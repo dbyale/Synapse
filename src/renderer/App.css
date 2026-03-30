@@ -1,62 +1,108 @@
-/*
- * @NOTE: Prepend a `~` to css file paths that are in your node_modules
- *        See https://github.com/webpack-contrib/sass-loader#imports
- */
-body {
-  position: relative;
-  color: white;
-  height: 100vh;
-  background: linear-gradient(
-    200.96deg,
-    #fedc2a -29.09%,
-    #dd5789 51.77%,
-    #7a2c9e 129.35%
-  );
-  font-family: sans-serif;
-  overflow-y: hidden;
-  display: flex;
-  justify-content: center;
-  align-items: center;
+/* ── Reset ── */
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
 }
 
-button {
-  background-color: white;
-  padding: 10px 20px;
-  border-radius: 10px;
+/* ── Theme Tokens ── */
+:root {
+  --bg-primary: #181825;
+  --bg-secondary: #1e1e2e;
+  --bg-sidebar: #11111b;
+  --bg-input: #313244;
+  --bg-hover: #45475a;
+  --text-primary: #cdd6f4;
+  --text-secondary: #7f849c;
+  --accent: #89b4fa;
+  --accent-hover: #74c7ec;
+  --border: #313244;
+
+  --sidebar-width: 260px;
+  --topbar-height: 52px;
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+/* ── Reusable Classes ── */
+.flex-row    { display: flex; flex-direction: row; }
+.flex-col    { display: flex; flex-direction: column; }
+.flex-center { display: flex; align-items: center; justify-content: center; }
+.flex-1      { flex: 1; }
+.gap-sm      { gap: 4px; }
+.gap-md      { gap: 8px; }
+.gap-lg      { gap: 16px; }
+.text-muted  { color: var(--text-secondary); }
+.text-center { text-align: center; }
+.no-drag     { -webkit-app-region: no-drag; }
+.draggable   { -webkit-app-region: drag; }
+.full-height { height: 100%; }
+.overflow-y  { overflow-y: auto; }
+
+/* ── Shared Button Base ── */
+.btn {
   border: none;
-  appearance: none;
-  font-size: 1.3rem;
-  box-shadow: 0px 8px 28px -6px rgba(24, 39, 75, 0.12),
-    0px 18px 88px -4px rgba(24, 39, 75, 0.14);
-  transition: all ease-in 0.1s;
+  border-radius: var(--radius-md);
   cursor: pointer;
-  opacity: 0.9;
+  transition: background 0.15s ease;
+  font-family: inherit;
 }
 
-button:hover {
-  transform: scale(1.05);
-  opacity: 1;
-}
-
-li {
-  list-style: none;
-}
-
-a {
-  text-decoration: none;
-  height: fit-content;
-  width: fit-content;
-  margin: 10px;
-}
-
-a:hover {
-  opacity: 1;
-  text-decoration: none;
-}
-
-.Hello {
+.btn-icon {
+  composes: btn;
+  width: 44px;
+  height: 44px;
+  background: transparent;
   display: flex;
-  justify-content: center;
   align-items: center;
-  margin: 20px 0;
+  justify-content: center;
+}
+.btn-icon:hover { background: var(--bg-hover); }
+.btn-icon.active { background: var(--accent); }
+
+.btn-accent {
+  background: var(--accent);
+  color: white;
+}
+.btn-accent:hover { background: var(--accent-hover); }
+
+.btn-accent:disabled {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+/* ── Shared Input Base ── */
+.input-base {
+  background: var(--bg-input);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: inherit;
+  font-size: 13px;
+  outline: none;
+}
+.input-base:focus { border-color: var(--accent); }
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }

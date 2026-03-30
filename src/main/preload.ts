@@ -1,29 +1,36 @@
-// Disable no-unused-vars, broken for spread args
-/* eslint no-unused-vars: off */
 import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron';
 
-export type Channels = 'ipc-example';
+contextBridge.exposeInMainWorld('electronAPI', {
+  // Settings
+  loadSettings: () => ipcRenderer.invoke('settings:load'),
+  saveSettings: (settings: unknown) =>
+    ipcRenderer.invoke('settings:save', settings),
+  pickDirectory: () => ipcRenderer.invoke('settings:pick-directory'),
 
-const electronHandler = {
-  ipcRenderer: {
-    sendMessage(channel: Channels, ...args: unknown[]) {
-      ipcRenderer.send(channel, ...args);
-    },
-    on(channel: Channels, func: (...args: unknown[]) => void) {
-      const subscription = (_event: IpcRendererEvent, ...args: unknown[]) =>
-        func(...args);
-      ipcRenderer.on(channel, subscription);
+  // Models
+  searchModels: (query: string) => ipcRenderer.invoke('models:search', query),
+  listModelFiles: (repoId: string) =>
+    ipcRenderer.invoke('models:list-files', repoId),
+  downloadModel: (repoId: string, filename: string) =>
+    ipcRenderer.invoke('models:download', repoId, filename),
+  listLocalModels: () => ipcRenderer.invoke('models:list-local'),
+  deleteModel: (filename: string) =>
+    ipcRenderer.invoke('models:delete', filename),
 
-      return () => {
-        ipcRenderer.removeListener(channel, subscription);
-      };
-    },
-    once(channel: Channels, func: (...args: unknown[]) => void) {
-      ipcRenderer.once(channel, (_event, ...args) => func(...args));
-    },
+  // Events
+  onDownloadProgress: (callback: (progress: any) => void) => {
+    // Wrap callback to strip the Electron event object
+    const subscription = (_event: IpcRendererEvent, progress: any) =>
+      callback(progress);
+
+    ipcRenderer.on('download-progress', subscription);
+
+    // Return an unsubscribe function if needed
+    return () => {
+      ipcRenderer.removeListener('download-progress', subscription);
+    };
   },
-};
-
-contextBridge.exposeInMainWorld('electron', electronHandler);
-
-export type ElectronHandler = typeof electronHandler;
+  removeDownloadProgressListener: () => {
+    ipcRenderer.removeAllListeners('download-progress');
+  },
+});
