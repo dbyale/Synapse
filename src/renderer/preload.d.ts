@@ -20,17 +20,6 @@ export interface AppSettings {
   profiles: Record<string, ProfileSettings>;
 }
 
-export interface ModelSearchResult {
-  id: string;
-  author: string;
-  name: string;
-  downloads: number;
-  likes: number;
-  lastModified: string;
-  pipelineTag: string;
-  parameters: string | null;
-}
-
 export interface LocalModel {
   filename: string;
   filepath: string;
@@ -57,14 +46,25 @@ export interface ModelSearchResult {
   tags: string[];
 }
 
+export interface RemoteModelFile {
+  filename: string;
+  sizeBytes: number;
+  quantization: string;
+  bits: number;
+}
+
 declare global {
   interface Window {
     electronAPI: {
       loadSettings: () => Promise<AppSettings>;
       saveSettings: (settings: AppSettings) => Promise<boolean>;
       pickDirectory: () => Promise<string | null>;
-      searchModels: (query: string) => Promise<ModelSearchResult[]>;
-      listModelFiles: (repoId: string) => Promise<string[]>;
+      searchModels: (
+        query: string,
+        limit?: number,
+        filters?: SearchFilter[]
+      ) => Promise<ModelSearchResult[]>;
+      listModelFiles: (repoId: string) => Promise<RemoteModelFile[]>;
       downloadModel: (repoId: string, filename: string) => Promise<string>;
       listLocalModels: () => Promise<LocalModel[]>;
       deleteModel: (filename: string) => Promise<boolean>;

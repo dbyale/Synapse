@@ -12,7 +12,7 @@ import {
   listLocalModels,
   deleteLocalModel,
   SearchFilter
-} from './models';
+} from '../renderer/utils/models';
 
 export function registerIpcHandlers(): void {
   // ── Settings ──

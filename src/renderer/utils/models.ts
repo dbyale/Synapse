@@ -2,41 +2,14 @@ import path from 'path';
 import fs from 'fs';
 import https from 'https';
 import { BrowserWindow } from 'electron';
-import { getModelsDirectory } from './settings';
-
-export interface ModelSearchResult {
-  id: string;
-  author: string;
-  name: string;
-  downloads: number;
-  likes: number;
-  trendingScore: number;
-  lastModified: string;
-  pipelineTag: string;
-  parameters: string | null;
-  tags: string[];
-}
-
-export interface SearchFilter {
-  id: string;
-  label: string;
-  type: 'library' | 'pipeline_tag' | 'tag' | 'author' | 'language';
-}
-
-export interface LocalModel {
-  filename: string;
-  filepath: string;
-  sizeBytes: number;
-  lastModified: string;
-}
-
-export interface DownloadProgress {
-  modelId: string;
-  filename: string;
-  downloadedBytes: number;
-  totalBytes: number;
-  percent: number;
-}
+import { getModelsDirectory } from '../../main/settings';
+import type {
+  ModelSearchResult,
+  SearchFilter,
+  LocalModel,
+  DownloadProgress,
+  RemoteModelFile
+} from '../preload.d';
 
 // ── Raw shape returned by HuggingFace REST API ──
 interface HFApiModel {
@@ -53,12 +26,10 @@ interface HFApiModel {
   modelId: string;
 }
 
-// ── Default filters applied to every search ──
 const DEFAULT_FILTERS: SearchFilter[] = [
   { id: 'gguf', label: 'GGUF', type: 'library' },
 ];
 
-// ── Search HuggingFace via REST API ──
 export async function searchModels(
   query: string,
   limit: number = 20,
@@ -69,7 +40,6 @@ export async function searchModels(
     limit: String(limit),
   });
 
-  // Map filters to their corresponding API query parameters
   const tagFilters: string[] = [];
 
   for (const filter of filters) {
@@ -96,7 +66,6 @@ export async function searchModels(
 
   try {
     const response = await fetch(url);
-
     if (!response.ok) {
       throw new Error(`HuggingFace API returned ${response.status}: ${response.statusText}`);
     }
@@ -135,24 +104,57 @@ export async function searchModels(
   }
 }
 
-// ── List GGUF files for a specific HuggingFace repo ──
-export async function listModelFiles(repoId: string): Promise<string[]> {
+// ── List GGUF files and parse file sizes + quantizations ──
+export async function listModelFiles(repoId: string): Promise<RemoteModelFile[]> {
   try {
-    const response = await fetch(`https://huggingface.co/api/models/${repoId}`);
+    const response = await fetch(`https://huggingface.co/api/models/${repoId}/tree/main?recursive=true`);
+    if (!response.ok) return [];
     const data = await response.json();
 
-    if (data.siblings) {
-      return data.siblings
-        .map((f: { rfilename: string }) => f.rfilename)
-        .filter((name: string) => name.endsWith('.gguf'));
+    const files: RemoteModelFile[] = [];
+
+    for (const file of data) {
+      if (file.type === 'file' && file.path.endsWith('.gguf')) {
+        const filename = file.path;
+        const lowerName = filename.toLowerCase();
+
+        let quant = 'GGUF';
+        let bits = 0;
+
+        // Catch Vision Projectors (mmproj) and extract their specific bit format
+        if (lowerName.includes('mmproj')) {
+          const pMatch = filename.match(/mmproj-([^.]+)\.gguf/i);
+          quant = pMatch ? pMatch[1].toUpperCase() : 'MMPROJ';
+          bits = -1; // Flag as projector so they sort to the bottom
+        } else {
+          // Extract standard quantizations like Q4_K_M, IQ3_M, FP16, BF16, Q8_0
+          const qMatch = filename.match(/(?:q|iq|fp|bf)\d+(?:_[a-z0-9_]+)?/i);
+          if (qMatch) {
+            quant = qMatch[0].toUpperCase();
+            const bitMatch = quant.match(/\d+/);
+            if (bitMatch) bits = parseInt(bitMatch[0], 10);
+          } else {
+            const fallback = filename.match(/(?:-|\.)([^.]+)\.gguf$/i);
+            if (fallback) quant = fallback[1].toUpperCase();
+          }
+        }
+
+        files.push({
+          filename,
+          sizeBytes: file.size,
+          quantization: quant,
+          bits
+        });
+      }
     }
+
+    return files;
   } catch (err) {
     console.error('Error listing model files:', err);
   }
   return [];
 }
 
-// ── Download a GGUF file ──
 export function downloadModel(repoId: string, filename: string, win: BrowserWindow | null): Promise<string> {
   return new Promise((resolve, reject) => {
     const modelsDir = getModelsDirectory();
@@ -216,7 +218,6 @@ export function downloadModel(repoId: string, filename: string, win: BrowserWind
   });
 }
 
-// ── List locally downloaded models ──
 export function listLocalModels(): LocalModel[] {
   const modelsDir = getModelsDirectory();
   if (!fs.existsSync(modelsDir)) return [];
@@ -235,7 +236,6 @@ export function listLocalModels(): LocalModel[] {
     });
 }
 
-// ── Delete a local model ──
 export function deleteLocalModel(filename: string): boolean {
   const filepath = path.join(getModelsDirectory(), filename);
   if (fs.existsSync(filepath)) {
