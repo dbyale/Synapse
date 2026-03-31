@@ -5,6 +5,7 @@ Models:
     * Link to search
     * Deleting model deletes MMPROJ addons
   * Search
+    * Tags use darker theme and one large letter
     * Return more data per query
     * Tooltips for each quantization type + mmproj
     * Check for equivelent HF Resolvers (higher API Limit)
