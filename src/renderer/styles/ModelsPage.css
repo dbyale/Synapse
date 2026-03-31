@@ -688,3 +688,12 @@
 .model-card__link-base:hover {
   text-shadow: 0 0 .6px var(--text-primary);
 }
+
+/* ── Infinite Scroll Loader ── */
+.models-loader {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 0;
+  color: var(--text-secondary);
+}

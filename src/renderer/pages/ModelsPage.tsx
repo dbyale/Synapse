@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { Search, Loader, Cloud, HardDrive, AlertCircle } from 'lucide-react';
 import type {
   ModelSearchResult,
@@ -7,10 +7,6 @@ import type {
   SearchFilter,
   RemoteModelFile,
 } from '../preload.d';
-import type { Language } from '../../data/languages';
-import type { PipelineTagOption } from '../../data/pipelineTags';
-import { LANGUAGES } from '../../data/languages';
-import { PIPELINE_TAGS } from '../../data/pipelineTags';
 
 import ModelFilterPanel from '../components/models/ModelFilterPanel';
 import ModelSortDropdown from '../components/models/ModelSortDropdown';
@@ -27,7 +23,7 @@ type Tab = 'browse' | 'local';
 
 interface ExpandedModel {
   repoId: string;
-  files: RemoteModelFile[]; // <- changed from string[]
+  files: RemoteModelFile[];
   loading: boolean;
 }
 
@@ -36,6 +32,13 @@ interface ActiveDownload {
   percent: number;
 }
 
+const API_SORT_MAP: Record<SortOption, { sort: string; direction: number }> = {
+  trending: { sort: 'trendingScore', direction: -1 },
+  downloads: { sort: 'downloads', direction: -1 },
+  likes: { sort: 'likes', direction: -1 },
+  recent: { sort: 'lastModified', direction: -1 },
+};
+
 // ============================================================================
 // MAIN COMPONENT
 // ============================================================================
@@ -43,10 +46,15 @@ export default function ModelsPage() {
   const [tab, setTab] = useState<Tab>('browse');
   const [query, setQuery] = useState('');
   const [searching, setSearching] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [results, setResults] = useState<ModelSearchResult[]>([]);
 
+  // ── Server-side state ──
   const [sortBy, setSortBy] = useState<SortOption>('trending');
+  const [limit, setLimit] = useState(20);
+  const [hasMore, setHasMore] = useState(true);
+  const loaderRef = useRef<HTMLDivElement>(null);
 
   const [selectedLanguage, setSelectedLanguage] = useState<string | null>(null);
   const [selectedPipeline, setSelectedPipeline] = useState<string | null>(null);
@@ -56,6 +64,108 @@ export default function ModelsPage() {
   const [downloads, setDownloads] = useState<Record<string, ActiveDownload>>(
     {},
   );
+
+  // ── Build filters ──
+  const buildFilters = (
+    lang: string | null,
+    pipe: string | null,
+  ): SearchFilter[] => {
+    const filters: SearchFilter[] = [
+      { id: 'gguf', label: 'GGUF', type: 'library' },
+    ];
+    if (lang) filters.push({ id: lang, label: lang, type: 'language' });
+    if (pipe) filters.push({ id: pipe, label: pipe, type: 'pipeline_tag' });
+    return filters;
+  };
+
+  // ── Server-Side API Search function ──
+  const doSearch = async (
+    q: string,
+    lang: string | null,
+    pipe: string | null,
+    fetchLimit: number,
+    sortKey: SortOption,
+    isLoadMore: boolean = false,
+  ): Promise<void> => {
+    if (isLoadMore) {
+      setIsLoadingMore(true);
+    } else {
+      setSearching(true);
+      setExpanded(null);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+    setError(null);
+
+    try {
+      const filters = buildFilters(lang, pipe);
+      const apiSort = API_SORT_MAP[sortKey];
+
+      // Exact 5 arguments to match preload
+      const res = await window.electronAPI.searchModels(
+        q.trim(),
+        filters,
+        apiSort.sort,
+        apiSort.direction,
+        fetchLimit,
+      );
+
+      // If we got exactly as many as we asked for, there might be more
+      setHasMore(res.length >= fetchLimit);
+      setResults(res);
+    } catch (searchErr: unknown) {
+      console.error('Search failed:', searchErr);
+      setError(
+        'Failed to connect to HuggingFace. Please check your internet connection.',
+      );
+    } finally {
+      setSearching(false);
+      setIsLoadingMore(false);
+    }
+  };
+
+  // ── Initial Load (No empty query return) ──
+  useEffect(() => {
+    doSearch('', null, null, 20, 'trending', false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Infinite Scroll Observer ──
+  const handleLoadMore = useCallback(() => {
+    if (searching || isLoadingMore || !hasMore) return;
+    const nextLimit = limit + 20;
+    setLimit(nextLimit);
+    doSearch(
+      query,
+      selectedLanguage,
+      selectedPipeline,
+      nextLimit,
+      sortBy,
+      true,
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    searching,
+    isLoadingMore,
+    hasMore,
+    limit,
+    query,
+    selectedLanguage,
+    selectedPipeline,
+    sortBy,
+  ]);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          handleLoadMore();
+        }
+      },
+      { threshold: 0.1 },
+    );
+    if (loaderRef.current) observer.observe(loaderRef.current);
+    return () => observer.disconnect();
+  }, [handleLoadMore]);
 
   // ── Download progress listener ──
   useEffect(() => {
@@ -100,107 +210,30 @@ export default function ModelsPage() {
     }
   }, [tab]);
 
-  // ── Sort ──
-  const applySort = (
-    data: ModelSearchResult[],
-    sortType: SortOption,
-  ): ModelSearchResult[] => {
-    return [...data].sort((a: ModelSearchResult, b: ModelSearchResult) => {
-      switch (sortType) {
-        case 'trending':
-          return (b.trendingScore ?? 0) - (a.trendingScore ?? 0);
-        case 'downloads':
-          return b.downloads - a.downloads;
-        case 'likes':
-          return b.likes - a.likes;
-        case 'recent':
-          return (
-            new Date(b.lastModified).getTime() -
-            new Date(a.lastModified).getTime()
-          );
-        default:
-          return 0;
-      }
-    });
-  };
-
-  const handleSortChange = (newSort: SortOption): void => {
-    setSortBy(newSort);
-    setResults((prev) => applySort(prev, newSort));
-  };
-
-  // ── Build filters ──
-  const buildFilters = (
-    lang: string | null,
-    pipe: string | null,
-  ): SearchFilter[] => {
-    const filters: SearchFilter[] = [
-      { id: 'gguf', label: 'GGUF', type: 'library' },
-    ];
-    if (lang) {
-      const langObj = LANGUAGES.find((l: Language) => l.code === lang);
-      filters.push({
-        id: lang,
-        label: langObj?.label ?? lang,
-        type: 'language',
-      });
-    }
-    if (pipe) {
-      const pipeObj = PIPELINE_TAGS.find(
-        (p: PipelineTagOption) => p.id === pipe,
-      );
-      filters.push({
-        id: pipe,
-        label: pipeObj?.label ?? pipe,
-        type: 'pipeline_tag',
-      });
-    }
-    return filters;
-  };
-
-  // ── Search ──
-  const doSearch = async (
-    q: string,
-    lang: string | null,
-    pipe: string | null,
-  ): Promise<void> => {
-    if (!q.trim()) return;
-    setSearching(true);
-    setExpanded(null);
-    setError(null);
-
-    // Automatically scroll to the top of the window when a new search starts
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-
-    try {
-      const filters = buildFilters(lang, pipe);
-      const res = await window.electronAPI.searchModels(q.trim(), 20, filters);
-      setResults(applySort(res, sortBy));
-    } catch (searchErr: unknown) {
-      console.error('Search failed:', searchErr);
-      setError(
-        'Failed to connect to HuggingFace. Please check your internet connection or try again later.',
-      );
-    } finally {
-      setSearching(false);
-    }
-  };
-
+  // ── Interaction Handlers ──
   const handleSearch = (): void => {
-    doSearch(query, selectedLanguage, selectedPipeline);
+    setLimit(20);
+    doSearch(query, selectedLanguage, selectedPipeline, 20, sortBy, false);
   };
 
-  // ── Filter handlers ──
   const handleLanguageSelect = (code: string | null): void => {
     const newLang = selectedLanguage === code ? null : code;
     setSelectedLanguage(newLang);
-    if (query.trim()) doSearch(query, newLang, selectedPipeline);
+    setLimit(20);
+    doSearch(query, newLang, selectedPipeline, 20, sortBy, false);
   };
 
   const handlePipelineSelect = (tag: string | null): void => {
     const newPipe = selectedPipeline === tag ? null : tag;
     setSelectedPipeline(newPipe);
-    if (query.trim()) doSearch(query, selectedLanguage, newPipe);
+    setLimit(20);
+    doSearch(query, selectedLanguage, newPipe, 20, sortBy, false);
+  };
+
+  const handleSortChange = (newSort: SortOption): void => {
+    setSortBy(newSort);
+    setLimit(20);
+    doSearch(query, selectedLanguage, selectedPipeline, 20, newSort, false);
   };
 
   // ── Expand ──
@@ -224,10 +257,7 @@ export default function ModelsPage() {
     repoId: string,
     filename: string,
   ): Promise<void> => {
-    setDownloads((prev) => ({
-      ...prev,
-      [filename]: { filename, percent: 0 },
-    }));
+    setDownloads((prev) => ({ ...prev, [filename]: { filename, percent: 0 } }));
     try {
       await window.electronAPI.downloadModel(repoId, filename);
     } catch (dlErr: unknown) {
@@ -326,7 +356,7 @@ export default function ModelsPage() {
           {/* Empty */}
           {results.length === 0 && !searching && !error && (
             <div className="models-empty">
-              Search HuggingFace to find and download GGUF models.
+              No GGUF models found matching your filters.
             </div>
           )}
 
@@ -343,15 +373,31 @@ export default function ModelsPage() {
               downloads={downloads}
               onToggleExpand={handleExpand}
               onDownload={handleDownload}
-              // ── New Search handler ──
               onSearchBaseModel={(bmQuery) => {
                 setQuery(bmQuery);
-                doSearch(bmQuery, selectedLanguage, selectedPipeline);
-                // scroll to top after triggering search
-                window.scrollTo({ top: 0, behavior: 'smooth' });
+                setLimit(20);
+                doSearch(
+                  bmQuery,
+                  selectedLanguage,
+                  selectedPipeline,
+                  20,
+                  sortBy,
+                  false,
+                );
               }}
             />
           ))}
+
+          {/* Infinite Scroll Loader Anchor */}
+          {results.length > 0 && hasMore && (
+            <div ref={loaderRef} className="models-loader">
+              <Loader
+                size={24}
+                className={isLoadingMore ? 'spin' : ''}
+                style={{ opacity: isLoadingMore ? 1 : 0 }}
+              />
+            </div>
+          )}
         </>
       )}
 

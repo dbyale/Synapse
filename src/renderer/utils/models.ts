@@ -32,29 +32,42 @@ const DEFAULT_FILTERS: SearchFilter[] = [
 
 export async function searchModels(
   query: string,
-  limit: number = 20,
-  filters: SearchFilter[] = DEFAULT_FILTERS
+  filters: SearchFilter[] = [],
+  sort: string = 'trendingScore',
+  direction: number = -1,
+  limit: number = 20
 ): Promise<ModelSearchResult[]> {
   const params = new URLSearchParams({
-    search: query,
     limit: String(limit),
+    sort: sort,
+    direction: String(direction)
   });
+
+  // Only append search parameter if it's not empty
+  if (query.trim()) {
+    params.set('search', query.trim());
+  }
 
   const tagFilters: string[] = [];
 
-  for (const filter of filters) {
-    switch (filter.type) {
-      case 'library':
-      case 'tag':
-      case 'language':
-        tagFilters.push(filter.id);
-        break;
-      case 'pipeline_tag':
-        params.set('pipeline_tag', filter.id);
-        break;
-      case 'author':
-        params.set('author', filter.id);
-        break;
+  // Default GGUF filter must be added manually if we default to []
+  tagFilters.push('gguf');
+
+  if (filters && Symbol.iterator in Object(filters)) {
+    for (const filter of filters) {
+      switch (filter.type) {
+        case 'library':
+        case 'tag':
+        case 'language':
+          if (filter.id !== 'gguf') tagFilters.push(filter.id);
+          break;
+        case 'pipeline_tag':
+          params.set('pipeline_tag', filter.id);
+          break;
+        case 'author':
+          params.set('author', filter.id);
+          break;
+      }
     }
   }
 

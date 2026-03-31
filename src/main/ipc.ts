@@ -11,8 +11,8 @@ import {
   downloadModel,
   listLocalModels,
   deleteLocalModel,
-  SearchFilter
 } from '../renderer/utils/models';
+import type { SearchFilter } from '../renderer/preload.d';
 
 export function registerIpcHandlers(): void {
   // ── Settings ──
@@ -35,9 +35,12 @@ export function registerIpcHandlers(): void {
   });
 
   // ── Models: HuggingFace ──
-  ipcMain.handle('models:search', async (_event, query: string, limit?: number, filters?: SearchFilter[]) => {
-    return searchModels(query, limit ?? 20, filters);
-  });
+  ipcMain.handle(
+    'models:search',
+    async (_event, query: string, filters: SearchFilter[], sort: string, direction: number, limit: number) => {
+      return searchModels(query, filters, sort, direction, limit);
+    }
+  );
 
   ipcMain.handle('models:list-files', (_event, repoId: string) => {
     return listModelFiles(repoId);

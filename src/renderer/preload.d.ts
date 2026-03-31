@@ -61,8 +61,10 @@ declare global {
       pickDirectory: () => Promise<string | null>;
       searchModels: (
         query: string,
-        limit?: number,
-        filters?: SearchFilter[]
+        filters: SearchFilter[],
+        sort: string,
+        direction: number,
+        limit: number
       ) => Promise<ModelSearchResult[]>;
       listModelFiles: (repoId: string) => Promise<RemoteModelFile[]>;
       downloadModel: (repoId: string, filename: string) => Promise<string>;
