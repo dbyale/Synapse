@@ -10,7 +10,10 @@ import {
   Loader,
   ListFilter,
   ArrowDownUp,
-  AlertCircle, // 👈 Added Alert icon
+  AlertCircle,
+  Heart,
+  Cpu,
+  Calendar,
 } from 'lucide-react';
 import type {
   ModelSearchResult,
@@ -21,22 +24,21 @@ import type {
 import { getCompanyLogoComponent } from '../utils/companyLogos';
 
 // ============================================================================
-// AVATAR GENERATION (Fallback for no logo)
+// AVATAR GENERATION
 // ============================================================================
 const AVATAR_COLORS = [
-  '#89b4fa', // Blue
-  '#f38ba8', // Red
-  '#a6e3a1', // Green
-  '#f9e2af', // Yellow
-  '#cba6f7', // Purple
-  '#94e2d5', // Teal
+  '#89b4fa',
+  '#f38ba8',
+  '#a6e3a1',
+  '#f9e2af',
+  '#cba6f7',
+  '#94e2d5',
 ];
 
 function getAvatarColor(name: string): string {
   const hash = name
     .split('')
     .reduce((acc, char) => acc * 31 + char.charCodeAt(0), 0);
-
   return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
 }
 
@@ -127,18 +129,18 @@ const s: Record<string, CSSProperties> = {
   sortTrigger: {
     display: 'flex',
     alignItems: 'center',
-    justifyContent: 'center', // Added for alignment
+    justifyContent: 'center',
     gap: 6,
     background: 'transparent',
-    border: '1px solid transparent', // Keep layout stable
+    border: '1px solid transparent',
     color: 'var(--text-primary)',
     fontSize: 13,
     fontWeight: 500,
     cursor: 'pointer',
-    padding: '0 8px', // Tweaked padding
+    padding: '0 8px',
     borderRadius: '6px',
-    height: 32, // Fixed height for perfect alignment
-    lineHeight: '30px', // Forces exact vertical centering
+    height: 32,
+    lineHeight: '30px',
   },
   sortMenu: {
     position: 'absolute',
@@ -191,8 +193,8 @@ const s: Record<string, CSSProperties> = {
   },
   cardLeft: { display: 'flex', alignItems: 'center', gap: 16 },
   avatar: {
-    width: 44,
-    height: 44,
+    width: 48,
+    height: 48,
     borderRadius: '12px',
     display: 'flex',
     alignItems: 'center',
@@ -209,14 +211,68 @@ const s: Record<string, CSSProperties> = {
     objectFit: 'contain',
     padding: '6px',
   },
-  cardTextCol: { display: 'flex', flexDirection: 'column', gap: 4 },
-  modelName: { fontSize: 15, fontWeight: 600 },
-  modelMeta: {
-    fontSize: 12,
-    color: 'var(--text-secondary)',
+  cardTextCol: { display: 'flex', flexDirection: 'column', gap: 6 },
+  modelName: { fontSize: 16, fontWeight: 600 },
+
+  // 👈 New Meta Row Styles
+  modelMetaRow: {
     display: 'flex',
+    alignItems: 'center',
+    gap: 14,
+    flexWrap: 'wrap',
+  },
+  taskBadge: {
+    background: 'var(--bg-input)',
+    border: '1px solid var(--border)',
+    padding: '2px 10px',
+    borderRadius: '12px',
+    fontSize: 11,
+    fontWeight: 500,
+    color: 'var(--text-secondary)',
+    textTransform: 'capitalize',
+  },
+  metaItem: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+    fontSize: 13,
+    color: 'var(--text-secondary)',
+    fontWeight: 500,
+  },
+
+  expandedPanel: {
+    borderTop: '1px solid var(--border)',
+    display: 'flex',
+    flexDirection: 'column',
+  },
+  detailsSection: {
+    padding: '16px 20px',
+    display: 'flex',
+    flexDirection: 'column',
     gap: 12,
   },
+  detailsDate: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+    fontSize: 13,
+    color: 'var(--text-secondary)',
+  },
+  tagsContainer: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: 6,
+    alignItems: 'center',
+  },
+  hfTag: {
+    background: 'rgba(255,255,255,0.05)',
+    color: 'var(--text-secondary)',
+    padding: '2px 8px',
+    borderRadius: '4px',
+    fontSize: 11,
+    border: '1px solid rgba(255,255,255,0.05)',
+  },
+
   fileList: {
     borderTop: '1px solid var(--border)',
     padding: '12px 20px',
@@ -282,7 +338,6 @@ const s: Record<string, CSSProperties> = {
     padding: 40,
     fontSize: 14,
   },
-  // 👈 New Error Box Styling
   errorBox: {
     margin: '40px auto',
     padding: '24px',
@@ -330,10 +385,9 @@ export default function ModelsPage() {
   const [tab, setTab] = useState<Tab>('browse');
   const [query, setQuery] = useState('');
   const [searching, setSearching] = useState(false);
-  const [error, setError] = useState<string | null>(null); // 👈 New error state
+  const [error, setError] = useState<string | null>(null);
   const [results, setResults] = useState<ModelSearchResult[]>([]);
 
-  // Sort State
   const [sortBy, setSortBy] = useState<SortOption>('downloads');
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
   const sortRef = useRef<HTMLDivElement>(null);
@@ -344,7 +398,6 @@ export default function ModelsPage() {
     {},
   );
 
-  // Close sort menu when clicking outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (sortRef.current && !sortRef.current.contains(event.target as Node)) {
@@ -355,7 +408,6 @@ export default function ModelsPage() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Listen for download progress
   useEffect(() => {
     if (!window.electronAPI) return undefined;
 
@@ -388,7 +440,6 @@ export default function ModelsPage() {
     };
   }, []);
 
-  // Load local models when switching to local tab
   useEffect(() => {
     if (tab === 'local') {
       window.electronAPI
@@ -398,7 +449,6 @@ export default function ModelsPage() {
     }
   }, [tab]);
 
-  // Apply sorting to an array
   const applySort = (data: ModelSearchResult[], sortType: SortOption) => {
     return [...data].sort((a, b) => {
       if (sortType === 'downloads') return b.downloads - a.downloads;
@@ -424,14 +474,13 @@ export default function ModelsPage() {
     if (!query.trim()) return;
     setSearching(true);
     setExpanded(null);
-    setError(null); // Clear previous errors
+    setError(null);
 
     try {
       const res = await window.electronAPI.searchModels(query.trim());
       setResults(applySort(res, sortBy));
     } catch (err) {
       console.error('Search failed:', err);
-      // Trigger the error state if IPC throws
       setError(
         'Failed to connect to HuggingFace. Please check your internet connection or try again later.',
       );
@@ -490,7 +539,6 @@ export default function ModelsPage() {
     <div style={s.page}>
       <h1 style={s.heading}>Models</h1>
 
-      {/* Tabs */}
       <div style={s.tabs}>
         <button
           type="button"
@@ -508,11 +556,9 @@ export default function ModelsPage() {
         </button>
       </div>
 
-      {/* Browse Tab */}
       {tab === 'browse' && (
         <>
           <div style={s.searchContainer}>
-            {/* Top row: Search + Filter + Button */}
             <div style={s.searchRow}>
               <input
                 className="input-base"
@@ -539,7 +585,6 @@ export default function ModelsPage() {
               </button>
             </div>
 
-            {/* Bottom row: Custom Sort Dropdown */}
             <div style={s.sortRow}>
               <span style={s.sortLabel}>
                 <ArrowDownUp size={14} /> Sort by:
@@ -550,7 +595,6 @@ export default function ModelsPage() {
                   type="button"
                   style={{
                     ...s.sortTrigger,
-                    // Give active state a slight background so it looks like a real control
                     background: sortMenuOpen
                       ? 'var(--bg-hover)'
                       : 'transparent',
@@ -594,7 +638,6 @@ export default function ModelsPage() {
             </div>
           </div>
 
-          {/* 👈 The New Error Card */}
           {error && !searching && (
             <div style={s.errorBox}>
               <AlertCircle size={32} style={{ marginBottom: 4 }} />
@@ -605,7 +648,6 @@ export default function ModelsPage() {
             </div>
           )}
 
-          {/* Empty State (Hides if error or searching) */}
           {results.length === 0 && !searching && !error && (
             <div style={s.emptyText}>
               Search HuggingFace to find and download GGUF models.
@@ -623,12 +665,11 @@ export default function ModelsPage() {
                   onClick={() => handleExpand(model.id)}
                 >
                   <div style={s.cardLeft}>
-                    {/* Avatar / Logo Render */}
                     <div
                       style={{
                         ...s.avatar,
                         background: LogoComponent
-                          ? '#ffffff'
+                          ? '#333333'
                           : getAvatarColor(model.author),
                       }}
                       title={model.author}
@@ -644,11 +685,29 @@ export default function ModelsPage() {
 
                     <div style={s.cardTextCol}>
                       <span style={s.modelName}>{model.id}</span>
-                      <div style={s.modelMeta}>
-                        <span>
-                          Downloads: {model.downloads.toLocaleString()}
+
+                      {/* 👈 Updated Meta Row */}
+                      <div style={s.modelMetaRow}>
+                        {model.pipelineTag !== 'none' && (
+                          <span style={s.taskBadge}>
+                            {model.pipelineTag.replace(/-/g, ' ')}
+                          </span>
+                        )}
+
+                        {model.parameters && (
+                          <span style={s.metaItem} title="Parameters">
+                            <Cpu size={14} /> {model.parameters}
+                          </span>
+                        )}
+
+                        <span style={s.metaItem} title="Downloads">
+                          <Download size={14} />{' '}
+                          {model.downloads.toLocaleString()}
                         </span>
-                        <span>Likes: {model.likes.toLocaleString()}</span>
+
+                        <span style={s.metaItem} title="Likes">
+                          <Heart size={14} /> {model.likes.toLocaleString()}
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -661,49 +720,66 @@ export default function ModelsPage() {
                 </button>
 
                 {expanded?.repoId === model.id && (
-                  <div style={s.fileList}>
-                    {expanded.loading && (
-                      <span className="text-muted">Loading files...</span>
-                    )}
-                    {!expanded.loading && expanded.files.length === 0 && (
-                      <span className="text-muted">No GGUF files found.</span>
-                    )}
-                    {expanded.files.map((file) => (
-                      <div key={file} style={s.fileRow}>
-                        <span>{file}</span>
-                        <div>
-                          {downloads[file] ? (
-                            <div style={{ width: 120 }}>
-                              <div style={s.progressBar}>
-                                <div
-                                  style={{
-                                    ...s.progressFill,
-                                    width: `${downloads[file].percent}%`,
-                                  }}
-                                />
-                              </div>
-                              <span
-                                style={{
-                                  fontSize: 11,
-                                  color: 'var(--text-secondary)',
-                                }}
-                              >
-                                {downloads[file].percent}%
-                              </span>
-                            </div>
-                          ) : (
-                            <button
-                              type="button"
-                              className="btn-accent"
-                              style={s.dlBtn}
-                              onClick={() => handleDownload(model.id, file)}
-                            >
-                              <Download size={14} /> Download
-                            </button>
-                          )}
-                        </div>
+                  <div style={s.expandedPanel}>
+                    <div style={s.detailsSection}>
+                      <div style={s.detailsDate}>
+                        <Calendar size={13} />
+                        Last Updated:{' '}
+                        {new Date(model.lastModified).toLocaleDateString(
+                          undefined,
+                          {
+                            year: 'numeric',
+                            month: 'long',
+                            day: 'numeric',
+                          },
+                        )}
                       </div>
-                    ))}
+                    </div>
+
+                    <div style={s.fileList}>
+                      {expanded.loading && (
+                        <span className="text-muted">Loading files...</span>
+                      )}
+                      {!expanded.loading && expanded.files.length === 0 && (
+                        <span className="text-muted">No GGUF files found.</span>
+                      )}
+                      {expanded.files.map((file) => (
+                        <div key={file} style={s.fileRow}>
+                          <span>{file}</span>
+                          <div>
+                            {downloads[file] ? (
+                              <div style={{ width: 120 }}>
+                                <div style={s.progressBar}>
+                                  <div
+                                    style={{
+                                      ...s.progressFill,
+                                      width: `${downloads[file].percent}%`,
+                                    }}
+                                  />
+                                </div>
+                                <span
+                                  style={{
+                                    fontSize: 11,
+                                    color: 'var(--text-secondary)',
+                                  }}
+                                >
+                                  {downloads[file].percent}%
+                                </span>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                className="btn-accent"
+                                style={s.dlBtn}
+                                onClick={() => handleDownload(model.id, file)}
+                              >
+                                <Download size={14} /> Download
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>
@@ -712,7 +788,6 @@ export default function ModelsPage() {
         </>
       )}
 
-      {/* Local Tab */}
       {tab === 'local' && (
         <>
           {localModels.length === 0 && (

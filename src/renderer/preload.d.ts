@@ -27,6 +27,8 @@ export interface ModelSearchResult {
   downloads: number;
   likes: number;
   lastModified: string;
+  pipelineTag: string;
+  parameters: string | null;
 }
 
 export interface LocalModel {
