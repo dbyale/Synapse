@@ -10,9 +10,11 @@ export interface ModelSearchResult {
   name: string;
   downloads: number;
   likes: number;
+  trendingScore: number;
   lastModified: string;
   pipelineTag: string;
   parameters: string | null;
+  tags: string[];
 }
 
 export interface LocalModel {
@@ -30,55 +32,73 @@ export interface DownloadProgress {
   percent: number;
 }
 
-// ── Search HuggingFace ──
+// ── Raw shape returned by HuggingFace REST API ──
+interface HFApiModel {
+  _id: string;
+  id: string;
+  likes: number;
+  trendingScore: number;
+  private: boolean;
+  downloads: number;
+  tags: string[];
+  pipeline_tag?: string;
+  library_name?: string;
+  createdAt: string;
+  modelId: string;
+}
+
+// ── Search HuggingFace via REST API ──
 export async function searchModels(
   query: string,
   limit: number = 20
 ): Promise<ModelSearchResult[]> {
-  const results: ModelSearchResult[] = [];
+  const searchQuery = query.includes('gguf') ? query : `${query} gguf`;
+  const params = new URLSearchParams({
+    search: searchQuery,
+    limit: String(limit),
+  });
+
+  const url = `https://huggingface.co/api/models?${params.toString()}`;
 
   try {
-    const { listModels } = await import('@huggingface/hub');
+    const response = await fetch(url);
 
-    // Clean, standard SDK call. No hacks required!
-    const iterator = listModels({
-      search: { query: query.includes('gguf') ? query : `${query} gguf` },
-      limit,
-    });
+    if (!response.ok) {
+      throw new Error(`HuggingFace API returned ${response.status}: ${response.statusText}`);
+    }
 
-    while (results.length < limit) {
-      const { value: model, done } = await iterator.next();
+    const models: HFApiModel[] = await response.json();
 
-      if (done) break;
-      if (!model) continue;
+    return models.map((model) => {
+      const repoId = model.id;
+      const [author = 'unknown', ...nameParts] = repoId.split('/');
+      const name = nameParts.join('/') || repoId;
 
-      const repoId = model.name;
-      const pipelineTag = model.task || 'none';
-
-      // Extract parameters (7B, 13B, 8x7B) directly from the repo name using regex
       let parameters: string | null = null;
-      const paramMatch = repoId.match(/(\d+(?:\.\d+)?[bBmM]|\d+x\d+(?:\.\d+)?[bBmM])/);
+      const paramMatch = repoId.match(
+        /(\d+(?:\.\d+)?[bBmM](?:-[A-Za-z]\d+[bBmM])?|\d+x\d+(?:\.\d+)?[bBmM])/
+      );
       if (paramMatch) {
         parameters = paramMatch[0].toUpperCase();
       }
 
-      results.push({
+      return {
         id: repoId,
-        author: repoId.split('/')[0] ?? 'unknown',
-        name: repoId.split('/')[1] ?? repoId,
+        author,
+        name,
         downloads: model.downloads ?? 0,
         likes: model.likes ?? 0,
-        lastModified: model.updatedAt?.toString() ?? new Date().toISOString(),
-        pipelineTag,
+        trendingScore: model.trendingScore ?? 0,
+        lastModified: model.createdAt ?? new Date().toISOString(),
+        pipelineTag: model.pipeline_tag ?? 'unknown',
         parameters,
-      });
-    }
+        tags: model.tags ?? [],
+      };
+    });
   } catch (err) {
     console.error('HuggingFace search error:', err);
     throw err;
   }
-
-  return results;
 }
 
 // ── List GGUF files for a specific HuggingFace repo ──
