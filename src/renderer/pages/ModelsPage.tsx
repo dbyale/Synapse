@@ -14,14 +14,26 @@ import {
   Heart,
   Cpu,
   Calendar,
+  Globe,
+  TrendingUp,
+  Clock,
+  X,
+  Check,
+  Tag,
+  Package,
 } from 'lucide-react';
 import type {
   ModelSearchResult,
   LocalModel,
   DownloadProgress,
+  SearchFilter,
 } from '../preload.d';
 
 import { getCompanyLogoComponent } from '../utils/companyLogos';
+import type { Language } from '../../data/languages';
+import type { PipelineTagOption } from '../../data/pipelineTags';
+import { LANGUAGES } from '../../data/languages';
+import { PIPELINE_TAGS } from '../../data/pipelineTags';
 
 // ============================================================================
 // AVATAR GENERATION
@@ -52,6 +64,18 @@ function formatBytes(bytes: number): string {
   const sizes = ['B', 'KB', 'MB', 'GB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return `${parseFloat((bytes / k ** i).toFixed(1))} ${sizes[i]}`;
+}
+
+function formatCount(n: number): string {
+  if (n >= 1_000_000) {
+    const val = n / 1_000_000;
+    return val >= 10 ? `${Math.round(val)}M` : `${val.toFixed(1)}M`;
+  }
+  if (n >= 1_000) {
+    const val = n / 1_000;
+    return val >= 10 ? `${Math.round(val)}K` : `${val.toFixed(1)}K`;
+  }
+  return n.toString();
 }
 
 // ============================================================================
@@ -92,6 +116,8 @@ const s: Record<string, CSSProperties> = {
   searchContainer: { display: 'flex', flexDirection: 'column', gap: 12 },
   searchRow: { display: 'flex', gap: 8 },
   searchInput: { flex: 1, padding: '10px 14px', fontSize: 14 },
+
+  filterBtnWrapper: { position: 'relative' },
   filterBtn: {
     padding: '0 16px',
     borderRadius: 'var(--radius-sm)',
@@ -103,7 +129,142 @@ const s: Record<string, CSSProperties> = {
     border: '1px solid var(--border)',
     color: 'var(--text-primary)',
     cursor: 'pointer',
+    height: '100%',
   },
+  filterBtnActive: {
+    borderColor: 'var(--accent)',
+    background: 'rgba(137, 180, 250, 0.08)',
+  },
+  filterBadge: {
+    background: 'var(--accent)',
+    color: '#11111b',
+    borderRadius: '50%',
+    width: 18,
+    height: 18,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: 11,
+    fontWeight: 700,
+  },
+  filterPanel: {
+    position: 'absolute',
+    top: '100%',
+    left: 0,
+    marginTop: 6,
+    background: 'var(--bg-secondary)',
+    border: '1px solid var(--border)',
+    borderRadius: 'var(--radius-md)',
+    padding: 16,
+    width: 280,
+    boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
+    zIndex: 20,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 16,
+  },
+  filterSectionHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  filterSectionTitle: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+    fontSize: 11,
+    fontWeight: 600,
+    color: 'var(--text-secondary)',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px',
+  },
+  filterClearBtn: {
+    background: 'transparent',
+    border: 'none',
+    color: 'var(--accent)',
+    fontSize: 11,
+    cursor: 'pointer',
+    padding: '2px 4px',
+  },
+  filterList: {
+    maxHeight: 160,
+    overflowY: 'auto',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 1,
+  },
+  filterItem: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: '6px 10px',
+    borderRadius: 4,
+    cursor: 'pointer',
+    fontSize: 13,
+    color: 'var(--text-secondary)',
+    background: 'transparent',
+    border: 'none',
+    textAlign: 'left',
+    width: '100%',
+  },
+  filterItemActive: {
+    color: 'var(--text-primary)',
+    background: 'var(--bg-hover)',
+    fontWeight: 500,
+  },
+  filterSearchInput: {
+    padding: '6px 10px',
+    fontSize: 12,
+    background: 'var(--bg-input)',
+    border: '1px solid var(--border)',
+    borderRadius: 4,
+    color: 'var(--text-primary)',
+    marginBottom: 4,
+    width: '100%',
+    outline: 'none',
+  },
+
+  filterChipsRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+    flexWrap: 'wrap',
+  },
+  filterChipFixed: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 5,
+    padding: '3px 10px',
+    background: 'rgba(137, 180, 250, 0.08)',
+    border: '1px solid rgba(137, 180, 250, 0.2)',
+    borderRadius: 12,
+    fontSize: 12,
+    color: 'var(--accent)',
+    fontWeight: 500,
+  },
+  filterChip: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 5,
+    padding: '3px 10px',
+    background: 'var(--bg-input)',
+    border: '1px solid var(--border)',
+    borderRadius: 12,
+    fontSize: 12,
+    color: 'var(--text-primary)',
+  },
+  filterChipX: {
+    display: 'flex',
+    alignItems: 'center',
+    cursor: 'pointer',
+    color: 'var(--text-secondary)',
+    background: 'transparent',
+    border: 'none',
+    padding: 0,
+    marginLeft: 2,
+  },
+
   searchBtn: {
     padding: '10px 20px',
     borderRadius: 'var(--radius-sm)',
@@ -112,6 +273,7 @@ const s: Record<string, CSSProperties> = {
     alignItems: 'center',
     gap: 8,
   },
+
   sortRow: {
     display: 'flex',
     alignItems: 'center',
@@ -153,11 +315,14 @@ const s: Record<string, CSSProperties> = {
     padding: '4px',
     display: 'flex',
     flexDirection: 'column',
-    minWidth: 160,
+    minWidth: 190,
     boxShadow: '0 8px 16px rgba(0,0,0,0.2)',
     zIndex: 10,
   },
   sortOption: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
     padding: '8px 12px',
     background: 'transparent',
     border: 'none',
@@ -166,13 +331,13 @@ const s: Record<string, CSSProperties> = {
     textAlign: 'left',
     cursor: 'pointer',
     borderRadius: '4px',
-    transition: 'all 0.1s ease',
   },
   sortOptionActive: {
     color: 'var(--text-primary)',
     background: 'var(--bg-hover)',
     fontWeight: 500,
   },
+
   card: {
     background: 'var(--bg-secondary)',
     borderRadius: 'var(--radius-md)',
@@ -213,8 +378,6 @@ const s: Record<string, CSSProperties> = {
   },
   cardTextCol: { display: 'flex', flexDirection: 'column', gap: 6 },
   modelName: { fontSize: 16, fontWeight: 600 },
-
-  // 👈 New Meta Row Styles
   modelMetaRow: {
     display: 'flex',
     alignItems: 'center',
@@ -239,7 +402,6 @@ const s: Record<string, CSSProperties> = {
     color: 'var(--text-secondary)',
     fontWeight: 500,
   },
-
   expandedPanel: {
     borderTop: '1px solid var(--border)',
     display: 'flex',
@@ -272,7 +434,6 @@ const s: Record<string, CSSProperties> = {
     fontSize: 11,
     border: '1px solid rgba(255,255,255,0.05)',
   },
-
   fileList: {
     borderTop: '1px solid var(--border)',
     padding: '12px 20px',
@@ -358,14 +519,18 @@ const s: Record<string, CSSProperties> = {
 // TYPES & CONSTANTS
 // ============================================================================
 type Tab = 'browse' | 'local';
-type SortOption = 'downloads' | 'likes' | 'recent' | 'alphabetical';
+type SortOption = 'trending' | 'downloads' | 'likes' | 'recent';
 
-const SORT_LABELS: Record<SortOption, string> = {
-  downloads: 'Most Downloads',
-  likes: 'Most Likes',
-  recent: 'Recently Updated',
-  alphabetical: 'Alphabetical',
-};
+const SORT_CONFIG: {
+  key: SortOption;
+  label: string;
+  icon: React.FC<{ size?: number }>;
+}[] = [
+  { key: 'trending', label: 'Trending', icon: TrendingUp },
+  { key: 'downloads', label: 'Most Downloads', icon: Download },
+  { key: 'likes', label: 'Most Likes', icon: Heart },
+  { key: 'recent', label: 'Recently Updated', icon: Clock },
+];
 
 interface ExpandedModel {
   repoId: string;
@@ -388,9 +553,15 @@ export default function ModelsPage() {
   const [error, setError] = useState<string | null>(null);
   const [results, setResults] = useState<ModelSearchResult[]>([]);
 
-  const [sortBy, setSortBy] = useState<SortOption>('downloads');
+  const [sortBy, setSortBy] = useState<SortOption>('trending');
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
   const sortRef = useRef<HTMLDivElement>(null);
+
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [selectedLanguage, setSelectedLanguage] = useState<string | null>(null);
+  const [selectedPipeline, setSelectedPipeline] = useState<string | null>(null);
+  const [langSearch, setLangSearch] = useState('');
+  const filterRef = useRef<HTMLDivElement>(null);
 
   const [expanded, setExpanded] = useState<ExpandedModel | null>(null);
   const [localModels, setLocalModels] = useState<LocalModel[]>([]);
@@ -398,10 +569,33 @@ export default function ModelsPage() {
     {},
   );
 
+  const activeFilterCount =
+    (selectedLanguage ? 1 : 0) + (selectedPipeline ? 1 : 0);
+
+  const currentSortConfig = SORT_CONFIG.find(
+    (c: {
+      key: SortOption;
+      label: string;
+      icon: React.FC<{ size?: number }>;
+    }) => c.key === sortBy,
+  )!;
+
+  const filteredLanguages = LANGUAGES.filter(
+    (l: Language) =>
+      l.label.toLowerCase().includes(langSearch.toLowerCase()) ||
+      l.code.toLowerCase().includes(langSearch.toLowerCase()),
+  );
+
   useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
+    function handleClickOutside(event: MouseEvent): void {
       if (sortRef.current && !sortRef.current.contains(event.target as Node)) {
         setSortMenuOpen(false);
+      }
+      if (
+        filterRef.current &&
+        !filterRef.current.contains(event.target as Node)
+      ) {
+        setFilterOpen(false);
       }
     }
     document.addEventListener('mousedown', handleClickOutside);
@@ -449,38 +643,79 @@ export default function ModelsPage() {
     }
   }, [tab]);
 
-  const applySort = (data: ModelSearchResult[], sortType: SortOption) => {
-    return [...data].sort((a, b) => {
-      if (sortType === 'downloads') return b.downloads - a.downloads;
-      if (sortType === 'likes') return b.likes - a.likes;
-      if (sortType === 'recent') {
-        return (
-          new Date(b.lastModified).getTime() -
-          new Date(a.lastModified).getTime()
-        );
+  const applySort = (
+    data: ModelSearchResult[],
+    sortType: SortOption,
+  ): ModelSearchResult[] => {
+    return [...data].sort((a: ModelSearchResult, b: ModelSearchResult) => {
+      switch (sortType) {
+        case 'trending':
+          return (b.trendingScore ?? 0) - (a.trendingScore ?? 0);
+        case 'downloads':
+          return b.downloads - a.downloads;
+        case 'likes':
+          return b.likes - a.likes;
+        case 'recent':
+          return (
+            new Date(b.lastModified).getTime() -
+            new Date(a.lastModified).getTime()
+          );
+        default:
+          return 0;
       }
-      if (sortType === 'alphabetical') return a.id.localeCompare(b.id);
-      return 0;
     });
   };
 
-  const handleSortChange = (newSort: SortOption) => {
+  const handleSortChange = (newSort: SortOption): void => {
     setSortBy(newSort);
     setSortMenuOpen(false);
     setResults((prev) => applySort(prev, newSort));
   };
 
-  const handleSearch = async () => {
-    if (!query.trim()) return;
+  const buildFilters = (
+    lang: string | null,
+    pipe: string | null,
+  ): SearchFilter[] => {
+    const filters: SearchFilter[] = [
+      { id: 'gguf', label: 'GGUF', type: 'library' },
+    ];
+    if (lang) {
+      const langObj = LANGUAGES.find((l: Language) => l.code === lang);
+      filters.push({
+        id: lang,
+        label: langObj?.label ?? lang,
+        type: 'language',
+      });
+    }
+    if (pipe) {
+      const pipeObj = PIPELINE_TAGS.find(
+        (p: PipelineTagOption) => p.id === pipe,
+      );
+      filters.push({
+        id: pipe,
+        label: pipeObj?.label ?? pipe,
+        type: 'pipeline_tag',
+      });
+    }
+    return filters;
+  };
+
+  const doSearch = async (
+    q: string,
+    lang: string | null,
+    pipe: string | null,
+  ): Promise<void> => {
+    if (!q.trim()) return;
     setSearching(true);
     setExpanded(null);
     setError(null);
 
     try {
-      const res = await window.electronAPI.searchModels(query.trim());
+      const filters = buildFilters(lang, pipe);
+      const res = await window.electronAPI.searchModels(q.trim(), 20, filters);
       setResults(applySort(res, sortBy));
-    } catch (err) {
-      console.error('Search failed:', err);
+    } catch (searchErr: unknown) {
+      console.error('Search failed:', searchErr);
       setError(
         'Failed to connect to HuggingFace. Please check your internet connection or try again later.',
       );
@@ -489,7 +724,30 @@ export default function ModelsPage() {
     }
   };
 
-  const handleExpand = async (repoId: string) => {
+  const handleSearch = (): void => {
+    doSearch(query, selectedLanguage, selectedPipeline);
+  };
+
+  const handleLanguageSelect = (code: string | null): void => {
+    const newLang = selectedLanguage === code ? null : code;
+    setSelectedLanguage(newLang);
+    if (query.trim()) doSearch(query, newLang, selectedPipeline);
+  };
+
+  const handlePipelineSelect = (tag: string | null): void => {
+    const newPipe = selectedPipeline === tag ? null : tag;
+    setSelectedPipeline(newPipe);
+    if (query.trim()) doSearch(query, selectedLanguage, newPipe);
+  };
+
+  const handleClearFilters = (): void => {
+    setSelectedLanguage(null);
+    setSelectedPipeline(null);
+    setLangSearch('');
+    if (query.trim()) doSearch(query, null, null);
+  };
+
+  const handleExpand = async (repoId: string): Promise<void> => {
     if (expanded?.repoId === repoId) {
       setExpanded(null);
       return;
@@ -498,21 +756,24 @@ export default function ModelsPage() {
     try {
       const files = await window.electronAPI.listModelFiles(repoId);
       setExpanded({ repoId, files, loading: false });
-    } catch (err) {
-      console.error('Failed to list files:', err);
+    } catch (expandErr: unknown) {
+      console.error('Failed to list files:', expandErr);
       setExpanded(null);
     }
   };
 
-  const handleDownload = async (repoId: string, filename: string) => {
+  const handleDownload = async (
+    repoId: string,
+    filename: string,
+  ): Promise<void> => {
     setDownloads((prev) => ({
       ...prev,
       [filename]: { filename, percent: 0 },
     }));
     try {
       await window.electronAPI.downloadModel(repoId, filename);
-    } catch (err) {
-      console.error('Download failed:', err);
+    } catch (dlErr: unknown) {
+      console.error('Download failed:', dlErr);
       setDownloads((prev) => {
         const updated = { ...prev };
         delete updated[filename];
@@ -521,13 +782,13 @@ export default function ModelsPage() {
     }
   };
 
-  const handleDelete = async (filename: string) => {
+  const handleDelete = async (filename: string): Promise<void> => {
     try {
       await window.electronAPI.deleteModel(filename);
       const updated = await window.electronAPI.listLocalModels();
       setLocalModels(updated);
-    } catch (err) {
-      console.error('Delete failed:', err);
+    } catch (delErr: unknown) {
+      console.error('Delete failed:', delErr);
     }
   };
 
@@ -569,9 +830,137 @@ export default function ModelsPage() {
                 onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
               />
 
-              <button type="button" style={s.filterBtn} title="Filter options">
-                <ListFilter size={16} /> Filter
-              </button>
+              <div style={s.filterBtnWrapper} ref={filterRef}>
+                <button
+                  type="button"
+                  style={{
+                    ...s.filterBtn,
+                    ...(filterOpen || activeFilterCount > 0
+                      ? s.filterBtnActive
+                      : {}),
+                  }}
+                  onClick={() => setFilterOpen(!filterOpen)}
+                >
+                  <ListFilter size={16} />
+                  Filter
+                  {activeFilterCount > 0 && (
+                    <span style={s.filterBadge}>{activeFilterCount}</span>
+                  )}
+                </button>
+
+                {filterOpen && (
+                  <div style={s.filterPanel}>
+                    <div>
+                      <div style={s.filterSectionHeader}>
+                        <span style={s.filterSectionTitle}>
+                          <Tag size={12} /> Pipeline Tag
+                        </span>
+                        {selectedPipeline && (
+                          <button
+                            type="button"
+                            style={s.filterClearBtn}
+                            onClick={() => handlePipelineSelect(null)}
+                          >
+                            Clear
+                          </button>
+                        )}
+                      </div>
+                      <div style={s.filterList}>
+                        {PIPELINE_TAGS.map((pt: PipelineTagOption) => (
+                          <button
+                            type="button"
+                            key={pt.id}
+                            style={{
+                              ...s.filterItem,
+                              ...(selectedPipeline === pt.id
+                                ? s.filterItemActive
+                                : {}),
+                            }}
+                            onClick={() => handlePipelineSelect(pt.id)}
+                          >
+                            <span>{pt.label}</span>
+                            {selectedPipeline === pt.id && (
+                              <Check
+                                size={14}
+                                style={{ color: 'var(--accent)' }}
+                              />
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <div style={s.filterSectionHeader}>
+                        <span style={s.filterSectionTitle}>
+                          <Globe size={12} /> Language
+                        </span>
+                        {selectedLanguage && (
+                          <button
+                            type="button"
+                            style={s.filterClearBtn}
+                            onClick={() => handleLanguageSelect(null)}
+                          >
+                            Clear
+                          </button>
+                        )}
+                      </div>
+                      <input
+                        style={s.filterSearchInput}
+                        placeholder="Search languages..."
+                        value={langSearch}
+                        onChange={(e) => setLangSearch(e.target.value)}
+                      />
+                      <div style={s.filterList}>
+                        {filteredLanguages.map((lang: Language) => (
+                          <button
+                            type="button"
+                            key={lang.code}
+                            style={{
+                              ...s.filterItem,
+                              ...(selectedLanguage === lang.code
+                                ? s.filterItemActive
+                                : {}),
+                            }}
+                            onClick={() => handleLanguageSelect(lang.code)}
+                          >
+                            <span>
+                              {lang.label}{' '}
+                              <span style={{ opacity: 0.5 }}>
+                                ({lang.code})
+                              </span>
+                            </span>
+                            {selectedLanguage === lang.code && (
+                              <Check
+                                size={14}
+                                style={{ color: 'var(--accent)' }}
+                              />
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {activeFilterCount > 0 && (
+                      <button
+                        type="button"
+                        style={{
+                          ...s.filterClearBtn,
+                          fontSize: 12,
+                          textAlign: 'center' as const,
+                          padding: '6px 0',
+                          borderTop: '1px solid var(--border)',
+                          marginTop: 4,
+                          paddingTop: 12,
+                        }}
+                        onClick={handleClearFilters}
+                      >
+                        Clear All Filters
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
 
               <button
                 type="button"
@@ -583,6 +972,43 @@ export default function ModelsPage() {
                 {searching ? <Loader size={16} /> : <Search size={16} />}
                 {searching ? 'Searching...' : 'Search'}
               </button>
+            </div>
+
+            <div style={s.filterChipsRow}>
+              <span style={s.filterChipFixed}>
+                <Package size={12} /> GGUF
+              </span>
+
+              {selectedPipeline && (
+                <span style={s.filterChip}>
+                  <Tag size={12} />
+                  {PIPELINE_TAGS.find(
+                    (p: PipelineTagOption) => p.id === selectedPipeline,
+                  )?.label ?? selectedPipeline}
+                  <button
+                    type="button"
+                    style={s.filterChipX}
+                    onClick={() => handlePipelineSelect(null)}
+                  >
+                    <X size={12} />
+                  </button>
+                </span>
+              )}
+
+              {selectedLanguage && (
+                <span style={s.filterChip}>
+                  <Globe size={12} />
+                  {LANGUAGES.find((l: Language) => l.code === selectedLanguage)
+                    ?.label ?? selectedLanguage}
+                  <button
+                    type="button"
+                    style={s.filterChipX}
+                    onClick={() => handleLanguageSelect(null)}
+                  >
+                    <X size={12} />
+                  </button>
+                </span>
+              )}
             </div>
 
             <div style={s.sortRow}>
@@ -601,13 +1027,14 @@ export default function ModelsPage() {
                   }}
                   onClick={() => setSortMenuOpen(!sortMenuOpen)}
                 >
+                  <currentSortConfig.icon size={14} />
                   <span
                     style={{
                       display: 'inline-block',
                       transform: 'translateY(-1px)',
                     }}
                   >
-                    {SORT_LABELS[sortBy]}
+                    {currentSortConfig.label}
                   </span>
                   <ChevronDown
                     size={14}
@@ -617,18 +1044,17 @@ export default function ModelsPage() {
 
                 {sortMenuOpen && (
                   <div style={s.sortMenu}>
-                    {(
-                      Object.entries(SORT_LABELS) as [SortOption, string][]
-                    ).map(([val, label]) => (
+                    {SORT_CONFIG.map(({ key, label, icon: Icon }) => (
                       <button
                         type="button"
-                        key={val}
+                        key={key}
                         style={{
                           ...s.sortOption,
-                          ...(sortBy === val ? s.sortOptionActive : {}),
+                          ...(sortBy === key ? s.sortOptionActive : {}),
                         }}
-                        onClick={() => handleSortChange(val)}
+                        onClick={() => handleSortChange(key)}
                       >
+                        <Icon size={14} />
                         {label}
                       </button>
                     ))}
@@ -654,7 +1080,7 @@ export default function ModelsPage() {
             </div>
           )}
 
-          {results.map((model) => {
+          {results.map((model: ModelSearchResult) => {
             const LogoComponent = getCompanyLogoComponent(model.id);
 
             return (
@@ -686,13 +1112,13 @@ export default function ModelsPage() {
                     <div style={s.cardTextCol}>
                       <span style={s.modelName}>{model.id}</span>
 
-                      {/* 👈 Updated Meta Row */}
                       <div style={s.modelMetaRow}>
-                        {model.pipelineTag !== 'none' && (
-                          <span style={s.taskBadge}>
-                            {model.pipelineTag.replace(/-/g, ' ')}
-                          </span>
-                        )}
+                        {model.pipelineTag !== 'none' &&
+                          model.pipelineTag !== 'unknown' && (
+                            <span style={s.taskBadge}>
+                              {model.pipelineTag.replace(/-/g, ' ')}
+                            </span>
+                          )}
 
                         {model.parameters && (
                           <span style={s.metaItem} title="Parameters">
@@ -701,12 +1127,11 @@ export default function ModelsPage() {
                         )}
 
                         <span style={s.metaItem} title="Downloads">
-                          <Download size={14} />{' '}
-                          {model.downloads.toLocaleString()}
+                          <Download size={14} /> {formatCount(model.downloads)}
                         </span>
 
                         <span style={s.metaItem} title="Likes">
-                          <Heart size={14} /> {model.likes.toLocaleString()}
+                          <Heart size={14} /> {formatCount(model.likes)}
                         </span>
                       </div>
                     </div>
@@ -743,7 +1168,7 @@ export default function ModelsPage() {
                       {!expanded.loading && expanded.files.length === 0 && (
                         <span className="text-muted">No GGUF files found.</span>
                       )}
-                      {expanded.files.map((file) => (
+                      {expanded.files.map((file: string) => (
                         <div key={file} style={s.fileRow}>
                           <span>{file}</span>
                           <div>
@@ -796,7 +1221,7 @@ export default function ModelsPage() {
             </div>
           )}
 
-          {localModels.map((model) => (
+          {localModels.map((model: LocalModel) => (
             <div key={model.filename} style={s.localCard}>
               <div style={s.localInfo}>
                 <span style={{ fontWeight: 600 }}>{model.filename}</span>

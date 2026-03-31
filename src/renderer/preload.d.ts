@@ -38,6 +38,25 @@ export interface LocalModel {
   lastModified: string;
 }
 
+export interface SearchFilter {
+  id: string;
+  label: string;
+  type: 'library' | 'pipeline_tag' | 'tag' | 'author' | 'language';
+}
+
+export interface ModelSearchResult {
+  id: string;
+  author: string;
+  name: string;
+  downloads: number;
+  likes: number;
+  trendingScore: number;
+  lastModified: string;
+  pipelineTag: string;
+  parameters: string | null;
+  tags: string[];
+}
+
 declare global {
   interface Window {
     electronAPI: {

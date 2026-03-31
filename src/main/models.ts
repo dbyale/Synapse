@@ -17,6 +17,12 @@ export interface ModelSearchResult {
   tags: string[];
 }
 
+export interface SearchFilter {
+  id: string;
+  label: string;
+  type: 'library' | 'pipeline_tag' | 'tag' | 'author' | 'language';
+}
+
 export interface LocalModel {
   filename: string;
   filepath: string;
@@ -47,16 +53,44 @@ interface HFApiModel {
   modelId: string;
 }
 
+// ── Default filters applied to every search ──
+const DEFAULT_FILTERS: SearchFilter[] = [
+  { id: 'gguf', label: 'GGUF', type: 'library' },
+];
+
 // ── Search HuggingFace via REST API ──
 export async function searchModels(
   query: string,
-  limit: number = 20
+  limit: number = 20,
+  filters: SearchFilter[] = DEFAULT_FILTERS
 ): Promise<ModelSearchResult[]> {
-  const searchQuery = query.includes('gguf') ? query : `${query} gguf`;
   const params = new URLSearchParams({
-    search: searchQuery,
+    search: query,
     limit: String(limit),
   });
+
+  // Map filters to their corresponding API query parameters
+  const tagFilters: string[] = [];
+
+  for (const filter of filters) {
+    switch (filter.type) {
+      case 'library':
+      case 'tag':
+      case 'language':
+        tagFilters.push(filter.id);
+        break;
+      case 'pipeline_tag':
+        params.set('pipeline_tag', filter.id);
+        break;
+      case 'author':
+        params.set('author', filter.id);
+        break;
+    }
+  }
+
+  if (tagFilters.length > 0) {
+    params.set('filter', tagFilters.join(','));
+  }
 
   const url = `https://huggingface.co/api/models?${params.toString()}`;
 

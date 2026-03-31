@@ -7,20 +7,32 @@ import { ReactComponent as DeepseekLogo } from '../../../assets/logos/deepseek.s
 import { ReactComponent as KimiLogo } from '../../../assets/logos/kimi.svg';
 import { ReactComponent as NvidiaLogo } from '../../../assets/logos/nvidia.svg';
 import { ReactComponent as OpenAILogo } from '../../../assets/logos/openai.svg';
+import { ReactComponent as MistralLogo } from '../../../assets/logos/mistral.svg';
+import { ReactComponent as MicrosoftLogo } from '../../../assets/logos/microsoft.svg';
+import { ReactComponent as ZLogo } from '../../../assets/logos/z.svg';
+import { ReactComponent as IBMLogo } from '../../../assets/logos/ibm.svg';
 
 const COMPANY_LOGOS: Record<
   string,
   React.FunctionComponent<React.SVGProps<SVGSVGElement>>
 > = {
-  meta: MetaLogo,
   llama: MetaLogo,
-  google: GoogleLogo,
+  gemma: GoogleLogo,
   qwen: QwenLogo,
   deepseek: DeepseekLogo,
   kimi: KimiLogo,
-  nvidia: NvidiaLogo,
   nemotron: NvidiaLogo,
-  gpt: OpenAILogo
+  gpt: OpenAILogo,
+
+  mistral: MistralLogo,
+  magistral: MistralLogo,
+  pixtral: MistralLogo,
+  ministral: MistralLogo,
+  devstral: MistralLogo,
+
+  phi: MicrosoftLogo,
+  glm: ZLogo,
+  granite: IBMLogo
 };
 
 /**

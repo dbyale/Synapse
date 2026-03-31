@@ -11,6 +11,7 @@ import {
   downloadModel,
   listLocalModels,
   deleteLocalModel,
+  SearchFilter
 } from './models';
 
 export function registerIpcHandlers(): void {
@@ -34,8 +35,8 @@ export function registerIpcHandlers(): void {
   });
 
   // ── Models: HuggingFace ──
-  ipcMain.handle('models:search', (_event, query: string) => {
-    return searchModels(query);
+  ipcMain.handle('models:search', async (_event, query: string, limit?: number, filters?: SearchFilter[]) => {
+    return searchModels(query, limit ?? 20, filters);
   });
 
   ipcMain.handle('models:list-files', (_event, repoId: string) => {

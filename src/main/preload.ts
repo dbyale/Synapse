@@ -8,7 +8,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   pickDirectory: () => ipcRenderer.invoke('settings:pick-directory'),
 
   // Models
-  searchModels: (query: string) => ipcRenderer.invoke('models:search', query),
+  searchModels: (query: string, limit?: number, filters?: any[]) =>
+    ipcRenderer.invoke('models:search', query, limit, filters),
   listModelFiles: (repoId: string) =>
     ipcRenderer.invoke('models:list-files', repoId),
   downloadModel: (repoId: string, filename: string) =>
