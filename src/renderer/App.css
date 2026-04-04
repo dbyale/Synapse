@@ -61,7 +61,6 @@ html, body, #root {
 }
 
 .btn-icon {
-  composes: btn;
   width: 44px;
   height: 44px;
   background: transparent;
@@ -97,10 +96,40 @@ html, body, #root {
 }
 .input-base:focus { border-color: var(--accent); }
 
-/* ── Scrollbar ── */
-::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+/* ============================================================================
+   GLOBAL SCROLLBAR (Expands on hover)
+   ============================================================================ */
+
+/* 1. Make the invisible hit-box nice and wide (14px) so it's easy to grab */
+::-webkit-scrollbar {
+  width: 14px;
+  height: 14px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* 2. Create a thin-looking scrollbar by using a thick transparent border */
+::-webkit-scrollbar-thumb {
+  background-color: rgba(147, 153, 178, 0.3); /* Subtle grayish tint */
+  border-radius: 10px;
+  border: 4px solid transparent; /* 14px - 8px = 6px visible width */
+  background-clip: padding-box; /* Forces background to stay inside the border */
+  min-height: 40px;
+}
+
+/* 3. When the mouse enters the 14px invisible hit-box, shrink the border to make it expand! */
+::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(147, 153, 178, 0.7); /* Brighter on hover */
+  border-width: 2px; /* 14px - 4px = 10px visible width */
+}
+
+/* Optional: Even brighter when actively clicking and dragging */
+::-webkit-scrollbar-thumb:active {
+  background-color: var(--accent, #89b4fa);
+  border-width: 2px;
+}
 
 @keyframes spin {
   from { transform: rotate(0deg); }

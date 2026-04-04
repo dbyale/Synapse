@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { Tag, Globe, Check, ChevronDown, Package, X } from 'lucide-react';
+import { Tag, Globe, Check, ChevronDown, Package, X, Info } from 'lucide-react';
 import type { Language } from '../../../data/languages';
 import type { PipelineTagOption } from '../../../data/pipelineTags';
 import { LANGUAGES } from '../../../data/languages';
@@ -139,6 +139,13 @@ export default function ModelFilterPanel({
       selectedLanguage)
     : null;
 
+  // Check if any filter is currently applied
+  const hasActiveFilter =
+    selectedLanguage !== null || selectedPipeline !== null;
+
+  const tooltipTitle = 'Filters may hide untagged models';
+  const tooltipText =
+    "Many models on HuggingFace are not properly tagged and won't appear here despite supporting the language or features.";
   return (
     <div className="filter-bar">
       {/* Fixed GGUF chip */}
@@ -201,6 +208,18 @@ export default function ModelFilterPanel({
           </button>
         ))}
       </FilterDropdown>
+
+      {/* ── Custom Disclaimer Tooltip (Only visible when filtered) ── */}
+      {hasActiveFilter && (
+        <div className="filter-info-wrapper">
+          <div className="filter-info-trigger">
+            <Info size={14} />
+            <span>{tooltipTitle}</span>
+          </div>
+
+          <div className="filter-info-tooltip">{tooltipText}</div>
+        </div>
+      )}
     </div>
   );
 }

@@ -833,3 +833,82 @@
 .model-card__summary-text {
   display: inline;
 }
+
+/* ============================================================================
+   FILTER INFO TOOLTIP
+   ============================================================================ */
+
+.filter-info-wrapper {
+  position: relative;
+  display: inline-flex;
+  margin-left: auto;
+  z-index: 10;
+}
+
+.filter-info-trigger {
+  font-size: 12px;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  opacity: 0.7;
+  cursor: help;
+  transition: opacity 0.15s ease;
+}
+
+.filter-info-trigger:hover {
+  opacity: 1;
+}
+
+.filter-info-tooltip {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0; /* Aligns popover to the right edge */
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  width: max-content;
+  max-width: 250px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  z-index: 100;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(-4px);
+  transition: all 0.2s ease;
+  font-size: 12px;
+  color: var(--text-primary);
+  line-height: 1.4;
+  text-align: left;
+}
+
+/* Outer Tooltip Arrow (Pointing Up) */
+.filter-info-tooltip::after {
+  content: '';
+  position: absolute;
+  bottom: 100%;
+  right: 16px;
+  border-width: 6px;
+  border-style: solid;
+  border-color: transparent transparent var(--border) transparent;
+}
+
+/* Inner Tooltip Arrow */
+.filter-info-tooltip::before {
+  content: '';
+  position: absolute;
+  bottom: calc(100% - 1px);
+  right: 16px;
+  border-width: 6px;
+  border-style: solid;
+  border-color: transparent transparent var(--bg-input) transparent;
+  z-index: 1;
+}
+
+/* Reveal on hover */
+.filter-info-wrapper:hover .filter-info-tooltip {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
