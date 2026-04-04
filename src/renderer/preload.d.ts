@@ -68,11 +68,10 @@ declare global {
       ) => Promise<ModelSearchResult[]>;
       listModelFiles: (repoId: string) => Promise<RemoteModelFile[]>;
       downloadModel: (repoId: string, filename: string) => Promise<string>;
+      cancelDownload: (filename: string) => Promise<boolean>;
       listLocalModels: () => Promise<LocalModel[]>;
       deleteModel: (filename: string) => Promise<boolean>;
-      onDownloadProgress: (
-        callback: (progress: DownloadProgress) => void
-      ) => void;
+      onDownloadProgress: (callback: (progress: DownloadProgress) => void) => () => void;
       removeDownloadProgressListener: () => void;
     };
   }

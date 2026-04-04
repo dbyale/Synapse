@@ -1,4 +1,5 @@
-import { CSSProperties } from 'react';
+import React, { CSSProperties } from 'react';
+import DownloadManager from './DownloadManager'; // <-- ADD IMPORT
 
 const s: Record<string, CSSProperties> = {
   bar: {
@@ -20,35 +21,21 @@ const s: Record<string, CSSProperties> = {
     fontWeight: 600,
     color: 'var(--text-secondary)',
   },
-  selector: {
-    minWidth: 200,
-    padding: '6px 12px',
-    cursor: 'pointer',
-  },
 };
 
 export default function TopBar() {
   return (
     <header style={s.bar} className="draggable">
       <div style={s.section} className="no-drag">
-        <span style={s.title}>My App</span>
+        <span style={s.title}>Synapse</span>
       </div>
 
       <div
-        style={{ ...s.section, justifyContent: 'center' }}
+        style={{ ...s.section, justifyContent: 'flex-end', gap: '12px' }} // <-- ADD GAP
         className="no-drag"
       >
-        <select className="input-base" style={s.selector}>
-          <option>Select a model...</option>
-          <option>llama-3.1-8b</option>
-          <option>mistral-7b</option>
-        </select>
+        <DownloadManager /> {/* <-- ADD COMPONENT */}
       </div>
-
-      <div
-        style={{ ...s.section, justifyContent: 'flex-end' }}
-        className="no-drag"
-      />
     </header>
   );
 }

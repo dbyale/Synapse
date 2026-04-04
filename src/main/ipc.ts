@@ -11,6 +11,7 @@ import {
   downloadModel,
   listLocalModels,
   deleteLocalModel,
+  cancelDownload,
 } from '../renderer/utils/models';
 import type { SearchFilter } from '../renderer/preload.d';
 
@@ -53,6 +54,10 @@ export function registerIpcHandlers(): void {
       return downloadModel(repoId, filename, win);
     }
   );
+
+  ipcMain.handle('models:cancel-download', async (_event, filename: string) => {
+    return cancelDownload(filename);
+  });
 
   // ── Models: Local ──
   ipcMain.handle('models:list-local', () => {

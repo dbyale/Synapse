@@ -18,6 +18,14 @@ export function formatCount(n: number): string {
   return n.toString();
 }
 
+export function formatSpeed(bytesPerSec: number): string {
+  if (bytesPerSec === 0 || isNaN(bytesPerSec)) return '0 B/s';
+  const k = 1024;
+  const sizes = ['B/s', 'KB/s', 'MB/s', 'GB/s'];
+  const i = Math.floor(Math.log(bytesPerSec) / Math.log(k));
+  return `${parseFloat((bytesPerSec / k ** i).toFixed(1))} ${sizes[i]}`;
+}
+
 const AVATAR_COLORS = [
   '#89b4fa',
   '#f38ba8',
@@ -36,4 +44,23 @@ export function getAvatarColor(name: string): string {
 
 export function getInitials(name: string): string {
   return name.substring(0, 2).toUpperCase();
+}
+
+// Add to the bottom of formatters.ts
+
+export function formatGB(bytes: number): string {
+  if (bytes === 0 || isNaN(bytes)) return '0.00 GB';
+  const gb = bytes / 1073741824; // 1024^3
+  return `${gb.toFixed(2)} GB`;
+}
+
+export function formatETA(seconds: number): string {
+  if (!isFinite(seconds) || seconds <= 0) return '';
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
 }

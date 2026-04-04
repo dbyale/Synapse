@@ -3,6 +3,7 @@ import fs from 'fs';
 import https from 'https';
 import { BrowserWindow } from 'electron';
 import { getModelsDirectory } from '../../main/settings';
+import { ClientRequest } from 'http';
 import type {
   ModelSearchResult,
   SearchFilter,
@@ -29,6 +30,8 @@ interface HFApiModel {
 const DEFAULT_FILTERS: SearchFilter[] = [
   { id: 'gguf', label: 'GGUF', type: 'library' },
 ];
+
+const activeDownloads = new Map<string, { req: ClientRequest; destPath: string }>();
 
 export async function searchModels(
   query: string,
@@ -182,15 +185,31 @@ export function downloadModel(repoId: string, filename: string, win: BrowserWind
     const file = fs.createWriteStream(destPath);
 
     const request = (downloadUrl: string) => {
-      https.get(downloadUrl, (response) => {
+      // Create a unified, safe cleanup function
+      const cleanupAndReject = (err: Error) => {
+        file.close(); // Important: Close the stream to release Windows file locks
+
+        // Safely check if file exists before deleting to prevent ENOENT crashes
+        if (fs.existsSync(destPath)) {
+          try {
+            fs.unlinkSync(destPath);
+          } catch (e) {
+            console.error('Failed to clean up incomplete download:', e);
+          }
+        }
+        activeDownloads.delete(filename);
+        reject(err);
+      };
+
+      const req = https.get(downloadUrl, (response) => {
+        // Handle Redirects
         if (response.statusCode && response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
           request(response.headers.location);
           return;
         }
 
         if (response.statusCode !== 200) {
-          fs.unlinkSync(destPath);
-          reject(new Error(`Download failed with status ${response.statusCode}`));
+          cleanupAndReject(new Error(`Download failed with status ${response.statusCode}`));
           return;
         }
 
@@ -214,21 +233,35 @@ export function downloadModel(repoId: string, filename: string, win: BrowserWind
 
         response.on('end', () => {
           file.end();
+          activeDownloads.delete(filename);
           resolve(destPath);
         });
 
-        response.on('error', (err) => {
-          fs.unlinkSync(destPath);
-          reject(err);
-        });
-      }).on('error', (err) => {
-        fs.unlinkSync(destPath);
-        reject(err);
+        // Use safe cleanup for response errors
+        response.on('error', cleanupAndReject);
       });
+
+      // Use safe cleanup for request errors
+      req.on('error', cleanupAndReject);
+
+      // Save request to allow cancellation
+      activeDownloads.set(filename, { req, destPath });
     };
 
     request(url);
   });
+}
+
+export function cancelDownload(filename: string): boolean {
+  const record = activeDownloads.get(filename);
+  if (record) {
+    // Calling destroy() aborts the network request. This will automatically
+    // trigger the 'error' event on the request above, which will safely handle
+    // closing the stream, deleting the file, and removing the active download record.
+    record.req.destroy();
+    return true;
+  }
+  return false;
 }
 
 export function listLocalModels(): LocalModel[] {

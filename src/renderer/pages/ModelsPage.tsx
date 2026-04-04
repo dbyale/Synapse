@@ -171,32 +171,37 @@ export default function ModelsPage() {
   useEffect(() => {
     if (!window.electronAPI) return undefined;
 
-    window.electronAPI.onDownloadProgress((progress: DownloadProgress) => {
-      setDownloads((prev) => ({
-        ...prev,
-        [progress.filename]: {
-          filename: progress.filename,
-          percent: progress.percent,
-        },
-      }));
+    // Capture the unsubscribe function
+    const unsubscribe = window.electronAPI.onDownloadProgress(
+      (progress: DownloadProgress) => {
+        setDownloads((prev) => ({
+          ...prev,
+          [progress.filename]: {
+            filename: progress.filename,
+            percent: progress.percent,
+          },
+        }));
 
-      if (progress.percent >= 100) {
-        setTimeout(() => {
-          setDownloads((prev) => {
-            const updated = { ...prev };
-            delete updated[progress.filename];
-            return updated;
-          });
-          window.electronAPI
-            .listLocalModels()
-            .then(setLocalModels)
-            .catch(console.error);
-        }, 1000);
-      }
-    });
+        if (progress.percent >= 100) {
+          setTimeout(() => {
+            setDownloads((prev) => {
+              const updated = { ...prev };
+              delete updated[progress.filename];
+              return updated;
+            });
+            window.electronAPI
+              .listLocalModels()
+              .then(setLocalModels)
+              // eslint-disable-next-line no-console
+              .catch(console.error);
+          }, 1000);
+        }
+      },
+    );
 
     return () => {
-      window.electronAPI.removeDownloadProgressListener();
+      // Use the specific unsubscribe function instead of wiping all listeners
+      if (typeof unsubscribe === 'function') unsubscribe();
     };
   }, []);
 
@@ -257,6 +262,11 @@ export default function ModelsPage() {
     repoId: string,
     filename: string,
   ): Promise<void> => {
+    // Dispatch event WITH THE FILENAME so DownloadManager can show it immediately
+    window.dispatchEvent(
+      new CustomEvent('open-download-manager', { detail: { filename } })
+    );
+
     setDownloads((prev) => ({ ...prev, [filename]: { filename, percent: 0 } }));
     try {
       await window.electronAPI.downloadModel(repoId, filename);
