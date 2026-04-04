@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   Download,
   ChevronDown,
@@ -35,6 +35,15 @@ interface ModelCardProps {
   onToggleExpand: (repoId: string) => void;
   onDownload: (repoId: string, filename: string) => void;
   onSearchBaseModel: (query: string) => void;
+}
+
+// ── Virtual Group Type ──
+interface FileGroup {
+  id: string; // The base name, e.g., 'model-Q4_K_M.gguf'
+  displayQuantization: string;
+  bits: number;
+  totalSizeBytes: number;
+  parts: RemoteModelFile[];
 }
 
 export default function ModelCard({
@@ -96,31 +105,61 @@ export default function ModelCard({
     datasets.length > 0 ||
     regions.length > 0;
 
-  // ── Group files by bit-size ──
-  const bitGroups = files.reduce(
-    (acc, file) => {
-      let key = 'Other';
-      if (file.bits === -1) {
-        key = 'Projectors';
-      } else if (file.bits > 0) {
-        key = `${file.bits}-bit`;
+  // ── Process and Group Splits ──
+  const sortedBitGroups = useMemo(() => {
+    const groupedFiles = new Map<string, FileGroup>();
+
+    files.forEach((file) => {
+      // Detect multi-part files like "model-00001-of-00005.gguf"
+      const splitMatch = file.filename.match(
+        /^(.*?)(?:-(\d{4,5})-of-(\d{4,5}))?\.gguf$/i,
+      );
+      const baseName =
+        splitMatch && splitMatch[2]
+          ? splitMatch[1]
+          : file.filename.replace(/\.gguf$/i, '');
+      const groupId = `${baseName}.gguf`;
+
+      if (!groupedFiles.has(groupId)) {
+        groupedFiles.set(groupId, {
+          id: groupId,
+          displayQuantization: file.quantization,
+          bits: file.bits,
+          totalSizeBytes: 0,
+          parts: [],
+        });
       }
 
-      if (!acc[key]) acc[key] = [];
-      acc[key].push(file);
-      return acc;
-    },
-    {} as Record<string, RemoteModelFile[]>,
-  );
+      const group = groupedFiles.get(groupId)!;
+      group.totalSizeBytes += file.sizeBytes;
+      group.parts.push(file);
+    });
 
-  const sortedBitGroups = Object.entries(bitGroups).sort(([a], [b]) => {
-    if (a === b) return 0;
-    if (a === 'Projectors') return 1;
-    if (b === 'Projectors') return -1;
-    if (a === 'Other') return 1;
-    if (b === 'Other') return -1;
-    return (parseInt(b, 10) || 0) - (parseInt(a, 10) || 0);
-  });
+    const bitGroups = Array.from(groupedFiles.values()).reduce(
+      (acc, group) => {
+        let key = 'Other';
+        if (group.bits === -1) {
+          key = 'Projectors';
+        } else if (group.bits > 0) {
+          key = `${group.bits}-bit`;
+        }
+
+        if (!acc[key]) acc[key] = [];
+        acc[key].push(group);
+        return acc;
+      },
+      {} as Record<string, FileGroup[]>,
+    );
+
+    return Object.entries(bitGroups).sort(([a], [b]) => {
+      if (a === b) return 0;
+      if (a === 'Projectors') return 1;
+      if (b === 'Projectors') return -1;
+      if (a === 'Other') return 1;
+      if (b === 'Other') return -1;
+      return (parseInt(b, 10) || 0) - (parseInt(a, 10) || 0);
+    });
+  }, [files]);
 
   return (
     <div className="model-card">
@@ -253,44 +292,77 @@ export default function ModelCard({
               </div>
             )}
 
-            {sortedBitGroups.map(([groupName, groupFiles]) => {
-              const sortedFiles = [...groupFiles].sort(
-                (a, b) => b.sizeBytes - a.sizeBytes,
+            {sortedBitGroups.map(([groupName, groups]) => {
+              const sortedGroups = [...groups].sort(
+                (a, b) => b.totalSizeBytes - a.totalSizeBytes,
               );
 
               return (
                 <div key={groupName} className="model-card__dl-row">
                   <div className="model-card__dl-row-label">{groupName}</div>
                   <div className="model-card__dl-pills">
-                    {sortedFiles.map((file) => {
-                      const activeDl = downloads[file.filename];
+                    {sortedGroups.map((group) => {
+                      const activeDls = group.parts
+                        .map((p) => downloads[p.filename])
+                        .filter(Boolean);
 
+                      // Active if any part is downloading
                       const isDownloading =
-                        !!activeDl &&
-                        activeDl.status !== 'cancelled' &&
-                        activeDl.status !== 'failed';
+                        activeDls.length > 0 &&
+                        activeDls.some(
+                          (d) =>
+                            d.status !== 'cancelled' && d.status !== 'failed',
+                        );
 
-                      const percent = isDownloading ? activeDl.percent : null;
+                      let percent: number | null = null;
 
-                      // Pass 'isProjector' based on file.bits === -1 so it natively handles the entire category
+                      if (isDownloading) {
+                        const anyStarted = activeDls.some((d) => d.percent > 0);
+
+                        const totalProgress = group.parts.reduce(
+                          (sum, part) => {
+                            const dl = downloads[part.filename];
+                            if (dl) return sum + dl.percent;
+                            // If a part vanishes from downloads state but others are active,
+                            // it implies it has successfully completed downloading
+                            return sum + (anyStarted ? 100 : 0);
+                          },
+                          0,
+                        );
+
+                        percent = Math.floor(
+                          totalProgress / group.parts.length,
+                        );
+                      }
+
                       const quantInfo = parseQuantization(
-                        file.filename,
-                        file.quantization,
-                        file.bits === -1,
+                        group.id,
+                        group.displayQuantization,
+                        group.bits === -1,
                       );
+
+                      if (group.parts.length > 1) {
+                        quantInfo.details.unshift(
+                          `Multi-part download (${group.parts.length} files)`,
+                        );
+                      }
 
                       return (
                         <div
-                          key={file.filename}
+                          key={group.id}
                           className="model-card__dl-pill-wrapper"
                         >
                           <button
                             type="button"
                             className={`model-card__dl-pill ${isDownloading ? 'model-card__dl-pill--active' : ''}`}
-                            onClick={() =>
-                              !isDownloading &&
-                              onDownload(model.id, file.filename)
-                            }
+                            onClick={() => {
+                              if (!isDownloading) {
+                                // Trigger concurrent downloads for all split files
+                                group.parts.forEach((p) =>
+                                  onDownload(model.id, p.filename),
+                                );
+                              }
+                            }}
                           >
                             {isDownloading && (
                               <div
@@ -300,17 +372,17 @@ export default function ModelCard({
                             )}
                             <div className="model-card__dl-content">
                               <span className="model-card__dl-quant">
-                                {file.quantization}
+                                {group.displayQuantization}
                               </span>
                               <span className="model-card__dl-size">
                                 {isDownloading
                                   ? `${percent}%`
-                                  : formatBytes(file.sizeBytes)}
+                                  : formatBytes(group.totalSizeBytes)}
                               </span>
                             </div>
                           </button>
 
-                          {/* Beautiful Custom Tooltip */}
+                          {/* Custom Tooltip */}
                           <div className="model-card__dl-tooltip">
                             <div className="model-card__dl-tooltip-title">
                               {quantInfo.filename}

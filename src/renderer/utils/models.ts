@@ -209,12 +209,24 @@ export function downloadModel(repoId: string, filename: string, win: BrowserWind
       targetDir = path.join(targetDir, 'projectors');
     }
 
-    // Create the folders if they don't exist
-    if (!fs.existsSync(targetDir)) {
-      fs.mkdirSync(targetDir, { recursive: true });
-    }
-
+    // IMPORTANT: The HF `filename` can contain directories (e.g., "folder/model-001.gguf")
+    // We must resolve the absolute directory for the actual file
     const destPath = path.join(targetDir, filename);
+    const destDir = path.dirname(destPath);
+
+    // Create the folders if they don't exist.
+    // Wrapped in try/catch because starting 5 split downloads simultaneously
+    // can cause race conditions where they all attempt to create the folder.
+    if (!fs.existsSync(destDir)) {
+      try {
+        fs.mkdirSync(destDir, { recursive: true });
+      } catch (err: any) {
+        if (err.code !== 'EEXIST') {
+          reject(err);
+          return;
+        }
+      }
+    }
 
     if (fs.existsSync(destPath)) {
       resolve(destPath);
