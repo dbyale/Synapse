@@ -42,6 +42,21 @@ const activeDownloads = new Map<
   }
 >();
 
+// ── Helper to recursively scan folders for .gguf files ──
+function walkDir(dir: string, callback: (filepath: string) => void) {
+  if (!fs.existsSync(dir)) return;
+  const files = fs.readdirSync(dir);
+  for (const file of files) {
+    const filepath = path.join(dir, file);
+    const stat = fs.statSync(filepath);
+    if (stat.isDirectory()) {
+      walkDir(filepath, callback);
+    } else {
+      callback(filepath);
+    }
+  }
+}
+
 export async function searchModels(
   query: string,
   filters: SearchFilter[] = [],
@@ -183,7 +198,23 @@ export async function listModelFiles(repoId: string): Promise<RemoteModelFile[]>
 export function downloadModel(repoId: string, filename: string, win: BrowserWindow | null): Promise<string> {
   return new Promise((resolve, reject) => {
     const modelsDir = getModelsDirectory();
-    const destPath = path.join(modelsDir, filename);
+    const isProjector = filename.toLowerCase().includes('mmproj');
+
+    // Split repoId (e.g. "TheBloke/Llama-2") into nested folder paths
+    const repoParts = repoId.split('/');
+    let targetDir = path.join(modelsDir, ...repoParts);
+
+    // Divert into a 'projectors' subfolder if applicable
+    if (isProjector) {
+      targetDir = path.join(targetDir, 'projectors');
+    }
+
+    // Create the folders if they don't exist
+    if (!fs.existsSync(targetDir)) {
+      fs.mkdirSync(targetDir, { recursive: true });
+    }
+
+    const destPath = path.join(targetDir, filename);
 
     if (fs.existsSync(destPath)) {
       resolve(destPath);
@@ -302,25 +333,61 @@ export function listLocalModels(): LocalModel[] {
   const modelsDir = getModelsDirectory();
   if (!fs.existsSync(modelsDir)) return [];
 
-  return fs.readdirSync(modelsDir)
-    .filter((f) => f.endsWith('.gguf'))
-    .map((filename) => {
-      const filepath = path.join(modelsDir, filename);
+  const models: LocalModel[] = [];
+
+  // Use recursive search instead of flat readdirSync
+  walkDir(modelsDir, (filepath) => {
+    if (filepath.endsWith('.gguf')) {
       const stats = fs.statSync(filepath);
-      return {
-        filename,
+      models.push({
+        filename: path.basename(filepath),
         filepath,
         sizeBytes: stats.size,
         lastModified: stats.mtime.toISOString(),
-      };
-    });
+      });
+    }
+  });
+
+  return models;
 }
 
-export function deleteLocalModel(filename: string): boolean {
-  const filepath = path.join(getModelsDirectory(), filename);
-  if (fs.existsSync(filepath)) {
-    fs.unlinkSync(filepath);
+export function deleteLocalModel(identifier: string): boolean {
+  const modelsDir = getModelsDirectory();
+
+  let foundPath: string | null = null;
+
+  // 1. Direct hit (if absolute filepath was passed)
+  if (path.isAbsolute(identifier) && fs.existsSync(identifier)) {
+    foundPath = identifier;
+  } else {
+    // 2. Fallback: recursively search for the file
+    walkDir(modelsDir, (filepath) => {
+      if (path.basename(filepath) === identifier) {
+        foundPath = filepath;
+      }
+    });
+  }
+
+  if (foundPath) {
+    // Delete the model file
+    fs.unlinkSync(foundPath);
+
+    // Clean up empty parent directories
+    let currentDir = path.dirname(foundPath);
+    while (currentDir !== modelsDir && currentDir.length > modelsDir.length) {
+      try {
+        if (fs.readdirSync(currentDir).length === 0) {
+          fs.rmdirSync(currentDir);
+          currentDir = path.dirname(currentDir);
+        } else {
+          break; // Stop climbing if directory has other files
+        }
+      } catch (err) {
+        break; // Safety break
+      }
+    }
     return true;
   }
+
   return false;
 }
