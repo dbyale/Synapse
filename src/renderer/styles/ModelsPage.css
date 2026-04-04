@@ -92,8 +92,6 @@
   flex-wrap: wrap;
 }
 
-/* ── Individual filter dropdown ── */
-
 .filter-dropdown {
   position: relative;
 }
@@ -204,8 +202,6 @@
   margin-left: 4px;
 }
 
-/* ── Fixed chip (GGUF) ── */
-
 .filter-chip--fixed {
   display: inline-flex;
   align-items: center;
@@ -218,8 +214,6 @@
   color: var(--accent);
   font-weight: 500;
 }
-
-/* ── Removable active chip ── */
 
 .filter-chip--active {
   display: inline-flex;
@@ -350,7 +344,9 @@
   background: var(--bg-secondary);
   border-radius: var(--radius-md);
   border: 1px solid var(--border);
-  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  /* Removed overflow: hidden so tooltips don't get clipped! */
 }
 
 .model-card__header {
@@ -364,6 +360,15 @@
   color: var(--text-primary);
   width: 100%;
   text-align: left;
+
+  /* Apply border radius gracefully based on expand state */
+  border-radius: var(--radius-md);
+  transition: border-radius 0.2s ease;
+}
+
+.model-card__header--expanded {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
 }
 
 .model-card__left {
@@ -439,6 +444,9 @@
   border-top: 1px solid var(--border);
   display: flex;
   flex-direction: column;
+  /* Apply border radius to the bottom of the expanded section */
+  border-bottom-left-radius: var(--radius-md);
+  border-bottom-right-radius: var(--radius-md);
 }
 
 .model-card__info-grid {
@@ -507,7 +515,17 @@
   gap: 12px;
 }
 
-/* ── Download Pill Button ── */
+/* ── Custom Tooltip + Pill Wrapper ── */
+
+.model-card__dl-pill-wrapper {
+  position: relative;
+  display: inline-flex;
+  z-index: 1;
+}
+
+.model-card__dl-pill-wrapper:hover {
+  z-index: 10;
+}
 
 .model-card__dl-pill {
   position: relative;
@@ -567,6 +585,94 @@
 
 .model-card__dl-pill:hover .model-card__dl-size {
   border-left-color: var(--accent);
+}
+
+/* Tooltip Body */
+.model-card__dl-tooltip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%) translateY(4px);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  width: max-content;
+  max-width: 280px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  z-index: 100;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: all 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Outer Tooltip Arrow */
+.model-card__dl-tooltip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border-width: 6px;
+  border-style: solid;
+  border-color: var(--border) transparent transparent transparent;
+}
+
+/* Inner Tooltip Arrow */
+.model-card__dl-tooltip::before {
+  content: '';
+  position: absolute;
+  top: calc(100% - 1px);
+  left: 50%;
+  transform: translateX(-50%);
+  border-width: 6px;
+  border-style: solid;
+  border-color: var(--bg-input) transparent transparent transparent;
+  z-index: 1;
+}
+
+.model-card__dl-pill-wrapper:hover .model-card__dl-tooltip {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(0);
+}
+
+.model-card__dl-tooltip-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  word-break: break-all;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding-bottom: 6px;
+  margin-bottom: 2px;
+}
+
+.model-card__dl-tooltip-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.model-card__dl-tooltip-list li {
+  font-size: 12px;
+  color: var(--text-secondary);
+  position: relative;
+  padding-left: 10px;
+  line-height: 1.3;
+}
+
+.model-card__dl-tooltip-list li::before {
+  content: '•';
+  position: absolute;
+  left: 0;
+  color: var(--accent);
 }
 
 /* ============================================================================
@@ -645,8 +751,6 @@
   opacity: 0.9;
 }
 
-/* Add these styles to the bottom of your ModelsPage.css file or inside the Expended panel section */
-
 /* ── Interactive Links ── */
 
 .model-card__link-dataset {
@@ -682,7 +786,7 @@
   font-size: inherit;
   font-family: inherit;
   padding: 0;
-  transition: text-shadow 0.1s ease; /* Prevents layout shift vs font-weight */
+  transition: text-shadow 0.1s ease;
 }
 
 .model-card__link-base:hover {

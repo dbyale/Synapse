@@ -16,6 +16,7 @@ import {
   getAvatarColor,
   getInitials,
 } from '../../utils/formatters';
+import { parseQuantization } from '../../utils/quantizationDescriptions';
 import { PIPELINE_TAG_MAP } from '../../../data/pipelineTags';
 import { LANGUAGES } from '../../../data/languages';
 
@@ -58,7 +59,7 @@ export default function ModelCard({
     new Set(
       model.tags
         .filter((t) => t.startsWith('dataset:'))
-        .map((t) => t.substring(8)) // cleanly removes 'dataset:'
+        .map((t) => t.substring(8))
         .filter((t): t is string => Boolean(t)),
     ),
   );
@@ -67,7 +68,7 @@ export default function ModelCard({
     new Set(
       model.tags
         .filter((t) => t.startsWith('base_model:'))
-        .map((t) => t.split(':').pop()) // gets the repo part
+        .map((t) => t.split(':').pop())
         .filter((t): t is string => Boolean(t)),
     ),
   );
@@ -112,7 +113,6 @@ export default function ModelCard({
     {} as Record<string, RemoteModelFile[]>,
   );
 
-  // Sort groups: Highest bits first, then 'Other', then 'Projectors' at the very bottom
   const sortedBitGroups = Object.entries(bitGroups).sort(([a], [b]) => {
     if (a === b) return 0;
     if (a === 'Projectors') return 1;
@@ -126,7 +126,7 @@ export default function ModelCard({
     <div className="model-card">
       <button
         type="button"
-        className="model-card__header"
+        className={`model-card__header ${isExpanded ? 'model-card__header--expanded' : ''}`}
         onClick={() => onToggleExpand(model.id)}
       >
         <div className="model-card__left">
@@ -179,7 +179,6 @@ export default function ModelCard({
 
       {isExpanded && (
         <div className="model-card__expanded">
-          {/* Detailed Info Grid */}
           {hasDetails && (
             <div className="model-card__info-grid">
               {baseModels.length > 0 && (
@@ -242,7 +241,6 @@ export default function ModelCard({
             </div>
           )}
 
-          {/* Grouped Download Pills */}
           <div className="model-card__dl-rows">
             {filesLoading && (
               <div style={{ padding: '20px', color: 'var(--text-secondary)' }}>
@@ -256,7 +254,6 @@ export default function ModelCard({
             )}
 
             {sortedBitGroups.map(([groupName, groupFiles]) => {
-              // Sort smallest to largest inside the group
               const sortedFiles = [...groupFiles].sort(
                 (a, b) => b.sizeBytes - a.sizeBytes,
               );
@@ -268,7 +265,6 @@ export default function ModelCard({
                     {sortedFiles.map((file) => {
                       const activeDl = downloads[file.filename];
 
-                      // Stop showing progress if the status was marked as cancelled or failed
                       const isDownloading =
                         !!activeDl &&
                         activeDl.status !== 'cancelled' &&
@@ -276,34 +272,58 @@ export default function ModelCard({
 
                       const percent = isDownloading ? activeDl.percent : null;
 
+                      // Pass 'isProjector' based on file.bits === -1 so it natively handles the entire category
+                      const quantInfo = parseQuantization(
+                        file.filename,
+                        file.quantization,
+                        file.bits === -1,
+                      );
+
                       return (
-                        <button
+                        <div
                           key={file.filename}
-                          type="button"
-                          className={`model-card__dl-pill ${isDownloading ? 'model-card__dl-pill--active' : ''}`}
-                          onClick={() =>
-                            !isDownloading &&
-                            onDownload(model.id, file.filename)
-                          }
-                          title={file.filename}
+                          className="model-card__dl-pill-wrapper"
                         >
-                          {isDownloading && (
-                            <div
-                              className="model-card__dl-progress"
-                              style={{ width: `${percent}%` }}
-                            />
-                          )}
-                          <div className="model-card__dl-content">
-                            <span className="model-card__dl-quant">
-                              {file.quantization}
-                            </span>
-                            <span className="model-card__dl-size">
-                              {isDownloading
-                                ? `${percent}%`
-                                : formatBytes(file.sizeBytes)}
-                            </span>
+                          <button
+                            type="button"
+                            className={`model-card__dl-pill ${isDownloading ? 'model-card__dl-pill--active' : ''}`}
+                            onClick={() =>
+                              !isDownloading &&
+                              onDownload(model.id, file.filename)
+                            }
+                          >
+                            {isDownloading && (
+                              <div
+                                className="model-card__dl-progress"
+                                style={{ width: `${percent}%` }}
+                              />
+                            )}
+                            <div className="model-card__dl-content">
+                              <span className="model-card__dl-quant">
+                                {file.quantization}
+                              </span>
+                              <span className="model-card__dl-size">
+                                {isDownloading
+                                  ? `${percent}%`
+                                  : formatBytes(file.sizeBytes)}
+                              </span>
+                            </div>
+                          </button>
+
+                          {/* Beautiful Custom Tooltip */}
+                          <div className="model-card__dl-tooltip">
+                            <div className="model-card__dl-tooltip-title">
+                              {quantInfo.filename}
+                            </div>
+                            {quantInfo.details.length > 0 && (
+                              <ul className="model-card__dl-tooltip-list">
+                                {quantInfo.details.map((detail) => (
+                                  <li key={detail}>{detail}</li>
+                                ))}
+                              </ul>
+                            )}
                           </div>
-                        </button>
+                        </div>
                       );
                     })}
                   </div>
