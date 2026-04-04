@@ -19,6 +19,14 @@ import {
 import { parseQuantization } from '../../utils/quantizationDescriptions';
 import { PIPELINE_TAG_MAP } from '../../../data/pipelineTags';
 import { LANGUAGES } from '../../../data/languages';
+import {
+  PIPELINE_DESCRIPTIONS,
+  FALLBACK_PIPELINE_DESCRIPTION,
+} from '../../../data/pipelineDescriptions';
+
+// ── Tooltip Strings ──
+const TOOLTIP_DOWNLOADS = 'Total downloads on HuggingFace';
+const TOOLTIP_LIKES = 'Total likes on HuggingFace';
 
 interface ActiveDownload {
   filename: string;
@@ -45,6 +53,35 @@ interface FileGroup {
   parts: RemoteModelFile[];
 }
 
+// ── Parse Parameters & MoE Detection ──
+function getParameterTooltip(params: string) {
+  const upperParams = params.toUpperCase();
+  const details: string[] = [];
+
+  // Check for "-A" format (e.g., 26B-A4B or 14B-A2.7B)
+  const aMatch = upperParams.match(/^([0-9.]+[BM])-A([0-9.]+[BM])$/);
+  // Check for "x" format (e.g., 8X7B)
+  const xMatch = upperParams.match(/^([0-9]+)X([0-9.]+[BM])$/);
+
+  if (aMatch) {
+    details.push('Architecture: Mixture of Experts (MoE)');
+    details.push(`Total Parameters: ${aMatch[1]}`);
+    details.push(`Active Parameters: ${aMatch[2]} (used per token)`);
+  } else if (xMatch) {
+    details.push('Architecture: Mixture of Experts (MoE)');
+    details.push(`Experts: ${xMatch[1]} experts of ${xMatch[2]} each`);
+    details.push('Active Parameters: Fraction used per token');
+  } else {
+    details.push('Architecture: Dense (All parameters active)');
+  }
+
+  return {
+    title: `Size: ${upperParams}`,
+    details,
+    text: "Represents the neural network's complexity. Higher parameters typically yield better reasoning and accuracy, but require more RAM and processing power to run.",
+  };
+}
+
 // ── Lightweight Markdown Summary Extractor ──
 function getMarkdownSummary(md: string): string {
   let content = md.replace(/^---[\s\S]*?---\n/, '');
@@ -58,7 +95,6 @@ function getMarkdownSummary(md: string): string {
   const summaryLines: string[] = [];
 
   lines.every((line) => {
-    // Skip empty lines, headers (#), blockquotes (>), or table dividers (|)
     if (!line || line.match(/^[#|>]/)) {
       if (summaryLines.length > 0 && summaryLines.join(' ').length > 100) {
         return false;
@@ -76,7 +112,6 @@ function getMarkdownSummary(md: string): string {
 
   let summary = summaryLines.join(' ').trim();
 
-  // Strip __ and ~~ to avoid weird edge cases, but LEAVE **, *, and ` so we can parse them!
   summary = summary.replace(/__/g, '');
   summary = summary.replace(/~~/g, '');
 
@@ -85,7 +120,6 @@ function getMarkdownSummary(md: string): string {
 
 // ── Render Markdown Formatting into React Elements ──
 function renderMarkdownSnippet(text: string): React.ReactNode[] {
-  // Matches [text](url), **bold**, *italic*, `code`
   const regex = /(\[[^\]]+\]\([^)]+\))|(\*\*[^*]+\*\*)|(\*[^*]+\*)|(`[^`]+`)/g;
   const parts: React.ReactNode[] = [];
   let lastIndex = 0;
@@ -106,7 +140,6 @@ function renderMarkdownSnippet(text: string): React.ReactNode[] {
         const label = linkMatch[1];
         const url = linkMatch[2];
 
-        // Do not turn anchor/section hashtags into broken links
         if (url.startsWith('#')) {
           parts.push(<strong key={key}>{label}</strong>);
         } else {
@@ -213,6 +246,15 @@ export default function ModelCard({
     model.pipelineTag !== 'none' && model.pipelineTag !== 'unknown'
       ? (PIPELINE_TAG_MAP[model.pipelineTag] ?? null)
       : null;
+
+  const pipelineTooltipText =
+    model.pipelineTag && PIPELINE_DESCRIPTIONS[model.pipelineTag]
+      ? PIPELINE_DESCRIPTIONS[model.pipelineTag]
+      : FALLBACK_PIPELINE_DESCRIPTION;
+
+  const paramTooltip = model.parameters
+    ? getParameterTooltip(model.parameters)
+    : null;
 
   const datasets = Array.from(
     new Set(
@@ -339,25 +381,69 @@ export default function ModelCard({
 
             <div className="model-card__meta">
               {pipelineTag && (
-                <span className="model-card__pipeline" title="Pipeline">
-                  <pipelineTag.icon size={13} />
-                  {pipelineTag.label}
-                </span>
+                <div className="model-card__meta-tooltip-wrapper">
+                  <span className="model-card__pipeline">
+                    <pipelineTag.icon size={13} />
+                    {pipelineTag.label}
+                  </span>
+                  <div className="model-card__meta-tooltip">
+                    <div className="model-card__meta-tooltip-title">
+                      Task: {pipelineTag.label}
+                    </div>
+                    <div className="model-card__meta-tooltip-text">
+                      {pipelineTooltipText}
+                    </div>
+                  </div>
+                </div>
               )}
 
-              {model.parameters && (
-                <span className="model-card__meta-item" title="Parameters">
-                  <Cpu size={14} /> {model.parameters}
-                </span>
+              {model.parameters && paramTooltip && (
+                <div className="model-card__meta-tooltip-wrapper">
+                  <span className="model-card__meta-item">
+                    <Cpu size={14} /> {model.parameters}
+                  </span>
+                  <div className="model-card__meta-tooltip">
+                    <div className="model-card__meta-tooltip-title">
+                      {paramTooltip.title}
+                    </div>
+                    {paramTooltip.details.length > 0 && (
+                      <ul
+                        className="model-card__dl-tooltip-list"
+                        style={{ marginBottom: '6px' }}
+                      >
+                        {paramTooltip.details.map((detail, i) => (
+                          <li key={i}>{detail}</li>
+                        ))}
+                      </ul>
+                    )}
+                    <div className="model-card__meta-tooltip-text">
+                      {paramTooltip.text}
+                    </div>
+                  </div>
+                </div>
               )}
 
-              <span className="model-card__meta-item" title="Downloads">
-                <Download size={14} /> {formatCount(model.downloads)}
-              </span>
+              <div className="model-card__meta-tooltip-wrapper">
+                <span className="model-card__meta-item">
+                  <Download size={14} /> {formatCount(model.downloads)}
+                </span>
+                <div className="model-card__meta-tooltip">
+                  <div className="model-card__meta-tooltip-text">
+                    {TOOLTIP_DOWNLOADS}
+                  </div>
+                </div>
+              </div>
 
-              <span className="model-card__meta-item" title="Likes">
-                <Heart size={14} /> {formatCount(model.likes)}
-              </span>
+              <div className="model-card__meta-tooltip-wrapper">
+                <span className="model-card__meta-item">
+                  <Heart size={14} /> {formatCount(model.likes)}
+                </span>
+                <div className="model-card__meta-tooltip">
+                  <div className="model-card__meta-tooltip-text">
+                    {TOOLTIP_LIKES}
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -547,8 +633,8 @@ export default function ModelCard({
                             </div>
                             {quantInfo.details.length > 0 && (
                               <ul className="model-card__dl-tooltip-list">
-                                {quantInfo.details.map((detail) => (
-                                  <li key={detail}>{detail}</li>
+                                {quantInfo.details.map((detail, idx) => (
+                                  <li key={idx}>{detail}</li>
                                 ))}
                               </ul>
                             )}

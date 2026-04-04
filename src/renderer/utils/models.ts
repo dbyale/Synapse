@@ -118,8 +118,8 @@ export async function searchModels(
       const name = nameParts.join('/') || repoId;
 
       let parameters: string | null = null;
-      const paramMatch = repoId.match(
-        /(\d+(?:\.\d+)?[bBmM](?:-[A-Za-z]\d+[bBmM])?|\d+x\d+(?:\.\d+)?[bBmM])/
+            const paramMatch = repoId.match(
+        /(\d+(?:\.\d+)?[bBmM](?:-[A-Za-z]\d+(?:\.\d+)?[bBmM])?|\d+x\d+(?:\.\d+)?[bBmM])/
       );
       if (paramMatch) {
         parameters = paramMatch[0].toUpperCase();
