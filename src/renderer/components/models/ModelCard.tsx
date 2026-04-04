@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import {
   Download,
   ChevronDown,
@@ -37,13 +37,102 @@ interface ModelCardProps {
   onSearchBaseModel: (query: string) => void;
 }
 
-// ── Virtual Group Type ──
 interface FileGroup {
-  id: string; // The base name, e.g., 'model-Q4_K_M.gguf'
+  id: string;
   displayQuantization: string;
   bits: number;
   totalSizeBytes: number;
   parts: RemoteModelFile[];
+}
+
+// ── Lightweight Markdown Summary Extractor ──
+function getMarkdownSummary(md: string): string {
+  // 1. Remove YAML frontmatter & HTML comments
+  let content = md.replace(/^---[\s\S]*?---\n/, '');
+  content = content.replace(/<!--[\s\S]*?-->/g, '');
+
+  // 2. Remove code blocks
+  content = content.replace(/```[\s\S]*?```/g, '');
+
+  // 3. Remove HTML tags completely (this handles <img src="..." />)
+  content = content.replace(/<[^>]+>/g, '');
+
+  // 4. Remove Markdown Images: ![alt](url)
+  content = content.replace(/!\[[^\]]*\]\([^)]+\)/g, '');
+
+  // 5. Remove empty links: [](url) - This cleans up badge links where the image was stripped
+  content = content.replace(/\[\s*\]\([^)]+\)/g, '');
+
+  const lines = content.split('\n').map((l) => l.trim());
+  const summaryLines: string[] = [];
+
+  lines.every((line) => {
+    // Skip empty lines, headers (#), blockquotes (>), or table dividers (|)
+    if (!line || line.match(/^[#|>]/)) {
+      // If we already have a decent chunk of text, stop looking
+      if (summaryLines.length > 0 && summaryLines.join(' ').length > 100) {
+        return false; // Break loop
+      }
+      return true; // Continue searching
+    }
+
+    summaryLines.push(line);
+
+    // Stop gathering if we hit 8 lines or about 400 characters
+    if (summaryLines.length >= 8 || summaryLines.join(' ').length > 400) {
+      return false; // Break loop
+    }
+    return true; // Continue loop
+  });
+
+  let summary = summaryLines.join(' ').trim();
+
+  // Strip basic formatting (**, __, ~~) but leave links intact
+  summary = summary.replace(/\*\*/g, '');
+  summary = summary.replace(/__/g, '');
+  summary = summary.replace(/~~/g, '');
+  summary = summary.replace(/`/g, '');
+
+  return summary || 'No description available.';
+}
+
+// ── Render Markdown Links into React Elements ──
+function renderSummaryWithLinks(text: string): React.ReactNode[] {
+  const linkRegex = /\[([^\]]+)\]\(([^)]+)\)/g;
+  const parts: React.ReactNode[] = [];
+  let lastIndex = 0;
+
+  // Execute regex without assigning inside the condition (Fixes ESLint no-cond-assign)
+  let match = linkRegex.exec(text);
+
+  while (match !== null) {
+    if (match.index > lastIndex) {
+      parts.push(text.substring(lastIndex, match.index));
+    }
+
+    parts.push(
+      <a
+        key={`link-${match.index}`}
+        href={match[2]}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="model-card__summary-link"
+        onClick={(e) => e.stopPropagation()} // Prevents the card from collapsing when clicked
+        title={match[2]}
+      >
+        {match[1]}
+      </a>,
+    );
+
+    lastIndex = linkRegex.lastIndex;
+    match = linkRegex.exec(text); // Fetch next match
+  }
+
+  if (lastIndex < text.length) {
+    parts.push(text.substring(lastIndex));
+  }
+
+  return parts;
 }
 
 export default function ModelCard({
@@ -57,6 +146,48 @@ export default function ModelCard({
   onSearchBaseModel,
 }: ModelCardProps) {
   const LogoComponent = getCompanyLogoComponent(model.id);
+
+  // ── README Fetching State ──
+  const [readmeSummary, setReadmeSummary] = useState<string | null>(null);
+  const [readmeLoading, setReadmeLoading] = useState(false);
+  const hasFetchedRef = useRef(false);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const fetchReadme = async () => {
+      if (!isExpanded || hasFetchedRef.current) return;
+
+      hasFetchedRef.current = true;
+      setReadmeLoading(true);
+
+      try {
+        const res = await fetch(
+          `https://huggingface.co/${model.id}/resolve/main/README.md`,
+        );
+        if (!res.ok) throw new Error('Not found');
+        const text = await res.text();
+
+        if (isMounted) {
+          setReadmeSummary(getMarkdownSummary(text));
+        }
+      } catch {
+        if (isMounted) {
+          setReadmeSummary('No description available.');
+        }
+      } finally {
+        if (isMounted) {
+          setReadmeLoading(false);
+        }
+      }
+    };
+
+    fetchReadme();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isExpanded, model.id]);
 
   const pipelineTag =
     model.pipelineTag !== 'none' && model.pipelineTag !== 'unknown'
@@ -110,7 +241,6 @@ export default function ModelCard({
     const groupedFiles = new Map<string, FileGroup>();
 
     files.forEach((file) => {
-      // Detect multi-part files like "model-00001-of-00005.gguf"
       const splitMatch = file.filename.match(
         /^(.*?)(?:-(\d{4,5})-of-(\d{4,5}))?\.gguf$/i,
       );
@@ -174,7 +304,8 @@ export default function ModelCard({
             style={{
               background: LogoComponent
                 ? '#333333'
-                : getAvatarColor(model.author),
+                : `${getAvatarColor(model.author)}25`, // Tinted dark background
+              color: LogoComponent ? '#ffffff' : getAvatarColor(model.author), // Bright solid text
             }}
             title={model.author}
           >
@@ -218,6 +349,20 @@ export default function ModelCard({
 
       {isExpanded && (
         <div className="model-card__expanded">
+          {/* ── Readme Summary ── */}
+          <div className="model-card__summary">
+            {readmeLoading ? (
+              <span className="model-card__summary-loading">
+                Loading summary...
+              </span>
+            ) : (
+              <div className="model-card__summary-text">
+                {readmeSummary ? renderSummaryWithLinks(readmeSummary) : ''}
+              </div>
+            )}
+          </div>
+
+          {/* ── Details Grid ── */}
           {hasDetails && (
             <div className="model-card__info-grid">
               {baseModels.length > 0 && (
@@ -306,7 +451,6 @@ export default function ModelCard({
                         .map((p) => downloads[p.filename])
                         .filter(Boolean);
 
-                      // Active if any part is downloading
                       const isDownloading =
                         activeDls.length > 0 &&
                         activeDls.some(
@@ -323,8 +467,6 @@ export default function ModelCard({
                           (sum, part) => {
                             const dl = downloads[part.filename];
                             if (dl) return sum + dl.percent;
-                            // If a part vanishes from downloads state but others are active,
-                            // it implies it has successfully completed downloading
                             return sum + (anyStarted ? 100 : 0);
                           },
                           0,
@@ -357,7 +499,6 @@ export default function ModelCard({
                             className={`model-card__dl-pill ${isDownloading ? 'model-card__dl-pill--active' : ''}`}
                             onClick={() => {
                               if (!isDownloading) {
-                                // Trigger concurrent downloads for all split files
                                 group.parts.forEach((p) =>
                                   onDownload(model.id, p.filename),
                                 );
@@ -382,7 +523,6 @@ export default function ModelCard({
                             </div>
                           </button>
 
-                          {/* Custom Tooltip */}
                           <div className="model-card__dl-tooltip">
                             <div className="model-card__dl-tooltip-title">
                               {quantInfo.filename}

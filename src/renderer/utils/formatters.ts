@@ -42,11 +42,10 @@ export function getAvatarColor(name: string): string {
   return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
 }
 
+// Updated to return only 1 uppercase letter
 export function getInitials(name: string): string {
-  return name.substring(0, 2).toUpperCase();
+  return name.substring(0, 1).toUpperCase();
 }
-
-// Add to the bottom of formatters.ts
 
 export function formatGB(bytes: number): string {
   if (bytes === 0 || isNaN(bytes)) return '0.00 GB';

@@ -384,9 +384,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 16px;
+  font-size: 24px;
   font-weight: 600;
-  color: #11111b;
   flex-shrink: 0;
   overflow: hidden;
 }
@@ -800,4 +799,37 @@
   justify-content: center;
   padding: 32px 0;
   color: var(--text-secondary);
+}
+
+/* ── README Summary ── */
+.model-card__summary {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.model-card__summary-loading {
+  opacity: 0.6;
+  font-style: italic;
+}
+
+/* ── Added to format the parsed Markdown Links ── */
+.model-card__summary-link {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 500;
+  transition: opacity 0.15s ease;
+  margin: 0 4px;
+}
+
+.model-card__summary-link:hover {
+  text-decoration: underline;
+  opacity: 0.8;
+}
+
+/* Updated to ensure links sit inline nicely */
+.model-card__summary-text {
+  display: inline;
 }
