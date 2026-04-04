@@ -11,7 +11,8 @@ interface ActiveDL {
   totalBytes: number;
   speed: number;
   lastTimestamp: number;
-  lastBytes: number; // Used to anchor the speed math correctly
+  lastBytes: number;
+  status: 'downloading' | 'cancelled' | 'failed';
 }
 
 export default function DownloadManager() {
@@ -46,6 +47,7 @@ export default function DownloadManager() {
             speed: 0,
             lastTimestamp: Date.now(),
             lastBytes: 0,
+            status: 'downloading',
           },
         }));
       }
@@ -60,11 +62,35 @@ export default function DownloadManager() {
     if (!window.electronAPI) return undefined;
 
     const unsubscribe = window.electronAPI.onDownloadProgress(
-      (progress: DownloadProgress) => {
+      (progress: DownloadProgress & { status?: 'cancelled' | 'failed' }) => {
         const now = Date.now();
 
         setDownloads((prev) => {
           const existing = prev[progress.filename];
+
+          // If the backend explicitly broadcasts a cancel/fail event, apply it
+          if (progress.status === 'cancelled' || progress.status === 'failed') {
+            return {
+              ...prev,
+              [progress.filename]: {
+                ...(existing || {
+                  filename: progress.filename,
+                  percent: 0,
+                  downloadedBytes: 0,
+                  totalBytes: 0,
+                  speed: 0,
+                  lastTimestamp: now,
+                  lastBytes: 0,
+                }),
+                status: progress.status,
+              },
+            };
+          }
+
+          // Ignore regular progress events if we've marked it as stopped
+          if (existing?.status === 'cancelled' || existing?.status === 'failed')
+            return prev;
+
           let speed = existing ? existing.speed : 0;
           let lastTimestamp = existing ? existing.lastTimestamp : now;
           let lastBytes = existing
@@ -72,17 +98,11 @@ export default function DownloadManager() {
             : progress.downloadedBytes;
 
           if (existing) {
-            const timeDiff = (now - existing.lastTimestamp) / 1000; // in seconds
+            const timeDiff = (now - existing.lastTimestamp) / 1000;
 
             if (timeDiff >= 0.5) {
-              // Calculate instantaneous speed for this exact 0.5s window
               const bytesDiff = progress.downloadedBytes - existing.lastBytes;
               const instantSpeed = bytesDiff / timeDiff;
-
-              // Exponential Moving Average (EMA) to smooth out the speed/ETA
-              // 0.1 = Very smooth (slow to react to changes)
-              // 0.3 = Balanced
-              // 0.8 = Very jumpy (fast to react to changes)
               const SMOOTHING_FACTOR = 0.1;
 
               if (speed === 0 || timeDiff > 5) {
@@ -93,7 +113,6 @@ export default function DownloadManager() {
                   speed * (1 - SMOOTHING_FACTOR);
               }
 
-              // Reset anchors for the next 0.5s window
               lastTimestamp = now;
               lastBytes = progress.downloadedBytes;
             }
@@ -109,10 +128,10 @@ export default function DownloadManager() {
               speed,
               lastTimestamp,
               lastBytes,
+              status: 'downloading',
             },
           };
         });
-        // Downloads remain in list until manually cleared
       },
     );
 
@@ -123,21 +142,29 @@ export default function DownloadManager() {
 
   // ── Handle Clear / Cancel ──
   const handleCancel = async (filename: string) => {
-    // Immediately remove from UI
-    setDownloads((prev) => {
-      const next = { ...prev };
-      delete next[filename];
-      return next;
-    });
+    const dl = downloads[filename];
+    if (!dl) return;
 
-    // Call backend to abort HTTP request if it's still running
+    const isComplete = dl.percent >= 100;
+
+    // Clear it if it's already done or stopped
+    if (isComplete || dl.status === 'cancelled' || dl.status === 'failed') {
+      setDownloads((prev) => {
+        const next = { ...prev };
+        delete next[filename];
+        return next;
+      });
+      return;
+    }
+
+    // Call backend to abort HTTP request. (This will trigger the broadcast above)
     if (window.electronAPI.cancelDownload) {
       await window.electronAPI.cancelDownload(filename);
     }
   };
 
   const activeCount = Object.values(downloads).filter(
-    (d) => d.percent < 100,
+    (d) => d.percent < 100 && d.status !== 'cancelled' && d.status !== 'failed',
   ).length;
   const dlList = Object.values(downloads);
 
@@ -165,9 +192,33 @@ export default function DownloadManager() {
             ) : (
               dlList.map((dl) => {
                 const isComplete = dl.percent >= 100;
+                const isCancelled = dl.status === 'cancelled';
+                const isFailed = dl.status === 'failed';
                 const bytesRemaining = dl.totalBytes - dl.downloadedBytes;
                 const etaSeconds =
-                  dl.speed > 0 && !isComplete ? bytesRemaining / dl.speed : 0;
+                  dl.speed > 0 && !isComplete && !isCancelled && !isFailed
+                    ? bytesRemaining / dl.speed
+                    : 0;
+
+                let progressColor = 'var(--accent)';
+                if (isCancelled || isFailed) {
+                  progressColor = 'var(--text-secondary, #9399b2)';
+                } else if (isComplete) {
+                  progressColor = 'var(--success, #a6e3a1)';
+                }
+
+                let statusText = '';
+                if (isCancelled) {
+                  statusText = 'Cancelled';
+                } else if (isFailed) {
+                  statusText = 'Failed';
+                } else if (isComplete) {
+                  statusText = 'Completed';
+                } else {
+                  const etaText =
+                    etaSeconds > 0 ? `- ETA ${formatETA(etaSeconds)}` : '';
+                  statusText = `${formatSpeed(dl.speed)} ${etaText}`;
+                }
 
                 return (
                   <div key={dl.filename} className="dl-manager__item">
@@ -182,7 +233,11 @@ export default function DownloadManager() {
                         type="button"
                         className="dl-manager__cancel-btn"
                         onClick={() => handleCancel(dl.filename)}
-                        title={isComplete ? 'Clear' : 'Cancel Download'}
+                        title={
+                          isComplete || isCancelled || isFailed
+                            ? 'Clear'
+                            : 'Cancel Download'
+                        }
                       >
                         <X size={14} />
                       </button>
@@ -193,9 +248,7 @@ export default function DownloadManager() {
                         className="dl-manager__progress-fill"
                         style={{
                           width: `${dl.percent}%`,
-                          background: isComplete
-                            ? 'var(--success, #a6e3a1)'
-                            : 'var(--accent)',
+                          background: progressColor,
                         }}
                       />
                     </div>
@@ -207,11 +260,7 @@ export default function DownloadManager() {
                           ? formatGB(dl.totalBytes)
                           : 'Starting...'}
                       </span>
-                      <span>
-                        {isComplete
-                          ? 'Completed'
-                          : `${formatSpeed(dl.speed)} ${etaSeconds > 0 ? `- ETA ${formatETA(etaSeconds)}` : ''}`}
-                      </span>
+                      <span>{statusText}</span>
                     </div>
                   </div>
                 );

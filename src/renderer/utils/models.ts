@@ -31,7 +31,16 @@ const DEFAULT_FILTERS: SearchFilter[] = [
   { id: 'gguf', label: 'GGUF', type: 'library' },
 ];
 
-const activeDownloads = new Map<string, { req: ClientRequest; destPath: string }>();
+const activeDownloads = new Map<
+  string,
+  {
+    req: ClientRequest;
+    destPath: string;
+    cancelled?: boolean;
+    win: BrowserWindow | null;
+    repoId: string;
+  }
+>();
 
 export async function searchModels(
   query: string,
@@ -185,11 +194,9 @@ export function downloadModel(repoId: string, filename: string, win: BrowserWind
     const file = fs.createWriteStream(destPath);
 
     const request = (downloadUrl: string) => {
-      // Create a unified, safe cleanup function
       const cleanupAndReject = (err: Error) => {
-        file.close(); // Important: Close the stream to release Windows file locks
+        file.close();
 
-        // Safely check if file exists before deleting to prevent ENOENT crashes
         if (fs.existsSync(destPath)) {
           try {
             fs.unlinkSync(destPath);
@@ -197,12 +204,32 @@ export function downloadModel(repoId: string, filename: string, win: BrowserWind
             console.error('Failed to clean up incomplete download:', e);
           }
         }
+
+        // Check if the abort was a deliberate cancellation
+        const record = activeDownloads.get(filename);
+        const wasCancelled = record?.cancelled;
+
         activeDownloads.delete(filename);
-        reject(err);
+
+        if (wasCancelled) {
+          // Resolve harmlessly to prevent Electron's unhandled promise rejection error log
+          resolve('CANCELLED');
+        } else {
+          // Tell the frontend the download failed network-side
+          win?.webContents.send('download-progress', {
+            modelId: repoId,
+            filename,
+            downloadedBytes: 0,
+            totalBytes: 0,
+            percent: 0,
+            status: 'failed'
+          } as DownloadProgress);
+
+          reject(err);
+        }
       };
 
       const req = https.get(downloadUrl, (response) => {
-        // Handle Redirects
         if (response.statusCode && response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
           request(response.headers.location);
           return;
@@ -237,15 +264,12 @@ export function downloadModel(repoId: string, filename: string, win: BrowserWind
           resolve(destPath);
         });
 
-        // Use safe cleanup for response errors
         response.on('error', cleanupAndReject);
       });
 
-      // Use safe cleanup for request errors
       req.on('error', cleanupAndReject);
 
-      // Save request to allow cancellation
-      activeDownloads.set(filename, { req, destPath });
+      activeDownloads.set(filename, { req, destPath, win, repoId });
     };
 
     request(url);
@@ -255,9 +279,19 @@ export function downloadModel(repoId: string, filename: string, win: BrowserWind
 export function cancelDownload(filename: string): boolean {
   const record = activeDownloads.get(filename);
   if (record) {
-    // Calling destroy() aborts the network request. This will automatically
-    // trigger the 'error' event on the request above, which will safely handle
-    // closing the stream, deleting the file, and removing the active download record.
+    // Flag it as deliberately cancelled so cleanupAndReject resolves instead of throwing
+    record.cancelled = true;
+
+    // Broadcast the cancellation to all UI components (ModelCard, DownloadManager)
+    record.win?.webContents.send('download-progress', {
+      modelId: record.repoId,
+      filename,
+      downloadedBytes: 0,
+      totalBytes: 0,
+      percent: 0,
+      status: 'cancelled'
+    } as DownloadProgress);
+
     record.req.destroy();
     return true;
   }

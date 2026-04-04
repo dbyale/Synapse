@@ -22,6 +22,7 @@ import { LANGUAGES } from '../../../data/languages';
 interface ActiveDownload {
   filename: string;
   percent: number;
+  status?: 'downloading' | 'cancelled' | 'failed' | string;
 }
 
 interface ModelCardProps {
@@ -265,10 +266,15 @@ export default function ModelCard({
                   <div className="model-card__dl-row-label">{groupName}</div>
                   <div className="model-card__dl-pills">
                     {sortedFiles.map((file) => {
-                      const isDownloading = !!downloads[file.filename];
-                      const percent = isDownloading
-                        ? downloads[file.filename].percent
-                        : null;
+                      const activeDl = downloads[file.filename];
+
+                      // Stop showing progress if the status was marked as cancelled or failed
+                      const isDownloading =
+                        !!activeDl &&
+                        activeDl.status !== 'cancelled' &&
+                        activeDl.status !== 'failed';
+
+                      const percent = isDownloading ? activeDl.percent : null;
 
                       return (
                         <button

@@ -30,6 +30,7 @@ interface ExpandedModel {
 interface ActiveDownload {
   filename: string;
   percent: number;
+  status?: string;
 }
 
 const API_SORT_MAP: Record<SortOption, { sort: string; direction: number }> = {
@@ -173,14 +174,25 @@ export default function ModelsPage() {
 
     // Capture the unsubscribe function
     const unsubscribe = window.electronAPI.onDownloadProgress(
-      (progress: DownloadProgress) => {
-        setDownloads((prev) => ({
-          ...prev,
-          [progress.filename]: {
-            filename: progress.filename,
-            percent: progress.percent,
-          },
-        }));
+      (progress: DownloadProgress & { status?: string }) => {
+        setDownloads((prev) => {
+          // 1. If cancelled or failed, completely remove it so the card resets
+          if (progress.status === 'cancelled' || progress.status === 'failed') {
+            const next = { ...prev };
+            delete next[progress.filename];
+            return next;
+          }
+
+          // 2. Otherwise update progress normally
+          return {
+            ...prev,
+            [progress.filename]: {
+              filename: progress.filename,
+              percent: progress.percent,
+              status: progress.status,
+            },
+          };
+        });
 
         if (progress.percent >= 100) {
           setTimeout(() => {
@@ -190,7 +202,7 @@ export default function ModelsPage() {
               return updated;
             });
             window.electronAPI
-              .listLocalModels()
+              ?.listLocalModels()
               .then(setLocalModels)
               // eslint-disable-next-line no-console
               .catch(console.error);
@@ -264,10 +276,13 @@ export default function ModelsPage() {
   ): Promise<void> => {
     // Dispatch event WITH THE FILENAME so DownloadManager can show it immediately
     window.dispatchEvent(
-      new CustomEvent('open-download-manager', { detail: { filename } })
+      new CustomEvent('open-download-manager', { detail: { filename } }),
     );
 
-    setDownloads((prev) => ({ ...prev, [filename]: { filename, percent: 0 } }));
+    setDownloads((prev) => ({
+      ...prev,
+      [filename]: { filename, percent: 0, status: 'downloading' },
+    }));
     try {
       await window.electronAPI.downloadModel(repoId, filename);
     } catch (dlErr: unknown) {
