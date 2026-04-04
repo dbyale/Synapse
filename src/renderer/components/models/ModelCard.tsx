@@ -47,20 +47,11 @@ interface FileGroup {
 
 // ── Lightweight Markdown Summary Extractor ──
 function getMarkdownSummary(md: string): string {
-  // 1. Remove YAML frontmatter & HTML comments
   let content = md.replace(/^---[\s\S]*?---\n/, '');
   content = content.replace(/<!--[\s\S]*?-->/g, '');
-
-  // 2. Remove code blocks
   content = content.replace(/```[\s\S]*?```/g, '');
-
-  // 3. Remove HTML tags completely (this handles <img src="..." />)
   content = content.replace(/<[^>]+>/g, '');
-
-  // 4. Remove Markdown Images: ![alt](url)
   content = content.replace(/!\[[^\]]*\]\([^)]+\)/g, '');
-
-  // 5. Remove empty links: [](url) - This cleans up badge links where the image was stripped
   content = content.replace(/\[\s*\]\([^)]+\)/g, '');
 
   const lines = content.split('\n').map((l) => l.trim());
@@ -69,63 +60,93 @@ function getMarkdownSummary(md: string): string {
   lines.every((line) => {
     // Skip empty lines, headers (#), blockquotes (>), or table dividers (|)
     if (!line || line.match(/^[#|>]/)) {
-      // If we already have a decent chunk of text, stop looking
       if (summaryLines.length > 0 && summaryLines.join(' ').length > 100) {
-        return false; // Break loop
+        return false;
       }
-      return true; // Continue searching
+      return true;
     }
 
     summaryLines.push(line);
 
-    // Stop gathering if we hit 8 lines or about 400 characters
     if (summaryLines.length >= 8 || summaryLines.join(' ').length > 400) {
-      return false; // Break loop
+      return false;
     }
-    return true; // Continue loop
+    return true;
   });
 
   let summary = summaryLines.join(' ').trim();
 
-  // Strip basic formatting (**, __, ~~) but leave links intact
-  summary = summary.replace(/\*\*/g, '');
+  // Strip __ and ~~ to avoid weird edge cases, but LEAVE **, *, and ` so we can parse them!
   summary = summary.replace(/__/g, '');
   summary = summary.replace(/~~/g, '');
-  summary = summary.replace(/`/g, '');
 
   return summary || 'No description available.';
 }
 
-// ── Render Markdown Links into React Elements ──
-function renderSummaryWithLinks(text: string): React.ReactNode[] {
-  const linkRegex = /\[([^\]]+)\]\(([^)]+)\)/g;
+// ── Render Markdown Formatting into React Elements ──
+function renderMarkdownSnippet(text: string): React.ReactNode[] {
+  // Matches [text](url), **bold**, *italic*, `code`
+  const regex = /(\[[^\]]+\]\([^)]+\))|(\*\*[^*]+\*\*)|(\*[^*]+\*)|(`[^`]+`)/g;
   const parts: React.ReactNode[] = [];
   let lastIndex = 0;
 
-  // Execute regex without assigning inside the condition (Fixes ESLint no-cond-assign)
-  let match = linkRegex.exec(text);
+  let match = regex.exec(text);
 
   while (match !== null) {
     if (match.index > lastIndex) {
       parts.push(text.substring(lastIndex, match.index));
     }
 
-    parts.push(
-      <a
-        key={`link-${match.index}`}
-        href={match[2]}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="model-card__summary-link"
-        onClick={(e) => e.stopPropagation()} // Prevents the card from collapsing when clicked
-        title={match[2]}
-      >
-        {match[1]}
-      </a>,
-    );
+    const token = match[0];
+    const key = `md-${match.index}`;
 
-    lastIndex = linkRegex.lastIndex;
-    match = linkRegex.exec(text); // Fetch next match
+    if (token.startsWith('[') && token.includes('](')) {
+      const linkMatch = /\[([^\]]+)\]\(([^)]+)\)/.exec(token);
+      if (linkMatch) {
+        const label = linkMatch[1];
+        const url = linkMatch[2];
+
+        // Do not turn anchor/section hashtags into broken links
+        if (url.startsWith('#')) {
+          parts.push(<strong key={key}>{label}</strong>);
+        } else {
+          parts.push(
+            <a
+              key={key}
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="model-card__summary-link"
+              onClick={(e) => e.stopPropagation()}
+              title={url}
+            >
+              {label}
+            </a>,
+          );
+        }
+      }
+    } else if (token.startsWith('**')) {
+      parts.push(
+        <strong key={key} className="model-card__summary-bold">
+          {token.slice(2, -2)}
+        </strong>,
+      );
+    } else if (token.startsWith('*')) {
+      parts.push(
+        <em key={key} className="model-card__summary-italic">
+          {token.slice(1, -1)}
+        </em>,
+      );
+    } else if (token.startsWith('`')) {
+      parts.push(
+        <code key={key} className="model-card__summary-code">
+          {token.slice(1, -1)}
+        </code>,
+      );
+    }
+
+    lastIndex = regex.lastIndex;
+    match = regex.exec(text);
   }
 
   if (lastIndex < text.length) {
@@ -147,7 +168,6 @@ export default function ModelCard({
 }: ModelCardProps) {
   const LogoComponent = getCompanyLogoComponent(model.id);
 
-  // ── README Fetching State ──
   const [readmeSummary, setReadmeSummary] = useState<string | null>(null);
   const [readmeLoading, setReadmeLoading] = useState(false);
   const hasFetchedRef = useRef(false);
@@ -194,7 +214,6 @@ export default function ModelCard({
       ? (PIPELINE_TAG_MAP[model.pipelineTag] ?? null)
       : null;
 
-  // ── Detail extraction & Deduplication ──
   const datasets = Array.from(
     new Set(
       model.tags
@@ -236,7 +255,6 @@ export default function ModelCard({
     datasets.length > 0 ||
     regions.length > 0;
 
-  // ── Process and Group Splits ──
   const sortedBitGroups = useMemo(() => {
     const groupedFiles = new Map<string, FileGroup>();
 
@@ -304,8 +322,8 @@ export default function ModelCard({
             style={{
               background: LogoComponent
                 ? '#333333'
-                : `${getAvatarColor(model.author)}25`, // Tinted dark background
-              color: LogoComponent ? '#ffffff' : getAvatarColor(model.author), // Bright solid text
+                : `${getAvatarColor(model.author)}25`,
+              color: LogoComponent ? '#ffffff' : getAvatarColor(model.author),
             }}
             title={model.author}
           >
@@ -357,7 +375,7 @@ export default function ModelCard({
               </span>
             ) : (
               <div className="model-card__summary-text">
-                {readmeSummary ? renderSummaryWithLinks(readmeSummary) : ''}
+                {readmeSummary ? renderMarkdownSnippet(readmeSummary) : ''}
               </div>
             )}
           </div>
