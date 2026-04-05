@@ -1,0 +1,297 @@
+/* ============================================================================
+   SETTINGS PAGE — LAYOUT
+   ============================================================================ */
+
+.settings-page {
+  max-width: 800px; /* Slightly tighter width looks better for forms */
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 48px; /* Big breathing room between major sections */
+  padding: 40px 32px; /* Global padding prevents hitting the window edges */
+}
+
+.settings-heading {
+  font-size: 28px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+/* ============================================================================
+   SECTIONS (Formerly "Cards")
+   ============================================================================ */
+
+.settings-card {
+  /* Removed background, borders, and border-radius to kill the "card" look */
+  display: flex;
+  flex-direction: column;
+  gap: 24px; /* Internal spacing between inputs in a section */
+}
+
+/* Note: Targeting .settings-card-title to match your React JSX */
+.settings-card-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin: 0;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border); /* Clean line to separate sections */
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* ============================================================================
+   FORM FIELDS
+   ============================================================================ */
+
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.settings-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary); /* Changed to primary for better contrast */
+}
+
+.settings-row {
+  display: flex;
+  gap: 12px; /* Increased gap slightly for breathing room */
+  align-items: center;
+}
+
+.settings-input {
+  flex: 1;
+  padding: 12px 14px; /* Slightly taller input feels more modern */
+  font-size: 14px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.settings-input:focus {
+  border-color: var(--accent);
+}
+
+.settings-icon-btn {
+  width: 42px; /* Matched to new taller input height */
+  height: 42px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-input);
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+.settings-icon-btn:hover {
+  background: var(--bg-secondary); /* Assuming this is a slightly lighter color */
+  color: var(--text-primary);
+  border-color: var(--text-secondary);
+}
+
+.settings-save-btn {
+  align-self: flex-start;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 24px;
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  font-weight: 500;
+  border: none;
+  cursor: pointer;
+  background: var(--accent);
+  color: var(--bg-primary); /* Assuming this is dark text on a bright accent */
+  transition: opacity 0.15s ease;
+}
+
+.settings-save-btn:hover {
+  opacity: 0.9;
+}
+
+/* ============================================================================
+   MEMORY BAR ALLOCATOR
+   ============================================================================ */
+
+.mem-container {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  font-family: inherit; /* Removed monospace from parent so titles look clean */
+}
+
+.mem-header {
+  display: flex;
+  justify-content: space-between; /* Spreads Title and Value cleanly */
+  align-items: center;
+}
+
+.mem-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.mem-usage-row {
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+.mem-value {
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.mem-value-small {
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+}
+
+.mem-bar-wrapper {
+  position: relative;
+  height: 24px; /* Increased height so the slider is easier to click/grab */
+  background: var(--bg-input);
+  margin-top: 12px;
+  margin-bottom: 8px;
+  border-radius: 4px;
+}
+
+.mem-segment-other {
+  position: absolute;
+  height: 100%;
+  left: 0;
+  background: #5c5f77;
+  border-radius: 4px 0 0 4px;
+  pointer-events: none; /* Allows clicks to pass through to the slider */
+}
+
+.mem-segment-app {
+  position: absolute;
+  height: 100%;
+  background: var(--text-primary);
+  pointer-events: none;
+  transition: background-color 0.2s ease;
+}
+
+.mem-segment-app.exceeded {
+  background: #f38ba8; /* Turns red to warn user */
+}
+
+.mem-max-wrapper {
+  position: absolute;
+  top: -18px;
+  bottom: -6px;
+  width: 2px;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.mem-max-line {
+  width: 100%;
+  height: 100%;
+  background: #f38ba8;
+}
+
+.mem-max-label {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  color: #f38ba8;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* ============================================================================
+   NATIVE RANGE SLIDER OVERRIDES
+   ============================================================================ */
+
+.mem-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 100%;
+  background: transparent;
+  position: absolute;
+  top: 0;
+  z-index: 20;
+  margin: 0;
+  outline: none;
+  cursor: pointer;
+}
+
+.mem-slider::-webkit-slider-runnable-track {
+  width: 100%;
+  height: 100%;
+  background: transparent;
+}
+
+/* Chrome / Edge / Safari Handle */
+.mem-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 32px; /* Taller than the bar itself */
+  width: 12px;
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  margin-top: -4px; /* Centered over the 24px track */
+  cursor: grab;
+  transition: transform 0.1s;
+}
+
+.mem-slider::-webkit-slider-thumb:active {
+  cursor: grabbing;
+  transform: scale(1.1);
+}
+
+.slider-exceeded::-webkit-slider-thumb {
+  background: #f38ba8;
+}
+
+.mem-legend-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.mem-legend-box {
+  width: 12px;
+  height: 12px;
+  background: var(--text-primary);
+  border-radius: 2px;
+  transition: background-color 0.2s ease;
+}
+
+.mem-legend-box.exceeded {
+  background: #f38ba8;
+}
+
+.mem-warning {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #f38ba8;
+  font-size: 13px;
+  margin-top: 4px;
+  background: rgba(243, 139, 168, 0.08);
+  border: 1px solid rgba(243, 139, 168, 0.3);
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+}

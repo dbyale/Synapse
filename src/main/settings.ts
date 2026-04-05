@@ -4,41 +4,20 @@ import fs from 'fs';
 
 export interface AppSettings {
   modelsDirectory: string;
-  activeProfile: string;
-  profiles: Record<string, ProfileSettings>;
-}
-
-export interface ProfileSettings {
-  name: string;
-  modelsDirectory: string;
-  defaultModel: string;
-  contextSize: number;
-  gpuLayers: number;
+  allocatedVRAM?: number;
+  allocatedRAM?: number;
 }
 
 const SETTINGS_FILE = path.join(app.getPath('userData'), 'settings.json');
-
 const DEFAULT_MODELS_DIR = path.join(app.getPath('userData'), 'models');
-
-const DEFAULT_PROFILE: ProfileSettings = {
-  name: 'Default',
-  modelsDirectory: DEFAULT_MODELS_DIR,
-  defaultModel: '',
-  contextSize: 4096,
-  gpuLayers: 0,
-};
 
 const DEFAULT_SETTINGS: AppSettings = {
   modelsDirectory: DEFAULT_MODELS_DIR,
-  activeProfile: 'default',
-  profiles: {
-    default: DEFAULT_PROFILE,
-  },
 };
 
 let cachedSettings: AppSettings | null = null;
 
-// Ensure the models directory exists
+// Ensure the directory exists
 function ensureDirectory(dir: string): void {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
@@ -60,8 +39,7 @@ export function loadSettings(): AppSettings {
   }
 
   // Ensure models directory exists
-  const activeProfile = getActiveProfile();
-  ensureDirectory(activeProfile.modelsDirectory);
+  ensureDirectory(cachedSettings!.modelsDirectory);
 
   return cachedSettings!;
 }
@@ -73,15 +51,6 @@ export function saveSettings(settings: AppSettings): void {
   fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2), 'utf-8');
 }
 
-export function getActiveProfile(): ProfileSettings {
-  const settings = loadSettings();
-  return (
-    settings.profiles[settings.activeProfile] ??
-    settings.profiles.default ??
-    DEFAULT_PROFILE
-  );
-}
-
 export function getModelsDirectory(): string {
-  return getActiveProfile().modelsDirectory;
+  return loadSettings().modelsDirectory;
 }

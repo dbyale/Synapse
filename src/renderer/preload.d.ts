@@ -6,20 +6,6 @@ export interface DownloadProgress {
   percent: number;
 }
 
-export interface ProfileSettings {
-  name: string;
-  modelsDirectory: string;
-  defaultModel: string;
-  contextSize: number;
-  gpuLayers: number;
-}
-
-export interface AppSettings {
-  modelsDirectory: string;
-  activeProfile: string;
-  profiles: Record<string, ProfileSettings>;
-}
-
 export interface LocalModel {
   filename: string;
   filepath: string;
@@ -53,12 +39,61 @@ export interface RemoteModelFile {
   bits: number;
 }
 
+export interface SystemMemStats {
+  total: number;
+  appCurrentUsage: number;
+  otherUsed: number;
+}
+
+export interface GpuMemStats {
+  isUnifiedMemory: boolean;
+  total?: number;
+  otherUsed?: number;
+  maxRecommended?: number;
+}
+
+export interface AppSettings {
+  modelsDirectory: string;
+  allocatedVRAM?: number;
+  allocatedRAM?: number;
+}
+
+export interface HardwareGpuInfo {
+  id: string;
+  vendor: string;
+  model: string;
+  bus: string;
+  vram: number;
+  vramDynamic: boolean;
+  driverVersion: string;
+  busAddress: string;
+}
+
+export interface HardwareRamStats {
+  total: number;
+  appCurrentUsage: number;
+  otherUsed: number;
+  maxRecommended: number;
+}
+
+export interface HardwareVramStats {
+  total: number;
+  otherUsed: number;
+  maxRecommended: number;
+}
+
+export interface HardwareStats {
+  isUnifiedMemory: boolean;
+  ram: HardwareRamStats;
+  vram: HardwareVramStats | null;
+  gpus: HardwareGpuInfo[];
+  selectedGpu: HardwareGpuInfo | null;
+}
+
 declare global {
   interface Window {
     electronAPI: {
-      loadSettings: () => Promise<AppSettings>;
-      saveSettings: (settings: AppSettings) => Promise<boolean>;
-      pickDirectory: () => Promise<string | null>;
+      // Search
       searchModels: (
         query: string,
         filters: SearchFilter[],
@@ -73,6 +108,13 @@ declare global {
       deleteModel: (filename: string) => Promise<boolean>;
       onDownloadProgress: (callback: (progress: DownloadProgress) => void) => () => void;
       removeDownloadProgressListener: () => void;
+
+      // Settings & Hardware
+      getMemoryStats: () => Promise<SystemMemStats>;
+  getVramStats: () => Promise<HardwareStats>;
+      loadSettings: () => Promise<AppSettings>;
+      saveSettings: (settings: AppSettings) => Promise<void>;
+      pickDirectory: () => Promise<string | null>;
     };
   }
 }

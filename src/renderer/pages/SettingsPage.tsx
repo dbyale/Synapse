@@ -1,251 +1,316 @@
-import { CSSProperties, useEffect, useState } from 'react';
-import { FolderOpen, Plus, Trash2, Save } from 'lucide-react';
-import type { AppSettings, ProfileSettings } from '../preload.d';
+import React, { useEffect, useRef, useState } from 'react';
+import { FolderOpen, Save, AlertTriangle } from 'lucide-react';
+import type { AppSettings, HardwareStats } from '../preload.d';
+import '../styles/SettingsPage.css';
 
-const s: Record<string, CSSProperties> = {
-  page: {
-    maxWidth: 700,
-    margin: '0 auto',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 32,
-  },
-  heading: {
-    fontSize: 24,
-    fontWeight: 600,
-  },
-  card: {
-    background: 'var(--bg-secondary)',
-    borderRadius: 'var(--radius-md)',
-    border: '1px solid var(--border)',
-    padding: 24,
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 20,
-  },
-  cardTitle: {
-    fontSize: 16,
-    fontWeight: 600,
-    marginBottom: 4,
-  },
-  field: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 6,
-  },
-  label: {
-    fontSize: 13,
-    fontWeight: 500,
-    color: 'var(--text-secondary)',
-  },
-  row: {
-    display: 'flex',
-    gap: 8,
-    alignItems: 'center',
-  },
-  input: {
-    flex: 1,
-    padding: '10px 14px',
-    fontSize: 14,
-  },
-  iconBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 'var(--radius-sm)',
-    border: '1px solid var(--border)',
-    background: 'var(--bg-input)',
-    color: 'var(--text-primary)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    cursor: 'pointer',
-    flexShrink: 0,
-  },
-  profileTab: {
-    padding: '8px 16px',
-    borderRadius: 'var(--radius-sm)',
-    border: '1px solid var(--border)',
-    background: 'transparent',
-    color: 'var(--text-primary)',
-    cursor: 'pointer',
-    fontSize: 13,
-    fontWeight: 500,
-  },
-  profileTabActive: {
-    background: 'var(--accent)',
-    borderColor: 'var(--accent)',
-    fontWeight: 600,
-  },
-  saveBtn: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-    padding: '10px 20px',
-    borderRadius: 'var(--radius-sm)',
-    fontSize: 14,
-    fontWeight: 500,
-    alignSelf: 'flex-start',
-  },
-  numberInput: {
-    width: 120,
-    padding: '10px 14px',
-    fontSize: 14,
-  },
+interface MemoryStats {
+  total: number;
+  appAllocated: number;
+  otherUsed: number;
+  maxRecommended: number;
+}
+
+const EMPTY_MEMORY: MemoryStats = {
+  total: 0,
+  appAllocated: 0,
+  otherUsed: 0,
+  maxRecommended: 0,
 };
 
-export default function SettingsPage() {
-  const [settings, setSettings] = useState<AppSettings | null>(null);
-  const [activeProfileKey, setActiveProfileKey] = useState('default');
-  const [saved, setSaved] = useState(false);
+type MemorySliderProps = {
+  title: string;
+  stats: MemoryStats;
+  appName: string;
+  loading: boolean;
+  unavailableMessage: string;
+  onChange: (newVal: number) => void;
+};
 
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const loaded = await window.electronAPI.loadSettings();
-        setSettings(loaded);
-        setActiveProfileKey(loaded.activeProfile);
-      } catch (err) {
-        console.error('Failed to load settings:', err);
-      }
-    };
+function MemorySlider({
+  title,
+  stats,
+  appName,
+  loading,
+  unavailableMessage,
+  onChange,
+}: MemorySliderProps) {
+  if (loading) {
+    return (
+      <div className="mem-container">
+        <div className="mem-header">
+          <div className="mem-title">{title}</div>
+          <div className="mem-usage-row">Detecting hardware…</div>
+        </div>
+        <div className="mem-bar-wrapper" style={{ opacity: 0.45 }} />
+      </div>
+    );
+  }
 
-    load();
-  }, []);
+  if (stats.total <= 0 || Number.isNaN(stats.total)) {
+    return (
+      <div className="mem-container">
+        <div className="mem-header">
+          <div className="mem-title">{title}</div>
+          <div className="mem-usage-row">{unavailableMessage}</div>
+        </div>
+      </div>
+    );
+  }
 
-  if (!settings) return null;
+  const totalUsed = stats.appAllocated + stats.otherUsed;
+  const otherPct = Math.min((stats.otherUsed / stats.total) * 100, 100);
+  const appPct = Math.min(
+    (stats.appAllocated / stats.total) * 100,
+    Math.max(0, 100 - otherPct),
+  );
+  const maxPct = Math.min((stats.maxRecommended / stats.total) * 100, 100);
+  const isExceeded = totalUsed > stats.maxRecommended;
 
-  const profile = settings.profiles[activeProfileKey];
-
-  const updateProfile = (updates: Partial<ProfileSettings>) => {
-    setSettings({
-      ...settings,
-      profiles: {
-        ...settings.profiles,
-        [activeProfileKey]: { ...profile, ...updates },
-      },
-    });
-  };
-
-  const handlePickDirectory = async () => {
-    try {
-      const dir = await window.electronAPI.pickDirectory();
-      if (dir) {
-        updateProfile({ modelsDirectory: dir });
-      }
-    } catch (err) {
-      console.error('Failed to pick directory:', err);
-    }
-  };
-
-  const handleSave = async () => {
-    try {
-      const updated = { ...settings, activeProfile: activeProfileKey };
-      await window.electronAPI.saveSettings(updated);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
-    } catch (err) {
-      console.error('Failed to save settings:', err);
-    }
-  };
-
-  const addProfile = () => {
-    const key = `profile_${Date.now()}`;
-    setSettings({
-      ...settings,
-      profiles: {
-        ...settings.profiles,
-        [key]: {
-          name: 'New Profile',
-          modelsDirectory: profile.modelsDirectory,
-          defaultModel: '',
-          contextSize: 4096,
-          gpuLayers: 0,
-        },
-      },
-    });
-    setActiveProfileKey(key);
-  };
-
-  const deleteProfile = () => {
-    if (activeProfileKey === 'default') return;
-    const updated = { ...settings.profiles };
-    delete updated[activeProfileKey];
-    setSettings({
-      ...settings,
-      profiles: updated,
-      activeProfile: 'default',
-    });
-    setActiveProfileKey('default');
+  const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    onChange(parseInt(e.target.value, 10));
   };
 
   return (
-    <div style={s.page}>
-      <h1 style={s.heading}>Settings</h1>
-
-      {/* Profile Selector */}
-      <div style={s.card}>
-        <div style={s.cardTitle}>Profiles</div>
-        <div style={{ ...s.row, flexWrap: 'wrap' }}>
-          {Object.entries(settings.profiles).map(([key, p]) => (
-            <button
-              type="button"
-              key={key}
-              style={{
-                ...s.profileTab,
-                ...(key === activeProfileKey ? s.profileTabActive : {}),
-              }}
-              onClick={() => setActiveProfileKey(key)}
-            >
-              {p.name}
-            </button>
-          ))}
-          <button
-            type="button"
-            style={s.iconBtn}
-            onClick={addProfile}
-            title="Add profile"
-          >
-            <Plus size={16} />
-          </button>
-          {activeProfileKey !== 'default' && (
-            <button
-              type="button"
-              style={{ ...s.iconBtn, color: '#f38ba8' }}
-              onClick={deleteProfile}
-              title="Delete profile"
-            >
-              <Trash2 size={16} />
-            </button>
-          )}
+    <div className="mem-container">
+      <div className="mem-header">
+        <div className="mem-title">{title}</div>
+        <div className="mem-usage-row">
+          <span className="mem-value">{totalUsed}</span>
+          <span className="mem-unit"> / {stats.total} MB</span>
         </div>
       </div>
 
-      {/* Profile Settings */}
-      <div style={s.card}>
-        <div style={s.cardTitle}>Profile: {profile.name}</div>
+      <div className="mem-bar-wrapper">
+        <div
+          className="mem-segment-other"
+          style={{ width: `${otherPct}%` }}
+          title="Used by OS and other apps"
+        />
 
-        <div style={s.field}>
-          <span style={s.label}>Profile Name</span>
-          <input
-            className="input-base"
-            style={s.input}
-            value={profile.name}
-            onChange={(e) => updateProfile({ name: e.target.value })}
-          />
+        <div
+          className={`mem-segment-app ${isExceeded ? 'exceeded' : ''}`}
+          style={{ left: `${otherPct}%`, width: `${appPct}%` }}
+        />
+
+        <div className="mem-max-wrapper" style={{ left: `${maxPct}%` }}>
+          <div className="mem-max-label">Rec. Max</div>
+          <div className="mem-max-line" />
         </div>
 
-        <div style={s.field}>
-          <span style={s.label}>Models Directory</span>
-          <div style={s.row}>
+        <input
+          type="range"
+          min={0}
+          max={Math.max(0, stats.total - stats.otherUsed)}
+          value={stats.appAllocated}
+          onChange={handleSliderChange}
+          className={`mem-slider ${isExceeded ? 'slider-exceeded' : ''}`}
+          style={{
+            left: `${otherPct}%`,
+            width: `${100 - otherPct}%`,
+          }}
+          title="Drag to allocate memory"
+        />
+      </div>
+
+      <div className="mem-legend-row">
+        <div className={`mem-legend-box ${isExceeded ? 'exceeded' : ''}`} />
+        <span>
+          {appName} Allocation:{' '}
+          <strong className="mem-value-small">{stats.appAllocated} MB</strong>
+        </span>
+      </div>
+
+      {isExceeded ? (
+        <div className="mem-warning">
+          <AlertTriangle size={14} />
+          <span>
+            Exceeding recommended limits may cause system instability or severe
+            performance drops.
+          </span>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+export default function SettingsPage() {
+  const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  const [hardware, setHardware] = useState<HardwareStats | null>(null);
+  const [ramLoading, setRamLoading] = useState(true);
+  const [gpuLoading, setGpuLoading] = useState(true);
+
+  const [ramStats, setRamStats] = useState<MemoryStats>(EMPTY_MEMORY);
+  const [vramStats, setVramStats] = useState<MemoryStats>(EMPTY_MEMORY);
+
+  const savedAllocationsRef = useRef<{
+    allocatedRAM?: number;
+    allocatedVRAM?: number;
+  }>({});
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function fetchHardware() {
+      try {
+        const hw: any = await window.electronAPI.getVramStats();
+        if (!mounted || !hw) return;
+
+        setHardware(hw);
+
+        // -- SYSTEM RAM (Pulled dynamically from getVramStats backend payload) --
+        if (hw.ram && hw.ram.total > 0) {
+          const savedRam = savedAllocationsRef.current.allocatedRAM;
+          setRamStats((prev) => ({
+            total: hw.ram.total,
+            appAllocated:
+              prev.appAllocated > 0
+                ? prev.appAllocated
+                : savedRam || Math.floor(hw.ram.total / 2),
+            otherUsed: hw.ram.otherUsed,
+            maxRecommended: hw.ram.maxRecommended,
+          }));
+        } else {
+          setRamStats(EMPTY_MEMORY);
+        }
+
+        // -- VRAM (GPU) --
+        if (hw.vram && hw.vram.total > 0) {
+          const savedVram = savedAllocationsRef.current.allocatedVRAM;
+          setVramStats((prev) => ({
+            total: hw.vram.total,
+            appAllocated:
+              prev.appAllocated > 0
+                ? prev.appAllocated
+                : savedVram || hw.vram.maxRecommended,
+            otherUsed: hw.vram.otherUsed,
+            maxRecommended: hw.vram.maxRecommended,
+          }));
+        } else {
+          setVramStats(EMPTY_MEMORY);
+        }
+      } catch {
+        // Silently fail
+      } finally {
+        if (mounted) {
+          setRamLoading(false);
+          setGpuLoading(false);
+        }
+      }
+    }
+
+    async function init() {
+      try {
+        const loaded = await window.electronAPI.loadSettings();
+        if (!mounted) return;
+
+        const normalized: AppSettings = {
+          modelsDirectory: loaded?.modelsDirectory || '',
+          allocatedRAM: loaded?.allocatedRAM,
+          allocatedVRAM: loaded?.allocatedVRAM,
+        };
+
+        savedAllocationsRef.current = {
+          allocatedRAM: normalized.allocatedRAM,
+          allocatedVRAM: normalized.allocatedVRAM,
+        };
+
+        setSettings(normalized);
+      } catch {
+        // Silently fail
+      }
+
+      // Initial hardware fetch on page load
+      fetchHardware();
+    }
+
+    init().catch(() => {});
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  async function handlePickDirectory() {
+    if (!settings) return;
+
+    try {
+      const dir = await window.electronAPI.pickDirectory();
+      if (dir) {
+        setSettings((prev) => {
+          if (!prev) return prev;
+          return { ...prev, modelsDirectory: dir };
+        });
+      }
+    } catch {
+      // Silently fail
+    }
+  }
+
+  async function handleSave() {
+    if (!settings) return;
+
+    try {
+      const payload: AppSettings = {
+        ...settings,
+        allocatedRAM: ramStats.appAllocated,
+      };
+
+      if (vramStats.total > 0) {
+        payload.allocatedVRAM = vramStats.appAllocated;
+      }
+
+      await window.electronAPI.saveSettings(payload);
+
+      savedAllocationsRef.current = {
+        allocatedRAM: payload.allocatedRAM,
+        allocatedVRAM: payload.allocatedVRAM,
+      };
+
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch {
+      // Silently fail
+    }
+  }
+
+  const isUnifiedMemory = hardware ? hardware.isUnifiedMemory : false;
+  const showVramSection =
+    !isUnifiedMemory && (gpuLoading || vramStats.total > 0);
+  const showGpuList = hardware ? hardware.gpus.length > 0 : false;
+  const showNoGpuMessage = hardware
+    ? !gpuLoading && hardware.gpus.length === 0
+    : false;
+
+  const ramTitle = isUnifiedMemory ? 'Unified Memory' : 'System Memory (RAM)';
+  const vramTitle =
+    hardware && hardware.selectedGpu
+      ? `Video Memory (GPU) — ${hardware.selectedGpu.model}`
+      : 'Video Memory (GPU)';
+
+  if (!settings) {
+    return null;
+  }
+
+  return (
+    <div className="settings-page">
+      <h1 className="settings-heading">Settings</h1>
+
+      <div className="settings-card">
+        <h2 className="settings-card-title">Application Setup</h2>
+
+        <div className="settings-field">
+          <span className="settings-label">Models Directory</span>
+          <div className="settings-row">
             <input
-              className="input-base"
-              style={s.input}
-              value={profile.modelsDirectory}
+              className="settings-input"
+              value={settings.modelsDirectory}
               readOnly
             />
             <button
               type="button"
-              style={s.iconBtn}
+              className="settings-icon-btn"
               onClick={handlePickDirectory}
               title="Browse"
             >
@@ -254,51 +319,90 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        <div style={s.field}>
-          <span style={s.label}>Context Size</span>
-          <input
-            className="input-base"
-            style={s.numberInput}
-            type="number"
-            min={512}
-            max={131072}
-            step={512}
-            value={profile.contextSize}
-            onChange={(e) =>
-              updateProfile({
-                contextSize: parseInt(e.target.value, 10) || 4096,
-              })
-            }
-          />
-        </div>
-
-        <div style={s.field}>
-          <span style={s.label}>GPU Layers</span>
-          <input
-            className="input-base"
-            style={s.numberInput}
-            type="number"
-            min={0}
-            max={100}
-            value={profile.gpuLayers}
-            onChange={(e) =>
-              updateProfile({
-                gpuLayers: parseInt(e.target.value, 10) || 0,
-              })
-            }
-          />
-        </div>
+        <button
+          type="button"
+          className="settings-save-btn"
+          onClick={handleSave}
+        >
+          <Save size={16} />
+          {saved ? 'Saved!' : 'Save Settings'}
+        </button>
       </div>
 
-      <button
-        type="button"
-        className="btn-accent"
-        style={s.saveBtn}
-        onClick={handleSave}
-      >
-        <Save size={16} />
-        {saved ? 'Saved!' : 'Save Settings'}
-      </button>
+      <div className="settings-card">
+        <h2 className="settings-card-title">System Resource Allocator</h2>
+
+        <MemorySlider
+          title={ramTitle}
+          stats={ramStats}
+          appName="Synapse AI Models"
+          onChange={(newVal) => {
+            setRamStats((prev) => ({
+              ...prev,
+              appAllocated: newVal,
+            }));
+          }}
+          loading={ramLoading}
+          unavailableMessage="RAM information unavailable"
+        />
+
+        {showVramSection ? (
+          <>
+            <div style={{ height: 32 }} />
+            <MemorySlider
+              title={vramTitle}
+              stats={vramStats}
+              appName="Synapse AI Models"
+              onChange={(newVal) => {
+                setVramStats((prev) => ({
+                  ...prev,
+                  appAllocated: newVal,
+                }));
+              }}
+              loading={gpuLoading}
+              unavailableMessage="GPU memory information unavailable"
+            />
+          </>
+        ) : null}
+
+        {showGpuList ? (
+          <div style={{ marginTop: 24 }}>
+            <h3 className="settings-label" style={{ marginBottom: 12 }}>
+              Detected GPUs
+            </h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {hardware?.gpus.map((gpu) => (
+                <div
+                  key={gpu.id}
+                  style={{
+                    padding: '12px 14px',
+                    border: '1px solid var(--border)',
+                    borderRadius: '8px',
+                    background: 'var(--bg-input)',
+                  }}
+                >
+                  <div>
+                    <strong>{gpu.model}</strong>
+                  </div>
+                  <div>Vendor: {gpu.vendor}</div>
+                  <div>VRAM: {gpu.vram} MB</div>
+                  <div>Dynamic VRAM: {gpu.vramDynamic ? 'Yes' : 'No'}</div>
+                  {gpu.driverVersion ? (
+                    <div>Driver: {gpu.driverVersion}</div>
+                  ) : null}
+                  {gpu.bus ? <div>Bus: {gpu.bus}</div> : null}
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        {showNoGpuMessage ? (
+          <div style={{ marginTop: 24 }} className="settings-label">
+            No GPUs detected.
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }

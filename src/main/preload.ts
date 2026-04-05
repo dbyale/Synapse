@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveSettings: (settings: unknown) =>
     ipcRenderer.invoke('settings:save', settings),
   pickDirectory: () => ipcRenderer.invoke('settings:pick-directory'),
+  getVramStats: () => ipcRenderer.invoke('get-vram-stats'),
 
   // Models
   searchModels: (query: string, filters?: any[], sort?: string, direction?: number, page?: number) =>
@@ -35,4 +36,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   removeDownloadProgressListener: () => {
     ipcRenderer.removeAllListeners('download-progress');
   },
+
+  getMemoryStats: () => ipcRenderer.invoke('get-memory-stats'),
 });

@@ -135,3 +135,23 @@ html, body, #root {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
+
+.btn-accent {
+  background: var(--accent);
+  color: #11111b;
+  border: none;
+  transition: all 0.2s;
+}
+.btn-accent:hover {
+  background: var(--accent-hover);
+}
+.input-base {
+  background: var(--bg-input);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  outline: none;
+}
+.input-base:focus {
+  border-color: var(--accent);
+}
