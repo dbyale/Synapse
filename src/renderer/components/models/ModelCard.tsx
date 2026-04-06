@@ -7,6 +7,8 @@ import {
   Cpu,
   Search,
   ExternalLink,
+  AlertTriangle,
+  AlertCircle,
 } from 'lucide-react';
 import type { ModelSearchResult, RemoteModelFile } from '../../preload.d';
 import { getCompanyLogoComponent } from '../../utils/companyLogos';
@@ -40,6 +42,7 @@ interface ModelCardProps {
   files: RemoteModelFile[];
   filesLoading: boolean;
   downloads: Record<string, ActiveDownload>;
+  systemMemoryMB: number; // Inherited from Settings
   onToggleExpand: (repoId: string) => void;
   onDownload: (repoId: string, filename: string) => void;
   onSearchBaseModel: (query: string) => void;
@@ -51,6 +54,79 @@ interface FileGroup {
   bits: number;
   totalSizeBytes: number;
   parts: RemoteModelFile[];
+}
+
+// ── Heuristics & Math for Memory Context ──
+interface ModelArchitecture {
+  numLayers: number;
+  numKvHeads: number;
+  headDim: number;
+}
+
+function parseBillionsOfParams(params: string | null | undefined): number {
+  if (!params) return 30; // Fallback to 30B
+  const upper = params.toUpperCase();
+
+  // Check for "-A" format (e.g., 26B-A4B or 14B-A2.7B)
+  const aMatch = upper.match(/^([0-9.]+[BM])-A([0-9.]+[BM])$/);
+  // Check for "x" format (e.g., 8X7B)
+  const xMatch = upper.match(/^([0-9]+)X([0-9.]+[BM])$/);
+  // Standard parameter format (e.g. 8B)
+  const standardMatch = upper.match(/^([0-9.]+)[BM]$/);
+
+  // Note: parseFloat("26B") or parseFloat("26M") natively strips the letter and returns 26.
+  if (aMatch) {
+    // Total parameters is the first capture group
+    return parseFloat(aMatch[1]);
+  }
+  if (xMatch) {
+    // Experts count * Size per expert
+    return parseFloat(xMatch[1]) * parseFloat(xMatch[2]);
+  }
+  if (standardMatch) {
+    // Standard dense model
+    return parseFloat(standardMatch[1]);
+  }
+
+  return 30; // Fallback if no patterns match
+}
+
+function guessArchitectureFromParamCount(
+  billionsOfParams: number,
+): ModelArchitecture {
+  if (billionsOfParams <= 3)
+    return { numLayers: 22, numKvHeads: 4, headDim: 128 };
+  if (billionsOfParams <= 9)
+    return { numLayers: 32, numKvHeads: 8, headDim: 128 }; // e.g. Llama 3 8B
+  if (billionsOfParams <= 14)
+    return { numLayers: 40, numKvHeads: 8, headDim: 128 };
+  if (billionsOfParams <= 35)
+    return { numLayers: 60, numKvHeads: 8, headDim: 128 };
+  return { numLayers: 80, numKvHeads: 8, headDim: 128 }; // 70B+ fallback
+}
+
+function calculateMaxContext(
+  availableMemoryMB: number,
+  modelSizeMB: number,
+  architecture: ModelArchitecture,
+  cacheBits: 16 | 8 = 16,
+): number {
+  // Free memory available strictly for the context
+  const freeMemoryForContextMB = availableMemoryMB - modelSizeMB;
+
+  if (freeMemoryForContextMB <= 0) return 0;
+
+  const bytesPerParam = cacheBits / 8;
+  const bytesPerToken =
+    2 *
+    architecture.numLayers *
+    architecture.numKvHeads *
+    architecture.headDim *
+    bytesPerParam;
+
+  const freeMemoryBytes = freeMemoryForContextMB * 1024 * 1024;
+
+  return Math.floor(freeMemoryBytes / bytesPerToken);
 }
 
 // ── Parse Parameters & MoE Detection ──
@@ -195,6 +271,7 @@ export default function ModelCard({
   files,
   filesLoading,
   downloads,
+  systemMemoryMB,
   onToggleExpand,
   onDownload,
   onSearchBaseModel,
@@ -411,8 +488,8 @@ export default function ModelCard({
                         className="model-card__dl-tooltip-list"
                         style={{ marginBottom: '6px' }}
                       >
-                        {paramTooltip.details.map((detail, i) => (
-                          <li key={i}>{detail}</li>
+                        {paramTooltip.details.map((detail) => (
+                          <li key={detail}>{detail}</li>
                         ))}
                       </ul>
                     )}
@@ -473,17 +550,22 @@ export default function ModelCard({
                 <div className="model-card__info-item">
                   <span className="model-card__info-label">Base Model</span>
                   <div className="model-card__info-value">
-                    {baseModels.map((bm) => (
-                      <button
-                        type="button"
-                        key={bm}
-                        className="model-card__link-base"
-                        onClick={() => onSearchBaseModel(bm)}
-                        title="Search base model"
-                      >
-                        {bm} <Search size={12} style={{ opacity: 0.6 }} />
-                      </button>
-                    ))}
+                    {baseModels.map((bm) => {
+                      const searchName = bm.includes('/')
+                        ? bm.split('/').pop() || bm
+                        : bm;
+                      return (
+                        <button
+                          type="button"
+                          key={bm}
+                          className="model-card__link-base"
+                          onClick={() => onSearchBaseModel(searchName)}
+                          title={`Search base model: ${searchName}`}
+                        >
+                          {bm} <Search size={12} style={{ opacity: 0.6 }} />
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -593,6 +675,32 @@ export default function ModelCard({
                         );
                       }
 
+                      // --- MEMORY CAPACITY MATH ---
+                      const modelSizeMB = group.totalSizeBytes / (1024 * 1024);
+                      const paramsB = parseBillionsOfParams(model.parameters);
+                      const arch = guessArchitectureFromParamCount(paramsB);
+                      const maxContext = calculateMaxContext(
+                        systemMemoryMB,
+                        modelSizeMB,
+                        arch,
+                      );
+                      const maxWords = Math.floor(maxContext * 0.75);
+
+                      let pillState: 'normal' | 'warning' | 'error' = 'normal';
+                      if (modelSizeMB >= systemMemoryMB) {
+                        pillState = 'error';
+                      } else if (maxContext < 4096) {
+                        pillState = 'warning';
+                      }
+
+                      let activePillClass = '';
+                      if (isDownloading)
+                        activePillClass = 'model-card__dl-pill--active';
+                      else if (pillState === 'error')
+                        activePillClass = 'model-card__dl-pill--error';
+                      else if (pillState === 'warning')
+                        activePillClass = 'model-card__dl-pill--warning';
+
                       return (
                         <div
                           key={group.id}
@@ -600,7 +708,7 @@ export default function ModelCard({
                         >
                           <button
                             type="button"
-                            className={`model-card__dl-pill ${isDownloading ? 'model-card__dl-pill--active' : ''}`}
+                            className={`model-card__dl-pill ${activePillClass}`}
                             onClick={() => {
                               if (!isDownloading) {
                                 group.parts.forEach((p) =>
@@ -631,10 +739,42 @@ export default function ModelCard({
                             <div className="model-card__dl-tooltip-title">
                               {quantInfo.filename}
                             </div>
+
+                            {pillState === 'error' && (
+                              <div className="model-card__dl-tooltip-alert model-card__dl-tooltip-alert--error">
+                                <AlertCircle
+                                  size={14}
+                                  style={{ flexShrink: 0, marginTop: 2 }}
+                                />
+                                <span>
+                                  Model size (
+                                  {formatBytes(group.totalSizeBytes)}) exceeds
+                                  your allocated memory (
+                                  {(systemMemoryMB / 1024).toFixed(1)} GB).
+                                  System will crash or heavily page to disk.
+                                </span>
+                              </div>
+                            )}
+
+                            {pillState === 'warning' && (
+                              <div className="model-card__dl-tooltip-alert model-card__dl-tooltip-alert--warning">
+                                <AlertTriangle
+                                  size={14}
+                                  style={{ flexShrink: 0, marginTop: 2 }}
+                                />
+                                <span>
+                                  Estimated max context is only ~
+                                  {maxContext.toLocaleString()} tokens (~
+                                  {maxWords.toLocaleString()} words). Model may
+                                  run out of memory during long conversations.
+                                </span>
+                              </div>
+                            )}
+
                             {quantInfo.details.length > 0 && (
                               <ul className="model-card__dl-tooltip-list">
-                                {quantInfo.details.map((detail, idx) => (
-                                  <li key={idx}>{detail}</li>
+                                {quantInfo.details.map((detail) => (
+                                  <li key={detail}>{detail}</li>
                                 ))}
                               </ul>
                             )}

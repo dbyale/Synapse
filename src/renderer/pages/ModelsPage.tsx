@@ -1,5 +1,17 @@
-import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { Search, Loader, Cloud, HardDrive, AlertCircle } from 'lucide-react';
+import React, {
+  useEffect,
+  useState,
+  useRef,
+  useCallback,
+  useMemo,
+} from 'react';
+import {
+  Search,
+  Loader,
+  HardDrive,
+  AlertCircle,
+  Lightbulb,
+} from 'lucide-react';
 import type {
   ModelSearchResult,
   LocalModel,
@@ -12,12 +24,15 @@ import ModelFilterPanel from '../components/models/ModelFilterPanel';
 import ModelSortDropdown from '../components/models/ModelSortDropdown';
 import type { SortOption } from '../components/models/ModelSortDropdown';
 import ModelCard from '../components/models/ModelCard';
-import LocalModelCard from '../components/models/LocalModelCard';
+import LocalModelCard, {
+  ExtendedLocalModel,
+  LocalModelGroup,
+} from '../components/models/LocalModelCard';
 
 import '../styles/ModelsPage.css';
 
 // ============================================================================
-// TYPES
+// TYPES & CONSTANTS
 // ============================================================================
 type Tab = 'browse' | 'local';
 
@@ -40,12 +55,30 @@ const API_SORT_MAP: Record<SortOption, { sort: string; direction: number }> = {
   recent: { sort: 'lastModified', direction: -1 },
 };
 
+const RECOMMENDATIONS = [
+  {
+    id: 'unsloth/Qwen3.5-0.8B-GGUF',
+    reason: 'An extremely small and efficient model, works on almost anything.',
+  },
+  {
+    id: 'unsloth/gemma-4-26B-A4B-it-GGUF',
+    reason:
+      'A Google model balancing power and speed, great for a wide range of tasks.',
+  },
+  {
+    id: 'unsloth/Qwen3.5-35B-A3B-GGUF',
+    reason:
+      'One of the most popular models ever due to its size and efficiency.',
+  },
+];
+
 // ============================================================================
 // MAIN COMPONENT
 // ============================================================================
 export default function ModelsPage() {
-  const [tab, setTab] = useState<Tab>('browse');
+  const [tab, setTab] = useState<Tab>('local');
   const [query, setQuery] = useState('');
+  const [localQuery, setLocalQuery] = useState('');
   const [searching, setSearching] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -65,6 +98,30 @@ export default function ModelsPage() {
   const [downloads, setDownloads] = useState<Record<string, ActiveDownload>>(
     {},
   );
+
+  // ── Recommendations & Settings State ──
+  const [recommendedModels, setRecommendedModels] = useState<
+    ModelSearchResult[]
+  >([]);
+  const [isLoadingRecs, setIsLoadingRecs] = useState(false);
+  const [systemMemoryMB, setSystemMemoryMB] = useState<number>(8192); // Default fallback 8GB
+
+  // ── Memory Fetching ──
+  const fetchSystemMemory = useCallback(async () => {
+    try {
+      const settings = await window.electronAPI.loadSettings();
+      // Explicitly convert to Number to ensure mathematical addition, not string concatenation
+      const ram = Number(settings?.allocatedRAM) || 0;
+      const vram = Number(settings?.allocatedVRAM) || 0;
+      const totalMem = ram + vram;
+
+      if (totalMem > 0) {
+        setSystemMemoryMB(totalMem);
+      }
+    } catch (err) {
+      console.error('Failed to load memory settings:', err);
+    }
+  }, []);
 
   // ── Build filters ──
   const buildFilters = (
@@ -87,7 +144,7 @@ export default function ModelsPage() {
     fetchLimit: number,
     sortKey: SortOption,
     isLoadMore: boolean = false,
-  ): Promise<void> => {
+  ): Promise<ModelSearchResult[]> => {
     if (isLoadMore) {
       setIsLoadingMore(true);
     } else {
@@ -101,7 +158,6 @@ export default function ModelsPage() {
       const filters = buildFilters(lang, pipe);
       const apiSort = API_SORT_MAP[sortKey];
 
-      // Exact 5 arguments to match preload
       const res = await window.electronAPI.searchModels(
         q.trim(),
         filters,
@@ -110,22 +166,24 @@ export default function ModelsPage() {
         fetchLimit,
       );
 
-      // If we got exactly as many as we asked for, there might be more
       setHasMore(res.length >= fetchLimit);
       setResults(res);
+      return res;
     } catch (searchErr: unknown) {
       console.error('Search failed:', searchErr);
       setError(
         'Failed to connect to HuggingFace. Please check your internet connection.',
       );
+      return [];
     } finally {
       setSearching(false);
       setIsLoadingMore(false);
     }
   };
 
-  // ── Initial Load (No empty query return) ──
+  // ── Initial Load ──
   useEffect(() => {
+    fetchSystemMemory();
     doSearch('', null, null, 20, 'trending', false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -172,18 +230,14 @@ export default function ModelsPage() {
   useEffect(() => {
     if (!window.electronAPI) return undefined;
 
-    // Capture the unsubscribe function
     const unsubscribe = window.electronAPI.onDownloadProgress(
       (progress: DownloadProgress & { status?: string }) => {
         setDownloads((prev) => {
-          // 1. If cancelled or failed, completely remove it so the card resets
           if (progress.status === 'cancelled' || progress.status === 'failed') {
             const next = { ...prev };
             delete next[progress.filename];
             return next;
           }
-
-          // 2. Otherwise update progress normally
           return {
             ...prev,
             [progress.filename]: {
@@ -203,8 +257,10 @@ export default function ModelsPage() {
             });
             window.electronAPI
               ?.listLocalModels()
-              .then(setLocalModels)
-              // eslint-disable-next-line no-console
+              .then((models) => {
+                setLocalModels(models);
+                return true;
+              })
               .catch(console.error);
           }, 1000);
         }
@@ -212,7 +268,6 @@ export default function ModelsPage() {
     );
 
     return () => {
-      // Use the specific unsubscribe function instead of wiping all listeners
       if (typeof unsubscribe === 'function') unsubscribe();
     };
   }, []);
@@ -220,12 +275,140 @@ export default function ModelsPage() {
   // ── Load local models on tab switch ──
   useEffect(() => {
     if (tab === 'local') {
-      window.electronAPI
-        ?.listLocalModels()
-        .then(setLocalModels)
-        .catch(console.error);
+      fetchSystemMemory(); // Always refresh memory settings on tab focus
+
+      const fetchLocal = async () => {
+        try {
+          const models = await window.electronAPI.listLocalModels();
+          setLocalModels(models);
+        } catch (err) {
+          console.error(err);
+        }
+      };
+      fetchLocal();
     }
-  }, [tab]);
+  }, [tab, fetchSystemMemory]);
+
+  // ── Local Model Grouping Logic ──
+  const groupedLocalModels = useMemo(() => {
+    const mGroups = new Map<string, LocalModelGroup>();
+
+    localModels.forEach((baseModel: LocalModel) => {
+      const m = baseModel as ExtendedLocalModel;
+
+      const splitMatch = m.filename.match(
+        /^(.*?)(?:-(\d{4,5})-of-(\d{4,5}))?\.gguf$/i,
+      );
+      const fileBaseName =
+        splitMatch && splitMatch[2]
+          ? splitMatch[1]
+          : m.filename.replace(/\.gguf$/i, '');
+
+      const modelName = m.generalName || fileBaseName;
+
+      if (!mGroups.has(modelName)) {
+        mGroups.set(modelName, {
+          name: modelName,
+          architecture: m.architecture,
+          parameters: m.parameters,
+          activeParameters: m.activeParameters,
+          contextLength: m.contextLength,
+          fileGroups: [],
+          totalSize: 0,
+        });
+      }
+
+      const mGroup = mGroups.get(modelName)!;
+
+      let fGroup = mGroup.fileGroups.find((g) => g.id === fileBaseName);
+      if (!fGroup) {
+        fGroup = {
+          id: fileBaseName,
+          quantization: m.quantization || 'Unknown',
+          isProjector: !!m.isProjector,
+          parts: [],
+          totalSize: 0,
+        };
+        mGroup.fileGroups.push(fGroup);
+      }
+
+      fGroup.parts.push(m);
+      fGroup.totalSize += m.sizeBytes;
+      mGroup.totalSize += m.sizeBytes;
+    });
+
+    mGroups.forEach((mg) => {
+      mg.fileGroups.forEach((fg) => {
+        fg.parts.sort((a, b) => a.filename.localeCompare(b.filename));
+      });
+      mg.fileGroups.sort((a, b) => {
+        if (a.isProjector && !b.isProjector) return 1;
+        if (!a.isProjector && b.isProjector) return -1;
+        return a.id.localeCompare(b.id);
+      });
+    });
+
+    return Array.from(mGroups.values()).sort((a, b) =>
+      a.name.localeCompare(b.name),
+    );
+  }, [localModels]);
+
+  const filteredLocalModels = useMemo(() => {
+    if (!localQuery.trim()) return groupedLocalModels;
+    const lowerQ = localQuery.toLowerCase();
+    return groupedLocalModels.filter((m) =>
+      m.name.toLowerCase().includes(lowerQ),
+    );
+  }, [groupedLocalModels, localQuery]);
+
+  // ── Fetch Recommended Models (if empty) ──
+  useEffect(() => {
+    let isMounted = true;
+
+    const fetchRecommendations = async () => {
+      setIsLoadingRecs(true);
+      try {
+        const promises = RECOMMENDATIONS.map((rec) =>
+          window.electronAPI
+            .searchModels(
+              rec.id,
+              [{ id: 'gguf', label: 'GGUF', type: 'library' }],
+              'trendingScore',
+              -1,
+              5,
+            )
+            .then((res) => {
+              return res.find((m) => m.id === rec.id) || res[0];
+            }),
+        );
+
+        const fetched = await Promise.all(promises);
+        const validResults = fetched.filter(
+          (r): r is ModelSearchResult => r !== undefined,
+        );
+
+        if (isMounted) setRecommendedModels(validResults);
+      } catch (err) {
+        console.error('Failed to fetch recommendations:', err);
+      } finally {
+        if (isMounted) setIsLoadingRecs(false);
+      }
+    };
+
+    if (
+      tab === 'local' &&
+      groupedLocalModels.length === 0 &&
+      recommendedModels.length === 0 &&
+      !isLoadingRecs
+    ) {
+      fetchRecommendations();
+    }
+
+    return () => {
+      isMounted = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, groupedLocalModels.length, recommendedModels.length]);
 
   // ── Interaction Handlers ──
   const handleSearch = (): void => {
@@ -253,7 +436,6 @@ export default function ModelsPage() {
     doSearch(query, selectedLanguage, selectedPipeline, 20, newSort, false);
   };
 
-  // ── Expand ──
   const handleExpand = async (repoId: string): Promise<void> => {
     if (expanded?.repoId === repoId) {
       setExpanded(null);
@@ -269,12 +451,37 @@ export default function ModelsPage() {
     }
   };
 
-  // ── Download / Delete ──
+  const handleSearchLocalModel = async (modelName: string): Promise<void> => {
+    setTab('browse');
+    setQuery(modelName);
+    setLimit(20);
+
+    const fetchRes = await doSearch(
+      modelName,
+      selectedLanguage,
+      selectedPipeline,
+      20,
+      sortBy,
+      false,
+    );
+
+    if (fetchRes && fetchRes.length > 0) {
+      const firstResultId = fetchRes[0].id;
+      setExpanded({ repoId: firstResultId, files: [], loading: true });
+      try {
+        const files = await window.electronAPI.listModelFiles(firstResultId);
+        setExpanded({ repoId: firstResultId, files, loading: false });
+      } catch (expandErr: unknown) {
+        console.error('Failed to list files:', expandErr);
+        setExpanded(null);
+      }
+    }
+  };
+
   const handleDownload = async (
     repoId: string,
     filename: string,
   ): Promise<void> => {
-    // Dispatch event WITH THE FILENAME so DownloadManager can show it immediately
     window.dispatchEvent(
       new CustomEvent('open-download-manager', { detail: { filename } }),
     );
@@ -295,9 +502,11 @@ export default function ModelsPage() {
     }
   };
 
-  const handleDelete = async (filename: string): Promise<void> => {
+  const handleDeleteGroup = async (filenames: string[]): Promise<void> => {
     try {
-      await window.electronAPI.deleteModel(filename);
+      await Promise.all(
+        filenames.map((file) => window.electronAPI.deleteModel(file)),
+      );
       const updated = await window.electronAPI.listLocalModels();
       setLocalModels(updated);
     } catch (delErr: unknown) {
@@ -317,19 +526,144 @@ export default function ModelsPage() {
       <div className="models-tabs">
         <button
           type="button"
-          className={`models-tab ${tab === 'browse' ? 'models-tab--active' : ''}`}
-          onClick={() => setTab('browse')}
-        >
-          <Cloud size={16} /> Browse
-        </button>
-        <button
-          type="button"
           className={`models-tab ${tab === 'local' ? 'models-tab--active' : ''}`}
           onClick={() => setTab('local')}
         >
           <HardDrive size={16} /> Installed
         </button>
+        <button
+          type="button"
+          className={`models-tab ${tab === 'browse' ? 'models-tab--active' : ''}`}
+          onClick={() => setTab('browse')}
+        >
+          <Search size={16} /> Browse
+        </button>
       </div>
+
+      {/* Local Tab */}
+      {tab === 'local' && (
+        <>
+          {groupedLocalModels.length > 0 && (
+            <div className="local-search-container">
+              <Search size={16} className="local-search-icon" />
+              <input
+                className="input-base search-input local-search-input"
+                placeholder="Search installed models..."
+                value={localQuery}
+                onChange={(e) => setLocalQuery(e.target.value)}
+              />
+            </div>
+          )}
+
+          {groupedLocalModels.length === 0 && (
+            <div className="models-empty-state">
+              <div className="models-empty" style={{ paddingBottom: '20px' }}>
+                No models installed yet. Here are some recommendations to get
+                you started:
+              </div>
+
+              {isLoadingRecs ? (
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'center',
+                    padding: '32px',
+                  }}
+                >
+                  <Loader
+                    className="spin"
+                    size={24}
+                    color="var(--text-secondary)"
+                  />
+                </div>
+              ) : (
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '20px',
+                  }}
+                >
+                  {recommendedModels.map((model) => {
+                    const recReason = RECOMMENDATIONS.find(
+                      (r) => r.id === model.id,
+                    )?.reason;
+                    return (
+                      <div key={model.id} className="recommendation-wrapper">
+                        {recReason && (
+                          <div className="recommendation-reason">
+                            <Lightbulb size={14} /> {recReason}
+                          </div>
+                        )}
+                        <ModelCard
+                          model={model}
+                          systemMemoryMB={systemMemoryMB}
+                          isExpanded={expanded?.repoId === model.id}
+                          files={
+                            expanded?.repoId === model.id ? expanded.files : []
+                          }
+                          filesLoading={
+                            expanded?.repoId === model.id
+                              ? expanded.loading
+                              : false
+                          }
+                          downloads={downloads}
+                          onToggleExpand={handleExpand}
+                          onDownload={handleDownload}
+                          onSearchBaseModel={(bmQuery) => {
+                            setTab('browse');
+                            setQuery(bmQuery);
+                            setLimit(20);
+                            doSearch(
+                              bmQuery,
+                              selectedLanguage,
+                              selectedPipeline,
+                              20,
+                              sortBy,
+                              false,
+                            );
+                          }}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {groupedLocalModels.length > 0 &&
+            filteredLocalModels.length === 0 && (
+              <div className="models-empty">
+                No installed models match your search.
+              </div>
+            )}
+
+          {groupedLocalModels.length > 0 &&
+            filteredLocalModels.length > 0 &&
+            filteredLocalModels.map((group) => (
+              <LocalModelCard
+                key={group.name}
+                group={group}
+                onDelete={handleDeleteGroup}
+                onSearchModel={handleSearchLocalModel}
+              />
+            ))}
+
+          <div className="find-more-container">
+            <button
+              type="button"
+              className="btn-accent find-more-btn"
+              onClick={() => {
+                setTab('browse');
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+            >
+              <Search size={16} /> Find more models
+            </button>
+          </div>
+        </>
+      )}
 
       {/* Browse Tab */}
       {tab === 'browse' && (
@@ -355,7 +689,6 @@ export default function ModelsPage() {
               </button>
             </div>
 
-            {/* Filter chips row */}
             <ModelFilterPanel
               selectedLanguage={selectedLanguage}
               selectedPipeline={selectedPipeline}
@@ -369,7 +702,6 @@ export default function ModelsPage() {
             />
           </div>
 
-          {/* Error */}
           {error && !searching && (
             <div className="models-error">
               <AlertCircle size={32} style={{ marginBottom: 4 }} />
@@ -378,18 +710,17 @@ export default function ModelsPage() {
             </div>
           )}
 
-          {/* Empty */}
           {results.length === 0 && !searching && !error && (
             <div className="models-empty">
               No GGUF models found matching your filters.
             </div>
           )}
 
-          {/* Results */}
           {results.map((model: ModelSearchResult) => (
             <ModelCard
               key={model.id}
               model={model}
+              systemMemoryMB={systemMemoryMB}
               isExpanded={expanded?.repoId === model.id}
               files={expanded?.repoId === model.id ? expanded.files : []}
               filesLoading={
@@ -413,7 +744,6 @@ export default function ModelsPage() {
             />
           ))}
 
-          {/* Infinite Scroll Loader Anchor */}
           {results.length > 0 && hasMore && (
             <div ref={loaderRef} className="models-loader">
               <Loader
@@ -423,25 +753,6 @@ export default function ModelsPage() {
               />
             </div>
           )}
-        </>
-      )}
-
-      {/* Local Tab */}
-      {tab === 'local' && (
-        <>
-          {localModels.length === 0 && (
-            <div className="models-empty">
-              No models installed yet. Browse and download models first.
-            </div>
-          )}
-
-          {localModels.map((model: LocalModel) => (
-            <LocalModelCard
-              key={model.filename}
-              model={model}
-              onDelete={handleDelete}
-            />
-          ))}
         </>
       )}
     </div>

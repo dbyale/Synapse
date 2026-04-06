@@ -46,7 +46,8 @@ const activeDownloads = new Map<
 function walkDir(dir: string, callback: (filepath: string) => void) {
   if (!fs.existsSync(dir)) return;
   const files = fs.readdirSync(dir);
-  for (const file of files) {
+
+  files.forEach((file) => {
     const filepath = path.join(dir, file);
     const stat = fs.statSync(filepath);
     if (stat.isDirectory()) {
@@ -54,7 +55,7 @@ function walkDir(dir: string, callback: (filepath: string) => void) {
     } else {
       callback(filepath);
     }
-  }
+  });
 }
 
 export async function searchModels(
@@ -80,8 +81,8 @@ export async function searchModels(
   // Default GGUF filter must be added manually if we default to []
   tagFilters.push('gguf');
 
-  if (filters && Symbol.iterator in Object(filters)) {
-    for (const filter of filters) {
+  if (Array.isArray(filters)) {
+    filters.forEach((filter) => {
       switch (filter.type) {
         case 'library':
         case 'tag':
@@ -95,7 +96,7 @@ export async function searchModels(
           params.set('author', filter.id);
           break;
       }
-    }
+    });
   }
 
   if (tagFilters.length > 0) {
@@ -118,7 +119,7 @@ export async function searchModels(
       const name = nameParts.join('/') || repoId;
 
       let parameters: string | null = null;
-            const paramMatch = repoId.match(
+      const paramMatch = repoId.match(
         /(\d+(?:\.\d+)?[bBmM](?:-[A-Za-z]\d+(?:\.\d+)?[bBmM])?|\d+x\d+(?:\.\d+)?[bBmM])/
       );
       if (paramMatch) {
@@ -149,11 +150,12 @@ export async function listModelFiles(repoId: string): Promise<RemoteModelFile[]>
   try {
     const response = await fetch(`https://huggingface.co/api/models/${repoId}/tree/main?recursive=true`);
     if (!response.ok) return [];
-    const data = await response.json();
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const data: any[] = await response.json();
     const files: RemoteModelFile[] = [];
 
-    for (const file of data) {
+    data.forEach((file) => {
       if (file.type === 'file' && file.path.endsWith('.gguf')) {
         const filename = file.path;
         const lowerName = filename.toLowerCase();
@@ -186,7 +188,7 @@ export async function listModelFiles(repoId: string): Promise<RemoteModelFile[]>
           bits
         });
       }
-    }
+    });
 
     return files;
   } catch (err) {
@@ -215,8 +217,6 @@ export function downloadModel(repoId: string, filename: string, win: BrowserWind
     const destDir = path.dirname(destPath);
 
     // Create the folders if they don't exist.
-    // Wrapped in try/catch because starting 5 split downloads simultaneously
-    // can cause race conditions where they all attempt to create the folder.
     if (!fs.existsSync(destDir)) {
       try {
         fs.mkdirSync(destDir, { recursive: true });
@@ -248,17 +248,14 @@ export function downloadModel(repoId: string, filename: string, win: BrowserWind
           }
         }
 
-        // Check if the abort was a deliberate cancellation
         const record = activeDownloads.get(filename);
         const wasCancelled = record?.cancelled;
 
         activeDownloads.delete(filename);
 
         if (wasCancelled) {
-          // Resolve harmlessly to prevent Electron's unhandled promise rejection error log
           resolve('CANCELLED');
         } else {
-          // Tell the frontend the download failed network-side
           win?.webContents.send('download-progress', {
             modelId: repoId,
             filename,
@@ -322,10 +319,8 @@ export function downloadModel(repoId: string, filename: string, win: BrowserWind
 export function cancelDownload(filename: string): boolean {
   const record = activeDownloads.get(filename);
   if (record) {
-    // Flag it as deliberately cancelled so cleanupAndReject resolves instead of throwing
     record.cancelled = true;
 
-    // Broadcast the cancellation to all UI components (ModelCard, DownloadManager)
     record.win?.webContents.send('download-progress', {
       modelId: record.repoId,
       filename,
@@ -345,22 +340,68 @@ export function listLocalModels(): LocalModel[] {
   const modelsDir = getModelsDirectory();
   if (!fs.existsSync(modelsDir)) return [];
 
-  const models: LocalModel[] = [];
+  // Temporarily defined as any[] to inject the extended fields required by the frontend
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const models: any[] = [];
 
   // Use recursive search instead of flat readdirSync
   walkDir(modelsDir, (filepath) => {
     if (filepath.endsWith('.gguf')) {
       const stats = fs.statSync(filepath);
+      const filename = path.basename(filepath);
+
+      // Calculate author and model names based on parent folder structure
+      const relativePath = path.relative(modelsDir, filepath);
+      const pathParts = relativePath.split(path.sep);
+
+      let author = 'Local';
+      let modelName = 'Uncategorized';
+
+      if (pathParts.length >= 3) {
+        // e.g., author/modelName/filename.gguf or author/modelName/projectors/filename.gguf
+        author = pathParts[0];
+        modelName = pathParts[1];
+      } else if (pathParts.length === 2) {
+        // Just directly dropped into a folder (fallback)
+        author = pathParts[0];
+        modelName = pathParts[0];
+      }
+
+      // Recreate the repo ID equivalent for UI grouping
+      const generalName = pathParts.length >= 3 ? `${author}/${modelName}` : modelName;
+
+      // Extract details from the filename
+      const lowerName = filename.toLowerCase();
+      const isProjector = lowerName.includes('mmproj');
+      let quant = 'Unknown';
+
+      if (isProjector) {
+        const pMatch = filename.match(/mmproj-([^.]+)\.gguf/i);
+        quant = pMatch ? pMatch[1].toUpperCase() : 'MMPROJ';
+      } else {
+        const qMatch = filename.match(/(?:q|iq|fp|bf)\d+(?:_[a-z0-9_]+)?/i);
+        if (qMatch) {
+          quant = qMatch[0].toUpperCase();
+        } else {
+          const fallback = filename.match(/(?:-|\.)([^.]+)\.gguf$/i);
+          if (fallback) quant = fallback[1].toUpperCase();
+        }
+      }
+
       models.push({
-        filename: path.basename(filepath),
+        filename,
         filepath,
         sizeBytes: stats.size,
         lastModified: stats.mtime.toISOString(),
+        // Metadata required for ExtendedLocalModel by the LocalModelGroupCard
+        generalName,
+        quantization: quant,
+        isProjector
       });
     }
   });
 
-  return models;
+  return models as LocalModel[];
 }
 
 export function deleteLocalModel(identifier: string): boolean {
@@ -368,11 +409,9 @@ export function deleteLocalModel(identifier: string): boolean {
 
   let foundPath: string | null = null;
 
-  // 1. Direct hit (if absolute filepath was passed)
   if (path.isAbsolute(identifier) && fs.existsSync(identifier)) {
     foundPath = identifier;
   } else {
-    // 2. Fallback: recursively search for the file
     walkDir(modelsDir, (filepath) => {
       if (path.basename(filepath) === identifier) {
         foundPath = filepath;
@@ -381,10 +420,8 @@ export function deleteLocalModel(identifier: string): boolean {
   }
 
   if (foundPath) {
-    // Delete the model file
     fs.unlinkSync(foundPath);
 
-    // Clean up empty parent directories
     let currentDir = path.dirname(foundPath);
     while (currentDir !== modelsDir && currentDir.length > modelsDir.length) {
       try {
@@ -392,10 +429,10 @@ export function deleteLocalModel(identifier: string): boolean {
           fs.rmdirSync(currentDir);
           currentDir = path.dirname(currentDir);
         } else {
-          break; // Stop climbing if directory has other files
+          break;
         }
       } catch (err) {
-        break; // Safety break
+        break;
       }
     }
     return true;

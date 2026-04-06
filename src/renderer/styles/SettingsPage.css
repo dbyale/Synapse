@@ -119,21 +119,44 @@
 .settings-save-btn:hover {
   opacity: 0.9;
 }
-
 /* ============================================================================
    MEMORY BAR ALLOCATOR
    ============================================================================ */
+
+.settings-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: -16px; /* Offset the parent flex gap so it aligns nicely */
+}
+
+.settings-saved-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #a6e3a1; /* Success green */
+  animation: fadeInOut 2s ease forwards;
+}
+
+@keyframes fadeInOut {
+  0% { opacity: 0; transform: translateY(-4px); }
+  10% { opacity: 1; transform: translateY(0); }
+  80% { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(0); }
+}
 
 .mem-container {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  font-family: inherit; /* Removed monospace from parent so titles look clean */
+  font-family: inherit;
 }
 
 .mem-header {
   display: flex;
-  justify-content: space-between; /* Spreads Title and Value cleanly */
+  justify-content: space-between;
   align-items: center;
 }
 
@@ -161,59 +184,138 @@
 
 .mem-bar-wrapper {
   position: relative;
-  height: 24px; /* Increased height so the slider is easier to click/grab */
+  height: 24px;
   background: var(--bg-input);
   margin-top: 12px;
   margin-bottom: 8px;
   border-radius: 4px;
 }
 
-.mem-segment-other {
+/* Base class for hoverable sections */
+.mem-tooltip-target {
   position: absolute;
   height: 100%;
-  left: 0;
+  pointer-events: auto; /* Required to trigger hover */
+}
+
+.mem-segment-other {
   background: #5c5f77;
   border-radius: 4px 0 0 4px;
-  pointer-events: none; /* Allows clicks to pass through to the slider */
 }
 
 .mem-segment-app {
-  position: absolute;
-  height: 100%;
   background: var(--text-primary);
-  pointer-events: none;
   transition: background-color 0.2s ease;
 }
 
 .mem-segment-app.exceeded {
-  background: #f38ba8; /* Turns red to warn user */
-}
-
-.mem-max-wrapper {
-  position: absolute;
-  top: -18px;
-  bottom: -6px;
-  width: 2px;
-  z-index: 10;
-  pointer-events: none;
-}
-
-.mem-max-line {
-  width: 100%;
-  height: 100%;
   background: #f38ba8;
 }
 
-.mem-max-label {
+.mem-segment-free {
+  background: transparent;
+  border-radius: 0 4px 4px 0;
+}
+
+/* ============================================================================
+   TOOLTIPS
+   ============================================================================ */
+
+.mem-tooltip {
   position: absolute;
-  top: 0;
+  bottom: calc(100% + 12px);
+  left: 50%;
+  transform: translateX(-50%) translateY(4px);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  width: max-content;
+  max-width: 240px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  z-index: 100;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: all 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: center;
+}
+
+/* Outer Arrow */
+.mem-tooltip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
   left: 50%;
   transform: translateX(-50%);
+  border-width: 6px;
+  border-style: solid;
+  border-color: var(--border) transparent transparent transparent;
+}
+
+/* Inner Arrow */
+.mem-tooltip::before {
+  content: '';
+  position: absolute;
+  top: calc(100% - 1px);
+  left: 50%;
+  transform: translateX(-50%);
+  border-width: 6px;
+  border-style: solid;
+  border-color: var(--bg-input) transparent transparent transparent;
+  z-index: 1;
+}
+
+.mem-tooltip-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding-bottom: 6px;
+  margin-bottom: 2px;
+}
+
+.mem-tooltip-text {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* Reveal tooltip on hover */
+.mem-tooltip-target:hover .mem-tooltip {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* Updated MAX Label & Line alignment using flexbox */
+.mem-max-wrapper {
+  position: absolute;
+  top: -20px;
+  bottom: -6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  z-index: 10;
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+
+.mem-max-label {
   color: #f38ba8;
   font-size: 10px;
-  font-weight: 700;
+  font-weight: 800;
   text-transform: uppercase;
   white-space: nowrap;
+  margin-bottom: 2px;
+}
+
+.mem-max-line {
+  width: 2px;
+  flex: 1;
+  background: #f38ba8;
 }
 
 /* ============================================================================
@@ -230,7 +332,9 @@
   z-index: 20;
   margin: 0;
   outline: none;
-  cursor: pointer;
+
+  /* CRITICAL: Allows hovers to pass through the track to the segments below */
+  pointer-events: none;
 }
 
 .mem-slider::-webkit-slider-runnable-track {
@@ -243,15 +347,22 @@
 .mem-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  height: 32px; /* Taller than the bar itself */
+  height: 32px;
   width: 12px;
   background: #ffffff;
   border: 1px solid var(--border);
   border-radius: 3px;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
-  margin-top: -4px; /* Centered over the 24px track */
+  margin-top: -4px;
+
+  /* Re-enable events specifically on the thumb so it can be dragged */
+  pointer-events: auto;
   cursor: grab;
   transition: transform 0.1s;
+}
+
+.mem-slider::-webkit-slider-thumb:hover {
+  background: #f8f8f8;
 }
 
 .mem-slider::-webkit-slider-thumb:active {
@@ -261,6 +372,7 @@
 
 .slider-exceeded::-webkit-slider-thumb {
   background: #f38ba8;
+  border-color: rgba(243, 139, 168, 0.5);
 }
 
 .mem-legend-row {
@@ -294,4 +406,43 @@
   border: 1px solid rgba(243, 139, 168, 0.3);
   padding: 10px 14px;
   border-radius: var(--radius-sm);
+}
+
+/* ============================================================================
+   MEMORY REFRESH BUTTON
+   ============================================================================ */
+
+.mem-refresh-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  outline: none;
+}
+
+.mem-refresh-btn:hover:not(:disabled) {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border-color: var(--text-secondary);
+}
+
+.mem-refresh-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.mem-refresh-btn.loading svg {
+  animation: mem-spin 1s linear infinite;
+}
+
+@keyframes mem-spin {
+  100% { transform: rotate(360deg); }
 }
