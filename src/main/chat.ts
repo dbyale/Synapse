@@ -5,7 +5,6 @@ import type {
   LlamaModel,
 } from 'node-llama-cpp';
 
-// The variable declarations are correct.
 let llamaModule: typeof import('node-llama-cpp') | null = null;
 let llama: Llama | null = null;
 let model: LlamaModel | null = null;
@@ -16,12 +15,10 @@ let abortController: AbortController | null = null;
 async function ensureLlamaLoaded() {
   if (!llamaModule) {
     console.log('[chat] Loading node-llama-cpp module...');
-    // FIX 1: Use a type assertion to tell TypeScript what the module's type is.
     llamaModule = (await Function('return import("node-llama-cpp")')()) as typeof import('node-llama-cpp');
     console.log('[chat] Module loaded.');
   }
 
-  // This check now satisfies TypeScript because it knows what `llamaModule` is.
   if (!llama) {
     const { getLlama } = llamaModule;
     llama = await getLlama();
@@ -36,20 +33,15 @@ export async function loadModel(filepath: string) {
   try {
     const { llama: llamaInstance, llamaModule: module } = await ensureLlamaLoaded();
 
-    // FIX 2: Add a guard clause to satisfy the 'possibly null' check.
     if (!llamaInstance) {
       throw new Error('Llama instance could not be initialized.');
     }
 
     console.log('[chat] Creating model instance...');
-    model = await llamaInstance.loadModel({
-      modelPath: filepath,
-    });
+    model = await llamaInstance.loadModel({ modelPath: filepath });
 
     console.log('[chat] Creating context...');
-    context = await model.createContext({
-      contextSize: 200,
-    });
+    context = await model.createContext({ contextSize: 200 });
 
     console.log('[chat] Creating chat session...');
     const { LlamaChatSession } = module;
@@ -79,9 +71,7 @@ export async function sendMessage(
     console.log('[chat] Sending message:', text);
     const response = await session.prompt(text, {
       signal: abortController.signal,
-      // FIX 3: Use a more flexible callback to handle potential type mismatches.
       onTextChunk: (chunk: { text: string } | string) => {
-        // This robustly handles if the chunk is just a string OR an object with a .text property.
         const token = typeof chunk === 'string' ? chunk : chunk.text;
         onToken(token);
       },
@@ -126,4 +116,23 @@ export async function unloadModel() {
   } catch (error) {
     console.error('[chat] Error unloading model:', error);
   }
+}
+
+/**
+ * Returns the exact token count for the given text using the loaded model's
+ * tokenizer. Returns null if no model is currently loaded.
+ */
+export async function tokenize(text: string): Promise<number | null> {
+  if (!model) return null;
+  const tokens = model.tokenize(text);
+  return tokens.length;
+}
+
+/**
+ * Returns the context size (max tokens) of the loaded model's context.
+ * Returns null if no context is currently loaded.
+ */
+export function getContextSize(): number | null {
+  if (!context) return null;
+  return context.contextSize;
 }

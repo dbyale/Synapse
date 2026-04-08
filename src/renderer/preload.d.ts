@@ -128,6 +128,8 @@ declare global {
       onChatToken: (callback: (token: string) => void) => () => void;
       onChatDone: (callback: () => void) => () => void;
       removeChatListeners: () => void;
+      chatTokenize: (text: string) => Promise<{ count: number | null }>;
+      chatContextSize: () => Promise<{ contextSize: number | null }>;
     };
   }
 }

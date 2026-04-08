@@ -58,5 +58,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   removeChatListeners: () => {
     ipcRenderer.removeAllListeners('chat:token');
     ipcRenderer.removeAllListeners('chat:done');
-  }
+  },
+
+  chatTokenize: (text: string): Promise<{ count: number | null }> =>
+    ipcRenderer.invoke('chat:tokenize', text),
+
+  chatContextSize: (): Promise<{ contextSize: number | null }> =>
+    ipcRenderer.invoke('chat:contextSize'),
 });

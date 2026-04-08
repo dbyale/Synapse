@@ -139,6 +139,19 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     await chatService.unloadModel();
   });
 
+  ipcMain.handle('chat:tokenize', async (_event, text: string) => {
+    try {
+      const count = await chatService.tokenize(text);
+      return { count };
+    } catch (error: any) {
+      return { count: null, error: error.message };
+    }
+  });
+
+  ipcMain.handle('chat:contextSize', () => {
+    return { contextSize: chatService.getContextSize() };
+  });
+
   // ── Unified Hardware Stats ──
   ipcMain.handle('get-vram-stats', async () => {
     // ... (Your hardware stats code is fine and remains unchanged) ...

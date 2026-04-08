@@ -1,120 +1,6 @@
-import {
-  CSSProperties,
-  FormEvent,
-  useEffect,
-  useRef,
-  useState,
-  KeyboardEvent,
-} from 'react';
+import { FormEvent, useEffect, useRef, useState, KeyboardEvent } from 'react';
 import { SendHorizonal, Square, Bot } from 'lucide-react';
-
-const s: Record<string, CSSProperties> = {
-  page: {
-    display: 'flex',
-    flexDirection: 'column',
-    height: '100%',
-    maxWidth: 1100,
-    margin: '0 auto',
-    width: '100%',
-    gap: 16,
-  },
-  modelSelector: {
-    background: 'var(--bg-secondary)',
-    border: '1px solid var(--border)',
-    borderRadius: 'var(--radius-lg)',
-    padding: '12px 16px',
-    display: 'flex',
-    alignItems: 'center',
-    gap: 12,
-  },
-  select: {
-    flex: 1,
-    background: 'var(--bg-primary)',
-    border: '1px solid var(--border)',
-    borderRadius: 'var(--radius-md)',
-    color: 'var(--text-primary)',
-    fontSize: 14,
-    padding: '8px 12px',
-    outline: 'none',
-    cursor: 'pointer',
-  },
-  messages: {
-    flex: 1,
-    overflowY: 'auto',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 16,
-    paddingBottom: 8,
-  },
-  emptyState: {
-    margin: 'auto',
-    textAlign: 'center',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 12,
-    alignItems: 'center',
-  },
-  emptyIcon: {
-    color: 'var(--text-secondary)',
-    marginBottom: 8,
-    opacity: 0.7,
-  },
-  inputWrapper: {
-    position: 'relative',
-    width: '100%',
-    background: 'var(--bg-secondary)',
-    borderRadius: 'var(--radius-lg)',
-    border: '1px solid var(--border)',
-    padding: '8px 16px',
-    display: 'flex',
-    gap: 12,
-    alignItems: 'flex-end',
-    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
-  },
-  textarea: {
-    flex: 1,
-    background: 'transparent',
-    border: 'none',
-    color: 'var(--text-primary)',
-    fontSize: 15,
-    resize: 'none',
-    lineHeight: 1.5,
-    padding: '10px 0',
-    maxHeight: 220,
-    outline: 'none',
-    fontFamily: 'inherit',
-  },
-  sendButton: {
-    width: 40,
-    height: 40,
-    marginBottom: 2,
-    borderRadius: 10,
-    border: 'none',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-    transition: 'all 0.15s ease',
-    cursor: 'pointer',
-  },
-  message: {
-    padding: '10px 16px',
-    borderRadius: 'var(--radius-lg, 12px)',
-    maxWidth: '75%',
-    whiteSpace: 'pre-wrap',
-    lineHeight: 1.5,
-  },
-  userMessage: {
-    alignSelf: 'flex-end',
-    background: 'var(--bg-accent, #2563eb)',
-    color: '#fff',
-  },
-  assistantMessage: {
-    alignSelf: 'flex-start',
-    background: 'var(--bg-secondary)',
-    color: 'var(--text-primary)',
-  },
-};
+import '../styles/ChatPage.css';
 
 interface Message {
   id: number;
@@ -132,10 +18,9 @@ interface LocalModel {
 }
 
 // ── Persistent state that survives component unmount/remount ──
-// This lives outside the component so navigating away doesn't lose it.
 let persistentMessages: Message[] = [];
 let persistentSelectedModelPath: string = '';
-let persistentModelLoaded: string = ''; // tracks which model is actually loaded in the backend
+let persistentModelLoaded: string = '';
 let persistentMessageCounter: number = 0;
 
 export default function ChatPage() {
@@ -148,18 +33,22 @@ export default function ChatPage() {
     persistentSelectedModelPath,
   );
   const [placeholder, setPlaceholder] = useState('Select a model first...');
+
+  // ── Token counter state ──
+  const [usedTokens, setUsedTokens] = useState<number>(0);
+  const [maxTokens, setMaxTokens] = useState<number | null>(null);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messageCounter = useRef(persistentMessageCounter);
+  const tokenDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // ── Sync persistent state whenever messages change ──
+  // ── Sync persistent state ──
   useEffect(() => {
     persistentMessages = messages;
   }, [messages]);
-
   useEffect(() => {
     persistentSelectedModelPath = selectedModelPath;
   }, [selectedModelPath]);
-
   useEffect(() => {
     persistentMessageCounter = messageCounter.current;
   });
@@ -170,8 +59,6 @@ export default function ChatPage() {
       const models = await window.electronAPI.listLocalModels();
       const chatModels = models.filter((m: LocalModel) => !m.isProjector);
       setLocalModels(chatModels);
-
-      // Auto-select first model if nothing is selected and nothing was previously selected
       if (chatModels.length > 0 && !selectedModelPath) {
         setSelectedModelPath(chatModels[0].filepath);
       }
@@ -180,20 +67,24 @@ export default function ChatPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── Load model only when selection actually changes to a different model ──
+  // ── Load model ──
   useEffect(() => {
     let cancelled = false;
 
     async function load() {
       if (!selectedModelPath) return;
-
-      // If this model is already loaded in the backend, skip reloading
       if (persistentModelLoaded === selectedModelPath) {
+        // Model already loaded — still fetch context size in case we just
+        // navigated back to this page.
+        const { contextSize } = await window.electronAPI.chatContextSize();
+        if (!cancelled) setMaxTokens(contextSize);
         return;
       }
 
       setModelLoading(true);
-      setMessages([]); // Clear chat on new model load
+      setMessages([]);
+      setUsedTokens(0);
+      setMaxTokens(null);
 
       const res = await window.electronAPI.chatLoad(selectedModelPath);
 
@@ -201,6 +92,8 @@ export default function ChatPage() {
         setModelLoading(false);
         if (res.success) {
           persistentModelLoaded = selectedModelPath;
+          const { contextSize } = await window.electronAPI.chatContextSize();
+          if (!cancelled) setMaxTokens(contextSize);
         } else {
           console.warn(`Failed to load model: ${res.error}`);
           persistentModelLoaded = '';
@@ -209,14 +102,28 @@ export default function ChatPage() {
     }
 
     load();
-
-    // NOTE: No cleanup that unloads the model!
-    // We intentionally do NOT unload on unmount so the model stays loaded
-    // across page navigations.
     return () => {
       cancelled = true;
     };
   }, [selectedModelPath]);
+
+  // ── Debounced exact token count ──
+  // Runs whenever the conversation or the current input changes.
+  useEffect(() => {
+    if (tokenDebounceRef.current) clearTimeout(tokenDebounceRef.current);
+
+    tokenDebounceRef.current = setTimeout(async () => {
+      // Build the full text the model will see: all messages + current input.
+      const fullText = [...messages.map((m) => m.content), inputText].join(' ');
+
+      const { count } = await window.electronAPI.chatTokenize(fullText);
+      if (count !== null) setUsedTokens(count);
+    }, 300);
+
+    return () => {
+      if (tokenDebounceRef.current) clearTimeout(tokenDebounceRef.current);
+    };
+  }, [messages, inputText]);
 
   // ── Listen for streaming tokens ──
   useEffect(() => {
@@ -231,14 +138,7 @@ export default function ChatPage() {
         }
         const id = messageCounter.current;
         messageCounter.current += 1;
-        return [
-          ...prev,
-          {
-            id,
-            role: 'assistant',
-            content: token,
-          },
-        ];
+        return [...prev, { id, role: 'assistant', content: token }];
       });
     });
 
@@ -252,20 +152,17 @@ export default function ChatPage() {
     };
   }, []);
 
-  // ── Auto-scroll to bottom ──
+  // ── Auto-scroll ──
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Set placeholder text
+  // ── Placeholder text ──
   useEffect(() => {
-    if (modelLoading) {
-      setPlaceholder('Loading model...');
-    } else if (selectedModelPath) {
+    if (modelLoading) setPlaceholder('Loading model...');
+    else if (selectedModelPath)
       setPlaceholder('Send a message... (Shift+Enter for new line)');
-    } else {
-      setPlaceholder('Select a model first...');
-    }
+    else setPlaceholder('Select a model first...');
   }, [modelLoading, selectedModelPath]);
 
   const autoResize = (e: FormEvent<HTMLTextAreaElement>) => {
@@ -294,9 +191,7 @@ export default function ChatPage() {
     await window.electronAPI.chatSend(text);
   };
 
-  const handleAbort = () => {
-    window.electronAPI.chatAbort();
-  };
+  const handleAbort = () => window.electronAPI.chatAbort();
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -305,26 +200,31 @@ export default function ChatPage() {
     }
   };
 
-  // Handler for model selection change - unload old model before loading new one
   const handleModelChange = async (newPath: string) => {
     if (newPath === selectedModelPath) return;
-
-    // If switching to a different model, unload the current one
     if (persistentModelLoaded && newPath !== persistentModelLoaded) {
       await window.electronAPI.chatUnload();
       persistentModelLoaded = '';
     }
-
     setSelectedModelPath(newPath);
   };
 
+  // ── Token counter presentation ──
+  const tokenRatio = maxTokens !== null ? usedTokens / maxTokens : 0;
+  const tokenCounterClass = () => {
+    if (tokenRatio >= 0.9)
+      return 'chat-token-counter chat-token-counter--danger';
+    if (tokenRatio >= 0.75)
+      return 'chat-token-counter chat-token-counter--warning';
+    return 'chat-token-counter';
+  };
+
   return (
-    <div style={s.page}>
+    <div className="chat-page">
       {/* Model Selector */}
-      <div style={s.modelSelector}>
+      <div className="chat-model-selector">
         <Bot size={20} style={{ color: 'var(--text-secondary)' }} />
         <select
-          style={s.select}
           value={selectedModelPath}
           onChange={(e) => handleModelChange(e.target.value)}
           disabled={modelLoading}
@@ -344,21 +244,19 @@ export default function ChatPage() {
           )}
         </select>
         {modelLoading && (
-          <span style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
-            Loading...
-          </span>
+          <span className="chat-model-loading-label">Loading...</span>
         )}
       </div>
 
       {/* Messages */}
-      <div style={s.messages}>
+      <div className="chat-messages">
         {messages.length === 0 && (
-          <div style={s.emptyState}>
-            <SendHorizonal style={s.emptyIcon} size={48} />
-            <h2 style={{ fontWeight: 500 }}>
+          <div className="chat-empty-state">
+            <SendHorizonal className="chat-empty-state-icon" size={48} />
+            <h2>
               {modelLoading ? 'Loading model...' : 'Start a conversation'}
             </h2>
-            <p style={{ color: 'var(--text-secondary)', maxWidth: 400 }}>
+            <p>
               {selectedModelPath
                 ? 'Type your message below.'
                 : 'Select a model from the dropdown above, then type your message below.'}
@@ -369,10 +267,11 @@ export default function ChatPage() {
         {messages.map((msg) => (
           <div
             key={msg.id}
-            style={{
-              ...s.message,
-              ...(msg.role === 'user' ? s.userMessage : s.assistantMessage),
-            }}
+            className={`chat-message ${
+              msg.role === 'user'
+                ? 'chat-message--user'
+                : 'chat-message--assistant'
+            }`}
           >
             {msg.content}
           </div>
@@ -381,40 +280,51 @@ export default function ChatPage() {
       </div>
 
       {/* Input Area */}
-      <div style={s.inputWrapper}>
-        <textarea
-          style={s.textarea}
-          value={inputText}
-          onChange={(e) => setInputText(e.target.value)}
-          placeholder={placeholder}
-          rows={1}
-          onInput={autoResize}
-          onKeyDown={handleKeyDown}
-          disabled={loading || modelLoading || !selectedModelPath}
-        />
+      <div className="chat-input-wrapper">
+        <div className="chat-input-row">
+          <textarea
+            value={inputText}
+            onChange={(e) => setInputText(e.target.value)}
+            placeholder={placeholder}
+            rows={1}
+            onInput={autoResize}
+            onKeyDown={handleKeyDown}
+            disabled={loading || modelLoading || !selectedModelPath}
+          />
 
-        {loading ? (
-          <button
-            type="button"
-            className="btn-accent"
-            style={{ ...s.sendButton, background: '#ef4444' }}
-            onClick={handleAbort}
-            title="Stop generation"
-          >
-            <Square size={18} strokeWidth={2.2} fill="white" />
-          </button>
-        ) : (
-          <button
-            type="button"
-            className="btn-accent"
-            style={s.sendButton}
-            disabled={!inputText.trim() || !selectedModelPath || modelLoading}
-            onClick={handleSend}
-            title="Send message"
-          >
-            <SendHorizonal size={18} strokeWidth={2.2} />
-          </button>
-        )}
+          {loading ? (
+            <button
+              type="button"
+              className="btn-accent chat-send-button chat-send-button--stop"
+              onClick={handleAbort}
+              title="Stop generation"
+            >
+              <Square size={18} strokeWidth={2.2} fill="white" />
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="btn-accent chat-send-button"
+              disabled={!inputText.trim() || !selectedModelPath || modelLoading}
+              onClick={handleSend}
+              title="Send message"
+            >
+              <SendHorizonal size={18} strokeWidth={2.2} />
+            </button>
+          )}
+        </div>
+
+        {/* Token counter */}
+        <div className={tokenCounterClass()}>
+          {maxTokens !== null ? (
+            <span>
+              {usedTokens.toLocaleString()} / {maxTokens.toLocaleString()}{' '}
+              tokens
+            </span>
+          ) : (
+            <span>— / — tokens</span>
+          )}
+        </div>
       </div>
     </div>
   );
