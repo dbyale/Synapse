@@ -1,4 +1,11 @@
-import { CSSProperties, FormEvent, useEffect, useRef, useState } from 'react';
+import {
+  CSSProperties,
+  FormEvent,
+  useEffect,
+  useRef,
+  useState,
+  KeyboardEvent,
+} from 'react';
 import { SendHorizonal, Square, Bot } from 'lucide-react';
 
 const s: Record<string, CSSProperties> = {
@@ -110,6 +117,7 @@ const s: Record<string, CSSProperties> = {
 };
 
 interface Message {
+  id: number;
   role: 'user' | 'assistant';
   content: string;
 }
@@ -123,37 +131,66 @@ interface LocalModel {
   isProjector: boolean;
 }
 
+// ── Persistent state that survives component unmount/remount ──
+// This lives outside the component so navigating away doesn't lose it.
+let persistentMessages: Message[] = [];
+let persistentSelectedModelPath: string = '';
+let persistentModelLoaded: string = ''; // tracks which model is actually loaded in the backend
+let persistentMessageCounter: number = 0;
+
 export default function ChatPage() {
   const [inputText, setInputText] = useState('');
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<Message[]>(persistentMessages);
   const [loading, setLoading] = useState(false);
   const [modelLoading, setModelLoading] = useState(false);
   const [localModels, setLocalModels] = useState<LocalModel[]>([]);
-  const [selectedModelPath, setSelectedModelPath] = useState<string>('');
+  const [selectedModelPath, setSelectedModelPath] = useState<string>(
+    persistentSelectedModelPath,
+  );
+  const [placeholder, setPlaceholder] = useState('Select a model first...');
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messageCounter = useRef(persistentMessageCounter);
+
+  // ── Sync persistent state whenever messages change ──
+  useEffect(() => {
+    persistentMessages = messages;
+  }, [messages]);
+
+  useEffect(() => {
+    persistentSelectedModelPath = selectedModelPath;
+  }, [selectedModelPath]);
+
+  useEffect(() => {
+    persistentMessageCounter = messageCounter.current;
+  });
 
   // ── Load local models on mount ──
   useEffect(() => {
     async function fetchLocalModels() {
       const models = await window.electronAPI.listLocalModels();
-      // Filter out projectors (mmproj files)
       const chatModels = models.filter((m: LocalModel) => !m.isProjector);
       setLocalModels(chatModels);
 
-      // Auto-select first model if available
+      // Auto-select first model if nothing is selected and nothing was previously selected
       if (chatModels.length > 0 && !selectedModelPath) {
         setSelectedModelPath(chatModels[0].filepath);
       }
     }
     fetchLocalModels();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── Load / Unload Model when selection changes ──
+  // ── Load model only when selection actually changes to a different model ──
   useEffect(() => {
     let cancelled = false;
 
     async function load() {
       if (!selectedModelPath) return;
+
+      // If this model is already loaded in the backend, skip reloading
+      if (persistentModelLoaded === selectedModelPath) {
+        return;
+      }
 
       setModelLoading(true);
       setMessages([]); // Clear chat on new model load
@@ -162,17 +199,22 @@ export default function ChatPage() {
 
       if (!cancelled) {
         setModelLoading(false);
-        if (!res.success) {
-          alert(`Failed to load model: ${res.error}`);
+        if (res.success) {
+          persistentModelLoaded = selectedModelPath;
+        } else {
+          console.warn(`Failed to load model: ${res.error}`);
+          persistentModelLoaded = '';
         }
       }
     }
 
     load();
 
+    // NOTE: No cleanup that unloads the model!
+    // We intentionally do NOT unload on unmount so the model stays loaded
+    // across page navigations.
     return () => {
       cancelled = true;
-      window.electronAPI.chatUnload();
     };
   }, [selectedModelPath]);
 
@@ -187,7 +229,16 @@ export default function ChatPage() {
             { ...last, content: last.content + token },
           ];
         }
-        return [...prev, { role: 'assistant', content: token }];
+        const id = messageCounter.current;
+        messageCounter.current += 1;
+        return [
+          ...prev,
+          {
+            id,
+            role: 'assistant',
+            content: token,
+          },
+        ];
       });
     });
 
@@ -206,6 +257,17 @@ export default function ChatPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  // Set placeholder text
+  useEffect(() => {
+    if (modelLoading) {
+      setPlaceholder('Loading model...');
+    } else if (selectedModelPath) {
+      setPlaceholder('Send a message... (Shift+Enter for new line)');
+    } else {
+      setPlaceholder('Select a model first...');
+    }
+  }, [modelLoading, selectedModelPath]);
+
   const autoResize = (e: FormEvent<HTMLTextAreaElement>) => {
     const t = e.currentTarget;
     t.style.height = 'auto';
@@ -216,11 +278,16 @@ export default function ChatPage() {
     const text = inputText.trim();
     if (!text || loading || modelLoading || !selectedModelPath) return;
 
-    setMessages((prev) => [...prev, { role: 'user', content: text }]);
+    const userMessage: Message = {
+      id: (messageCounter.current += 1),
+      role: 'user',
+      content: text,
+    };
+
+    setMessages((prev) => [...prev, userMessage]);
     setInputText('');
     setLoading(true);
 
-    // Reset textarea height
     const textarea = document.querySelector('textarea');
     if (textarea) textarea.style.height = 'auto';
 
@@ -231,11 +298,24 @@ export default function ChatPage() {
     window.electronAPI.chatAbort();
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
     }
+  };
+
+  // Handler for model selection change - unload old model before loading new one
+  const handleModelChange = async (newPath: string) => {
+    if (newPath === selectedModelPath) return;
+
+    // If switching to a different model, unload the current one
+    if (persistentModelLoaded && newPath !== persistentModelLoaded) {
+      await window.electronAPI.chatUnload();
+      persistentModelLoaded = '';
+    }
+
+    setSelectedModelPath(newPath);
   };
 
   return (
@@ -246,7 +326,7 @@ export default function ChatPage() {
         <select
           style={s.select}
           value={selectedModelPath}
-          onChange={(e) => setSelectedModelPath(e.target.value)}
+          onChange={(e) => handleModelChange(e.target.value)}
           disabled={modelLoading}
         >
           {localModels.length === 0 ? (
@@ -286,9 +366,9 @@ export default function ChatPage() {
           </div>
         )}
 
-        {messages.map((msg, i) => (
+        {messages.map((msg) => (
           <div
-            key={i}
+            key={msg.id}
             style={{
               ...s.message,
               ...(msg.role === 'user' ? s.userMessage : s.assistantMessage),
@@ -306,13 +386,7 @@ export default function ChatPage() {
           style={s.textarea}
           value={inputText}
           onChange={(e) => setInputText(e.target.value)}
-          placeholder={
-            modelLoading
-              ? 'Loading model...'
-              : selectedModelPath
-                ? 'Send a message... (Shift+Enter for new line)'
-                : 'Select a model first...'
-          }
+          placeholder={placeholder}
           rows={1}
           onInput={autoResize}
           onKeyDown={handleKeyDown}
