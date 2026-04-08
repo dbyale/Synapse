@@ -12,11 +12,13 @@ import {
   deleteLocalModel,
   cancelDownload,
 } from '../renderer/utils/models';
+import * as chatService from './chat';
 import type { SearchFilter } from '../renderer/preload.d';
 
 const execAsync = util.promisify(exec);
 
-export function registerIpcHandlers(): void {
+// The 'win' parameter is no longer needed for the chat handler, but may be used by others.
+export function registerIpcHandlers(win: BrowserWindow): void {
   // ── Settings ──
   ipcMain.handle('settings:load', () => {
     return loadSettings();
@@ -58,9 +60,9 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(
     'models:download',
     async (event, repoId: string, filename: string) => {
-      const win = BrowserWindow.fromWebContents(event.sender);
-      if (!win) throw new Error('No window found');
-      return downloadModel(repoId, filename, win);
+      const downloadWin = BrowserWindow.fromWebContents(event.sender);
+      if (!downloadWin) throw new Error('No window found');
+      return downloadModel(repoId, filename, downloadWin);
     }
   );
 
@@ -77,8 +79,69 @@ export function registerIpcHandlers(): void {
     return deleteLocalModel(filename);
   });
 
+  // ── Chat ──
+  ipcMain.handle('chat:load', async (_event, filepath: string) => {
+    try {
+      await chatService.loadModel(filepath);
+      return { success: true };
+    } catch (err: any) {
+      console.error('[chat:load]', err);
+      return { success: false, error: err.message };
+    }
+  });
+
+  // ====================================================================
+  // THIS IS THE CORRECTED HANDLER
+  // ====================================================================
+  ipcMain.handle('chat:send', async (event, text: string) => {
+    try {
+      // Define the callback function that uses `event.sender`
+      const onTokenCallback = (token: string) => {
+        // Always use event.sender to reply to the correct window.
+        // Add a check to prevent errors if the window is closed during generation.
+        if (!event.sender.isDestroyed()) {
+          event.sender.send('chat:token', token);
+        }
+      };
+
+      // Pass the reliable callback to the chat service
+      await chatService.sendMessage(text, onTokenCallback);
+
+      // Send the 'done' signal using the reliable event.sender
+      if (!event.sender.isDestroyed()) {
+        event.sender.send('chat:done');
+      }
+
+      return { success: true };
+    } catch (err: any) {
+      if (err.name === 'AbortError') {
+        if (!event.sender.isDestroyed()) {
+          event.sender.send('chat:done');
+        }
+        return { success: true, aborted: true };
+      }
+      console.error('[chat:send]', err);
+      if (!event.sender.isDestroyed()) {
+        event.sender.send('chat:done');
+        // It's also good practice to send the error back to the frontend
+        event.sender.send('chat:error', err.message);
+      }
+      return { success: false, error: err.message };
+    }
+  });
+  // ====================================================================
+
+  ipcMain.handle('chat:abort', async () => {
+    chatService.abort();
+  });
+
+  ipcMain.handle('chat:unload', async () => {
+    await chatService.unloadModel();
+  });
+
   // ── Unified Hardware Stats ──
   ipcMain.handle('get-vram-stats', async () => {
+    // ... (Your hardware stats code is fine and remains unchanged) ...
     console.log('--- STARTING HARDWARE DETECTION ---');
 
     try {

@@ -38,4 +38,25 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   getMemoryStats: () => ipcRenderer.invoke('get-memory-stats'),
+
+  // ── Chat API ──
+  chatLoad: (filepath: string) => ipcRenderer.invoke('chat:load', filepath),
+  chatSend: (text: string) => ipcRenderer.invoke('chat:send', text),
+  chatAbort: () => ipcRenderer.invoke('chat:abort'),
+  chatUnload: () => ipcRenderer.invoke('chat:unload'),
+
+  onChatToken: (callback: (token: string) => void) => {
+    const listener = (_event: IpcRendererEvent, token: string) => callback(token);
+    ipcRenderer.on('chat:token', listener);
+    return () => ipcRenderer.removeListener('chat:token', listener);
+  },
+  onChatDone: (callback: () => void) => {
+    const listener = (_event: IpcRendererEvent) => callback();
+    ipcRenderer.on('chat:done', listener);
+    return () => ipcRenderer.removeListener('chat:done', listener);
+  },
+  removeChatListeners: () => {
+    ipcRenderer.removeAllListeners('chat:token');
+    ipcRenderer.removeAllListeners('chat:done');
+  }
 });

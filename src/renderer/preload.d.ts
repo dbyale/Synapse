@@ -4,6 +4,7 @@ export interface DownloadProgress {
   downloadedBytes: number;
   totalBytes: number;
   percent: number;
+  status?: 'downloading' | 'completed' | 'failed' | 'cancelled';
 }
 
 export interface LocalModel {
@@ -11,6 +12,9 @@ export interface LocalModel {
   filepath: string;
   sizeBytes: number;
   lastModified: string;
+  generalName: string;
+  quantization: string;
+  isProjector: boolean;
 }
 
 export interface SearchFilter {
@@ -93,13 +97,13 @@ export interface HardwareStats {
 declare global {
   interface Window {
     electronAPI: {
-      // Search
+      // Search & Models
       searchModels: (
         query: string,
-        filters: SearchFilter[],
-        sort: string,
-        direction: number,
-        limit: number
+        filters?: SearchFilter[],
+        sort?: string,
+        direction?: number,
+        limit?: number
       ) => Promise<ModelSearchResult[]>;
       listModelFiles: (repoId: string) => Promise<RemoteModelFile[]>;
       downloadModel: (repoId: string, filename: string) => Promise<string>;
@@ -111,10 +115,21 @@ declare global {
 
       // Settings & Hardware
       getMemoryStats: () => Promise<SystemMemStats>;
-  getVramStats: () => Promise<HardwareStats>;
+      getVramStats: () => Promise<HardwareStats>;
       loadSettings: () => Promise<AppSettings>;
       saveSettings: (settings: AppSettings) => Promise<void>;
       pickDirectory: () => Promise<string | null>;
+
+      // Chat
+      chatLoad: (filepath: string) => Promise<{ success: boolean; error?: string }>;
+      chatSend: (text: string) => Promise<{ success: boolean; error?: string; aborted?: boolean }>;
+      chatAbort: () => Promise<void>;
+      chatUnload: () => Promise<void>;
+      onChatToken: (callback: (token: string) => void) => () => void;
+      onChatDone: (callback: () => void) => () => void;
+      removeChatListeners: () => void;
     };
   }
 }
+
+export {};
