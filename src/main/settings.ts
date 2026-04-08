@@ -17,7 +17,30 @@ const DEFAULT_SETTINGS: AppSettings = {
 
 let cachedSettings: AppSettings | null = null;
 
-// Ensure the directory exists safely
+type MemorySettingsListener = (next: {
+  allocatedVRAM: number | undefined;
+  allocatedRAM: number | undefined;
+}) => void;
+
+const memoryListeners = new Set<MemorySettingsListener>();
+
+export function onMemorySettingsChanged(
+  listener: MemorySettingsListener,
+): () => void {
+  memoryListeners.add(listener);
+  return () => memoryListeners.delete(listener);
+}
+
+function notifyMemoryListeners(settings: AppSettings) {
+  const payload = {
+    allocatedVRAM: settings.allocatedVRAM,
+    allocatedRAM:  settings.allocatedRAM,
+  };
+  for (const listener of memoryListeners) {
+    listener(payload);
+  }
+}
+
 function ensureDirectory(dir: string): boolean {
   try {
     if (!fs.existsSync(dir)) {
@@ -46,8 +69,6 @@ export function loadSettings(): AppSettings {
     loadedSettings = { ...DEFAULT_SETTINGS };
   }
 
-  // Safely ensure models directory exists.
-  // If the user set it to a disconnected external drive, fallback to default.
   const dirCreated = ensureDirectory(loadedSettings.modelsDirectory);
   if (!dirCreated) {
     console.warn('[Settings] Falling back to default models directory.');
@@ -60,15 +81,28 @@ export function loadSettings(): AppSettings {
 }
 
 export function saveSettings(settings: AppSettings): void {
+  const previous = cachedSettings;
   cachedSettings = settings;
-  const dir = path.dirname(SETTINGS_FILE);
 
+  const dir = path.dirname(SETTINGS_FILE);
   if (ensureDirectory(dir)) {
     try {
       fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2), 'utf-8');
     } catch (err) {
       console.error('[Settings] Failed to write settings to disk:', err);
     }
+  }
+
+  // Notify listeners only when memory settings actually changed
+  const vramChanged = previous?.allocatedVRAM !== settings.allocatedVRAM;
+  const ramChanged  = previous?.allocatedRAM  !== settings.allocatedRAM;
+  if (vramChanged || ramChanged) {
+    console.log(
+      `[Settings] Memory settings changed — ` +
+      `VRAM: ${previous?.allocatedVRAM ?? '?'} → ${settings.allocatedVRAM ?? '?'} MB, ` +
+      `RAM: ${previous?.allocatedRAM  ?? '?'} → ${settings.allocatedRAM  ?? '?'} MB`,
+    );
+    notifyMemoryListeners(settings);
   }
 }
 

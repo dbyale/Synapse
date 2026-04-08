@@ -7,6 +7,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('settings:save', settings),
   pickDirectory: () => ipcRenderer.invoke('settings:pick-directory'),
   getVramStats: () => ipcRenderer.invoke('get-vram-stats'),
+  chatMemoryUsage: (): Promise<{
+    modelVramUsage: number;
+    contextVramUsage: number;
+    modelRamUsage: number;
+    contextRamUsage: number;
+  } | null> => ipcRenderer.invoke('chat:memoryUsage'),
 
   // Models
   searchModels: (query: string, filters?: any[], sort?: string, direction?: number, page?: number) =>

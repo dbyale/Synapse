@@ -116,6 +116,12 @@ declare global {
       // Settings & Hardware
       getMemoryStats: () => Promise<SystemMemStats>;
       getVramStats: () => Promise<HardwareStats>;
+      chatMemoryUsage: () => Promise<{
+        modelVramUsage: number;
+        contextVramUsage: number;
+        modelRamUsage: number;
+        contextRamUsage: number;
+      } | null>;
       loadSettings: () => Promise<AppSettings>;
       saveSettings: (settings: AppSettings) => Promise<void>;
       pickDirectory: () => Promise<string | null>;

@@ -22,7 +22,6 @@ const EMPTY_MEMORY: MemoryStats = {
   maxRecommended: 0,
 };
 
-// Helper to format MB to GB cleanly
 const formatGB = (mb: number) => (mb / 1024).toFixed(1);
 
 type MemorySliderProps = {
@@ -82,24 +81,22 @@ function MemorySlider({
     );
   }
 
-  const totalUsed = stats.appAllocated + stats.otherUsed;
-  const freeSpace = Math.max(0, stats.total - totalUsed);
-
+  const appPct = Math.min((stats.appAllocated / stats.total) * 100, 100);
   const otherPct = Math.min((stats.otherUsed / stats.total) * 100, 100);
-  const appPct = Math.min(
-    (stats.appAllocated / stats.total) * 100,
-    Math.max(0, 100 - otherPct),
-  );
-  const freePct = Math.max(0, 100 - otherPct - appPct);
-
+  const freePct = Math.max(0, 100 - appPct - otherPct);
   const maxPct = Math.min((stats.maxRecommended / stats.total) * 100, 100);
-  const isExceeded = totalUsed > stats.maxRecommended;
 
-  const totalUsedGB = formatGB(totalUsed);
-  const totalGB = formatGB(stats.total);
+  const freeSpace = Math.max(
+    0,
+    stats.total - stats.appAllocated - stats.otherUsed,
+  );
+  const isExceeded = stats.appAllocated > stats.maxRecommended;
+
   const appGB = formatGB(stats.appAllocated);
   const otherGB = formatGB(stats.otherUsed);
   const freeGB = formatGB(freeSpace);
+  const totalGB = formatGB(stats.total);
+  const displayUsedGB = formatGB(stats.appAllocated);
 
   const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     onChange(parseInt(e.target.value, 10));
@@ -114,16 +111,16 @@ function MemorySlider({
       <div className="mem-header">
         {TitleNode}
         <div className="mem-usage-row">
-          <span className="mem-value">{totalUsedGB}</span>
+          <span className="mem-value">{displayUsedGB}</span>
           <span className="mem-unit"> / {totalGB} GB</span>
         </div>
       </div>
 
       <div className="mem-bar-wrapper">
-        {/* OTHER Segment */}
+        {/* OTHER — pinned to right edge, always at the same position */}
         <div
           className="mem-tooltip-target mem-segment-other"
-          style={{ left: 0, width: `${otherPct}%` }}
+          style={{ right: 0, left: 'auto', width: `${otherPct}%` }}
         >
           <div className="mem-tooltip">
             <div className="mem-tooltip-title">OS & Other Apps</div>
@@ -131,10 +128,21 @@ function MemorySlider({
           </div>
         </div>
 
-        {/* APP Segment */}
+        {/* FREE — fills gap between APP and OTHER */}
+        <div
+          className="mem-tooltip-target mem-segment-free"
+          style={{ left: `${appPct}%`, width: `${freePct}%` }}
+        >
+          <div className="mem-tooltip">
+            <div className="mem-tooltip-title">Free Space</div>
+            <div className="mem-tooltip-text">{freeGB} GB Available</div>
+          </div>
+        </div>
+
+        {/* APP — grows from left edge, renders on top of OTHER when overlapping */}
         <div
           className={`mem-tooltip-target mem-segment-app ${isExceeded ? 'exceeded' : ''}`}
-          style={{ left: `${otherPct}%`, width: `${appPct}%` }}
+          style={{ left: 0, width: `${appPct}%` }}
         >
           <div className="mem-tooltip">
             <div
@@ -147,28 +155,17 @@ function MemorySlider({
           </div>
         </div>
 
-        {/* FREE Segment */}
-        <div
-          className="mem-tooltip-target mem-segment-free"
-          style={{ left: `${otherPct + appPct}%`, width: `${freePct}%` }}
-        >
-          <div className="mem-tooltip">
-            <div className="mem-tooltip-title">Free Space</div>
-            <div className="mem-tooltip-text">{freeGB} GB Available</div>
-          </div>
-        </div>
-
-        {/* Rec Max Line */}
+        {/* MAX line — fixed at maxRecommended / total */}
         <div className="mem-max-wrapper" style={{ left: `${maxPct}%` }}>
           <div className="mem-max-label">MAX</div>
           <div className="mem-max-line" />
         </div>
 
-        {/* Range Slider */}
+        {/* Slider — full width, sits on top of all segments */}
         <input
           type="range"
           min={0}
-          max={Math.max(0, stats.total - stats.otherUsed)}
+          max={stats.total}
           value={stats.appAllocated}
           onChange={handleSliderChange}
           onMouseUp={handleSliderCommit}
@@ -178,10 +175,7 @@ function MemorySlider({
               handleSliderCommit();
           }}
           className={`mem-slider ${isExceeded ? 'slider-exceeded' : ''}`}
-          style={{
-            left: `${otherPct}%`,
-            width: `${100 - otherPct}%`,
-          }}
+          style={{ left: 0, width: '100%' }}
         />
       </div>
 
@@ -229,22 +223,52 @@ export default function SettingsPage() {
     setGpuLoading(true);
 
     try {
-      const hw: any = await window.electronAPI.getVramStats();
+      const [hw, modelMemory]: [any, any] = await Promise.all([
+        window.electronAPI.getVramStats(),
+        window.electronAPI.chatMemoryUsage(),
+      ]);
+
       if (!hw) return;
 
       setHardware(hw);
 
+      const modelRamMB = modelMemory
+        ? Math.round(
+            (modelMemory.modelRamUsage + modelMemory.contextRamUsage) /
+              1024 /
+              1024,
+          )
+        : 0;
+
+      const modelVramMB = modelMemory
+        ? Math.round(
+            (modelMemory.modelVramUsage + modelMemory.contextVramUsage) /
+              1024 /
+              1024,
+          )
+        : 0;
+
       // -- SYSTEM RAM --
       if (hw.ram && hw.ram.total > 0) {
         const savedRam = savedAllocationsRef.current.allocatedRAM;
+        const adjustedOtherRam = Math.max(0, hw.ram.otherUsed - modelRamMB);
+
+        // Safety buffer the backend uses is total - maxRecommended.
+        // Preserve that buffer and apply it on top of the adjusted otherUsed.
+        const ramSafetyBuffer = hw.ram.total - hw.ram.maxRecommended;
+        const adjustedMaxRam = Math.max(
+          0,
+          hw.ram.total - adjustedOtherRam - ramSafetyBuffer,
+        );
+
         setRamStats((prev) => ({
           total: hw.ram.total,
           appAllocated:
             prev.appAllocated > 0
               ? prev.appAllocated
               : savedRam || Math.floor(hw.ram.total / 2),
-          otherUsed: hw.ram.otherUsed,
-          maxRecommended: hw.ram.maxRecommended,
+          otherUsed: adjustedOtherRam,
+          maxRecommended: adjustedMaxRam,
         }));
       } else {
         setRamStats(EMPTY_MEMORY);
@@ -253,14 +277,22 @@ export default function SettingsPage() {
       // -- VRAM (GPU) --
       if (hw.vram && hw.vram.total > 0) {
         const savedVram = savedAllocationsRef.current.allocatedVRAM;
+        const adjustedOtherVram = Math.max(0, hw.vram.otherUsed - modelVramMB);
+
+        const vramSafetyBuffer = hw.vram.total - hw.vram.maxRecommended;
+        const adjustedMaxVram = Math.max(
+          0,
+          hw.vram.total - adjustedOtherVram - vramSafetyBuffer,
+        );
+
         setVramStats((prev) => ({
           total: hw.vram.total,
           appAllocated:
             prev.appAllocated > 0
               ? prev.appAllocated
               : savedVram || hw.vram.maxRecommended,
-          otherUsed: hw.vram.otherUsed,
-          maxRecommended: hw.vram.maxRecommended,
+          otherUsed: adjustedOtherVram,
+          maxRecommended: adjustedMaxVram,
         }));
       } else {
         setVramStats(EMPTY_MEMORY);
@@ -309,7 +341,6 @@ export default function SettingsPage() {
     };
   }, [fetchHardware]);
 
-  // Universal save function for Auto-Save
   const triggerSave = async (overrides: Partial<AppSettings> = {}) => {
     if (!settings) return;
 
@@ -349,7 +380,6 @@ export default function SettingsPage() {
     try {
       const dir = await window.electronAPI.pickDirectory();
       if (dir && dir !== settings.modelsDirectory) {
-        // Set UI visually, and immediately auto-save
         setSettings((prev) =>
           prev ? { ...prev, modelsDirectory: dir } : prev,
         );

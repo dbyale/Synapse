@@ -33,8 +33,6 @@ export default function ChatPage() {
     persistentSelectedModelPath,
   );
   const [placeholder, setPlaceholder] = useState('Select a model first...');
-
-  // ── Token counter state ──
   const [usedTokens, setUsedTokens] = useState<number>(0);
   const [maxTokens, setMaxTokens] = useState<number | null>(null);
 
@@ -52,6 +50,17 @@ export default function ChatPage() {
   useEffect(() => {
     persistentMessageCounter = messageCounter.current;
   });
+
+  // ── On mount, fetch context size immediately in case model is already loaded ──
+  useEffect(() => {
+    async function syncContextSize() {
+      const { contextSize } = await window.electronAPI.chatContextSize();
+      if (contextSize !== null) {
+        setMaxTokens(contextSize);
+      }
+    }
+    syncContextSize();
+  }, []);
 
   // ── Load local models on mount ──
   useEffect(() => {
@@ -73,9 +82,8 @@ export default function ChatPage() {
 
     async function load() {
       if (!selectedModelPath) return;
+
       if (persistentModelLoaded === selectedModelPath) {
-        // Model already loaded — still fetch context size in case we just
-        // navigated back to this page.
         const { contextSize } = await window.electronAPI.chatContextSize();
         if (!cancelled) setMaxTokens(contextSize);
         return;
@@ -88,16 +96,17 @@ export default function ChatPage() {
 
       const res = await window.electronAPI.chatLoad(selectedModelPath);
 
-      if (!cancelled) {
-        setModelLoading(false);
-        if (res.success) {
-          persistentModelLoaded = selectedModelPath;
-          const { contextSize } = await window.electronAPI.chatContextSize();
-          if (!cancelled) setMaxTokens(contextSize);
-        } else {
-          console.warn(`Failed to load model: ${res.error}`);
-          persistentModelLoaded = '';
-        }
+      if (cancelled) return;
+
+      setModelLoading(false);
+
+      if (res.success) {
+        persistentModelLoaded = selectedModelPath;
+        const { contextSize } = await window.electronAPI.chatContextSize();
+        if (!cancelled) setMaxTokens(contextSize);
+      } else {
+        console.warn(`Failed to load model: ${res.error}`);
+        persistentModelLoaded = '';
       }
     }
 
@@ -107,15 +116,33 @@ export default function ChatPage() {
     };
   }, [selectedModelPath]);
 
+  // ── Poll for context size until it is available ──
+  // Covers the case where the model finishes loading while on another page.
+  useEffect(() => {
+    if (maxTokens !== null) return;
+    if (!selectedModelPath) return;
+
+    const interval = setInterval(() => {
+      function poll() {
+        window.electronAPI.chatContextSize().then(({ contextSize }) => {
+          if (contextSize !== null) {
+            setMaxTokens(contextSize);
+            clearInterval(interval);
+          }
+        });
+      }
+      poll();
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [maxTokens, selectedModelPath]);
+
   // ── Debounced exact token count ──
-  // Runs whenever the conversation or the current input changes.
   useEffect(() => {
     if (tokenDebounceRef.current) clearTimeout(tokenDebounceRef.current);
 
     tokenDebounceRef.current = setTimeout(async () => {
-      // Build the full text the model will see: all messages + current input.
       const fullText = [...messages.map((m) => m.content), inputText].join(' ');
-
       const { count } = await window.electronAPI.chatTokenize(fullText);
       if (count !== null) setUsedTokens(count);
     }, 300);
@@ -211,13 +238,11 @@ export default function ChatPage() {
 
   // ── Token counter presentation ──
   const tokenRatio = maxTokens !== null ? usedTokens / maxTokens : 0;
-  const tokenCounterClass = () => {
-    if (tokenRatio >= 0.9)
-      return 'chat-token-counter chat-token-counter--danger';
-    if (tokenRatio >= 0.75)
-      return 'chat-token-counter chat-token-counter--warning';
-    return 'chat-token-counter';
-  };
+
+  let tokenCounterClass = 'chat-token-counter';
+  if (tokenRatio >= 0.9) tokenCounterClass += ' chat-token-counter--danger';
+  else if (tokenRatio >= 0.75)
+    tokenCounterClass += ' chat-token-counter--warning';
 
   return (
     <div className="chat-page">
@@ -234,10 +259,10 @@ export default function ChatPage() {
           ) : (
             <>
               <option value="">Select a model...</option>
-              {localModels.map((model) => (
-                <option key={model.filepath} value={model.filepath}>
-                  {model.generalName} - {model.quantization} (
-                  {(model.sizeBytes / 1024 / 1024 / 1024).toFixed(2)} GB)
+              {localModels.map((m) => (
+                <option key={m.filepath} value={m.filepath}>
+                  {m.generalName} - {m.quantization} (
+                  {(m.sizeBytes / 1024 / 1024 / 1024).toFixed(2)} GB)
                 </option>
               ))}
             </>
@@ -315,7 +340,7 @@ export default function ChatPage() {
         </div>
 
         {/* Token counter */}
-        <div className={tokenCounterClass()}>
+        <div className={tokenCounterClass}>
           {maxTokens !== null ? (
             <span>
               {usedTokens.toLocaleString()} / {maxTokens.toLocaleString()}{' '}

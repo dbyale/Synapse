@@ -314,4 +314,8 @@ export function registerIpcHandlers(win: BrowserWindow): void {
       };
     }
   });
+
+  ipcMain.handle('chat:memoryUsage', () => {
+    return chatService.getModelMemoryUsage();
+  });
 }

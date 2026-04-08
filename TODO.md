@@ -1,3 +1,9 @@
+Chat:
+  * Configuration like Temp, TopP/K, etc
+  * Other options
+  * TPS Display
+  * MMPROJ selection and upload
+
 Models:
   * Upload model with file
     * Author

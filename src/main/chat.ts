@@ -4,6 +4,7 @@ import type {
   LlamaContext,
   LlamaModel,
 } from 'node-llama-cpp';
+import { loadSettings, onMemorySettingsChanged } from './settings';
 
 let llamaModule: typeof import('node-llama-cpp') | null = null;
 let llama: Llama | null = null;
@@ -11,6 +12,15 @@ let model: LlamaModel | null = null;
 let context: LlamaContext | null = null;
 let session: LlamaChatSession | null = null;
 let abortController: AbortController | null = null;
+let currentModelPath: string | null = null;
+let reloadUnsubscribe: (() => void) | null = null;
+
+let lastResolvedMemory: {
+  modelVramUsage: number;
+  contextVramUsage: number;
+  modelRamUsage: number;
+  contextRamUsage: number;
+} | null = null;
 
 async function ensureLlamaLoaded() {
   if (!llamaModule) {
@@ -26,7 +36,73 @@ async function ensureLlamaLoaded() {
   return { llamaModule, llama };
 }
 
-export async function loadModel(filepath: string) {
+async function computeLoadParams(loadedModel: LlamaModel): Promise<{
+  gpuLayers: number;
+  contextSize: number;
+}> {
+  const settings = loadSettings();
+
+  // Settings are stored in MB — convert to bytes
+  const allocatedVRAMBytes = (settings.allocatedVRAM ?? 0) * 1024 * 1024;
+  const allocatedRAMBytes  = (settings.allocatedRAM  ?? 4096) * 1024 * 1024;
+
+  console.log(
+    `[chat] Memory budget — VRAM: ${(allocatedVRAMBytes / 1024 / 1024).toFixed(0)} MB, ` +
+    `RAM: ${(allocatedRAMBytes / 1024 / 1024).toFixed(0)} MB`,
+  );
+
+  const resolved = await loadedModel.fileInsights.configurationResolver
+    .resolveAndScoreConfig(
+      {},
+      {
+        getVramState: () => Promise.resolve({
+          total: allocatedVRAMBytes,
+          free:  allocatedVRAMBytes,
+          unifiedSize: 0,
+        }),
+        getRamState: () => Promise.resolve({
+          total: allocatedRAMBytes,
+          free:  allocatedRAMBytes,
+        }),
+      },
+    );
+
+  const { gpuLayers, contextSize } = resolved.resolvedValues;
+
+  lastResolvedMemory = {
+    modelVramUsage:   resolved.resolvedValues.modelVramUsage,
+    contextVramUsage: resolved.resolvedValues.contextVramUsage,
+    modelRamUsage:    resolved.resolvedValues.modelRamUsage,
+    contextRamUsage:  resolved.resolvedValues.contextRamUsage,
+  };
+
+  console.log(
+    `[chat] Resolved — gpuLayers: ${gpuLayers}, contextSize: ${contextSize}\n` +
+    `  modelRamUsage:    ${(resolved.resolvedValues.modelRamUsage    / 1024 / 1024).toFixed(0)} MB\n` +
+    `  contextRamUsage:  ${(resolved.resolvedValues.contextRamUsage  / 1024 / 1024).toFixed(0)} MB\n` +
+    `  modelVramUsage:   ${(resolved.resolvedValues.modelVramUsage   / 1024 / 1024).toFixed(0)} MB\n` +
+    `  contextVramUsage: ${(resolved.resolvedValues.contextVramUsage / 1024 / 1024).toFixed(0)} MB\n` +
+    `  compatibilityScore: ${resolved.compatibilityScore}, bonusScore: ${resolved.bonusScore}`,
+  );
+
+  return { gpuLayers, contextSize };
+}
+
+async function reloadCurrentModel() {
+  if (!currentModelPath) return;
+  console.log('[chat] Memory settings changed — reloading model with new params...');
+  await loadModel(currentModelPath);
+}
+
+reloadUnsubscribe = onMemorySettingsChanged(() => {
+  reloadCurrentModel().catch((err) => {
+    console.error('[chat] Failed to reload model after memory settings change:', err);
+  });
+});
+
+export async function loadModel(
+  filepath: string,
+): Promise<{ success: boolean; error?: string }> {
   console.log('[chat] Loading model from:', filepath);
   await unloadModel();
 
@@ -37,11 +113,36 @@ export async function loadModel(filepath: string) {
       throw new Error('Llama instance could not be initialized.');
     }
 
-    console.log('[chat] Creating model instance...');
-    model = await llamaInstance.loadModel({ modelPath: filepath });
+    console.log('[chat] Computing load params...');
+    let gpuLayers: number | undefined = undefined;
+    let contextSize: number = 2048;
 
-    console.log('[chat] Creating context...');
-    context = await model.createContext({ contextSize: 200 });
+    const tempModel = await llamaInstance.loadModel({ modelPath: filepath });
+
+    try {
+      const params = await computeLoadParams(tempModel);
+      gpuLayers   = params.gpuLayers;
+      contextSize = params.contextSize;
+    } catch (paramError) {
+      console.error(
+        '[chat] computeLoadParams failed, falling back to safe defaults:',
+        paramError,
+      );
+    }
+
+    await tempModel.dispose();
+
+    console.log('[chat] Creating model instance...');
+    model = await llamaInstance.loadModel({
+      modelPath: filepath,
+      ...(gpuLayers !== undefined && { gpuLayers }),
+    });
+
+    console.log(`[chat] Creating context — contextSize: ${contextSize}`);
+    context = await model.createContext({
+      contextSize,
+      ignoreMemorySafetyChecks: true,
+    });
 
     console.log('[chat] Creating chat session...');
     const { LlamaChatSession } = module;
@@ -49,11 +150,14 @@ export async function loadModel(filepath: string) {
       contextSequence: context.getSequence(),
     });
 
+    currentModelPath = filepath;
+
     console.log('[chat] Model loaded successfully');
-  } catch (error) {
+    return { success: true };
+  } catch (error: any) {
     console.error('[chat] Error loading model:', error);
     await unloadModel();
-    throw error;
+    return { success: false, error: error.message };
   }
 }
 
@@ -102,6 +206,7 @@ export function abort() {
 export async function unloadModel() {
   console.log('[chat] Unloading model...');
   abort();
+  lastResolvedMemory = null;
   try {
     if (session) session = null;
     if (context) {
@@ -118,21 +223,17 @@ export async function unloadModel() {
   }
 }
 
-/**
- * Returns the exact token count for the given text using the loaded model's
- * tokenizer. Returns null if no model is currently loaded.
- */
 export async function tokenize(text: string): Promise<number | null> {
   if (!model) return null;
   const tokens = model.tokenize(text);
   return tokens.length;
 }
 
-/**
- * Returns the context size (max tokens) of the loaded model's context.
- * Returns null if no context is currently loaded.
- */
 export function getContextSize(): number | null {
   if (!context) return null;
   return context.contextSize;
+}
+
+export function getModelMemoryUsage() {
+  return lastResolvedMemory;
 }
