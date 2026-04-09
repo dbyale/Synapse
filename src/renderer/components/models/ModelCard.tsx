@@ -750,8 +750,10 @@ export default function ModelCard({
                                   Model size (
                                   {formatBytes(group.totalSizeBytes)}) exceeds
                                   your allocated memory (
-                                  {(systemMemoryMB / 1024).toFixed(1)} GB).
-                                  System will crash or heavily page to disk.
+                                  {(systemMemoryMB / 1024).toFixed(1)} GB). The
+                                  model may fail to load or run out of memory
+                                  during use. Consider increasing the memory
+                                  limit in settings.
                                 </span>
                               </div>
                             )}
@@ -766,7 +768,9 @@ export default function ModelCard({
                                   Estimated max context is only ~
                                   {maxContext.toLocaleString()} tokens (~
                                   {maxWords.toLocaleString()} words). Model may
-                                  run out of memory during long conversations.
+                                  run out of memory during conversations.
+                                  Consider increasing the memory limit in
+                                  settings.
                                 </span>
                               </div>
                             )}

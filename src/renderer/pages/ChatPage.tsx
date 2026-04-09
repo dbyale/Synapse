@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useRef, useState, KeyboardEvent } from 'react';
 import { SendHorizonal, Square, Bot } from 'lucide-react';
+import MarkdownRenderer from '../components/MarkdownRenderer';
 import '../styles/ChatPage.css';
 
 interface Message {
@@ -55,9 +56,7 @@ export default function ChatPage() {
   useEffect(() => {
     async function syncContextSize() {
       const { contextSize } = await window.electronAPI.chatContextSize();
-      if (contextSize !== null) {
-        setMaxTokens(contextSize);
-      }
+      if (contextSize !== null) setMaxTokens(contextSize);
     }
     syncContextSize();
   }, []);
@@ -116,22 +115,23 @@ export default function ChatPage() {
     };
   }, [selectedModelPath]);
 
-  // ── Poll for context size until it is available ──
-  // Covers the case where the model finishes loading while on another page.
   useEffect(() => {
-    if (maxTokens !== null) return;
-    if (!selectedModelPath) return;
-
     const interval = setInterval(() => {
-      function poll() {
-        window.electronAPI.chatContextSize().then(({ contextSize }) => {
+      if (maxTokens !== null || !selectedModelPath) {
+        clearInterval(interval);
+        return;
+      }
+
+      window.electronAPI
+        .chatContextSize()
+        .then(({ contextSize }) => {
           if (contextSize !== null) {
             setMaxTokens(contextSize);
             clearInterval(interval);
           }
-        });
-      }
-      poll();
+          return contextSize;
+        })
+        .catch(() => {});
     }, 1000);
 
     return () => clearInterval(interval);
@@ -236,7 +236,7 @@ export default function ChatPage() {
     setSelectedModelPath(newPath);
   };
 
-  // ── Token counter presentation ──
+  // ── Token counter class ──
   const tokenRatio = maxTokens !== null ? usedTokens / maxTokens : 0;
 
   let tokenCounterClass = 'chat-token-counter';
@@ -248,7 +248,10 @@ export default function ChatPage() {
     <div className="chat-page">
       {/* Model Selector */}
       <div className="chat-model-selector">
-        <Bot size={20} style={{ color: 'var(--text-secondary)' }} />
+        <Bot
+          size={18}
+          style={{ color: 'var(--text-secondary)', flexShrink: 0 }}
+        />
         <select
           value={selectedModelPath}
           onChange={(e) => handleModelChange(e.target.value)}
@@ -261,7 +264,7 @@ export default function ChatPage() {
               <option value="">Select a model...</option>
               {localModels.map((m) => (
                 <option key={m.filepath} value={m.filepath}>
-                  {m.generalName} - {m.quantization} (
+                  {m.generalName} — {m.quantization} (
                   {(m.sizeBytes / 1024 / 1024 / 1024).toFixed(2)} GB)
                 </option>
               ))}
@@ -277,7 +280,7 @@ export default function ChatPage() {
       <div className="chat-messages">
         {messages.length === 0 && (
           <div className="chat-empty-state">
-            <SendHorizonal className="chat-empty-state-icon" size={48} />
+            <SendHorizonal className="chat-empty-state-icon" size={44} />
             <h2>
               {modelLoading ? 'Loading model...' : 'Start a conversation'}
             </h2>
@@ -292,13 +295,18 @@ export default function ChatPage() {
         {messages.map((msg) => (
           <div
             key={msg.id}
-            className={`chat-message ${
-              msg.role === 'user'
-                ? 'chat-message--user'
-                : 'chat-message--assistant'
-            }`}
+            className={`chat-message chat-message--${msg.role}`}
           >
-            {msg.content}
+            <div className="chat-message__label">
+              {msg.role === 'user' ? 'You' : 'Assistant'}
+            </div>
+            <div className="chat-message__bubble">
+              {msg.role === 'assistant' ? (
+                <MarkdownRenderer content={msg.content} />
+              ) : (
+                msg.content
+              )}
+            </div>
           </div>
         ))}
         <div ref={messagesEndRef} />
@@ -324,7 +332,7 @@ export default function ChatPage() {
               onClick={handleAbort}
               title="Stop generation"
             >
-              <Square size={18} strokeWidth={2.2} fill="white" />
+              <Square size={16} strokeWidth={2.2} fill="white" />
             </button>
           ) : (
             <button
@@ -334,12 +342,11 @@ export default function ChatPage() {
               onClick={handleSend}
               title="Send message"
             >
-              <SendHorizonal size={18} strokeWidth={2.2} />
+              <SendHorizonal size={16} strokeWidth={2.2} />
             </button>
           )}
         </div>
 
-        {/* Token counter */}
         <div className={tokenCounterClass}>
           {maxTokens !== null ? (
             <span>
