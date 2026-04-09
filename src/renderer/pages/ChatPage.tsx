@@ -28,6 +28,7 @@ export default function ChatPage() {
   const [inputText, setInputText] = useState('');
   const [messages, setMessages] = useState<Message[]>(persistentMessages);
   const [loading, setLoading] = useState(false);
+  const [processing, setProcessing] = useState(false);
   const [modelLoading, setModelLoading] = useState(false);
   const [localModels, setLocalModels] = useState<LocalModel[]>([]);
   const [selectedModelPath, setSelectedModelPath] = useState<string>(
@@ -115,6 +116,7 @@ export default function ChatPage() {
     };
   }, [selectedModelPath]);
 
+  // ── Poll for context size until available ──
   useEffect(() => {
     const interval = setInterval(() => {
       if (maxTokens !== null || !selectedModelPath) {
@@ -155,22 +157,27 @@ export default function ChatPage() {
   // ── Listen for streaming tokens ──
   useEffect(() => {
     const removeTokenListener = window.electronAPI.onChatToken((token) => {
+      setProcessing(false);
       setMessages((prev) => {
         const last = prev[prev.length - 1];
         if (last && last.role === 'assistant') {
           return [
             ...prev.slice(0, -1),
-            { ...last, content: last.content + token },
+            { ...last, content: (last.content + token).replace(/^\s+/, '') },
           ];
         }
         const id = messageCounter.current;
         messageCounter.current += 1;
-        return [...prev, { id, role: 'assistant', content: token }];
+        return [
+          ...prev,
+          { id, role: 'assistant', content: token.replace(/^\s+/, '') },
+        ];
       });
     });
 
     const removeDoneListener = window.electronAPI.onChatDone(() => {
       setLoading(false);
+      setProcessing(false);
     });
 
     return () => {
@@ -182,7 +189,7 @@ export default function ChatPage() {
   // ── Auto-scroll ──
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages, loading, processing]);
 
   // ── Placeholder text ──
   useEffect(() => {
@@ -211,6 +218,7 @@ export default function ChatPage() {
     setMessages((prev) => [...prev, userMessage]);
     setInputText('');
     setLoading(true);
+    setProcessing(true);
 
     const textarea = document.querySelector('textarea');
     if (textarea) textarea.style.height = 'auto';
@@ -278,7 +286,7 @@ export default function ChatPage() {
 
       {/* Messages */}
       <div className="chat-messages">
-        {messages.length === 0 && (
+        {messages.length === 0 && !loading && (
           <div className="chat-empty-state">
             <SendHorizonal className="chat-empty-state-icon" size={44} />
             <h2>
@@ -300,6 +308,18 @@ export default function ChatPage() {
             <div className="chat-message__label">
               {msg.role === 'user' ? 'You' : 'Assistant'}
             </div>
+            {loading &&
+              msg === messages[messages.length - 1] &&
+              msg.role === 'assistant' && (
+                <div className="chat-message__indicator-box">
+                  <div className="chat-indicator">
+                    <div className="chat-indicator__spinner" />
+                    <span className="chat-indicator__label">
+                      {processing ? 'Processing prompt…' : 'Generating…'}
+                    </span>
+                  </div>
+                </div>
+              )}
             <div className="chat-message__bubble">
               {msg.role === 'assistant' ? (
                 <MarkdownRenderer content={msg.content} />
@@ -309,6 +329,24 @@ export default function ChatPage() {
             </div>
           </div>
         ))}
+
+        {/* Processing / generating indicator - shown when no assistant message exists yet */}
+        {loading &&
+          (messages.length === 0 ||
+            messages[messages.length - 1].role !== 'assistant') && (
+            <div className="chat-message chat-message--assistant">
+              <div className="chat-message__label">Assistant</div>
+              <div className="chat-message__indicator-box">
+                <div className="chat-indicator">
+                  <div className="chat-indicator__spinner" />
+                  <span className="chat-indicator__label">
+                    {processing ? 'Processing prompt…' : 'Generating…'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
         <div ref={messagesEndRef} />
       </div>
 

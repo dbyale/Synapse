@@ -100,6 +100,7 @@
   display: flex;
   flex-direction: column;
   max-width: 78%;
+  gap: 6px;
 }
 
 .chat-message--user {
@@ -138,12 +139,53 @@
   text-transform: uppercase;
   letter-spacing: 0.5px;
   color: var(--text-secondary);
-  margin-bottom: 4px;
   padding: 0 2px;
 }
 
 .chat-message--user .chat-message__label {
   text-align: right;
+}
+
+/* ── Indicator box ── */
+
+.chat-message__indicator-box {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 14px;
+  border-bottom-left-radius: 4px;
+}
+
+/* ============================================================================
+   PROCESSING / GENERATING INDICATOR
+   ============================================================================ */
+
+.chat-indicator {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.chat-indicator__label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.chat-indicator__spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  flex-shrink: 0;
+  animation: chat-spin 0.75s linear infinite;
+}
+
+@keyframes chat-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* ============================================================================
@@ -177,12 +219,23 @@
   line-height: 1.3;
 }
 
-.md h1 { font-size: 20px; }
-.md h2 { font-size: 17px; }
-.md h3 { font-size: 15px; }
+.md h1 {
+  font-size: 20px;
+}
+
+.md h2 {
+  font-size: 17px;
+}
+
+.md h3 {
+  font-size: 15px;
+}
+
 .md h4,
 .md h5,
-.md h6 { font-size: 14px; }
+.md h6 {
+  font-size: 14px;
+}
 
 /* ── Lists ── */
 

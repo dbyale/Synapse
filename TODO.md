@@ -3,6 +3,8 @@ Chat:
   * Other options
   * TPS Display
   * MMPROJ selection and upload
+  * Set default model
+  * Cancel model loading
 
 Models:
   * Upload model with file
