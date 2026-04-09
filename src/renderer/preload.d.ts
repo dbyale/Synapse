@@ -136,6 +136,19 @@ declare global {
       removeChatListeners: () => void;
       chatTokenize: (text: string) => Promise<{ count: number | null }>;
       chatContextSize: () => Promise<{ contextSize: number | null }>;
+      browseForFiles: (options: {
+        title: string;
+        filters?: { name: string; extensions: string[] }[];
+        multiSelections?: boolean;
+      }) => Promise<string[]>;
+
+      registerLocalModel: (payload: {
+        name: string;
+        author: string;
+        modelPaths: string[];
+        projectorPaths: string[];
+      }) => Promise<{ success: boolean; message?: string }>;
+
     };
   }
 }

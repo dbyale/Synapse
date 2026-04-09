@@ -11,6 +11,7 @@ import {
   HardDrive,
   AlertCircle,
   Lightbulb,
+  Plus,
 } from 'lucide-react';
 import type {
   ModelSearchResult,
@@ -23,6 +24,7 @@ import type {
 import ModelFilterPanel from '../components/models/ModelFilterPanel';
 import ModelSortDropdown from '../components/models/ModelSortDropdown';
 import type { SortOption } from '../components/models/ModelSortDropdown';
+import AddLocalModelModal from '../components/models/AddLocalModel';
 import ModelCard from '../components/models/ModelCard';
 import LocalModelCard, {
   ExtendedLocalModel,
@@ -92,6 +94,8 @@ export default function ModelsPage() {
 
   const [selectedLanguage, setSelectedLanguage] = useState<string | null>(null);
   const [selectedPipeline, setSelectedPipeline] = useState<string | null>(null);
+
+  const [showAddLocalModal, setShowAddLocalModal] = useState(false);
 
   const [expanded, setExpanded] = useState<ExpandedModel | null>(null);
   const [localModels, setLocalModels] = useState<LocalModel[]>([]);
@@ -502,6 +506,39 @@ export default function ModelsPage() {
     }
   };
 
+  const handleAddLocalModel = async (
+    name: string,
+    author: string,
+    modelPaths: string[],
+    projectorPaths: string[],
+  ): Promise<void> => {
+    try {
+      console.log('Adding local model:', {
+        name,
+        author,
+        modelPaths,
+        projectorPaths,
+      });
+
+      const result = await window.electronAPI.registerLocalModel({
+        name,
+        author,
+        modelPaths,
+        projectorPaths,
+      });
+
+      console.log('Model registered:', result);
+
+      // Refresh the local model list
+      const updated = await window.electronAPI.listLocalModels();
+      console.log('Updated models list:', updated);
+      setLocalModels(updated);
+    } catch (err: any) {
+      console.error('Failed to add local model:', err);
+      throw err; // Re-throw so the modal can display the error
+    }
+  };
+
   const handleDeleteGroup = async (filenames: string[]): Promise<void> => {
     try {
       await Promise.all(
@@ -649,6 +686,29 @@ export default function ModelsPage() {
                 onSearchModel={handleSearchLocalModel}
               />
             ))}
+
+          {/* ── Add Local Model Button ── */}
+          <div
+            className="find-more-container"
+            style={{ borderTop: 'none', marginTop: 0, paddingTop: 0 }}
+          >
+            <button
+              type="button"
+              className="alm-upload-btn" // reuses the dashed-border style
+              style={{ alignSelf: 'center' }}
+              onClick={() => setShowAddLocalModal(true)}
+            >
+              <Plus size={15} /> Add Local Model
+            </button>
+          </div>
+
+          {/* ── Modal ── */}
+          {showAddLocalModal && (
+            <AddLocalModelModal
+              onClose={() => setShowAddLocalModal(false)}
+              onAdd={handleAddLocalModel}
+            />
+          )}
 
           <div className="find-more-container">
             <button
