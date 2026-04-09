@@ -39,6 +39,7 @@ export default function ChatPage() {
   const [maxTokens, setMaxTokens] = useState<number | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const messageCounter = useRef(persistentMessageCounter);
   const tokenDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -186,9 +187,19 @@ export default function ChatPage() {
     };
   }, []);
 
-  // ── Auto-scroll ──
+  // ── Smart auto-scroll: only scroll if already at bottom ──
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const container = messagesContainerRef.current;
+    if (!container) return;
+
+    const isAtBottom =
+      Math.abs(
+        container.scrollHeight - container.scrollTop - container.clientHeight,
+      ) < 10;
+
+    if (isAtBottom) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
   }, [messages, loading, processing]);
 
   // ── Placeholder text ──
@@ -285,7 +296,7 @@ export default function ChatPage() {
       </div>
 
       {/* Messages */}
-      <div className="chat-messages">
+      <div className="chat-messages" ref={messagesContainerRef}>
         {messages.length === 0 && !loading && (
           <div className="chat-empty-state">
             <SendHorizonal className="chat-empty-state-icon" size={44} />
