@@ -179,7 +179,7 @@ export async function loadModel(
 
 export async function sendMessage(
   text: string,
-  onToken: (token: string) => void,
+  onToken: (token: string, segmentType?: 'thought' | 'comment') => void,
 ): Promise<string> {
   if (!session) {
     throw new Error('No model loaded. Please load a model first.');
@@ -192,9 +192,28 @@ export async function sendMessage(
 
     const response = await session.prompt(text, {
       signal: abortController.signal,
-      onTextChunk: (chunk: { text: string } | string) => {
-        const token = typeof chunk === 'string' ? chunk : chunk.text;
-        onToken(token);
+      onResponseChunk: (chunk) => {
+        // Determine segment type from chunk
+        let segmentType: 'thought' | 'comment' | undefined = undefined;
+
+        if (chunk.type === 'segment') {
+          if (chunk.segmentType === 'thought') {
+            segmentType = 'thought';
+          } else if (chunk.segmentType === 'comment') {
+            segmentType = 'comment';
+          }
+
+          // Optional: Log segment boundaries for debugging
+          if (chunk.segmentStartTime != null) {
+            console.log(`[chat] Segment start: ${chunk.segmentType}`);
+          }
+          if (chunk.segmentEndTime != null) {
+            console.log(`[chat] Segment end: ${chunk.segmentType}`);
+          }
+        }
+
+        // Call the callback with token and optional segment type
+        onToken(chunk.text, segmentType);
       },
     });
 

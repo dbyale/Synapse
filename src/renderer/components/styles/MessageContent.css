@@ -1,0 +1,128 @@
+/* ============================================================================
+   MESSAGE CONTENT — SEGMENTS
+   ============================================================================ */
+
+.message-content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.message-segment {
+  width: 100%;
+}
+
+/* ── Thought segment ── */
+
+.message-segment--thought {
+  background: rgba(137, 180, 250, 0.05);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.message-segment__thought-toggle {
+  width: 100%;
+  background: transparent;
+  border: none;
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  font-family: inherit;
+  transition: background 0.15s ease;
+  text-align: left;
+}
+
+.message-segment__thought-toggle:hover {
+  background: rgba(137, 180, 250, 0.08);
+}
+
+.message-segment__thought-toggle span {
+  flex: 1;
+}
+
+.message-segment__chevron {
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+  color: var(--accent);
+}
+
+.message-segment__chevron--open {
+  transform: rotate(90deg);
+}
+
+.message-segment--thought .message-segment__content {
+  padding: 0 14px 12px 14px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  border-top: 1px solid rgba(137, 180, 250, 0.15);
+  margin-top: -2px;
+}
+
+/* ── Comment segment ── */
+
+.message-segment--comment {
+  background: rgba(249, 226, 175, 0.05);
+  border-left: 3px solid #f9e2af;
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+}
+
+.message-segment__label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: #f9e2af;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.message-segment--comment .message-segment__content {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+/* ── Normal segment ── */
+
+.message-segment--normal {
+  /* No special styling, just renders markdown */
+}
+
+/* ============================================================================
+   RESPONSIVE BEHAVIOR
+   ============================================================================ */
+
+@media (max-width: 768px) {
+  .message-segment__thought-toggle {
+    padding: 8px 12px;
+    font-size: 12px;
+  }
+
+  .message-segment--thought .message-segment__content {
+    padding: 0 12px 10px 12px;
+    font-size: 12px;
+  }
+
+  .message-segment--comment {
+    padding: 8px 12px;
+  }
+
+  .message-segment--comment .message-segment__content {
+    font-size: 12px;
+  }
+
+  .message-segment__label {
+    font-size: 11px;
+  }
+}

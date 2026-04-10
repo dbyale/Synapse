@@ -138,17 +138,14 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     }
   });
 
-  // ====================================================================
-  // THIS IS THE CORRECTED HANDLER
-  // ====================================================================
   ipcMain.handle('chat:send', async (event, text: string) => {
     try {
-      // Define the callback function that uses `event.sender`
-      const onTokenCallback = (token: string) => {
+      // Define the callback function with segment type support
+      const onTokenCallback = (token: string, segmentType?: 'thought' | 'comment') => {
         // Always use event.sender to reply to the correct window.
         // Add a check to prevent errors if the window is closed during generation.
         if (!event.sender.isDestroyed()) {
-          event.sender.send('chat:token', token);
+          event.sender.send('chat:token', { token, segmentType });
         }
       };
 
@@ -177,7 +174,6 @@ export function registerIpcHandlers(win: BrowserWindow): void {
       return { success: false, error: err.message };
     }
   });
-  // ====================================================================
 
   ipcMain.handle('chat:abort', async () => {
     chatService.abort();

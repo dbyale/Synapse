@@ -1,14 +1,20 @@
 import { FormEvent, useEffect, useRef, useState, KeyboardEvent } from 'react';
 import { SendHorizonal, Square, Bot, Settings } from 'lucide-react';
-import MarkdownRenderer from '../components/MarkdownRenderer';
+import MessageContent from '../components/MessageContent';
 import SystemPromptMenu from '../components/SystemPromptMenu';
 import ConfirmDialog from '../components/ConfirmDialog';
 import '../styles/ChatPage.css';
 
+interface MessageSegment {
+  id: string;
+  text: string;
+  type: 'thought' | 'comment' | 'normal';
+}
+
 interface Message {
   id: number;
   role: 'user' | 'assistant';
-  content: string;
+  content: MessageSegment[];
 }
 
 interface LocalModel {
@@ -55,6 +61,7 @@ export default function ChatPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const messageCounter = useRef(persistentMessageCounter);
+  const segmentCounter = useRef(0);
   const tokenDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const initialSystemPromptApplied = useRef(false);
 
@@ -262,7 +269,11 @@ export default function ChatPage() {
     if (tokenDebounceRef.current) clearTimeout(tokenDebounceRef.current);
 
     tokenDebounceRef.current = setTimeout(async () => {
-      const fullText = [...messages.map((m) => m.content), inputText].join(' ');
+      // Extract text from all segments
+      const fullText = [
+        ...messages.map((m) => m.content.map((seg) => seg.text).join('')),
+        inputText,
+      ].join(' ');
       const { count } = await window.electronAPI.chatTokenize(fullText);
       if (count !== null) setUsedTokens(count);
     }, 300);
@@ -274,24 +285,71 @@ export default function ChatPage() {
 
   // ── Listen for streaming tokens ──
   useEffect(() => {
-    const removeTokenListener = window.electronAPI.onChatToken((token) => {
-      setProcessing(false);
-      setMessages((prev) => {
-        const last = prev[prev.length - 1];
-        if (last && last.role === 'assistant') {
+    const removeTokenListener = window.electronAPI.onChatToken(
+      ({ token, segmentType }) => {
+        setProcessing(false);
+        setMessages((prev) => {
+          const last = prev[prev.length - 1];
+
+          if (last && last.role === 'assistant') {
+            const updatedContent = [...last.content];
+            const lastSegment = updatedContent[updatedContent.length - 1];
+
+            // Determine the current segment type
+            let currentType: 'thought' | 'comment' | 'normal' = 'normal';
+            if (segmentType === 'thought') {
+              currentType = 'thought';
+            } else if (segmentType === 'comment') {
+              currentType = 'comment';
+            }
+
+            // If the segment type matches the last segment, append to it
+            if (lastSegment && lastSegment.type === currentType) {
+              lastSegment.text += token;
+            } else {
+              // Different segment type, create a new segment
+              segmentCounter.current += 1;
+              const segmentId = `seg-${Date.now()}-${segmentCounter.current}`;
+              updatedContent.push({
+                id: segmentId,
+                text: token,
+                type: currentType,
+              });
+            }
+
+            return [...prev.slice(0, -1), { ...last, content: updatedContent }];
+          }
+
+          // Create new assistant message
+          const id = messageCounter.current;
+          messageCounter.current += 1;
+
+          let initialType: 'thought' | 'comment' | 'normal' = 'normal';
+          if (segmentType === 'thought') {
+            initialType = 'thought';
+          } else if (segmentType === 'comment') {
+            initialType = 'comment';
+          }
+
+          segmentCounter.current += 1;
+          const segmentId = `seg-${Date.now()}-${segmentCounter.current}`;
           return [
-            ...prev.slice(0, -1),
-            { ...last, content: (last.content + token).replace(/^\s+/, '') },
+            ...prev,
+            {
+              id,
+              role: 'assistant',
+              content: [
+                {
+                  id: segmentId,
+                  text: token.replace(/^\s+/, ''),
+                  type: initialType,
+                },
+              ],
+            },
           ];
-        }
-        const id = messageCounter.current;
-        messageCounter.current += 1;
-        return [
-          ...prev,
-          { id, role: 'assistant', content: token.replace(/^\s+/, '') },
-        ];
-      });
-    });
+        });
+      },
+    );
 
     const removeDoneListener = window.electronAPI.onChatDone(() => {
       setLoading(false);
@@ -312,7 +370,7 @@ export default function ChatPage() {
     const isAtBottom =
       Math.abs(
         container.scrollHeight - container.scrollTop - container.clientHeight,
-      ) < 50;
+      ) < 40;
 
     if (isAtBottom) {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -337,10 +395,19 @@ export default function ChatPage() {
     const text = inputText.trim();
     if (!text || loading || modelLoading || !selectedModelPath) return;
 
+    messageCounter.current += 1;
+    segmentCounter.current += 1;
+
     const userMessage: Message = {
-      id: (messageCounter.current += 1),
+      id: messageCounter.current,
       role: 'user',
-      content: text,
+      content: [
+        {
+          id: `seg-${Date.now()}-${segmentCounter.current}`,
+          text,
+          type: 'normal',
+        },
+      ],
     };
 
     setMessages((prev) => [...prev, userMessage]);
@@ -351,7 +418,6 @@ export default function ChatPage() {
     const textarea = document.querySelector('textarea');
     if (textarea) textarea.style.height = 'auto';
 
-    // Send the message directly - system prompt is already set in the session
     await window.electronAPI.chatSend(text);
   };
 
@@ -494,9 +560,9 @@ export default function ChatPage() {
               )}
             <div className="chat-message__bubble">
               {msg.role === 'assistant' ? (
-                <MarkdownRenderer content={msg.content} />
+                <MessageContent segments={msg.content} />
               ) : (
-                msg.content
+                msg.content[0]?.text || ''
               )}
             </div>
           </div>

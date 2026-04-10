@@ -127,12 +127,15 @@ declare global {
       pickDirectory: () => Promise<string | null>;
 
       // Chat
-      chatLoad: (filepath: string, systemPrompt?: string) => Promise<{ success: boolean; error?: string }>;
+
       chatSend: (text: string) => Promise<{ success: boolean; error?: string; aborted?: boolean }>;
+      onChatToken: (callback: (data: { token: string; segmentType?: 'thought' | 'comment' }) => void) => () => void;
+      onChatDone: (callback: () => void) => () => void;
+      onChatError: (callback: (error: string) => void) => () => void;
+
+      chatLoad: (filepath: string, systemPrompt?: string) => Promise<{ success: boolean; error?: string }>;
       chatAbort: () => Promise<void>;
       chatUnload: () => Promise<void>;
-      onChatToken: (callback: (token: string) => void) => () => void;
-      onChatDone: (callback: () => void) => () => void;
       removeChatListeners: () => void;
       chatTokenize: (text: string) => Promise<{ count: number | null }>;
       chatContextSize: () => Promise<{ contextSize: number | null }>;

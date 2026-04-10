@@ -40,8 +40,9 @@ export function parseQuantization(
   for (const token of tokens) {
     switch (token) {
       // Methods
-      case 'K': info.details.push('K-Quant (mixed layer bitrates for optimal quality)'); break;
-      case '0': info.details.push('Legacy Type 0 (basic block quant, lower quality)'); break;
+      case 'K': info.details.push('K-Quant (uses different precision across the model for better quality)'); break;
+      case 'NL': info.details.push('Nonlinear Quantization (better accuracy by focusing precision where it matters)'); break;
+      case '0': info.details.push('Legacy Type 0 (older method, lower quality)'); break;
       case '1': info.details.push('Legacy Type 1 (higher accuracy than Type 0)'); break;
 
       // Sizes

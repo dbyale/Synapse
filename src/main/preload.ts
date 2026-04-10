@@ -60,21 +60,30 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getMemoryStats: () => ipcRenderer.invoke('get-memory-stats'),
 
   // ── Chat API ──
-  chatLoad: (filepath: string, systemPrompt?: string) => ipcRenderer.invoke('chat:load', filepath, systemPrompt),
   chatSend: (text: string) => ipcRenderer.invoke('chat:send', text),
-  chatAbort: () => ipcRenderer.invoke('chat:abort'),
-  chatUnload: () => ipcRenderer.invoke('chat:unload'),
 
-  onChatToken: (callback: (token: string) => void) => {
-    const listener = (_event: IpcRendererEvent, token: string) => callback(token);
+  onChatToken: (callback: (data: { token: string; segmentType?: 'thought' | 'comment' }) => void) => {
+    const listener = (_: any, data: { token: string; segmentType?: 'thought' | 'comment' }) => callback(data);
     ipcRenderer.on('chat:token', listener);
     return () => ipcRenderer.removeListener('chat:token', listener);
   },
+
   onChatDone: (callback: () => void) => {
-    const listener = (_event: IpcRendererEvent) => callback();
+    const listener = () => callback();
     ipcRenderer.on('chat:done', listener);
     return () => ipcRenderer.removeListener('chat:done', listener);
   },
+
+  onChatError: (callback: (error: string) => void) => {
+    const listener = (_: any, error: string) => callback(error);
+    ipcRenderer.on('chat:error', listener);
+    return () => ipcRenderer.removeListener('chat:error', listener);
+  },
+
+  chatLoad: (filepath: string, systemPrompt?: string) => ipcRenderer.invoke('chat:load', filepath, systemPrompt),
+  chatAbort: () => ipcRenderer.invoke('chat:abort'),
+  chatUnload: () => ipcRenderer.invoke('chat:unload'),
+
   removeChatListeners: () => {
     ipcRenderer.removeAllListeners('chat:token');
     ipcRenderer.removeAllListeners('chat:done');
