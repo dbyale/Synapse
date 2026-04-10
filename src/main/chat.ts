@@ -289,6 +289,25 @@ export function getContextSize(): number | null {
   return context.contextSize;
 }
 
+export function getContextUsage(): { used: number; total: number } | null {
+  if (!context || !session) return null;
+
+  try {
+    const sequence = session.sequence;
+    const inputTokens = sequence.tokenMeter.usedInputTokens;
+    const outputTokens = sequence.tokenMeter.usedOutputTokens;
+    const totalUsed = inputTokens + outputTokens;
+    const totalTokens = context.contextSize;
+
+    return {
+      used: totalUsed,
+      total: totalTokens
+    };
+  } catch (error) {
+    return null;
+  }
+}
+
 export function getModelMemoryUsage() {
   return lastResolvedMemory;
 }

@@ -89,6 +89,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.removeAllListeners('chat:done');
   },
 
+  chatContextUsage: () => ipcRenderer.invoke('chat:contextUsage'),
+
   chatTokenize: (text: string): Promise<{ count: number | null }> =>
     ipcRenderer.invoke('chat:tokenize', text),
 

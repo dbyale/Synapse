@@ -62,7 +62,6 @@ export default function ChatPage() {
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const messageCounter = useRef(persistentMessageCounter);
   const segmentCounter = useRef(0);
-  const tokenDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const initialSystemPromptApplied = useRef(false);
 
   // ── Load system prompts from localStorage on mount ──
@@ -103,6 +102,7 @@ export default function ChatPage() {
     persistentMessages = [];
     messageCounter.current = 0;
     persistentMessageCounter = 0;
+    setUsedTokens(0);
 
     // Reload the model with the new system prompt
     if (persistentModelLoaded) {
@@ -264,24 +264,27 @@ export default function ChatPage() {
     return () => clearInterval(interval);
   }, [maxTokens, selectedModelPath]);
 
-  // ── Debounced exact token count ──
+  // ── Real-time context usage polling ──
   useEffect(() => {
-    if (tokenDebounceRef.current) clearTimeout(tokenDebounceRef.current);
+    if (!selectedModelPath || modelLoading) return undefined;
 
-    tokenDebounceRef.current = setTimeout(async () => {
-      // Extract text from all segments
-      const fullText = [
-        ...messages.map((m) => m.content.map((seg) => seg.text).join('')),
-        inputText,
-      ].join(' ');
-      const { count } = await window.electronAPI.chatTokenize(fullText);
-      if (count !== null) setUsedTokens(count);
-    }, 300);
-
-    return () => {
-      if (tokenDebounceRef.current) clearTimeout(tokenDebounceRef.current);
+    // Initial fetch
+    const updateContextUsage = async () => {
+      const usage = await window.electronAPI.chatContextUsage();
+      setUsedTokens(usage.used);
+      if (usage.total > 0 && maxTokens === null) {
+        setMaxTokens(usage.total);
+      }
     };
-  }, [messages, inputText]);
+
+    updateContextUsage();
+
+    // Poll every 500ms during generation, every 2s when idle
+    const pollInterval = loading ? 500 : 2000;
+    const interval = setInterval(updateContextUsage, pollInterval);
+
+    return () => clearInterval(interval);
+  }, [selectedModelPath, modelLoading, loading, maxTokens]);
 
   // ── Listen for streaming tokens ──
   useEffect(() => {

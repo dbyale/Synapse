@@ -192,6 +192,11 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     }
   });
 
+  ipcMain.handle('chat:contextUsage', async () => {
+    const usage = chatService.getContextUsage();
+    return usage || { used: 0, total: 0 };
+  });
+
   ipcMain.handle('chat:contextSize', () => {
     return { contextSize: chatService.getContextSize() };
   });

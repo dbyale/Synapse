@@ -138,6 +138,7 @@ declare global {
       chatUnload: () => Promise<void>;
       removeChatListeners: () => void;
       chatTokenize: (text: string) => Promise<{ count: number | null }>;
+      chatContextUsage: () => Promise<{ used: number; total: number }>;
       chatContextSize: () => Promise<{ contextSize: number | null }>;
 
       chatUpdateSystemPrompt: (systemPrompt: string) => Promise<{ success: boolean; error?: string }>;
