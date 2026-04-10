@@ -312,7 +312,7 @@ export default function ChatPage() {
     const isAtBottom =
       Math.abs(
         container.scrollHeight - container.scrollTop - container.clientHeight,
-      ) < 10;
+      ) < 50;
 
     if (isAtBottom) {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
