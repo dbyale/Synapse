@@ -139,6 +139,19 @@ declare global {
 
       chatUpdateSystemPrompt: (systemPrompt: string) => Promise<{ success: boolean; error?: string }>;
       chatGetCurrentSystemPrompt: () => Promise<string>;
+      browseForFiles: (options: {
+        title: string;
+        filters?: { name: string; extensions: string[] }[];
+        multiSelections?: boolean;
+      }) => Promise<string[]>;
+
+      registerLocalModel: (payload: {
+        name: string;
+        author: string;
+        modelPaths: string[];
+        projectorPaths: string[];
+      }) => Promise<{ success: boolean; message?: string }>;
+
     };
   }
 }

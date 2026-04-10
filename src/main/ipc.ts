@@ -11,6 +11,7 @@ import {
   listLocalModels,
   deleteLocalModel,
   cancelDownload,
+  registerLocalModel
 } from '../renderer/utils/models';
 import * as chatService from './chat';
 import type { SearchFilter } from '../renderer/preload.d';
@@ -57,6 +58,52 @@ export function registerIpcHandlers(win: BrowserWindow): void {
   ipcMain.handle('models:list-files', (_event, repoId: string) => {
     return listModelFiles(repoId);
   });
+
+  // ── Browse for files via native dialog ──────────────────────────────────────
+  ipcMain.handle(
+    'browse-for-files',
+    async (
+      _event,
+      options: {
+        title: string;
+        filters?: { name: string; extensions: string[] }[];
+        multiSelections?: boolean;
+      },
+    ) => {
+      const properties: Electron.OpenDialogOptions['properties'] = ['openFile'];
+      if (options.multiSelections) properties.push('multiSelections');
+
+      const result = await dialog.showOpenDialog({
+        title: options.title,
+        filters: options.filters ?? [],
+        properties,
+      });
+
+      return result.canceled ? [] : result.filePaths;
+    },
+  );
+
+  ipcMain.handle(
+    'register-local-model',
+    async (
+      _event,
+      payload: {
+        name: string;
+        author: string;
+        modelPaths: string[];
+        projectorPaths: string[];
+      },
+    ) => {
+      try {
+        const result = registerLocalModel(payload);
+        return result;
+      } catch (err: any) {
+        console.error('Failed to register local model:', err);
+        throw new Error(err.message || 'Failed to register local model');
+      }
+    },
+  );
+
 
   ipcMain.handle(
     'models:download',
@@ -155,8 +202,6 @@ export function registerIpcHandlers(win: BrowserWindow): void {
 
   // ── Unified Hardware Stats ──
   ipcMain.handle('get-vram-stats', async () => {
-    // ... (Your hardware stats code is fine and remains unchanged) ...
-    console.log('--- STARTING HARDWARE DETECTION ---');
 
     try {
       const toMB = (bytes: number) => Math.round(bytes / (1024 * 1024));
@@ -205,8 +250,6 @@ export function registerIpcHandlers(win: BrowserWindow): void {
         busAddress: gpu.busAddress || '',
       }));
 
-      console.log('[HW] GPU List:', JSON.stringify(gpuList, null, 2));
-
       // ---------------------------------------------------------------------
       // SELECT BEST GPU
       // Prefer non-dynamic VRAM, then highest VRAM overall
@@ -236,8 +279,6 @@ export function registerIpcHandlers(win: BrowserWindow): void {
       for (const cmd of nvidiaCommands) {
         try {
           const { stdout } = await execAsync(cmd);
-          console.log(`[HW] NVIDIA-SMI Success: ${cmd}`);
-          console.log(`[HW] NVIDIA Raw Output: ${stdout.trim()}`);
 
           const firstLine = stdout.trim().split('\n')[0];
           const parts = firstLine.split(',');
@@ -297,7 +338,6 @@ export function registerIpcHandlers(win: BrowserWindow): void {
         selectedGpu,
       };
 
-      console.log('[HW] Final hardware result:', JSON.stringify(result, null, 2));
       return result;
     } catch (error) {
       console.error('[HW] Fatal error during hardware detection:', error);

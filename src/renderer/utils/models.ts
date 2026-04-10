@@ -197,6 +197,86 @@ export async function listModelFiles(repoId: string): Promise<RemoteModelFile[]>
   return [];
 }
 
+export function registerLocalModel(payload: {
+  name: string;
+  author: string;
+  modelPaths: string[];
+  projectorPaths: string[];
+}): { success: boolean; message?: string } {
+  const modelsDir = getModelsDirectory();
+
+  // Create a folder structure: author/modelName
+  const authorFolder = payload.author.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const modelFolderName = payload.name.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const modelDir = path.join(modelsDir, authorFolder, modelFolderName);
+
+  // Create the model directory if it doesn't exist
+  if (!fs.existsSync(modelDir)) {
+    try {
+      fs.mkdirSync(modelDir, { recursive: true });
+    } catch (err: any) {
+      if (err.code !== 'EEXIST') {
+        throw new Error(`Failed to create model directory: ${err.message}`);
+      }
+    }
+  }
+
+  // Copy model files
+  for (const srcPath of payload.modelPaths) {
+    if (!fs.existsSync(srcPath)) {
+      throw new Error(`Model file not found: ${srcPath}`);
+    }
+
+    const filename = path.basename(srcPath);
+    const destPath = path.join(modelDir, filename);
+
+    // Skip if already in the destination
+    if (path.resolve(srcPath) !== path.resolve(destPath)) {
+      try {
+        fs.copyFileSync(srcPath, destPath);
+      } catch (err: any) {
+        throw new Error(`Failed to copy model file ${filename}: ${err.message}`);
+      }
+    }
+  }
+
+  // Copy projector files into a 'projectors' subfolder
+  if (payload.projectorPaths.length > 0) {
+    const projectorDir = path.join(modelDir, 'projectors');
+
+    if (!fs.existsSync(projectorDir)) {
+      try {
+        fs.mkdirSync(projectorDir, { recursive: true });
+      } catch (err: any) {
+        if (err.code !== 'EEXIST') {
+          throw new Error(`Failed to create projector directory: ${err.message}`);
+        }
+      }
+    }
+
+    for (const srcPath of payload.projectorPaths) {
+      if (!fs.existsSync(srcPath)) {
+        throw new Error(`Projector file not found: ${srcPath}`);
+      }
+
+      const filename = path.basename(srcPath);
+      const destPath = path.join(projectorDir, filename);
+
+      // Skip if already in the destination
+      if (path.resolve(srcPath) !== path.resolve(destPath)) {
+        try {
+          fs.copyFileSync(srcPath, destPath);
+        } catch (err: any) {
+          throw new Error(`Failed to copy projector file ${filename}: ${err.message}`);
+        }
+      }
+    }
+  }
+
+  return { success: true };
+}
+
+
 export function downloadModel(repoId: string, filename: string, win: BrowserWindow | null): Promise<string> {
   return new Promise((resolve, reject) => {
     const modelsDir = getModelsDirectory();

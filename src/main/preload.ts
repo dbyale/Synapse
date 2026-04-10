@@ -19,6 +19,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('models:search', query, filters, sort, direction, page),
   listModelFiles: (repoId: string) =>
     ipcRenderer.invoke('models:list-files', repoId),
+
+  browseForFiles: (options: {
+    title: string;
+    filters?: { name: string; extensions: string[] }[];
+    multiSelections?: boolean;
+  }) => ipcRenderer.invoke('browse-for-files', options),
+
+  registerLocalModel: (payload: {
+    name: string;
+    modelPaths: string[];
+    projectorPaths: string[];
+  }) => ipcRenderer.invoke('register-local-model', payload),
+
+
   downloadModel: (repoId: string, filename: string) =>
     ipcRenderer.invoke('models:download', repoId, filename),
   cancelDownload: (filename: string) => ipcRenderer.invoke('models:cancel-download', filename),
