@@ -5,6 +5,7 @@ Chat:
   * MMPROJ selection and upload
   * Set default model
   * Cancel model loading
+  * Error reporting
 
 Models:
   * Upload model with file

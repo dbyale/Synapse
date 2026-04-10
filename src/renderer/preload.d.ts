@@ -127,7 +127,7 @@ declare global {
       pickDirectory: () => Promise<string | null>;
 
       // Chat
-      chatLoad: (filepath: string) => Promise<{ success: boolean; error?: string }>;
+      chatLoad: (filepath: string, systemPrompt?: string) => Promise<{ success: boolean; error?: string }>;
       chatSend: (text: string) => Promise<{ success: boolean; error?: string; aborted?: boolean }>;
       chatAbort: () => Promise<void>;
       chatUnload: () => Promise<void>;
@@ -136,6 +136,9 @@ declare global {
       removeChatListeners: () => void;
       chatTokenize: (text: string) => Promise<{ count: number | null }>;
       chatContextSize: () => Promise<{ contextSize: number | null }>;
+
+      chatUpdateSystemPrompt: (systemPrompt: string) => Promise<{ success: boolean; error?: string }>;
+      chatGetCurrentSystemPrompt: () => Promise<string>;
     };
   }
 }

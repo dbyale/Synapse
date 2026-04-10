@@ -1,6 +1,8 @@
 import { FormEvent, useEffect, useRef, useState, KeyboardEvent } from 'react';
-import { SendHorizonal, Square, Bot } from 'lucide-react';
+import { SendHorizonal, Square, Bot, Settings } from 'lucide-react';
 import MarkdownRenderer from '../components/MarkdownRenderer';
+import SystemPromptMenu from '../components/SystemPromptMenu';
+import ConfirmDialog from '../components/ConfirmDialog';
 import '../styles/ChatPage.css';
 
 interface Message {
@@ -16,6 +18,13 @@ interface LocalModel {
   generalName: string;
   quantization: string;
   isProjector: boolean;
+}
+
+export interface SystemPrompt {
+  id: string;
+  name: string;
+  content: string;
+  createdAt: number;
 }
 
 // ── Persistent state that survives component unmount/remount ──
@@ -37,11 +46,100 @@ export default function ChatPage() {
   const [placeholder, setPlaceholder] = useState('Select a model first...');
   const [usedTokens, setUsedTokens] = useState<number>(0);
   const [maxTokens, setMaxTokens] = useState<number | null>(null);
+  const [showSystemPromptMenu, setShowSystemPromptMenu] = useState(false);
+  const [systemPrompts, setSystemPrompts] = useState<SystemPrompt[]>([]);
+  const [selectedPromptId, setSelectedPromptId] = useState<string | null>(null);
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [pendingPromptId, setPendingPromptId] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const messageCounter = useRef(persistentMessageCounter);
   const tokenDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const initialSystemPromptApplied = useRef(false);
+
+  // ── Load system prompts from localStorage on mount ──
+  useEffect(() => {
+    const stored = localStorage.getItem('systemPrompts');
+    if (stored) {
+      try {
+        setSystemPrompts(JSON.parse(stored));
+      } catch (e) {
+        console.error('Failed to parse system prompts:', e);
+      }
+    }
+
+    const storedSelectedId = localStorage.getItem('selectedPromptId');
+    if (storedSelectedId) {
+      setSelectedPromptId(storedSelectedId);
+    }
+  }, []);
+
+  // ── Save system prompts to localStorage whenever they change ──
+  const saveSystemPrompts = (prompts: SystemPrompt[]) => {
+    setSystemPrompts(prompts);
+    localStorage.setItem('systemPrompts', JSON.stringify(prompts));
+  };
+
+  // ── Start new chat with selected system prompt ──
+  const startNewChatWithPrompt = async (promptId: string | null) => {
+    if (promptId) {
+      localStorage.setItem('selectedPromptId', promptId);
+    } else {
+      localStorage.removeItem('selectedPromptId');
+    }
+
+    setSelectedPromptId(promptId);
+
+    // Clear messages
+    setMessages([]);
+    persistentMessages = [];
+    messageCounter.current = 0;
+    persistentMessageCounter = 0;
+
+    // Reload the model with the new system prompt
+    if (persistentModelLoaded) {
+      await window.electronAPI.chatUnload();
+      persistentModelLoaded = '';
+    }
+
+    // Trigger reload by updating the path
+    if (selectedModelPath) {
+      const tempPath = selectedModelPath;
+      setSelectedModelPath('');
+      setTimeout(() => setSelectedModelPath(tempPath), 10);
+    }
+  };
+
+  // ── Handle selecting a system prompt ──
+  const handleSelectPrompt = async (id: string | null) => {
+    // If there are existing messages and we're changing the prompt, confirm first
+    if (messages.length > 0 && id !== selectedPromptId) {
+      setPendingPromptId(id);
+      setShowConfirmDialog(true);
+      return;
+    }
+
+    // No messages, just apply directly
+    await startNewChatWithPrompt(id);
+  };
+
+  // ── Confirm dialog handlers ──
+  const handleConfirmNewChat = async () => {
+    setShowConfirmDialog(false);
+    await startNewChatWithPrompt(pendingPromptId);
+    setPendingPromptId(null);
+  };
+
+  const handleCancelNewChat = () => {
+    setShowConfirmDialog(false);
+    setPendingPromptId(null);
+  };
+
+  // ── Get the currently selected system prompt ──
+  const selectedSystemPrompt = systemPrompts.find(
+    (p) => p.id === selectedPromptId,
+  );
 
   // ── Sync persistent state ──
   useEffect(() => {
@@ -77,7 +175,7 @@ export default function ChatPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── Load model ──
+  // ── Load model with system prompt ──
   useEffect(() => {
     let cancelled = false;
 
@@ -91,11 +189,24 @@ export default function ChatPage() {
       }
 
       setModelLoading(true);
-      setMessages([]);
       setUsedTokens(0);
       setMaxTokens(null);
+      initialSystemPromptApplied.current = false;
 
-      const res = await window.electronAPI.chatLoad(selectedModelPath);
+      // Determine which system prompt to use
+      const systemPromptToUse =
+        selectedSystemPrompt?.content || 'You are a helpful assistant.';
+
+      console.log(
+        '[ChatPage] Loading model with system prompt:',
+        selectedSystemPrompt ? selectedSystemPrompt.name : 'default',
+      );
+
+      // Pass the system prompt directly to chatLoad
+      const res = await window.electronAPI.chatLoad(
+        selectedModelPath,
+        systemPromptToUse,
+      );
 
       if (cancelled) return;
 
@@ -103,8 +214,14 @@ export default function ChatPage() {
 
       if (res.success) {
         persistentModelLoaded = selectedModelPath;
+        initialSystemPromptApplied.current = true;
         const { contextSize } = await window.electronAPI.chatContextSize();
-        if (!cancelled) setMaxTokens(contextSize);
+        if (!cancelled) {
+          setMaxTokens(contextSize);
+          console.log(
+            '[ChatPage] Model loaded successfully with system prompt',
+          );
+        }
       } else {
         console.warn(`Failed to load model: ${res.error}`);
         persistentModelLoaded = '';
@@ -115,7 +232,7 @@ export default function ChatPage() {
     return () => {
       cancelled = true;
     };
-  }, [selectedModelPath]);
+  }, [selectedModelPath, selectedSystemPrompt]);
 
   // ── Poll for context size until available ──
   useEffect(() => {
@@ -234,6 +351,7 @@ export default function ChatPage() {
     const textarea = document.querySelector('textarea');
     if (textarea) textarea.style.height = 'auto';
 
+    // Send the message directly - system prompt is already set in the session
     await window.electronAPI.chatSend(text);
   };
 
@@ -262,6 +380,8 @@ export default function ChatPage() {
   if (tokenRatio >= 0.9) tokenCounterClass += ' chat-token-counter--danger';
   else if (tokenRatio >= 0.75)
     tokenCounterClass += ' chat-token-counter--warning';
+
+  const pendingPrompt = systemPrompts.find((p) => p.id === pendingPromptId);
 
   return (
     <div className="chat-page">
@@ -293,7 +413,43 @@ export default function ChatPage() {
         {modelLoading && (
           <span className="chat-model-loading-label">Loading...</span>
         )}
+
+        {/* System Prompt Button */}
+        <button
+          type="button"
+          className="chat-system-prompt-button"
+          onClick={() => setShowSystemPromptMenu(true)}
+          title="System Prompts"
+        >
+          <Settings size={18} />
+          {selectedSystemPrompt && (
+            <span className="chat-system-prompt-indicator" />
+          )}
+        </button>
       </div>
+
+      {/* System Prompt Menu Modal */}
+      {showSystemPromptMenu && (
+        <SystemPromptMenu
+          prompts={systemPrompts}
+          selectedPromptId={selectedPromptId}
+          onClose={() => setShowSystemPromptMenu(false)}
+          onSave={saveSystemPrompts}
+          onSelect={handleSelectPrompt}
+        />
+      )}
+
+      {/* Confirmation Dialog */}
+      {showConfirmDialog && (
+        <ConfirmDialog
+          title="Start New Chat?"
+          message={`Changing the system prompt${pendingPrompt ? ` to "${pendingPrompt.name}"` : ''} will clear your current conversation and reload the model. Do you want to continue?`}
+          confirmText="Start New Chat"
+          cancelText="Cancel"
+          onConfirm={handleConfirmNewChat}
+          onCancel={handleCancelNewChat}
+        />
+      )}
 
       {/* Messages */}
       <div className="chat-messages" ref={messagesContainerRef}>
@@ -308,6 +464,11 @@ export default function ChatPage() {
                 ? 'Type your message below.'
                 : 'Select a model from the dropdown above, then type your message below.'}
             </p>
+            {selectedSystemPrompt && (
+              <div className="chat-active-prompt-badge">
+                Active: {selectedSystemPrompt.name}
+              </div>
+            )}
           </div>
         )}
 
@@ -381,7 +542,7 @@ export default function ChatPage() {
               onClick={handleAbort}
               title="Stop generation"
             >
-              <Square size={16} strokeWidth={2.2} fill="white" />
+              <Square size={20} strokeWidth={2.2} fill="white" />
             </button>
           ) : (
             <button

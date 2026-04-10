@@ -46,7 +46,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getMemoryStats: () => ipcRenderer.invoke('get-memory-stats'),
 
   // ── Chat API ──
-  chatLoad: (filepath: string) => ipcRenderer.invoke('chat:load', filepath),
+  chatLoad: (filepath: string, systemPrompt?: string) => ipcRenderer.invoke('chat:load', filepath, systemPrompt),
   chatSend: (text: string) => ipcRenderer.invoke('chat:send', text),
   chatAbort: () => ipcRenderer.invoke('chat:abort'),
   chatUnload: () => ipcRenderer.invoke('chat:unload'),
@@ -71,4 +71,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   chatContextSize: (): Promise<{ contextSize: number | null }> =>
     ipcRenderer.invoke('chat:contextSize'),
+
+  chatUpdateSystemPrompt: (systemPrompt: string) =>
+    ipcRenderer.invoke('chat:updateSystemPrompt', systemPrompt),
+
+  chatGetCurrentSystemPrompt: () =>
+    ipcRenderer.invoke('chat:getCurrentSystemPrompt'),
 });

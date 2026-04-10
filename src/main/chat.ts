@@ -13,6 +13,7 @@ let context: LlamaContext | null = null;
 let session: LlamaChatSession | null = null;
 let abortController: AbortController | null = null;
 let currentModelPath: string | null = null;
+let currentSystemPrompt: string = 'You are a helpful assistant.';
 let reloadUnsubscribe: (() => void) | null = null;
 
 let lastResolvedMemory: {
@@ -91,7 +92,7 @@ async function computeLoadParams(loadedModel: LlamaModel): Promise<{
 async function reloadCurrentModel() {
   if (!currentModelPath) return;
   console.log('[chat] Memory settings changed — reloading model with new params...');
-  await loadModel(currentModelPath);
+  await loadModel(currentModelPath, currentSystemPrompt);
 }
 
 reloadUnsubscribe = onMemorySettingsChanged(() => {
@@ -102,8 +103,17 @@ reloadUnsubscribe = onMemorySettingsChanged(() => {
 
 export async function loadModel(
   filepath: string,
+  systemPrompt?: string,
 ): Promise<{ success: boolean; error?: string }> {
   console.log('[chat] Loading model from:', filepath);
+
+  // Update system prompt if provided, otherwise keep current
+  if (systemPrompt !== undefined) {
+    currentSystemPrompt = systemPrompt;
+  }
+
+  console.log('[chat] Using system prompt:', currentSystemPrompt.substring(0, 100) + '...');
+
   await unloadModel();
 
   try {
@@ -144,15 +154,21 @@ export async function loadModel(
       ignoreMemorySafetyChecks: true,
     });
 
-    console.log('[chat] Creating chat session...');
+    console.log('[chat] Creating chat session with system prompt...');
     const { LlamaChatSession } = module;
+
     session = new LlamaChatSession({
       contextSequence: context.getSequence(),
+      systemPrompt: currentSystemPrompt,
     });
+
+    console.log('[chat] Preloading system prompt into context...');
+    await session.preloadPrompt('');
+    console.log('[chat] Context warmed up.');
 
     currentModelPath = filepath;
 
-    console.log('[chat] Model loaded successfully');
+    console.log('[chat] Model loaded successfully with system prompt', currentSystemPrompt.substring(0, 10) + '...');
     return { success: true };
   } catch (error: any) {
     console.error('[chat] Error loading model:', error);
@@ -173,6 +189,7 @@ export async function sendMessage(
 
   try {
     console.log('[chat] Sending message:', text);
+
     const response = await session.prompt(text, {
       signal: abortController.signal,
       onTextChunk: (chunk: { text: string } | string) => {
@@ -221,6 +238,25 @@ export async function unloadModel() {
   } catch (error) {
     console.error('[chat] Error unloading model:', error);
   }
+}
+
+// Changing system prompt requires reloading the model
+export async function updateSystemPrompt(systemPrompt: string): Promise<void> {
+  if (!currentModelPath) {
+    throw new Error('No model loaded. Please load a model first.');
+  }
+
+  console.log('[chat] Updating system prompt (will reload model):', systemPrompt.substring(0, 100) + '...');
+
+  // Reload the model with the new system prompt
+  // This clears conversation history but ensures proper system prompt application
+  await loadModel(currentModelPath, systemPrompt);
+
+  console.log('[chat] System prompt updated successfully');
+}
+
+export function getCurrentSystemPrompt(): string {
+  return currentSystemPrompt;
 }
 
 export async function tokenize(text: string): Promise<number | null> {

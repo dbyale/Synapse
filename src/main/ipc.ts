@@ -14,6 +14,7 @@ import {
 } from '../renderer/utils/models';
 import * as chatService from './chat';
 import type { SearchFilter } from '../renderer/preload.d';
+import { getCurrentSystemPrompt, updateSystemPrompt } from './chat';
 
 const execAsync = util.promisify(exec);
 
@@ -80,9 +81,9 @@ export function registerIpcHandlers(win: BrowserWindow): void {
   });
 
   // ── Chat ──
-  ipcMain.handle('chat:load', async (_event, filepath: string) => {
+  ipcMain.handle('chat:load', async (_event, filepath: string, systemPrompt?: string) => {
     try {
-      await chatService.loadModel(filepath);
+      await chatService.loadModel(filepath, systemPrompt);
       return { success: true };
     } catch (err: any) {
       console.error('[chat:load]', err);
@@ -317,5 +318,19 @@ export function registerIpcHandlers(win: BrowserWindow): void {
 
   ipcMain.handle('chat:memoryUsage', () => {
     return chatService.getModelMemoryUsage();
+  });
+
+  ipcMain.handle('chat:updateSystemPrompt', async (_, systemPrompt: string) => {
+    try {
+      await updateSystemPrompt(systemPrompt);
+      return { success: true };
+    } catch (error: any) {
+      console.error('[IPC] Error updating system prompt:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('chat:getCurrentSystemPrompt', () => {
+    return getCurrentSystemPrompt();
   });
 }
