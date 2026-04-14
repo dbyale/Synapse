@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useRef, useState, KeyboardEvent } from 'react';
-import { SendHorizonal, Square, Bot, Settings } from 'lucide-react';
+import { SendHorizonal, Square, Bot, SlidersHorizontal } from 'lucide-react';
 import MessageContent from '../components/MessageContent';
 import SystemPromptMenu from '../components/SystemPromptMenu';
 import ConfirmDialog from '../components/ConfirmDialog';
@@ -63,6 +63,9 @@ export default function ChatPage() {
   const messageCounter = useRef(persistentMessageCounter);
   const segmentCounter = useRef(0);
   const initialSystemPromptApplied = useRef(false);
+  const loadAbortController = useRef<{ cancelled: boolean }>({
+    cancelled: false,
+  });
 
   // ── Load system prompts from localStorage on mount ──
   useEffect(() => {
@@ -184,14 +187,16 @@ export default function ChatPage() {
 
   // ── Load model with system prompt ──
   useEffect(() => {
-    let cancelled = false;
+    // Create a new abort controller for this load operation
+    const abortController = { cancelled: false };
+    loadAbortController.current = abortController;
 
     async function load() {
       if (!selectedModelPath) return;
 
       if (persistentModelLoaded === selectedModelPath) {
         const { contextSize } = await window.electronAPI.chatContextSize();
-        if (!cancelled) setMaxTokens(contextSize);
+        if (!abortController.cancelled) setMaxTokens(contextSize);
         return;
       }
 
@@ -215,7 +220,10 @@ export default function ChatPage() {
         systemPromptToUse,
       );
 
-      if (cancelled) return;
+      if (abortController.cancelled) {
+        console.log('[ChatPage] Model load was cancelled');
+        return;
+      }
 
       setModelLoading(false);
 
@@ -223,7 +231,7 @@ export default function ChatPage() {
         persistentModelLoaded = selectedModelPath;
         initialSystemPromptApplied.current = true;
         const { contextSize } = await window.electronAPI.chatContextSize();
-        if (!cancelled) {
+        if (!abortController.cancelled) {
           setMaxTokens(contextSize);
           console.log(
             '[ChatPage] Model loaded successfully with system prompt',
@@ -236,8 +244,9 @@ export default function ChatPage() {
     }
 
     load();
+
     return () => {
-      cancelled = true;
+      abortController.cancelled = true;
     };
   }, [selectedModelPath, selectedSystemPrompt]);
 
@@ -435,10 +444,20 @@ export default function ChatPage() {
 
   const handleModelChange = async (newPath: string) => {
     if (newPath === selectedModelPath) return;
-    if (persistentModelLoaded && newPath !== persistentModelLoaded) {
+
+    // Cancel any ongoing model load
+    if (loadAbortController.current) {
+      loadAbortController.current.cancelled = true;
+    }
+
+    // Unload the current model (whether it's loaded or loading)
+    if (persistentModelLoaded || modelLoading) {
+      console.log('[ChatPage] Unloading current model...');
       await window.electronAPI.chatUnload();
       persistentModelLoaded = '';
+      setModelLoading(false);
     }
+
     setSelectedModelPath(newPath);
   };
 
@@ -463,7 +482,6 @@ export default function ChatPage() {
         <select
           value={selectedModelPath}
           onChange={(e) => handleModelChange(e.target.value)}
-          disabled={modelLoading}
         >
           {localModels.length === 0 ? (
             <option value="">No models available</option>
@@ -490,7 +508,7 @@ export default function ChatPage() {
           onClick={() => setShowSystemPromptMenu(true)}
           title="System Prompts"
         >
-          <Settings size={18} />
+          <SlidersHorizontal size={18} />
           {selectedSystemPrompt && (
             <span className="chat-system-prompt-indicator" />
           )}
