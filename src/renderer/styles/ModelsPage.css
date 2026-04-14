@@ -684,65 +684,95 @@
   border: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  overflow: hidden;
 }
 
 .local-group-card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   padding: 16px 20px;
   background: rgba(0, 0, 0, 0.1);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid transparent;
+  cursor: pointer;
+  transition: background 0.15s ease;
 }
 
-/* REPLACE `.local-group-card__title` block WITH THIS: */
+.local-group-card__header:hover {
+  background: rgba(0, 0, 0, 0.15);
+}
 
-.local-group-card__title-btn {
-  display: inline-flex;
+.local-group-card__header--expanded {
+  border-bottom-color: var(--border);
+}
+
+.local-group-card__header-left {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.local-group-card__header-right {
+  color: var(--text-secondary);
+  flex-shrink: 0;
+  margin-left: 16px;
+  display: flex;
   align-items: center;
-  gap: 8px;
-  background: transparent;
-  border: none;
-  padding: 0;
+}
+
+.local-group-card__title {
   font-size: 16px;
   font-weight: 600;
-  margin: 0 0 10px 0;
+  margin: 0;
   color: var(--text-primary);
-  cursor: pointer;
-  transition: text-shadow 0.15s ease;
-  font-family: inherit;
-  text-align: left;
-}
-
-.local-group-card__title-btn:hover {
-  /* Using text-shadow to faux-bold text prevents layout shift */
-  text-shadow: 0 0 .6px var(--text-primary);
-}
-
-.local-group-card__title-icon {
-  opacity: 0.3;
-  transition: opacity 0.15s ease;
-}
-
-.local-group-card__title-btn:hover .local-group-card__title-icon {
-  opacity: 1;
 }
 
 .local-group-card__meta {
   display: flex;
-  gap: 8px;
+  align-items: center;
+  gap: 10px;
   flex-wrap: wrap;
 }
 
 .local-group-card__meta-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  font-weight: 500;
+  font-family: inherit;
+}
+
+.local-group-card__expanded {
+  display: flex;
+  flex-direction: column;
+}
+
+.local-group-card__hf-section {
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.local-group-card__hf-link {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 10px;
-  background: var(--bg-input);
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--border);
-  border-radius: 999px;
-  font-size: 12px;
+  background: transparent;
   color: var(--text-secondary);
+  font-size: 13px;
   font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.local-group-card__hf-link:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(137, 180, 250, 0.05);
 }
 
 .local-group-card__variants {
@@ -1034,7 +1064,7 @@
 }
 
 /* ============================================================================
-   META HEADER TOOLTIPS
+   META HEADER TOOLTIPS (centered, default for browse models)
    ============================================================================ */
 
 .model-card__meta-tooltip-wrapper {
@@ -1113,6 +1143,125 @@
 }
 
 /* ============================================================================
+   LOCAL MODEL META TOOLTIP (appears centered below, same as browse models)
+   ============================================================================ */
+
+.local-model-card__meta-tooltip {
+  position: absolute;
+  top: calc(100% + 8px); /* Drops down below the icon */
+  left: 50%;
+  transform: translateX(-50%) translateY(-4px);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  width: max-content;
+  max-width: 240px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  z-index: 100;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: all 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+  cursor: default;
+}
+
+/* Arrow pointing UP from the tooltip (so it sits below the item) */
+.local-model-card__meta-tooltip::after {
+  content: '';
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border-width: 6px;
+  border-style: solid;
+  border-color: transparent transparent var(--border) transparent;
+}
+
+.local-model-card__meta-tooltip::before {
+  content: '';
+  position: absolute;
+  top: -11px;
+  left: 50%;
+  transform: translateX(-50%);
+  border-width: 6px;
+  border-style: solid;
+  border-color: transparent transparent var(--bg-input) transparent;
+  z-index: 1;
+}
+
+.model-card__meta-tooltip-wrapper:hover .local-model-card__meta-tooltip {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* ============================================================================
+   LOCAL VARIANT QUANTIZATION TOOLTIP (appears to the right)
+   ============================================================================ */
+
+.local-variant__quant-wrapper {
+  position: relative;
+  display: inline-flex;
+}
+
+.local-variant__quant-tooltip {
+  position: absolute;
+  top: 50%;
+  left: calc(100% + 8px); /* Position to the right with 8px gap */
+  transform: translateY(-50%) translateX(-4px);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  width: max-content;
+  max-width: 280px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  z-index: 100;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: all 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Arrow pointing LEFT from the tooltip (so it sits to the right) */
+.local-variant__quant-tooltip::after {
+  content: '';
+  position: absolute;
+  right: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  border-width: 6px;
+  border-style: solid;
+  border-color: transparent var(--border) transparent transparent;
+}
+
+.local-variant__quant-tooltip::before {
+  content: '';
+  position: absolute;
+  right: calc(100% - 1px);
+  top: 50%;
+  transform: translateY(-50%);
+  border-width: 6px;
+  border-style: solid;
+  border-color: transparent var(--bg-input) transparent transparent;
+  z-index: 1;
+}
+
+.local-variant__quant-wrapper:hover .local-variant__quant-tooltip {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(-50%) translateX(0);
+}
+
+/* ============================================================================
    LOCAL SEARCH & FIND MORE BUTTON
    ============================================================================ */
 
@@ -1156,43 +1305,6 @@
 .find-more-btn:hover {
   transform: translateY(-1px);
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
-}
-
-/* ============================================================================
-   LOCAL MODEL CARD (GROUPED) - HEADER UPDATES
-   ============================================================================ */
-
-.local-group-card__header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 16px 20px;
-  background: rgba(0, 0, 0, 0.1);
-  border-bottom: 1px solid transparent;
-  cursor: pointer;
-  transition: background 0.15s ease;
-}
-
-.local-group-card__header:hover {
-  background: rgba(0, 0, 0, 0.15);
-}
-
-.local-group-card__header--expanded {
-  border-bottom-color: var(--border);
-}
-
-.local-group-card__header-left {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.local-group-card__header-right {
-  color: var(--text-secondary);
-  flex-shrink: 0;
-  margin-left: 16px;
-  display: flex;
-  align-items: center;
 }
 
 /* ============================================================================
@@ -1277,6 +1389,7 @@
   color: #f9e2af;
   border: 1px solid rgba(249, 226, 175, 0.3);
 }
+
 /* ============================================================================
    ADD LOCAL MODEL MODAL
    ============================================================================ */
