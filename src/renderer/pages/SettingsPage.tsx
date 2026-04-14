@@ -8,6 +8,16 @@ import {
 import type { AppSettings, HardwareStats } from '../preload.d';
 import '../styles/SettingsPage.css';
 
+// Minimal buffer — VRAM overflow is preferable to RAM overflow.
+// At this point all other allocations (weights, KV cache, other processes)
+// are already accounted for, so this only guards against sudden spikes
+// and allocator fragmentation.
+const VRAM_SAFETY_BUFFER_MB = 300;
+
+// More conservative buffer — RAM overflow causes system-wide instability
+// and can crash the OS, not just the inference process.
+const RAM_SAFETY_BUFFER_MB = 2048;
+
 interface MemoryStats {
   total: number;
   appAllocated: number;
@@ -253,12 +263,12 @@ export default function SettingsPage() {
         const savedRam = savedAllocationsRef.current.allocatedRAM;
         const adjustedOtherRam = Math.max(0, hw.ram.otherUsed - modelRamMB);
 
-        // Safety buffer the backend uses is total - maxRecommended.
-        // Preserve that buffer and apply it on top of the adjusted otherUsed.
-        const ramSafetyBuffer = hw.ram.total - hw.ram.maxRecommended;
+        // MAX = everything except other processes and the safety buffer.
+        // RAM_SAFETY_BUFFER_MB is intentionally generous — RAM overflow
+        // destabilises the entire OS, not just the inference process.
         const adjustedMaxRam = Math.max(
           0,
-          hw.ram.total - adjustedOtherRam - ramSafetyBuffer,
+          hw.ram.total - adjustedOtherRam - RAM_SAFETY_BUFFER_MB,
         );
 
         setRamStats((prev) => ({
@@ -279,10 +289,12 @@ export default function SettingsPage() {
         const savedVram = savedAllocationsRef.current.allocatedVRAM;
         const adjustedOtherVram = Math.max(0, hw.vram.otherUsed - modelVramMB);
 
-        const vramSafetyBuffer = hw.vram.total - hw.vram.maxRecommended;
+        // MAX = everything except other processes and the safety buffer.
+        // VRAM_SAFETY_BUFFER_MB is intentionally tight — VRAM overflow only
+        // slows inference via CPU offload, it does not crash the system.
         const adjustedMaxVram = Math.max(
           0,
-          hw.vram.total - adjustedOtherVram - vramSafetyBuffer,
+          hw.vram.total - adjustedOtherVram - VRAM_SAFETY_BUFFER_MB,
         );
 
         setVramStats((prev) => ({
