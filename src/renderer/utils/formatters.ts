@@ -1,7 +1,7 @@
 export function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B';
   const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return `${parseFloat((bytes / k ** i).toFixed(1))} ${sizes[i]}`;
 }
@@ -21,7 +21,7 @@ export function formatCount(n: number): string {
 export function formatSpeed(bytesPerSec: number): string {
   if (bytesPerSec === 0 || isNaN(bytesPerSec)) return '0 B/s';
   const k = 1024;
-  const sizes = ['B/s', 'KB/s', 'MB/s', 'GB/s'];
+  const sizes = ['B/s', 'KB/s', 'MB/s', 'GB/s', 'TB/s', 'PB/s'];
   const i = Math.floor(Math.log(bytesPerSec) / Math.log(k));
   return `${parseFloat((bytesPerSec / k ** i).toFixed(1))} ${sizes[i]}`;
 }
