@@ -77,14 +77,14 @@ export default function ChatPage() {
   const unloadInProgress = useRef(false);
 
   // ── Unload model helper (defined early to avoid hoisting issues) ──
-  const unloadModel = async () => {
+  const unloadModel = async (): Promise<void> => {
     if (unloadInProgress.current) {
       console.log('[ChatPage] Unload already in progress, waiting...');
       // Wait for the unload to complete with a maximum timeout
       const startTime = Date.now();
       const maxWaitTime = 5000; // 5 seconds max
 
-      return new Promise<void>((resolve) => {
+      await new Promise<void>((resolve) => {
         const checkInterval = setInterval(() => {
           if (
             !unloadInProgress.current ||
@@ -95,6 +95,7 @@ export default function ChatPage() {
           }
         }, 100);
       });
+      return;
     }
 
     unloadInProgress.current = true;
