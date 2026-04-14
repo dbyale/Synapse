@@ -116,6 +116,8 @@ export async function loadModel(
 
   await unloadModel();
 
+  let tempModel: LlamaModel | null = null;
+
   try {
     const { llama: llamaInstance, llamaModule: module } = await ensureLlamaLoaded();
 
@@ -127,20 +129,33 @@ export async function loadModel(
     let gpuLayers: number | undefined = undefined;
     let contextSize: number = 2048;
 
-    const tempModel = await llamaInstance.loadModel({ modelPath: filepath });
+    console.log('[chat] Creating temporary model for param calculation...');
+    tempModel = await llamaInstance.loadModel({ modelPath: filepath });
 
     try {
       const params = await computeLoadParams(tempModel);
       gpuLayers   = params.gpuLayers;
       contextSize = params.contextSize;
-    } catch (paramError) {
-      console.error(
-        '[chat] computeLoadParams failed, falling back to safe defaults:',
-        paramError,
-      );
+      console.log(`[chat] Params computed: gpuLayers=${gpuLayers}, contextSize=${contextSize}`);
+    } catch (paramError: any) {
+      console.error('[chat] computeLoadParams failed:', paramError);
+
+      // Dispose temp model before throwing
+      if (tempModel) {
+        await tempModel.dispose();
+        tempModel = null;
+      }
+
+      // Re-throw the error with a clearer message
+      throw new Error(`Failed to compute load parameters: ${paramError.message || 'Insufficient memory'}`);
     }
 
-    await tempModel.dispose();
+    // Dispose temp model after successful param computation
+    if (tempModel) {
+      console.log('[chat] Disposing temporary model...');
+      await tempModel.dispose();
+      tempModel = null;
+    }
 
     console.log('[chat] Creating model instance...');
     model = await llamaInstance.loadModel({
@@ -168,12 +183,27 @@ export async function loadModel(
 
     currentModelPath = filepath;
 
-    console.log('[chat] Model loaded successfully with system prompt', currentSystemPrompt.substring(0, 10) + '...');
+    console.log('[chat] Model loaded successfully');
     return { success: true };
   } catch (error: any) {
     console.error('[chat] Error loading model:', error);
+
+    // Clean up temp model if it still exists
+    if (tempModel) {
+      try {
+        await tempModel.dispose();
+      } catch (disposeError) {
+        console.error('[chat] Error disposing temp model:', disposeError);
+      }
+    }
+
+    // Ensure everything is cleaned up
     await unloadModel();
-    return { success: false, error: error.message };
+
+    return {
+      success: false,
+      error: error?.message || 'Unknown error occurred while loading model'
+    };
   }
 }
 

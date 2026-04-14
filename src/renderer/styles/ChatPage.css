@@ -663,3 +663,54 @@
     font-size: 11px;
   }
 }
+
+/* ============================================================================
+   ERROR BOX
+   ============================================================================ */
+
+.chat-error {
+  margin: 40px auto;
+  padding: 24px;
+  background: rgba(243, 139, 168, 0.08);
+  border: 1px solid rgba(243, 139, 168, 0.3);
+  border-radius: var(--radius-md);
+  color: #f38ba8;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  max-width: 450px;
+}
+
+.chat-error__title {
+  font-weight: 600;
+  font-size: 16px;
+}
+
+.chat-error__message {
+  font-size: 14px;
+  opacity: 0.9;
+  margin-bottom: 8px;
+}
+
+.chat-error__retry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: inherit;
+}
+
+.chat-error__retry:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}

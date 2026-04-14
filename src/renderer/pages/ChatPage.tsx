@@ -1,5 +1,12 @@
 import { FormEvent, useEffect, useRef, useState, KeyboardEvent } from 'react';
-import { SendHorizonal, Square, Bot, SlidersHorizontal } from 'lucide-react';
+import {
+  SendHorizonal,
+  Square,
+  Bot,
+  SlidersHorizontal,
+  AlertCircle,
+  RefreshCw,
+} from 'lucide-react';
 import MessageContent from '../components/MessageContent';
 import SystemPromptMenu from '../components/SystemPromptMenu';
 import ConfirmDialog from '../components/ConfirmDialog';
@@ -45,6 +52,7 @@ export default function ChatPage() {
   const [loading, setLoading] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [modelLoading, setModelLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [localModels, setLocalModels] = useState<LocalModel[]>([]);
   const [selectedModelPath, setSelectedModelPath] = useState<string>(
     persistentSelectedModelPath,
@@ -66,6 +74,42 @@ export default function ChatPage() {
   const loadAbortController = useRef<{ cancelled: boolean }>({
     cancelled: false,
   });
+  const unloadInProgress = useRef(false);
+
+  // ── Unload model helper (defined early to avoid hoisting issues) ──
+  const unloadModel = async () => {
+    if (unloadInProgress.current) {
+      console.log('[ChatPage] Unload already in progress, waiting...');
+      // Wait for the unload to complete with a maximum timeout
+      const startTime = Date.now();
+      const maxWaitTime = 5000; // 5 seconds max
+
+      return new Promise<void>((resolve) => {
+        const checkInterval = setInterval(() => {
+          if (
+            !unloadInProgress.current ||
+            Date.now() - startTime > maxWaitTime
+          ) {
+            clearInterval(checkInterval);
+            resolve();
+          }
+        }, 100);
+      });
+    }
+
+    unloadInProgress.current = true;
+    console.log('[ChatPage] Unloading current model...');
+
+    try {
+      await window.electronAPI.chatUnload();
+      persistentModelLoaded = '';
+      console.log('[ChatPage] Model unloaded successfully');
+    } catch (error) {
+      console.error('[ChatPage] Error unloading model:', error);
+    } finally {
+      unloadInProgress.current = false;
+    }
+  };
 
   // ── Load system prompts from localStorage on mount ──
   useEffect(() => {
@@ -109,8 +153,7 @@ export default function ChatPage() {
 
     // Reload the model with the new system prompt
     if (persistentModelLoaded) {
-      await window.electronAPI.chatUnload();
-      persistentModelLoaded = '';
+      await unloadModel();
     }
 
     // Trigger reload by updating the path
@@ -192,15 +235,22 @@ export default function ChatPage() {
     loadAbortController.current = abortController;
 
     async function load() {
-      if (!selectedModelPath) return;
+      if (!selectedModelPath) {
+        setLoadError(null);
+        return;
+      }
 
       if (persistentModelLoaded === selectedModelPath) {
         const { contextSize } = await window.electronAPI.chatContextSize();
-        if (!abortController.cancelled) setMaxTokens(contextSize);
+        if (!abortController.cancelled) {
+          setMaxTokens(contextSize);
+          setLoadError(null);
+        }
         return;
       }
 
       setModelLoading(true);
+      setLoadError(null);
       setUsedTokens(0);
       setMaxTokens(null);
       initialSystemPromptApplied.current = false;
@@ -214,32 +264,77 @@ export default function ChatPage() {
         selectedSystemPrompt ? selectedSystemPrompt.name : 'default',
       );
 
-      // Pass the system prompt directly to chatLoad
-      const res = await window.electronAPI.chatLoad(
-        selectedModelPath,
-        systemPromptToUse,
-      );
+      // Ensure previous model is fully unloaded
+      if (persistentModelLoaded) {
+        await unloadModel();
+      }
+
+      // Wait a bit to ensure VRAM is freed
+      await new Promise((resolve) => {
+        setTimeout(resolve, 1000);
+      });
 
       if (abortController.cancelled) {
-        console.log('[ChatPage] Model load was cancelled');
+        console.log('[ChatPage] Model load was cancelled during unload wait');
+        setModelLoading(false);
         return;
       }
 
-      setModelLoading(false);
+      try {
+        // Pass the system prompt directly to chatLoad
+        const res = await window.electronAPI.chatLoad(
+          selectedModelPath,
+          systemPromptToUse,
+        );
 
-      if (res.success) {
-        persistentModelLoaded = selectedModelPath;
-        initialSystemPromptApplied.current = true;
-        const { contextSize } = await window.electronAPI.chatContextSize();
-        if (!abortController.cancelled) {
-          setMaxTokens(contextSize);
-          console.log(
-            '[ChatPage] Model loaded successfully with system prompt',
-          );
+        console.log('[ChatPage] chatLoad response:', res);
+
+        if (abortController.cancelled) {
+          console.log('[ChatPage] Model load was cancelled after response');
+          setModelLoading(false);
+          return;
         }
-      } else {
-        console.warn(`Failed to load model: ${res.error}`);
+
+        setModelLoading(false);
+
+        if (res.success) {
+          persistentModelLoaded = selectedModelPath;
+          initialSystemPromptApplied.current = true;
+
+          // Verify the model is actually loaded by checking context size
+          const { contextSize } = await window.electronAPI.chatContextSize();
+
+          if (!abortController.cancelled) {
+            if (contextSize !== null && contextSize > 0) {
+              setMaxTokens(contextSize);
+              setLoadError(null);
+              console.log('[ChatPage] Model loaded and verified successfully');
+            } else {
+              // Model claims to be loaded but context size is null/0
+              console.error(
+                '[ChatPage] Model claims success but context size is invalid',
+              );
+              persistentModelLoaded = '';
+              setLoadError(
+                'Model loaded but context is invalid. Try reloading.',
+              );
+              await unloadModel();
+            }
+          }
+        } else {
+          console.error(`[ChatPage] Backend returned error: ${res.error}`);
+          persistentModelLoaded = '';
+          setLoadError(res.error || 'Failed to load model');
+          await unloadModel();
+        }
+      } catch (error) {
+        console.error('[ChatPage] Exception during model load:', error);
+        setModelLoading(false);
         persistentModelLoaded = '';
+        setLoadError(
+          error instanceof Error ? error.message : 'Unknown error occurred',
+        );
+        await unloadModel();
       }
     }
 
@@ -275,7 +370,7 @@ export default function ChatPage() {
 
   // ── Real-time context usage polling ──
   useEffect(() => {
-    if (!selectedModelPath || modelLoading) return undefined;
+    if (!selectedModelPath || modelLoading || loadError) return undefined;
 
     // Initial fetch
     const updateContextUsage = async () => {
@@ -293,7 +388,7 @@ export default function ChatPage() {
     const interval = setInterval(updateContextUsage, pollInterval);
 
     return () => clearInterval(interval);
-  }, [selectedModelPath, modelLoading, loading, maxTokens]);
+  }, [selectedModelPath, modelLoading, loading, maxTokens, loadError]);
 
   // ── Listen for streaming tokens ──
   useEffect(() => {
@@ -392,10 +487,11 @@ export default function ChatPage() {
   // ── Placeholder text ──
   useEffect(() => {
     if (modelLoading) setPlaceholder('Loading model...');
+    else if (loadError) setPlaceholder('Model failed to load');
     else if (selectedModelPath)
       setPlaceholder('Send a message... (Shift+Enter for new line)');
     else setPlaceholder('Select a model first...');
-  }, [modelLoading, selectedModelPath]);
+  }, [modelLoading, selectedModelPath, loadError]);
 
   const autoResize = (e: FormEvent<HTMLTextAreaElement>) => {
     const t = e.currentTarget;
@@ -405,7 +501,8 @@ export default function ChatPage() {
 
   const handleSend = async () => {
     const text = inputText.trim();
-    if (!text || loading || modelLoading || !selectedModelPath) return;
+    if (!text || loading || modelLoading || !selectedModelPath || loadError)
+      return;
 
     messageCounter.current += 1;
     segmentCounter.current += 1;
@@ -450,15 +547,35 @@ export default function ChatPage() {
       loadAbortController.current.cancelled = true;
     }
 
+    // Clear any previous errors
+    setLoadError(null);
+
     // Unload the current model (whether it's loaded or loading)
     if (persistentModelLoaded || modelLoading) {
-      console.log('[ChatPage] Unloading current model...');
-      await window.electronAPI.chatUnload();
-      persistentModelLoaded = '';
       setModelLoading(false);
+      await unloadModel();
     }
 
     setSelectedModelPath(newPath);
+  };
+
+  // ── Retry loading the model ──
+  const handleRetry = async () => {
+    console.log('[ChatPage] Retrying model load...');
+    setLoadError(null);
+
+    // Unload any partially loaded model
+    if (persistentModelLoaded) {
+      await unloadModel();
+    }
+
+    // Trigger reload by clearing and resetting the path
+    const tempPath = selectedModelPath;
+    setSelectedModelPath('');
+    setTimeout(() => {
+      console.log('[ChatPage] Reloading model:', tempPath);
+      setSelectedModelPath(tempPath);
+    }, 100);
   };
 
   // ── Token counter class ──
@@ -497,9 +614,10 @@ export default function ChatPage() {
             </>
           )}
         </select>
-        {modelLoading && (
+        {modelLoading && !loadError && (
           <span className="chat-model-loading-label">Loading...</span>
         )}
+        {loadError && <span className="chat-model-error-label">Error</span>}
 
         {/* System Prompt Button */}
         <button
@@ -540,7 +658,24 @@ export default function ChatPage() {
 
       {/* Messages */}
       <div className="chat-messages" ref={messagesContainerRef}>
-        {messages.length === 0 && !loading && (
+        {/* Error Display */}
+        {loadError && !modelLoading && (
+          <div className="chat-error">
+            <AlertCircle size={32} style={{ marginBottom: 4 }} />
+            <span className="chat-error__title">Failed to Load Model</span>
+            <span className="chat-error__message">{loadError}</span>
+            <button
+              type="button"
+              className="chat-error__retry"
+              onClick={handleRetry}
+            >
+              <RefreshCw size={16} />
+              Retry
+            </button>
+          </div>
+        )}
+
+        {messages.length === 0 && !loading && !loadError && (
           <div className="chat-empty-state">
             <SendHorizonal className="chat-empty-state-icon" size={44} />
             <h2>
@@ -619,7 +754,9 @@ export default function ChatPage() {
             rows={1}
             onInput={autoResize}
             onKeyDown={handleKeyDown}
-            disabled={loading || modelLoading || !selectedModelPath}
+            disabled={
+              loading || modelLoading || !selectedModelPath || !!loadError
+            }
           />
 
           {loading ? (
@@ -635,7 +772,12 @@ export default function ChatPage() {
             <button
               type="button"
               className="btn-accent chat-send-button"
-              disabled={!inputText.trim() || !selectedModelPath || modelLoading}
+              disabled={
+                !inputText.trim() ||
+                !selectedModelPath ||
+                modelLoading ||
+                !!loadError
+              }
               onClick={handleSend}
               title="Send message"
             >
