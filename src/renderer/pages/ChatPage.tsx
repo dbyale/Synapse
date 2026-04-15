@@ -755,9 +755,6 @@ export default function ChatPage() {
             rows={1}
             onInput={autoResize}
             onKeyDown={handleKeyDown}
-            disabled={
-              loading || modelLoading || !selectedModelPath || !!loadError
-            }
           />
 
           {loading ? (
