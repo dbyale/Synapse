@@ -1,9 +1,9 @@
-import { ipcMain, dialog, BrowserWindow, app } from 'electron';
+import { ipcMain, dialog, BrowserWindow, app, shell } from 'electron';
 import os from 'os';
 import util from 'util';
 import { exec } from 'child_process';
 import si from 'systeminformation';
-import { loadSettings, saveSettings, AppSettings } from './settings';
+import { loadSettings, saveSettings, AppSettings, getModelsDirectory } from './settings';
 import {
   searchModels,
   listModelFiles,
@@ -373,5 +373,10 @@ export function registerIpcHandlers(win: BrowserWindow): void {
 
   ipcMain.handle('chat:getCurrentSystemPrompt', () => {
     return getCurrentSystemPrompt();
+  });
+
+  ipcMain.handle('open-models-folder', async () => {
+    const modelsDir = getModelsDirectory();
+    await shell.openPath(modelsDir);
   });
 }

@@ -102,4 +102,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   chatGetCurrentSystemPrompt: () =>
     ipcRenderer.invoke('chat:getCurrentSystemPrompt'),
+
+  openModelsFolder: () => ipcRenderer.invoke('open-models-folder'),
 });

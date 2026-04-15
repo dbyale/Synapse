@@ -156,6 +156,8 @@ declare global {
         projectorPaths: string[];
       }) => Promise<{ success: boolean; message?: string }>;
 
+      openModelsFolder: () => Promise<void>;
+
     };
   }
 }

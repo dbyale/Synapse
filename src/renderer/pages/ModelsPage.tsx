@@ -12,6 +12,7 @@ import {
   AlertCircle,
   Lightbulb,
   Plus,
+  FolderOpen,
 } from 'lucide-react';
 import type {
   ModelSearchResult,
@@ -589,6 +590,15 @@ export default function ModelsPage() {
                 value={localQuery}
                 onChange={(e) => setLocalQuery(e.target.value)}
               />
+              <button
+                type="button"
+                className="local-folder-btn"
+                onClick={() => window.electronAPI.openModelsFolder()}
+                title="Open models folder"
+              >
+                <FolderOpen size={16} />
+                <span>Open Folder</span>
+              </button>
             </div>
           )}
 
