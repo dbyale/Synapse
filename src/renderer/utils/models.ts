@@ -500,21 +500,33 @@ export function deleteLocalModel(identifier: string): boolean {
   }
 
   if (foundPath) {
+    // Delete the file
     fs.unlinkSync(foundPath);
 
+    // Clean up empty parent directories
     let currentDir = path.dirname(foundPath);
-    while (currentDir !== modelsDir && currentDir.length > modelsDir.length) {
+    const normalizedModelsDir = path.normalize(modelsDir);
+
+    // Keep going up the directory tree while we're inside modelsDir
+    while (currentDir.startsWith(normalizedModelsDir) && currentDir !== normalizedModelsDir) {
       try {
-        if (fs.readdirSync(currentDir).length === 0) {
+        const contents = fs.readdirSync(currentDir);
+
+        // If directory is empty, delete it and move up
+        if (contents.length === 0) {
           fs.rmdirSync(currentDir);
+          console.log(`Deleted empty directory: ${currentDir}`);
           currentDir = path.dirname(currentDir);
         } else {
+          // Directory has files, stop cleanup
           break;
         }
       } catch (err) {
+        console.error(`Error cleaning up directory ${currentDir}:`, err);
         break;
       }
     }
+
     return true;
   }
 
