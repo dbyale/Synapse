@@ -69,6 +69,17 @@ function extractParametersFromName(modelName: string): string | null {
   return null;
 }
 
+function extractQuantizationFromFilename(filename: string): string {
+  // Remove mmproj- prefix if present
+  const cleanFilename = filename.replace(/^mmproj-/i, '').toUpperCase();
+
+  // Extract quantization suffix like -Q6_K, -f16, etc.
+  const match = cleanFilename.match(
+    /-(Q\d+_K|F\d+|Q\d+|I\d+|A\d+B)(?:\.gguf)?$/i,
+  );
+  return match ? match[1] : 'Unknown';
+}
+
 // ── Extract author from model name ──
 function extractAuthor(modelName: string): string {
   const parts = modelName.split('/');
@@ -202,9 +213,13 @@ export default function LocalModelCard({
           {/* ── Variants ── */}
           <div className="local-group-card__variants">
             {group.fileGroups.map((fg) => {
+              const displayQuantization = fg.isProjector
+                ? extractQuantizationFromFilename(fg.parts[0].filename)
+                : fg.quantization;
+
               const quantInfo = parseQuantization(
                 fg.id,
-                fg.quantization,
+                displayQuantization,
                 fg.isProjector,
               );
 
@@ -220,7 +235,9 @@ export default function LocalModelCard({
                     <div className="local-variant__row">
                       <div className="local-variant__quant-wrapper">
                         <span className="local-variant__quant">
-                          {fg.isProjector ? 'MMPROJ' : fg.quantization}
+                          {fg.isProjector
+                            ? `MMPROJ (${displayQuantization.toUpperCase()})`
+                            : displayQuantization.toUpperCase()}
                         </span>
                         <div className="local-variant__quant-tooltip">
                           <div className="model-card__dl-tooltip-title">
