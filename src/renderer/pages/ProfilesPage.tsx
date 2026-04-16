@@ -195,6 +195,28 @@ export default function ProfilesPage() {
     loadLocalModels();
   }, []);
 
+  // Add inside ProfilesPage's useEffect (or a new one)
+  useEffect(() => {
+    const handleProfilesUpdated = () => {
+      const stored = localStorage.getItem('profiles');
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored) as Profile[];
+          const sorted = parsed.sort(
+            (a, b) => (a.order ?? a.createdAt) - (b.order ?? b.createdAt),
+          );
+          setProfiles(sorted);
+        } catch {
+          // ignore
+        }
+      }
+    };
+
+    window.addEventListener('profiles-updated', handleProfilesUpdated);
+    return () =>
+      window.removeEventListener('profiles-updated', handleProfilesUpdated);
+  }, []);
+
   // ── Persist to localStorage ──
   const saveProfiles = (updated: Profile[]) => {
     setProfiles(updated);

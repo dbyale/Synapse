@@ -20,6 +20,7 @@ import type {
   DownloadProgress,
   SearchFilter,
   RemoteModelFile,
+  Profile,
 } from '../preload.d';
 
 import ModelFilterPanel from '../components/models/ModelFilterPanel';
@@ -74,6 +75,36 @@ const RECOMMENDATIONS = [
       'One of the most popular models ever due to its size and efficiency.',
   },
 ];
+
+export function createDefaultProfileForModel(
+  filename: string,
+  displayName: string, // e.g. "Qwen3.5-0.8B (Q4_K_M)"
+): Profile | null {
+  const stored = localStorage.getItem('profiles');
+  const profiles: Profile[] = stored ? JSON.parse(stored) : [];
+
+  // Avoid creating a duplicate for the same model file
+  const alreadyExists = profiles.some((p) => p.model === filename);
+  if (alreadyExists) return null;
+
+  const newProfile: Profile = {
+    id: Date.now().toString(),
+    name: displayName,
+    model: filename,
+    systemPrompt: 'You are a helpful assistant.',
+    temperature: 0.7,
+    topK: 20,
+    topP: 0.8,
+    minP: 0.05,
+    seed: 0,
+    order: Date.now(),
+    createdAt: Date.now(),
+  };
+
+  const updated = [...profiles, newProfile];
+  localStorage.setItem('profiles', JSON.stringify(updated));
+  return newProfile;
+}
 
 // ============================================================================
 // MAIN COMPONENT
@@ -254,19 +285,32 @@ export default function ModelsPage() {
         });
 
         if (progress.percent >= 100) {
-          setTimeout(() => {
+          setTimeout(async () => {
             setDownloads((prev) => {
               const updated = { ...prev };
               delete updated[progress.filename];
               return updated;
             });
-            window.electronAPI
-              ?.listLocalModels()
-              .then((models) => {
-                setLocalModels(models);
-                return true;
-              })
-              .catch(console.error);
+
+            const models = await window.electronAPI.listLocalModels();
+            setLocalModels(models);
+
+            // Find the newly downloaded model to get its display name
+            const newModel = models.find(
+              (m) => m.filename === progress.filename,
+            );
+            if (newModel && !newModel.isProjector) {
+              const quantization = newModel.quantization || 'Unknown';
+              const baseName =
+                newModel.generalName ||
+                progress.filename.replace(/\.gguf$/i, '');
+              const displayName = `${baseName} (${quantization.toUpperCase()})`;
+
+              createDefaultProfileForModel(progress.filename, displayName);
+
+              // Optional: notify ProfilesPage to re-read localStorage
+              window.dispatchEvent(new CustomEvent('profiles-updated'));
+            }
           }, 1000);
         }
       },
