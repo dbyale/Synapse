@@ -4,15 +4,18 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
+  background: rgba(0, 0, 0, 0.55);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 2000;
-  backdrop-filter: blur(4px);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
   border: none;
   outline: none;
   text-align: left;
+  padding: 0;
+  cursor: default;
 }
 
 .confirm-dialog {
@@ -27,6 +30,18 @@
   align-items: center;
   gap: 20px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  animation: confirm-dialog-in 0.18s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes confirm-dialog-in {
+  from {
+    opacity: 0;
+    transform: scale(0.93) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }
 
 .confirm-dialog-icon {
@@ -58,4 +73,43 @@
 
 .confirm-dialog-actions button {
   flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: inherit;
+  white-space: nowrap;
+}
+
+/* ── Cancel button (secondary) ── */
+.confirm-dialog-actions .btn-secondary {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.confirm-dialog-actions .btn-secondary:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(37, 99, 235, 0.06);
+}
+
+/* ── Confirm button (accent) ── */
+.confirm-dialog-actions .btn-accent {
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: white;
+}
+
+.confirm-dialog-actions .btn-accent:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+  opacity: 0.88;
 }

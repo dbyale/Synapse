@@ -510,10 +510,9 @@
   background: var(--accent, #2563eb);
   color: white;
   padding: 0;
-  /* Ensure no inherited styles shrink the button */
   box-sizing: border-box;
   line-height: 1;
-  font-size: 0; /* prevents any stray inline text from affecting size */
+  font-size: 0;
 }
 
 .chat-send-button:hover:not(:disabled) {
@@ -691,12 +690,13 @@
 .chat-error__retry {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
   padding: 8px 16px;
-  background: var(--accent);
-  color: white;
-  border: none;
   border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
@@ -705,8 +705,9 @@
 }
 
 .chat-error__retry:hover {
-  opacity: 0.9;
-  transform: translateY(-1px);
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--accent);
 }
 
 /* ============================================================================
@@ -804,57 +805,69 @@
   justify-content: flex-end;
 }
 
-/* Cancel button */
+/* Cancel button - matches .sp-card__select-btn outline style */
 .confirm-dialog__cancel {
   flex: 1;
-  padding: 9px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 12px;
   border-radius: var(--radius-md);
   border: 1px solid var(--border);
-  background: var(--bg-primary);
+  background: transparent;
   color: var(--text-secondary);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.15s ease;
   font-family: inherit;
+  white-space: nowrap;
 }
 
 .confirm-dialog__cancel:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-  border-color: var(--text-secondary);
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(37, 99, 235, 0.06);
 }
 
-/* Confirm / destructive button */
+/* Confirm / primary button - matches .sp-card__select-btn active style */
 .confirm-dialog__confirm {
   flex: 1;
-  padding: 9px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 12px;
   border-radius: var(--radius-md);
-  border: none;
-  background: var(--accent, #2563eb);
+  border: 1px solid var(--accent);
+  background: var(--accent);
   color: white;
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 500;
   cursor: pointer;
   transition: all 0.15s ease;
   font-family: inherit;
+  white-space: nowrap;
 }
 
 .confirm-dialog__confirm:hover {
-  opacity: 0.9;
-  transform: translateY(-1px);
-}
-
-.confirm-dialog__confirm:active {
-  transform: translateY(0);
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+  opacity: 0.88;
 }
 
 /* Destructive variant — use when the action is irreversible (e.g. clear chat) */
 .confirm-dialog__confirm--danger {
+  border-color: #ef4444;
   background: #ef4444;
+  color: white;
 }
 
 .confirm-dialog__confirm--danger:hover {
-  background: #dc2626;
-  opacity: 1;
+  background: #ef4444;
+  border-color: #ef4444;
+  color: white;
+  opacity: 0.88;
 }

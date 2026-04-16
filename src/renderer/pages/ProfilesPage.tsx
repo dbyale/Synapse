@@ -278,8 +278,6 @@ export default function ProfilesPage() {
     );
 
     // Extract relative path from full filepath
-    // filepath is like: /Volumes/X10/Models/Local/Qwen3_5-2B-Uncensored-HauhauCS-Aggressive/Qwen3.5-2B-Uncensored-HauhauCS-Aggressive-Q6_K.gguf
-    // We want: Local/Qwen3_5-2B-Uncensored-HauhauCS-Aggressive/Qwen3.5-2B-Uncensored-HauhauCS-Aggressive-Q6_K.gguf (last 3 path segments)
     let modelRelativePath = editModel;
     if (selectedLocalModel?.filepath) {
       const pathParts = selectedLocalModel.filepath.split(/[/\\]/);
