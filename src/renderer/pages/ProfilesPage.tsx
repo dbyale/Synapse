@@ -145,9 +145,9 @@ export default function ProfilesPage() {
   const [isNewProfile, setIsNewProfile] = useState(false);
   const [editName, setEditName] = useState('');
   const [editSystemPrompt, setEditSystemPrompt] = useState('');
-  const [editTemperature, setEditTemperature] = useState('0.8');
-  const [editTopK, setEditTopK] = useState('40');
-  const [editTopP, setEditTopP] = useState('0.9');
+  const [editTemperature, setEditTemperature] = useState('0.7');
+  const [editTopK, setEditTopK] = useState('20');
+  const [editTopP, setEditTopP] = useState('0.8');
   const [editMinP, setEditMinP] = useState('0.05');
   const [editSeed, setEditSeed] = useState('');
   const [editModel, setEditModel] = useState('');
@@ -208,9 +208,9 @@ export default function ProfilesPage() {
       name: 'New Profile',
       model: '',
       systemPrompt: 'You are a helpful assistant.',
-      temperature: 0.8,
-      topK: 40,
-      topP: 0.9,
+      temperature: 0.7,
+      topK: 20,
+      topP: 0.8,
       minP: 0.05,
       seed: 0,
       order: Date.now(),
@@ -760,11 +760,11 @@ export default function ProfilesPage() {
                           <EditSection
                             label="Temperature"
                             htmlFor={`edit-temp-${profile.id}`}
-                            helper="Default: 0.8"
+                            helper="Default: 0.7"
                             tooltip={[
                               'Controls how creative vs. predictable responses are',
                               '0 = always picks the most likely word (boring, repetitive)',
-                              '0.8 = balanced',
+                              '0.7 = balanced',
                               '1.5+ = very creative and unpredictable',
                               'Higher for creative writing, lower for factual answers',
                             ]}
@@ -786,11 +786,11 @@ export default function ProfilesPage() {
                           <EditSection
                             label="Top K"
                             htmlFor={`edit-topk-${profile.id}`}
-                            helper="Default: 40"
+                            helper="Default: 20"
                             tooltip={[
                               'Limits choices to the K most likely next words',
                               'Only used when Temperature > 0',
-                              '40 = pick from top 40 candidates',
+                              '20 = pick from top 20 candidates',
                               '0 = disable (consider all words)',
                               'Higher = more variety, lower = more focused',
                             ]}
@@ -809,11 +809,11 @@ export default function ProfilesPage() {
                           <EditSection
                             label="Top P"
                             htmlFor={`edit-topp-${profile.id}`}
-                            helper="Default: 0.9"
+                            helper="Default: 0.8"
                             tooltip={[
                               'Picks words until reaching a probability threshold',
                               'Only used when Temperature > 0',
-                              '0.9 = keep picking until 90% probability is reached',
+                              '0.8 = keep picking until 80% probability is reached',
                               '1 = disable (consider all words)',
                               'Lower = more focused, higher = more variety',
                             ]}
@@ -839,7 +839,7 @@ export default function ProfilesPage() {
                               'Only used when Temperature > 0',
                               '0.05 = discard the worst 5% of word choices',
                               'Helps prevent weird or nonsensical outputs',
-                              'Range: 0–1 (0 = disabled)',
+                              'Range: 0-1 (0 = disabled)',
                             ]}
                           >
                             <input
