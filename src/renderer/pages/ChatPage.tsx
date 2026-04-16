@@ -693,7 +693,7 @@ export default function ChatPage() {
           {loading ? (
             <button
               type="button"
-              className="btn-accent chat-send-button chat-send-button--stop"
+              className="chat-send-button chat-send-button--stop"
               onClick={handleAbort}
               title="Stop generation"
             >
@@ -702,7 +702,7 @@ export default function ChatPage() {
           ) : (
             <button
               type="button"
-              className="btn-accent chat-send-button"
+              className=" chat-send-button"
               disabled={
                 !inputText.trim() ||
                 !selectedProfileId ||

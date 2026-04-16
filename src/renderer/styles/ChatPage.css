@@ -244,23 +244,12 @@
   line-height: 1.3;
 }
 
-.md h1 {
-  font-size: 20px;
-}
-
-.md h2 {
-  font-size: 17px;
-}
-
-.md h3 {
-  font-size: 15px;
-}
-
+.md h1 { font-size: 20px; }
+.md h2 { font-size: 17px; }
+.md h3 { font-size: 15px; }
 .md h4,
 .md h5,
-.md h6 {
-  font-size: 14px;
-}
+.md h6 { font-size: 14px; }
 
 /* ── Lists ── */
 
@@ -502,6 +491,8 @@
   opacity: 0.5;
 }
 
+/* ── Send / Stop buttons ── */
+
 .chat-send-button {
   width: 36px;
   height: 36px;
@@ -519,6 +510,10 @@
   background: var(--accent, #2563eb);
   color: white;
   padding: 0;
+  /* Ensure no inherited styles shrink the button */
+  box-sizing: border-box;
+  line-height: 1;
+  font-size: 0; /* prevents any stray inline text from affecting size */
 }
 
 .chat-send-button:hover:not(:disabled) {
@@ -712,4 +707,154 @@
 .chat-error__retry:hover {
   opacity: 0.9;
   transform: translateY(-1px);
+}
+
+/* ============================================================================
+   CONFIRM DIALOG (clear conversation / switch profile warning)
+   ============================================================================ */
+
+/* Backdrop */
+.confirm-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: confirm-overlay-in 0.15s ease;
+}
+
+@keyframes confirm-overlay-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* Dialog card */
+.confirm-dialog {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  width: min(420px, calc(100vw - 32px));
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  animation: confirm-dialog-in 0.18s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes confirm-dialog-in {
+  from {
+    opacity: 0;
+    transform: scale(0.93) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* Icon row (optional warning icon slot) */
+.confirm-dialog__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(249, 226, 175, 0.12);
+  color: #f9e2af;
+  flex-shrink: 0;
+  align-self: center;
+}
+
+/* Title */
+.confirm-dialog__title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+  text-align: center;
+  margin: 0;
+  line-height: 1.3;
+}
+
+/* Body message */
+.confirm-dialog__message {
+  font-size: 14px;
+  color: var(--text-secondary);
+  text-align: center;
+  line-height: 1.6;
+  margin: 0;
+}
+
+/* Divider */
+.confirm-dialog__divider {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 0;
+}
+
+/* Button row */
+.confirm-dialog__actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+/* Cancel button */
+.confirm-dialog__cancel {
+  flex: 1;
+  padding: 9px 16px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: inherit;
+}
+
+.confirm-dialog__cancel:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--text-secondary);
+}
+
+/* Confirm / destructive button */
+.confirm-dialog__confirm {
+  flex: 1;
+  padding: 9px 16px;
+  border-radius: var(--radius-md);
+  border: none;
+  background: var(--accent, #2563eb);
+  color: white;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: inherit;
+}
+
+.confirm-dialog__confirm:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.confirm-dialog__confirm:active {
+  transform: translateY(0);
+}
+
+/* Destructive variant — use when the action is irreversible (e.g. clear chat) */
+.confirm-dialog__confirm--danger {
+  background: #ef4444;
+}
+
+.confirm-dialog__confirm--danger:hover {
+  background: #dc2626;
+  opacity: 1;
 }
