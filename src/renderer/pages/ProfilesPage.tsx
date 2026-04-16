@@ -15,6 +15,7 @@ import {
   ChevronDown,
   Info,
   GripVertical,
+  Loader2,
 } from 'lucide-react';
 import type { LocalModel } from '../preload.d';
 import { Profile } from '../types/profile';
@@ -126,10 +127,7 @@ interface LocalModelGroup {
 
 // ── Helper to extract quantization from filename ──
 function extractQuantizationFromFilename(filename: string): string {
-  // Remove mmproj- prefix if present
   const cleanFilename = filename.replace(/^mmproj-/i, '');
-
-  // Extract quantization suffix like -Q6_K, -f16, etc.
   const match = cleanFilename.match(
     /-(Q\d+_K|f\d+|Q\d+|I\d+|A\d+B)(?:\.gguf)?$/i,
   );
@@ -153,7 +151,8 @@ export default function ProfilesPage() {
   const [editSeed, setEditSeed] = useState('');
   const [editModel, setEditModel] = useState('');
   const [editProjector, setEditProjector] = useState('');
-  const [loading, setLoading] = useState(false);
+  // ── Replace global `loading` bool with per-profile loadingId ──
+  const [loadingId, setLoadingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [previewOrder, setPreviewOrder] = useState<Profile[]>([]);
@@ -167,7 +166,6 @@ export default function ProfilesPage() {
     if (stored) {
       try {
         const parsedProfiles = JSON.parse(stored) as Profile[];
-        // Sort by order field, defaulting to creation order if not set
         const sortedProfiles = parsedProfiles.sort((a, b) => {
           const orderA = a.order ?? a.createdAt;
           const orderB = b.order ?? b.createdAt;
@@ -184,7 +182,6 @@ export default function ProfilesPage() {
       setSelectedProfileId(storedSelectedId);
     }
 
-    // Load local models
     const loadLocalModels = async () => {
       try {
         const models = await window.electronAPI.listLocalModels();
@@ -196,7 +193,6 @@ export default function ProfilesPage() {
     loadLocalModels();
   }, []);
 
-  // Add inside ProfilesPage's useEffect (or a new one)
   useEffect(() => {
     const handleProfilesUpdated = () => {
       const stored = localStorage.getItem('profiles');
@@ -277,7 +273,6 @@ export default function ProfilesPage() {
       (m) => m.filename === editModel,
     );
 
-    // Extract relative path from full filepath
     let modelRelativePath = editModel;
     if (selectedLocalModel?.filepath) {
       const pathParts = selectedLocalModel.filepath.split(/[/\\]/);
@@ -292,7 +287,6 @@ export default function ProfilesPage() {
             : filename;
     }
 
-    // Same for projector
     let projectorRelativePath: string | undefined;
     if (editProjector) {
       const selectedProjector = localModels.find(
@@ -325,7 +319,7 @@ export default function ProfilesPage() {
             topP: parseFloat(editTopP),
             minP: parseFloat(editMinP),
             seed: parseInt(editSeed, 10),
-            model: modelRelativePath, // Store "Local/subfolder/filename.gguf"
+            model: modelRelativePath,
             projector: projectorRelativePath || undefined,
           }
         : p,
@@ -337,7 +331,6 @@ export default function ProfilesPage() {
   };
 
   const handleCancelEdit = () => {
-    // If canceling a new profile, delete it
     if (isNewProfile && editingId) {
       const updated = profiles.filter((p) => p.id !== editingId);
       saveProfiles(updated);
@@ -368,7 +361,8 @@ export default function ProfilesPage() {
     } else {
       const profile = profiles.find((p) => p.id === id);
       if (profile) {
-        setLoading(true);
+        // ── Show loading spinner on this specific button ──
+        setLoadingId(id);
         setError(null);
         try {
           const result = await window.electronAPI.chatLoadProfile(profile);
@@ -383,7 +377,7 @@ export default function ProfilesPage() {
         } catch {
           setError('Error loading profile. Please try again.');
         } finally {
-          setLoading(false);
+          setLoadingId(null);
         }
       }
     }
@@ -398,8 +392,6 @@ export default function ProfilesPage() {
     setDraggedId(id);
     setPreviewOrder(profiles);
     e.dataTransfer.effectAllowed = 'move';
-
-    // Clear any pending drag leave timeout
     if (dragLeaveTimeoutRef.current) {
       clearTimeout(dragLeaveTimeoutRef.current);
       dragLeaveTimeoutRef.current = null;
@@ -409,34 +401,24 @@ export default function ProfilesPage() {
   const handleDragOver = (e: DragEvent<HTMLDivElement>, targetId: string) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
-
-    // Clear any pending drag leave timeout when dragging over a card
     if (dragLeaveTimeoutRef.current) {
       clearTimeout(dragLeaveTimeoutRef.current);
       dragLeaveTimeoutRef.current = null;
     }
-
-    if (!draggedId || draggedId === targetId) {
-      return;
-    }
+    if (!draggedId || draggedId === targetId) return;
 
     const draggedIndex = profiles.findIndex((p) => p.id === draggedId);
     const targetIndex = profiles.findIndex((p) => p.id === targetId);
-
     if (draggedIndex === -1 || targetIndex === -1) return;
 
     const updated = [...profiles];
     const [draggedProfile] = updated.splice(draggedIndex, 1);
     updated.splice(targetIndex, 0, draggedProfile);
-
     setPreviewOrder(updated);
   };
 
   const handleDragLeave = (e: DragEvent<HTMLDivElement>) => {
-    // Only reset if we're actually leaving the card element
-    // (not just moving to a child element)
     if (e.currentTarget === e.target) {
-      // Use a small timeout to avoid flickering when moving between cards
       dragLeaveTimeoutRef.current = setTimeout(() => {
         setPreviewOrder(profiles);
         dragLeaveTimeoutRef.current = null;
@@ -446,25 +428,20 @@ export default function ProfilesPage() {
 
   const handleDrop = (e: DragEvent<HTMLDivElement>, targetId: string) => {
     e.preventDefault();
-
-    // Clear any pending drag leave timeout
     if (dragLeaveTimeoutRef.current) {
       clearTimeout(dragLeaveTimeoutRef.current);
       dragLeaveTimeoutRef.current = null;
     }
-
     if (!draggedId) {
       setDraggedId(null);
       setPreviewOrder([]);
       return;
     }
 
-    // Allow dropping on the same card (it will just revert to original order)
     const draggedIndex =
       previewOrder.length > 0
         ? previewOrder.findIndex((p) => p.id === draggedId)
         : profiles.findIndex((p) => p.id === draggedId);
-
     const targetIndex =
       previewOrder.length > 0
         ? previewOrder.findIndex((p) => p.id === targetId)
@@ -476,41 +453,32 @@ export default function ProfilesPage() {
       return;
     }
 
-    // Use the preview order if it exists (the reordered state), otherwise use profiles
     const sourceArray = previewOrder.length > 0 ? previewOrder : profiles;
     const updated = [...sourceArray];
     const [draggedProfile] = updated.splice(draggedIndex, 1);
     updated.splice(targetIndex, 0, draggedProfile);
 
-    // Update order field for all profiles
-    const reorderedProfiles = updated.map((p, idx) => ({
-      ...p,
-      order: idx,
-    }));
-
+    const reorderedProfiles = updated.map((p, idx) => ({ ...p, order: idx }));
     saveProfiles(reorderedProfiles);
     setDraggedId(null);
     setPreviewOrder([]);
   };
 
   const handleDragEnd = () => {
-    // Clear any pending drag leave timeout
     if (dragLeaveTimeoutRef.current) {
       clearTimeout(dragLeaveTimeoutRef.current);
       dragLeaveTimeoutRef.current = null;
     }
-
     setDraggedId(null);
     setPreviewOrder([]);
   };
 
-  // ── Group local models (same logic as ModelsPage) ──
+  // ── Group local models ──
   const groupedLocalModels = useMemo(() => {
     const mGroups = new Map<string, LocalModelGroup>();
 
     localModels.forEach((baseModel: LocalModel) => {
       const m = baseModel;
-
       const splitMatch = m.filename.match(
         /^(.*?)(?:-(\d{4,5})-of-(\d{4,5}))?\.gguf$/i,
       );
@@ -518,7 +486,6 @@ export default function ProfilesPage() {
         splitMatch && splitMatch[2]
           ? splitMatch[1]
           : m.filename.replace(/\.gguf$/i, '');
-
       const modelName = m.generalName || fileBaseName;
 
       if (!mGroups.has(modelName)) {
@@ -530,7 +497,6 @@ export default function ProfilesPage() {
       }
 
       const mGroup = mGroups.get(modelName)!;
-
       let fGroup = mGroup.fileGroups.find((g) => g.id === fileBaseName);
       if (!fGroup) {
         fGroup = {
@@ -564,7 +530,6 @@ export default function ProfilesPage() {
     );
   }, [localModels]);
 
-  // ── Get available models (non-projectors) ──
   const availableModelsForEdit = useMemo(() => {
     const models: Array<{
       filename: string;
@@ -587,13 +552,9 @@ export default function ProfilesPage() {
     return models;
   }, [groupedLocalModels]);
 
-  // ── Get available projectors for selected model ──
   const availableProjectorsForEdit = useMemo(() => {
     if (!editModel) return [];
-
-    // Find the model group for the selected model
     let selectedGroup: LocalModelGroup | undefined;
-
     groupedLocalModels.forEach((group) => {
       if (selectedGroup) return;
       group.fileGroups.forEach((fg) => {
@@ -603,10 +564,8 @@ export default function ProfilesPage() {
         }
       });
     });
-
     if (!selectedGroup) return [];
 
-    // Find projectors with the same base name
     const projectors: Array<{
       filename: string;
       quantization: string;
@@ -626,11 +585,9 @@ export default function ProfilesPage() {
         });
       }
     });
-
     return projectors;
   }, [editModel, groupedLocalModels]);
 
-  // ── Determine which list to display (preview or actual) ──
   const displayProfiles =
     draggedId && previewOrder.length > 0 ? previewOrder : profiles;
 
@@ -650,7 +607,7 @@ export default function ProfilesPage() {
           type="button"
           className="btn-accent"
           onClick={handleNewProfile}
-          disabled={loading || availableModelsForEdit.length === 0}
+          disabled={loadingId !== null || availableModelsForEdit.length === 0}
           title={
             availableModelsForEdit.length === 0
               ? 'Download a model first'
@@ -700,6 +657,7 @@ export default function ProfilesPage() {
           <div className="sp-page__list">
             {displayProfiles.map((profile) => {
               const isDragged = draggedId === profile.id;
+              const isLoadingThis = loadingId === profile.id;
 
               return (
                 <div
@@ -990,11 +948,7 @@ export default function ProfilesPage() {
                           Created{' '}
                           {new Date(profile.createdAt).toLocaleDateString(
                             undefined,
-                            {
-                              year: 'numeric',
-                              month: 'short',
-                              day: 'numeric',
-                            },
+                            { year: 'numeric', month: 'short', day: 'numeric' },
                           )}
                         </span>
                       </div>
@@ -1006,7 +960,7 @@ export default function ProfilesPage() {
                             selectedProfileId === profile.id
                               ? 'sp-card__select-btn--active'
                               : ''
-                          }`}
+                          } ${isLoadingThis ? 'sp-card__select-btn--loading' : ''}`}
                           onClick={() => handleSelect(profile.id)}
                           onKeyDown={(e) => {
                             if (e.key === 'Enter' || e.key === ' ') {
@@ -1014,17 +968,31 @@ export default function ProfilesPage() {
                               handleSelect(profile.id);
                             }
                           }}
-                          disabled={loading}
+                          disabled={loadingId !== null}
                           aria-label={
-                            selectedProfileId === profile.id
-                              ? `Deactivate profile ${profile.name}`
-                              : `Activate profile ${profile.name}`
+                            isLoadingThis
+                              ? `Loading profile ${profile.name}`
+                              : selectedProfileId === profile.id
+                                ? `Deactivate profile ${profile.name}`
+                                : `Activate profile ${profile.name}`
                           }
                         >
-                          <Check size={15} />
-                          {selectedProfileId === profile.id
-                            ? 'Active'
-                            : 'Set Active'}
+                          {isLoadingThis ? (
+                            <>
+                              <Loader2 size={15} className="sp-card__spinner" />
+                              Loading...
+                            </>
+                          ) : selectedProfileId === profile.id ? (
+                            <>
+                              <Check size={15} />
+                              Active
+                            </>
+                          ) : (
+                            <>
+                              <Check size={15} />
+                              Set Active
+                            </>
+                          )}
                         </button>
                         <button
                           type="button"
@@ -1036,6 +1004,7 @@ export default function ProfilesPage() {
                               handleEdit(profile);
                             }
                           }}
+                          disabled={loadingId !== null}
                           aria-label={`Edit profile ${profile.name}`}
                         >
                           <Pencil size={15} />
@@ -1050,6 +1019,7 @@ export default function ProfilesPage() {
                               handleDelete(profile.id);
                             }
                           }}
+                          disabled={loadingId !== null}
                           aria-label={`Delete profile ${profile.name}`}
                         >
                           <Trash2 size={15} />
