@@ -16,7 +16,8 @@ import {
   Info,
   GripVertical,
 } from 'lucide-react';
-import type { Profile, LocalModel } from '../preload.d';
+import type { LocalModel } from '../preload.d';
+import { Profile } from '../types/profile';
 import '../styles/ProfilesPage.css';
 
 interface EditSectionProps {
@@ -272,6 +273,49 @@ export default function ProfilesPage() {
   const handleSaveEdit = () => {
     if (!editingId || !editName.trim() || !editModel) return;
 
+    const selectedLocalModel = localModels.find(
+      (m) => m.filename === editModel,
+    );
+
+    // Extract relative path from full filepath
+    // filepath is like: /Volumes/X10/Models/Local/Qwen3_5-2B-Uncensored-HauhauCS-Aggressive/Qwen3.5-2B-Uncensored-HauhauCS-Aggressive-Q6_K.gguf
+    // We want: Local/Qwen3_5-2B-Uncensored-HauhauCS-Aggressive/Qwen3.5-2B-Uncensored-HauhauCS-Aggressive-Q6_K.gguf (last 3 path segments)
+    let modelRelativePath = editModel;
+    if (selectedLocalModel?.filepath) {
+      const pathParts = selectedLocalModel.filepath.split(/[/\\]/);
+      const filename = pathParts.pop() || editModel;
+      const subfolder = pathParts.pop() || '';
+      const author = pathParts.pop() || '';
+      modelRelativePath =
+        author && subfolder
+          ? `${author}/${subfolder}/${filename}`
+          : subfolder
+            ? `${subfolder}/${filename}`
+            : filename;
+    }
+
+    // Same for projector
+    let projectorRelativePath: string | undefined;
+    if (editProjector) {
+      const selectedProjector = localModels.find(
+        (m) => m.filename === editProjector,
+      );
+      if (selectedProjector?.filepath) {
+        const projParts = selectedProjector.filepath.split(/[/\\]/);
+        const projFilename = projParts.pop() || editProjector;
+        const projSubfolder = projParts.pop() || '';
+        const projAuthor = projParts.pop() || '';
+        projectorRelativePath =
+          projAuthor && projSubfolder
+            ? `${projAuthor}/${projSubfolder}/${projFilename}`
+            : projSubfolder
+              ? `${projSubfolder}/${projFilename}`
+              : projFilename;
+      } else {
+        projectorRelativePath = editProjector;
+      }
+    }
+
     const updated = profiles.map((p) =>
       p.id === editingId
         ? {
@@ -283,8 +327,8 @@ export default function ProfilesPage() {
             topP: parseFloat(editTopP),
             minP: parseFloat(editMinP),
             seed: parseInt(editSeed, 10),
-            model: editModel,
-            projector: editProjector || undefined,
+            model: modelRelativePath, // Store "Local/subfolder/filename.gguf"
+            projector: projectorRelativePath || undefined,
           }
         : p,
     );

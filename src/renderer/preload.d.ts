@@ -94,24 +94,7 @@ export interface HardwareStats {
   selectedGpu: HardwareGpuInfo | null;
 }
 
-export interface Profile {
-  id: string;
-  name: string;
-  model: string;
-  projector?: string;
-  systemPrompt: string;
-  temperature?: number;
-  topK?: number;
-  topP?: number;
-  minP?: number;
-  seed?: number;
-  xtc?: {
-    probability: number;
-    threshold: number;
-  };
-  order: number;
-  createdAt: number;
-}
+import { Profile } from "./types/profile";
 
 declare global {
   interface Window {

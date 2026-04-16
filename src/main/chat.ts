@@ -1,3 +1,5 @@
+// chat.ts — Update loadProfile to resolve relative paths
+
 import type {
   Llama,
   LlamaChatSession,
@@ -5,8 +7,9 @@ import type {
   LlamaModel,
   LLamaChatPromptOptions,
 } from 'node-llama-cpp';
-import { loadSettings, onMemorySettingsChanged } from './settings';
+import { loadSettings, onMemorySettingsChanged, getModelsDirectory } from './settings';
 import type { Profile } from '../renderer/types/profile';
+import path from 'path';
 
 let llamaModule: typeof import('node-llama-cpp') | null = null;
 let llama: Llama | null = null;
@@ -107,7 +110,14 @@ export async function loadProfile(
   profile: Profile,
 ): Promise<{ success: boolean; error?: string }> {
   console.log('[chat] Loading profile:', profile.name);
-  console.log('[chat] Model path:', profile.model);
+
+  // Resolve the full model path: models directory + author/filename
+  const modelsDir = getModelsDirectory();
+  const fullModelPath = path.join(modelsDir, profile.model);
+
+  console.log('[chat] Model relative path:', profile.model);
+  console.log('[chat] Models directory:', modelsDir);
+  console.log('[chat] Full model path:', fullModelPath);
   console.log('[chat] System prompt:', profile.systemPrompt.substring(0, 100) + '...');
 
   await unloadModel();
@@ -126,7 +136,7 @@ export async function loadProfile(
     let contextSize: number = 2048;
 
     console.log('[chat] Creating temporary model for param calculation...');
-    tempModel = await llamaInstance.loadModel({ modelPath: profile.model });
+    tempModel = await llamaInstance.loadModel({ modelPath: fullModelPath });
 
     try {
       const params = await computeLoadParams(tempModel);
@@ -152,7 +162,7 @@ export async function loadProfile(
 
     console.log('[chat] Creating model instance...');
     model = await llamaInstance.loadModel({
-      modelPath: profile.model,
+      modelPath: fullModelPath,
       ...(gpuLayers !== undefined && { gpuLayers }),
     });
 
@@ -174,7 +184,7 @@ export async function loadProfile(
     await session.preloadPrompt('');
     console.log('[chat] Context warmed up.');
 
-    currentModelPath = profile.model;
+    currentModelPath = fullModelPath;
     currentProfile = profile;
 
     console.log('[chat] Profile loaded successfully');

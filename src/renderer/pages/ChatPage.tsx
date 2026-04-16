@@ -10,6 +10,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import MessageContent from '../components/MessageContent';
 import ConfirmDialog from '../components/ConfirmDialog';
+import { Profile } from '../types/profile';
 import '../styles/ChatPage.css';
 
 interface MessageSegment {
@@ -24,26 +25,10 @@ interface Message {
   content: MessageSegment[];
 }
 
-interface LocalModel {
-  filename: string;
-  filepath: string;
-  sizeBytes: number;
-  generalName: string;
-  quantization: string;
-  isProjector: boolean;
-}
-
-export interface SystemPrompt {
-  id: string;
-  name: string;
-  content: string;
-  createdAt: number;
-}
-
 // ── Persistent state that survives component unmount/remount ──
 let persistentMessages: Message[] = [];
-let persistentSelectedModelPath: string = '';
-let persistentModelLoaded: string = '';
+let persistentSelectedProfileId: string = '';
+let persistentLoadedProfileId: string = '';
 let persistentMessageCounter: number = 0;
 
 export default function ChatPage() {
@@ -53,23 +38,20 @@ export default function ChatPage() {
   const [processing, setProcessing] = useState(false);
   const [modelLoading, setModelLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [localModels, setLocalModels] = useState<LocalModel[]>([]);
-  const [selectedModelPath, setSelectedModelPath] = useState<string>(
-    persistentSelectedModelPath,
+  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [selectedProfileId, setSelectedProfileId] = useState<string>(
+    persistentSelectedProfileId,
   );
-  const [placeholder, setPlaceholder] = useState('Select a model first...');
+  const [placeholder, setPlaceholder] = useState('Select a profile first...');
   const [usedTokens, setUsedTokens] = useState<number>(0);
   const [maxTokens, setMaxTokens] = useState<number | null>(null);
-  const [systemPrompts, setSystemPrompts] = useState<SystemPrompt[]>([]);
-  const [selectedPromptId, setSelectedPromptId] = useState<string | null>(null);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
-  const [pendingPromptId, setPendingPromptId] = useState<string | null>(null);
+  const [pendingProfileId, setPendingProfileId] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const messageCounter = useRef(persistentMessageCounter);
   const segmentCounter = useRef(0);
-  const initialSystemPromptApplied = useRef(false);
   const loadAbortController = useRef<{ cancelled: boolean }>({
     cancelled: false,
   });
@@ -77,14 +59,38 @@ export default function ChatPage() {
 
   const navigate = useNavigate();
 
-  // ── Unload model helper (defined early to avoid hoisting issues) ──
+  // ── Derived: currently selected profile object ──
+  const selectedProfile =
+    profiles.find((p) => p.id === selectedProfileId) ?? null;
+
+  // ── Helper: load profiles from localStorage ──
+  const loadProfilesFromStorage = () => {
+    const stored = localStorage.getItem('profiles');
+    if (stored) {
+      try {
+        const parsed: Profile[] = JSON.parse(stored);
+        // Sort by order field
+        const sorted = [...parsed].sort((a, b) => a.order - b.order);
+        setProfiles(sorted);
+
+        // Auto-select first profile if nothing is selected yet
+        if (!persistentSelectedProfileId && sorted.length > 0) {
+          setSelectedProfileId(sorted[0].id);
+        }
+
+        return sorted;
+      } catch (e) {
+        console.error('[ChatPage] Failed to parse profiles:', e);
+      }
+    }
+    return [];
+  };
+
+  // ── Unload model helper ──
   const unloadModel = async (): Promise<void> => {
     if (unloadInProgress.current) {
-      console.log('[ChatPage] Unload already in progress, waiting...');
-      // Wait for the unload to complete with a maximum timeout
       const startTime = Date.now();
-      const maxWaitTime = 5000; // 5 seconds max
-
+      const maxWaitTime = 5000;
       await new Promise<void>((resolve) => {
         const checkInterval = setInterval(() => {
           if (
@@ -104,7 +110,7 @@ export default function ChatPage() {
 
     try {
       await window.electronAPI.chatUnload();
-      persistentModelLoaded = '';
+      persistentLoadedProfileId = '';
       console.log('[ChatPage] Model unloaded successfully');
     } catch (error) {
       console.error('[ChatPage] Error unloading model:', error);
@@ -113,82 +119,86 @@ export default function ChatPage() {
     }
   };
 
-  // ── Load system prompts from localStorage on mount ──
+  // ── Load profiles on mount and listen for storage changes ──
   useEffect(() => {
-    const stored = localStorage.getItem('systemPrompts');
-    if (stored) {
-      try {
-        setSystemPrompts(JSON.parse(stored));
-      } catch (e) {
-        console.error('Failed to parse system prompts:', e);
-      }
-    }
+    // Initial load
+    loadProfilesFromStorage();
 
-    const storedSelectedId = localStorage.getItem('selectedPromptId');
-    if (storedSelectedId) {
-      setSelectedPromptId(storedSelectedId);
-    }
+    // Listen for storage changes (e.g., from ProfilesPage)
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'profiles') {
+        console.log(
+          '[ChatPage] Profiles changed in localStorage, reloading...',
+        );
+        const updated = loadProfilesFromStorage();
+
+        // If the currently loaded profile was modified, reload it
+        if (persistentLoadedProfileId && updated.length > 0) {
+          const currentProfile = updated.find(
+            (p) => p.id === persistentLoadedProfileId,
+          );
+          if (currentProfile) {
+            console.log(
+              '[ChatPage] Currently loaded profile was modified, reloading...',
+            );
+            // Trigger reload by bouncing the selected profile ID
+            setSelectedProfileId('');
+            setTimeout(
+              () => setSelectedProfileId(persistentLoadedProfileId),
+              10,
+            );
+          }
+        }
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
 
-  // ── Start new chat with selected system prompt ──
-  const startNewChatWithPrompt = async (promptId: string | null) => {
-    if (promptId) {
-      localStorage.setItem('selectedPromptId', promptId);
-    } else {
-      localStorage.removeItem('selectedPromptId');
-    }
-
-    setSelectedPromptId(promptId);
-
-    // Clear messages
+  // ── Start new chat with a given profile ──
+  const startNewChatWithProfile = async (profileId: string | null) => {
     setMessages([]);
     persistentMessages = [];
     messageCounter.current = 0;
     persistentMessageCounter = 0;
     setUsedTokens(0);
 
-    // Reload the model with the new system prompt
-    if (persistentModelLoaded) {
+    if (persistentLoadedProfileId) {
       await unloadModel();
     }
 
-    // Trigger reload by updating the path
-    if (selectedModelPath) {
-      const tempPath = selectedModelPath;
-      setSelectedModelPath('');
-      setTimeout(() => setSelectedModelPath(tempPath), 10);
+    // Trigger reload by bouncing the selected profile ID
+    if (profileId) {
+      setSelectedProfileId('');
+      setTimeout(() => setSelectedProfileId(profileId), 10);
     }
   };
 
   // ── Confirm dialog handlers ──
   const handleConfirmNewChat = async () => {
     setShowConfirmDialog(false);
-    await startNewChatWithPrompt(pendingPromptId);
-    setPendingPromptId(null);
+    await startNewChatWithProfile(pendingProfileId);
+    setPendingProfileId(null);
   };
 
   const handleCancelNewChat = () => {
     setShowConfirmDialog(false);
-    setPendingPromptId(null);
+    setPendingProfileId(null);
   };
-
-  // ── Get the currently selected system prompt ──
-  const selectedSystemPrompt = systemPrompts.find(
-    (p) => p.id === selectedPromptId,
-  );
 
   // ── Sync persistent state ──
   useEffect(() => {
     persistentMessages = messages;
   }, [messages]);
   useEffect(() => {
-    persistentSelectedModelPath = selectedModelPath;
-  }, [selectedModelPath]);
+    persistentSelectedProfileId = selectedProfileId;
+  }, [selectedProfileId]);
   useEffect(() => {
     persistentMessageCounter = messageCounter.current;
   });
 
-  // ── On mount, fetch context size immediately in case model is already loaded ──
+  // ── On mount, fetch context size in case model is already loaded ──
   useEffect(() => {
     async function syncContextSize() {
       const { contextSize } = await window.electronAPI.chatContextSize();
@@ -197,33 +207,19 @@ export default function ChatPage() {
     syncContextSize();
   }, []);
 
-  // ── Load local models on mount ──
+  // ── Load profile when selectedProfileId changes ──
   useEffect(() => {
-    async function fetchLocalModels() {
-      const models = await window.electronAPI.listLocalModels();
-      const chatModels = models.filter((m: LocalModel) => !m.isProjector);
-      setLocalModels(chatModels);
-      if (chatModels.length > 0 && !selectedModelPath) {
-        setSelectedModelPath(chatModels[0].filepath);
-      }
-    }
-    fetchLocalModels();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // ── Load model with system prompt ──
-  useEffect(() => {
-    // Create a new abort controller for this load operation
     const abortController = { cancelled: false };
     loadAbortController.current = abortController;
 
     async function load() {
-      if (!selectedModelPath) {
+      if (!selectedProfileId || !selectedProfile) {
         setLoadError(null);
         return;
       }
 
-      if (persistentModelLoaded === selectedModelPath) {
+      // Already loaded — just sync context size
+      if (persistentLoadedProfileId === selectedProfileId) {
         const { contextSize } = await window.electronAPI.chatContextSize();
         if (!abortController.cancelled) {
           setMaxTokens(contextSize);
@@ -236,44 +232,29 @@ export default function ChatPage() {
       setLoadError(null);
       setUsedTokens(0);
       setMaxTokens(null);
-      initialSystemPromptApplied.current = false;
 
-      // Determine which system prompt to use
-      const systemPromptToUse =
-        selectedSystemPrompt?.content || 'You are a helpful assistant.';
+      console.log('[ChatPage] Loading profile:', selectedProfile.name);
 
-      console.log(
-        '[ChatPage] Loading model with system prompt:',
-        selectedSystemPrompt ? selectedSystemPrompt.name : 'default',
-      );
-
-      // Ensure previous model is fully unloaded
-      if (persistentModelLoaded) {
+      // Unload previous model first
+      if (persistentLoadedProfileId) {
         await unloadModel();
       }
 
-      // Wait a bit to ensure VRAM is freed
-      await new Promise((resolve) => {
-        setTimeout(resolve, 1000);
-      });
+      // Brief pause to ensure VRAM is freed
+      await new Promise((resolve) => setTimeout(resolve, 1000));
 
       if (abortController.cancelled) {
-        console.log('[ChatPage] Model load was cancelled during unload wait');
+        console.log('[ChatPage] Profile load cancelled during unload wait');
         setModelLoading(false);
         return;
       }
 
       try {
-        // Pass the system prompt directly to chatLoad
-        const res = await window.electronAPI.chatLoad(
-          selectedModelPath,
-          systemPromptToUse,
-        );
+        const res = await window.electronAPI.chatLoadProfile(selectedProfile);
 
-        console.log('[ChatPage] chatLoad response:', res);
+        console.log('[ChatPage] chatLoadProfile response:', res);
 
         if (abortController.cancelled) {
-          console.log('[ChatPage] Model load was cancelled after response');
           setModelLoading(false);
           return;
         }
@@ -281,39 +262,38 @@ export default function ChatPage() {
         setModelLoading(false);
 
         if (res.success) {
-          persistentModelLoaded = selectedModelPath;
-          initialSystemPromptApplied.current = true;
+          persistentLoadedProfileId = selectedProfileId;
 
-          // Verify the model is actually loaded by checking context size
           const { contextSize } = await window.electronAPI.chatContextSize();
 
           if (!abortController.cancelled) {
             if (contextSize !== null && contextSize > 0) {
               setMaxTokens(contextSize);
               setLoadError(null);
-              console.log('[ChatPage] Model loaded and verified successfully');
-            } else {
-              // Model claims to be loaded but context size is null/0
-              console.error(
-                '[ChatPage] Model claims success but context size is invalid',
+              console.log(
+                '[ChatPage] Profile loaded and verified successfully',
               );
-              persistentModelLoaded = '';
+            } else {
+              console.error(
+                '[ChatPage] Profile loaded but context size is invalid',
+              );
+              persistentLoadedProfileId = '';
               setLoadError(
-                'Model loaded but context is invalid. Try reloading.',
+                'Profile loaded but context is invalid. Try reloading.',
               );
               await unloadModel();
             }
           }
         } else {
           console.error(`[ChatPage] Backend returned error: ${res.error}`);
-          persistentModelLoaded = '';
-          setLoadError(res.error || 'Failed to load model');
+          persistentLoadedProfileId = '';
+          setLoadError(res.error || 'Failed to load profile');
           await unloadModel();
         }
       } catch (error) {
-        console.error('[ChatPage] Exception during model load:', error);
+        console.error('[ChatPage] Exception during profile load:', error);
         setModelLoading(false);
-        persistentModelLoaded = '';
+        persistentLoadedProfileId = '';
         setLoadError(
           error instanceof Error ? error.message : 'Unknown error occurred',
         );
@@ -326,12 +306,12 @@ export default function ChatPage() {
     return () => {
       abortController.cancelled = true;
     };
-  }, [selectedModelPath, selectedSystemPrompt]);
+  }, [selectedProfileId, selectedProfile]);
 
   // ── Poll for context size until available ──
   useEffect(() => {
     const interval = setInterval(() => {
-      if (maxTokens !== null || !selectedModelPath) {
+      if (maxTokens !== null || !selectedProfileId) {
         clearInterval(interval);
         return;
       }
@@ -349,13 +329,12 @@ export default function ChatPage() {
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [maxTokens, selectedModelPath]);
+  }, [maxTokens, selectedProfileId]);
 
   // ── Real-time context usage polling ──
   useEffect(() => {
-    if (!selectedModelPath || modelLoading || loadError) return undefined;
+    if (!selectedProfileId || modelLoading || loadError) return undefined;
 
-    // Initial fetch
     const updateContextUsage = async () => {
       const usage = await window.electronAPI.chatContextUsage();
       setUsedTokens(usage.used);
@@ -366,12 +345,11 @@ export default function ChatPage() {
 
     updateContextUsage();
 
-    // Poll every 500ms during generation, every 2s when idle
     const pollInterval = loading ? 500 : 2000;
     const interval = setInterval(updateContextUsage, pollInterval);
 
     return () => clearInterval(interval);
-  }, [selectedModelPath, modelLoading, loading, maxTokens, loadError]);
+  }, [selectedProfileId, modelLoading, loading, maxTokens, loadError]);
 
   // ── Listen for streaming tokens ──
   useEffect(() => {
@@ -385,23 +363,16 @@ export default function ChatPage() {
             const updatedContent = [...last.content];
             const lastSegment = updatedContent[updatedContent.length - 1];
 
-            // Determine the current segment type
             let currentType: 'thought' | 'comment' | 'normal' = 'normal';
-            if (segmentType === 'thought') {
-              currentType = 'thought';
-            } else if (segmentType === 'comment') {
-              currentType = 'comment';
-            }
+            if (segmentType === 'thought') currentType = 'thought';
+            else if (segmentType === 'comment') currentType = 'comment';
 
-            // If the segment type matches the last segment, append to it
             if (lastSegment && lastSegment.type === currentType) {
               lastSegment.text += token;
             } else {
-              // Different segment type, create a new segment
               segmentCounter.current += 1;
-              const segmentId = `seg-${Date.now()}-${segmentCounter.current}`;
               updatedContent.push({
-                id: segmentId,
+                id: `seg-${Date.now()}-${segmentCounter.current}`,
                 text: token,
                 type: currentType,
               });
@@ -410,19 +381,14 @@ export default function ChatPage() {
             return [...prev.slice(0, -1), { ...last, content: updatedContent }];
           }
 
-          // Create new assistant message
           const id = messageCounter.current;
           messageCounter.current += 1;
 
           let initialType: 'thought' | 'comment' | 'normal' = 'normal';
-          if (segmentType === 'thought') {
-            initialType = 'thought';
-          } else if (segmentType === 'comment') {
-            initialType = 'comment';
-          }
+          if (segmentType === 'thought') initialType = 'thought';
+          else if (segmentType === 'comment') initialType = 'comment';
 
           segmentCounter.current += 1;
-          const segmentId = `seg-${Date.now()}-${segmentCounter.current}`;
           return [
             ...prev,
             {
@@ -430,7 +396,7 @@ export default function ChatPage() {
               role: 'assistant',
               content: [
                 {
-                  id: segmentId,
+                  id: `seg-${Date.now()}-${segmentCounter.current}`,
                   text: token.replace(/^\s+/, ''),
                   type: initialType,
                 },
@@ -452,7 +418,7 @@ export default function ChatPage() {
     };
   }, []);
 
-  // ── Smart auto-scroll: only scroll if already at bottom ──
+  // ── Smart auto-scroll ──
   useEffect(() => {
     const container = messagesContainerRef.current;
     if (!container) return;
@@ -469,12 +435,12 @@ export default function ChatPage() {
 
   // ── Placeholder text ──
   useEffect(() => {
-    if (modelLoading) setPlaceholder('Loading model...');
-    else if (loadError) setPlaceholder('Model failed to load');
-    else if (selectedModelPath)
+    if (modelLoading) setPlaceholder('Loading profile...');
+    else if (loadError) setPlaceholder('Profile failed to load');
+    else if (selectedProfileId)
       setPlaceholder('Send a message... (Shift+Enter for new line)');
-    else setPlaceholder('Select a model first...');
-  }, [modelLoading, selectedModelPath, loadError]);
+    else setPlaceholder('Select a profile first...');
+  }, [modelLoading, selectedProfileId, loadError]);
 
   const autoResize = (e: FormEvent<HTMLTextAreaElement>) => {
     const t = e.currentTarget;
@@ -484,7 +450,7 @@ export default function ChatPage() {
 
   const handleSend = async () => {
     const text = inputText.trim();
-    if (!text || loading || modelLoading || !selectedModelPath || loadError)
+    if (!text || loading || modelLoading || !selectedProfileId || loadError)
       return;
 
     messageCounter.current += 1;
@@ -522,106 +488,103 @@ export default function ChatPage() {
     }
   };
 
-  const handleModelChange = async (newPath: string) => {
-    if (newPath === selectedModelPath) return;
+  const handleProfileChange = async (newProfileId: string) => {
+    if (newProfileId === selectedProfileId) return;
 
-    // Cancel any ongoing model load
     if (loadAbortController.current) {
       loadAbortController.current.cancelled = true;
     }
 
-    // Clear any previous errors
     setLoadError(null);
 
-    // Unload the current model (whether it's loaded or loading)
-    if (persistentModelLoaded || modelLoading) {
+    if (persistentLoadedProfileId || modelLoading) {
       setModelLoading(false);
       await unloadModel();
     }
 
-    setSelectedModelPath(newPath);
+    // If there are existing messages, confirm before switching
+    if (messages.length > 0) {
+      setPendingProfileId(newProfileId);
+      setShowConfirmDialog(true);
+    } else {
+      setSelectedProfileId(newProfileId);
+    }
   };
 
-  // ── Retry loading the model ──
+  // ── Retry loading the profile ──
   const handleRetry = async () => {
-    console.log('[ChatPage] Retrying model load...');
+    console.log('[ChatPage] Retrying profile load...');
     setLoadError(null);
 
-    // Unload any partially loaded model
-    if (persistentModelLoaded) {
+    if (persistentLoadedProfileId) {
       await unloadModel();
     }
 
-    // Trigger reload by clearing and resetting the path
-    const tempPath = selectedModelPath;
-    setSelectedModelPath('');
+    const tempId = selectedProfileId;
+    setSelectedProfileId('');
     setTimeout(() => {
-      console.log('[ChatPage] Reloading model:', tempPath);
-      setSelectedModelPath(tempPath);
+      console.log('[ChatPage] Reloading profile:', tempId);
+      setSelectedProfileId(tempId);
     }, 100);
   };
 
   // ── Token counter class ──
   const tokenRatio = maxTokens !== null ? usedTokens / maxTokens : 0;
-
   let tokenCounterClass = 'chat-token-counter';
   if (tokenRatio >= 0.9) tokenCounterClass += ' chat-token-counter--danger';
   else if (tokenRatio >= 0.75)
     tokenCounterClass += ' chat-token-counter--warning';
 
-  const pendingPrompt = systemPrompts.find((p) => p.id === pendingPromptId);
+  const pendingProfile = profiles.find((p) => p.id === pendingProfileId);
 
   return (
     <div className="chat-page">
-      {/* Model Selector */}
+      {/* Profile Selector */}
       <div className="chat-model-selector">
         <Bot
           size={18}
           style={{ color: 'var(--text-secondary)', flexShrink: 0 }}
         />
         <select
-          value={selectedModelPath}
-          onChange={(e) => handleModelChange(e.target.value)}
+          value={selectedProfileId}
+          onChange={(e) => handleProfileChange(e.target.value)}
         >
-          {localModels.length === 0 ? (
-            <option value="">No models available</option>
+          {profiles.length === 0 ? (
+            <option value="">No profiles available</option>
           ) : (
             <>
-              <option value="">Select a model...</option>
-              {localModels.map((m) => (
-                <option key={m.filepath} value={m.filepath}>
-                  {m.generalName} — {m.quantization} (
-                  {(m.sizeBytes / 1024 / 1024 / 1024).toFixed(2)} GB)
+              <option value="">Select a profile...</option>
+              {profiles.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
                 </option>
               ))}
             </>
           )}
         </select>
+
         {modelLoading && !loadError && (
           <span className="chat-model-loading-label">Loading...</span>
         )}
         {loadError && <span className="chat-model-error-label">Error</span>}
 
-        {/* System Prompt Button */}
+        {/* Profiles Button */}
         <button
           type="button"
           className="chat-system-prompt-button"
           onClick={() => navigate('/profiles')}
-          title="System Prompts"
+          title="Manage Profiles"
         >
           <SlidersHorizontal size={18} />
-          {selectedSystemPrompt && (
-            <span className="chat-system-prompt-indicator" />
-          )}
         </button>
       </div>
 
       {/* Confirmation Dialog */}
       {showConfirmDialog && (
         <ConfirmDialog
-          title="Start New Chat?"
-          message={`Changing the system prompt${pendingPrompt ? ` to "${pendingPrompt.name}"` : ''} will clear your current conversation and reload the model. Do you want to continue?`}
-          confirmText="Start New Chat"
+          title="Switch Profile?"
+          message={`Switching to "${pendingProfile?.name ?? 'this profile'}" will clear your current conversation and reload the model. Do you want to continue?`}
+          confirmText="Switch Profile"
           cancelText="Cancel"
           onConfirm={handleConfirmNewChat}
           onCancel={handleCancelNewChat}
@@ -634,7 +597,7 @@ export default function ChatPage() {
         {loadError && !modelLoading && (
           <div className="chat-error">
             <AlertCircle size={32} style={{ marginBottom: 4 }} />
-            <span className="chat-error__title">Failed to Load Model</span>
+            <span className="chat-error__title">Failed to Load Profile</span>
             <span className="chat-error__message">{loadError}</span>
             <button
               type="button"
@@ -651,16 +614,16 @@ export default function ChatPage() {
           <div className="chat-empty-state">
             <SendHorizonal className="chat-empty-state-icon" size={44} />
             <h2>
-              {modelLoading ? 'Loading model...' : 'Start a conversation'}
+              {modelLoading ? 'Loading profile...' : 'Start a conversation'}
             </h2>
             <p>
-              {selectedModelPath
+              {selectedProfileId
                 ? 'Type your message below.'
-                : 'Select a model from the dropdown above, then type your message below.'}
+                : 'Select a profile from the dropdown above, then type your message below.'}
             </p>
-            {selectedSystemPrompt && (
+            {selectedProfile && (
               <div className="chat-active-prompt-badge">
-                Active: {selectedSystemPrompt.name}
+                Active: {selectedProfile.name}
               </div>
             )}
           </div>
@@ -696,7 +659,6 @@ export default function ChatPage() {
           </div>
         ))}
 
-        {/* Processing / generating indicator - shown when no assistant message exists yet */}
         {loading &&
           (messages.length === 0 ||
             messages[messages.length - 1].role !== 'assistant') && (
@@ -743,7 +705,7 @@ export default function ChatPage() {
               className="btn-accent chat-send-button"
               disabled={
                 !inputText.trim() ||
-                !selectedModelPath ||
+                !selectedProfileId ||
                 modelLoading ||
                 !!loadError
               }

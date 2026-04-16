@@ -4,10 +4,10 @@ export interface Profile {
   model: string; // filepath to model
   projector?: string; // optional filepath to projector
   systemPrompt: string;
-  temperature?: number; // 0 to disable (default)
-  topK?: number; // 0 to disable (default)
-  topP?: number; // 1 to disable (default)
-  minP?: number; // 0 to disable (default)
+  temperature?: number;
+  topK?: number;
+  topP?: number;
+  minP?: number;
   seed?: number;
   xtc?: {
     probability: number;
