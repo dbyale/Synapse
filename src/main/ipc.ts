@@ -15,11 +15,9 @@ import {
 } from '../renderer/utils/models';
 import * as chatService from './chat';
 import type { SearchFilter } from '../renderer/preload.d';
-import { getCurrentSystemPrompt, updateSystemPrompt } from './chat';
 
 const execAsync = util.promisify(exec);
 
-// The 'win' parameter is no longer needed for the chat handler, but may be used by others.
 export function registerIpcHandlers(win: BrowserWindow): void {
   // ── Settings ──
   ipcMain.handle('settings:load', () => {
@@ -59,7 +57,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     return listModelFiles(repoId);
   });
 
-  // ── Browse for files via native dialog ──────────────────────────────────────
+  // ── Browse for files via native dialog ──
   ipcMain.handle(
     'browse-for-files',
     async (
@@ -104,7 +102,6 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     },
   );
 
-
   ipcMain.handle(
     'models:download',
     async (event, repoId: string, filename: string) => {
@@ -128,31 +125,30 @@ export function registerIpcHandlers(win: BrowserWindow): void {
   });
 
   // ── Chat ──
-  ipcMain.handle('chat:load', async (_event, filepath: string, systemPrompt?: string) => {
+  ipcMain.handle('chat:loadProfile', async (_event, profile: any) => {
     try {
-      await chatService.loadModel(filepath, systemPrompt);
-      return { success: true };
+      const result = await chatService.loadProfile(profile);
+      return result;
     } catch (err: any) {
-      console.error('[chat:load]', err);
+      console.error('[chat:loadProfile]', err);
       return { success: false, error: err.message };
     }
   });
 
+  ipcMain.handle('chat:getCurrentProfile', () => {
+    return chatService.getCurrentProfile();
+  });
+
   ipcMain.handle('chat:send', async (event, text: string) => {
     try {
-      // Define the callback function with segment type support
       const onTokenCallback = (token: string, segmentType?: 'thought' | 'comment') => {
-        // Always use event.sender to reply to the correct window.
-        // Add a check to prevent errors if the window is closed during generation.
         if (!event.sender.isDestroyed()) {
           event.sender.send('chat:token', { token, segmentType });
         }
       };
 
-      // Pass the reliable callback to the chat service
       await chatService.sendMessage(text, onTokenCallback);
 
-      // Send the 'done' signal using the reliable event.sender
       if (!event.sender.isDestroyed()) {
         event.sender.send('chat:done');
       }
@@ -168,7 +164,6 @@ export function registerIpcHandlers(win: BrowserWindow): void {
       console.error('[chat:send]', err);
       if (!event.sender.isDestroyed()) {
         event.sender.send('chat:done');
-        // It's also good practice to send the error back to the frontend
         event.sender.send('chat:error', err.message);
       }
       return { success: false, error: err.message };
@@ -201,15 +196,18 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     return { contextSize: chatService.getContextSize() };
   });
 
+  ipcMain.handle('chat:memoryUsage', () => {
+    return chatService.getModelMemoryUsage();
+  });
+
   // ── Unified Hardware Stats ──
   ipcMain.handle('get-vram-stats', async () => {
-
     try {
       const toMB = (bytes: number) => Math.round(bytes / (1024 * 1024));
 
-      // ---------------------------------------------------------------------
+      // ─────────────────────────────────────────────────────────────────
       // SYSTEM RAM
-      // ---------------------------------------------------------------------
+      // ─────────────────────────────────────────────────────────────────
       const totalRamBytes = os.totalmem();
       const freeRamBytes = os.freemem();
 
@@ -226,16 +224,16 @@ export function registerIpcHandlers(win: BrowserWindow): void {
       const otherUsedRam = Math.max(0, toMB(otherRamUsedBytes));
       const recommendedRam = Math.max(0, totalRam - 4096);
 
-      // ---------------------------------------------------------------------
+      // ─────────────────────────────────────────────────────────────────
       // APPLE SILICON CHECK
-      // ---------------------------------------------------------------------
+      // ─────────────────────────────────────────────────────────────────
       const cpu = await si.cpu();
       const isAppleSilicon =
         process.platform === 'darwin' && cpu.vendor === 'Apple';
 
-      // ---------------------------------------------------------------------
+      // ─────────────────────────────────────────────────────────────────
       // GPU INVENTORY
-      // ---------------------------------------------------------------------
+      // ─────────────────────────────────────────────────────────────────
       const graphics = await si.graphics();
       const gpuList = (graphics.controllers || []).map((gpu, index) => ({
         id: `${index}`,
@@ -251,10 +249,10 @@ export function registerIpcHandlers(win: BrowserWindow): void {
         busAddress: gpu.busAddress || '',
       }));
 
-      // ---------------------------------------------------------------------
+      // ─────────────────────────────────────────────────────────────────
       // SELECT BEST GPU
       // Prefer non-dynamic VRAM, then highest VRAM overall
-      // ---------------------------------------------------------------------
+      // ─────────────────────────────────────────────────────────────────
       let selectedGpu =
         gpuList
           .filter((gpu) => !gpu.vramDynamic && gpu.vram > 0)
@@ -264,10 +262,10 @@ export function registerIpcHandlers(win: BrowserWindow): void {
           .sort((a, b) => b.vram - a.vram)[0] ||
         null;
 
-      // ---------------------------------------------------------------------
+      // ─────────────────────────────────────────────────────────────────
       // NVIDIA REAL USAGE OVERRIDE
       // If nvidia-smi works, use it for usage and possibly total.
-      // ---------------------------------------------------------------------
+      // ─────────────────────────────────────────────────────────────────
       let detectedVramTotal = selectedGpu?.vram || 0;
       let detectedVramUsed = selectedGpu ? 500 : 0;
 
@@ -317,9 +315,9 @@ export function registerIpcHandlers(win: BrowserWindow): void {
         }
       }
 
-      // ---------------------------------------------------------------------
+      // ─────────────────────────────────────────────────────────────────
       // UNIFIED RESPONSE
-      // ---------------------------------------------------------------------
+      // ─────────────────────────────────────────────────────────────────
       const result = {
         isUnifiedMemory: isAppleSilicon,
         ram: {
@@ -355,24 +353,6 @@ export function registerIpcHandlers(win: BrowserWindow): void {
         selectedGpu: null,
       };
     }
-  });
-
-  ipcMain.handle('chat:memoryUsage', () => {
-    return chatService.getModelMemoryUsage();
-  });
-
-  ipcMain.handle('chat:updateSystemPrompt', async (_, systemPrompt: string) => {
-    try {
-      await updateSystemPrompt(systemPrompt);
-      return { success: true };
-    } catch (error: any) {
-      console.error('[IPC] Error updating system prompt:', error);
-      return { success: false, error: error.message };
-    }
-  });
-
-  ipcMain.handle('chat:getCurrentSystemPrompt', () => {
-    return getCurrentSystemPrompt();
   });
 
   ipcMain.handle('open-models-folder', async () => {

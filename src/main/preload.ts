@@ -32,7 +32,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     projectorPaths: string[];
   }) => ipcRenderer.invoke('register-local-model', payload),
 
-
   downloadModel: (repoId: string, filename: string) =>
     ipcRenderer.invoke('models:download', repoId, filename),
   cancelDownload: (filename: string) => ipcRenderer.invoke('models:cancel-download', filename),
@@ -42,13 +41,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Events
   onDownloadProgress: (callback: (progress: any) => void) => {
-    // Wrap callback to strip the Electron event object
     const subscription = (_event: IpcRendererEvent, progress: any) =>
       callback(progress);
 
     ipcRenderer.on('download-progress', subscription);
 
-    // Return an unsubscribe function if needed
     return () => {
       ipcRenderer.removeListener('download-progress', subscription);
     };
@@ -60,6 +57,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getMemoryStats: () => ipcRenderer.invoke('get-memory-stats'),
 
   // ── Chat API ──
+  chatLoadProfile: (profile: any) => ipcRenderer.invoke('chat:loadProfile', profile),
+  chatGetCurrentProfile: () => ipcRenderer.invoke('chat:getCurrentProfile'),
   chatSend: (text: string) => ipcRenderer.invoke('chat:send', text),
 
   onChatToken: (callback: (data: { token: string; segmentType?: 'thought' | 'comment' }) => void) => {
@@ -80,7 +79,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('chat:error', listener);
   },
 
-  chatLoad: (filepath: string, systemPrompt?: string) => ipcRenderer.invoke('chat:load', filepath, systemPrompt),
   chatAbort: () => ipcRenderer.invoke('chat:abort'),
   chatUnload: () => ipcRenderer.invoke('chat:unload'),
 
@@ -96,12 +94,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   chatContextSize: (): Promise<{ contextSize: number | null }> =>
     ipcRenderer.invoke('chat:contextSize'),
-
-  chatUpdateSystemPrompt: (systemPrompt: string) =>
-    ipcRenderer.invoke('chat:updateSystemPrompt', systemPrompt),
-
-  chatGetCurrentSystemPrompt: () =>
-    ipcRenderer.invoke('chat:getCurrentSystemPrompt'),
 
   openModelsFolder: () => ipcRenderer.invoke('open-models-folder'),
 });

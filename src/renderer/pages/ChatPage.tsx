@@ -7,8 +7,8 @@ import {
   AlertCircle,
   RefreshCw,
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import MessageContent from '../components/MessageContent';
-import SystemPromptMenu from '../components/SystemPromptMenu';
 import ConfirmDialog from '../components/ConfirmDialog';
 import '../styles/ChatPage.css';
 
@@ -60,7 +60,6 @@ export default function ChatPage() {
   const [placeholder, setPlaceholder] = useState('Select a model first...');
   const [usedTokens, setUsedTokens] = useState<number>(0);
   const [maxTokens, setMaxTokens] = useState<number | null>(null);
-  const [showSystemPromptMenu, setShowSystemPromptMenu] = useState(false);
   const [systemPrompts, setSystemPrompts] = useState<SystemPrompt[]>([]);
   const [selectedPromptId, setSelectedPromptId] = useState<string | null>(null);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
@@ -75,6 +74,8 @@ export default function ChatPage() {
     cancelled: false,
   });
   const unloadInProgress = useRef(false);
+
+  const navigate = useNavigate();
 
   // ── Unload model helper (defined early to avoid hoisting issues) ──
   const unloadModel = async (): Promise<void> => {
@@ -129,12 +130,6 @@ export default function ChatPage() {
     }
   }, []);
 
-  // ── Save system prompts to localStorage whenever they change ──
-  const saveSystemPrompts = (prompts: SystemPrompt[]) => {
-    setSystemPrompts(prompts);
-    localStorage.setItem('systemPrompts', JSON.stringify(prompts));
-  };
-
   // ── Start new chat with selected system prompt ──
   const startNewChatWithPrompt = async (promptId: string | null) => {
     if (promptId) {
@@ -163,19 +158,6 @@ export default function ChatPage() {
       setSelectedModelPath('');
       setTimeout(() => setSelectedModelPath(tempPath), 10);
     }
-  };
-
-  // ── Handle selecting a system prompt ──
-  const handleSelectPrompt = async (id: string | null) => {
-    // If there are existing messages and we're changing the prompt, confirm first
-    if (messages.length > 0 && id !== selectedPromptId) {
-      setPendingPromptId(id);
-      setShowConfirmDialog(true);
-      return;
-    }
-
-    // No messages, just apply directly
-    await startNewChatWithPrompt(id);
   };
 
   // ── Confirm dialog handlers ──
@@ -624,7 +606,7 @@ export default function ChatPage() {
         <button
           type="button"
           className="chat-system-prompt-button"
-          onClick={() => setShowSystemPromptMenu(true)}
+          onClick={() => navigate('/profiles')}
           title="System Prompts"
         >
           <SlidersHorizontal size={18} />
@@ -633,17 +615,6 @@ export default function ChatPage() {
           )}
         </button>
       </div>
-
-      {/* System Prompt Menu Modal */}
-      {showSystemPromptMenu && (
-        <SystemPromptMenu
-          prompts={systemPrompts}
-          selectedPromptId={selectedPromptId}
-          onClose={() => setShowSystemPromptMenu(false)}
-          onSave={saveSystemPrompts}
-          onSelect={handleSelectPrompt}
-        />
-      )}
 
       {/* Confirmation Dialog */}
       {showConfirmDialog && (

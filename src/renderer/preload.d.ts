@@ -94,6 +94,25 @@ export interface HardwareStats {
   selectedGpu: HardwareGpuInfo | null;
 }
 
+export interface Profile {
+  id: string;
+  name: string;
+  model: string;
+  projector?: string;
+  systemPrompt: string;
+  temperature?: number;
+  topK?: number;
+  topP?: number;
+  minP?: number;
+  seed?: number;
+  xtc?: {
+    probability: number;
+    threshold: number;
+  };
+  order: number;
+  createdAt: number;
+}
+
 declare global {
   interface Window {
     electronAPI: {
@@ -127,13 +146,12 @@ declare global {
       pickDirectory: () => Promise<string | null>;
 
       // Chat
-
+      chatLoadProfile: (profile: Profile) => Promise<{ success: boolean; error?: string }>;
+      chatGetCurrentProfile: () => Promise<Profile | null>;
       chatSend: (text: string) => Promise<{ success: boolean; error?: string; aborted?: boolean }>;
       onChatToken: (callback: (data: { token: string; segmentType?: 'thought' | 'comment' }) => void) => () => void;
       onChatDone: (callback: () => void) => () => void;
       onChatError: (callback: (error: string) => void) => () => void;
-
-      chatLoad: (filepath: string, systemPrompt?: string) => Promise<{ success: boolean; error?: string }>;
       chatAbort: () => Promise<void>;
       chatUnload: () => Promise<void>;
       removeChatListeners: () => void;
@@ -141,8 +159,6 @@ declare global {
       chatContextUsage: () => Promise<{ used: number; total: number }>;
       chatContextSize: () => Promise<{ contextSize: number | null }>;
 
-      chatUpdateSystemPrompt: (systemPrompt: string) => Promise<{ success: boolean; error?: string }>;
-      chatGetCurrentSystemPrompt: () => Promise<string>;
       browseForFiles: (options: {
         title: string;
         filters?: { name: string; extensions: string[] }[];
@@ -157,7 +173,6 @@ declare global {
       }) => Promise<{ success: boolean; message?: string }>;
 
       openModelsFolder: () => Promise<void>;
-
     };
   }
 }

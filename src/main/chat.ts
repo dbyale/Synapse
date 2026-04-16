@@ -3,8 +3,10 @@ import type {
   LlamaChatSession,
   LlamaContext,
   LlamaModel,
+  LLamaChatPromptOptions,
 } from 'node-llama-cpp';
 import { loadSettings, onMemorySettingsChanged } from './settings';
+import type { Profile } from '../renderer/types/profile';
 
 let llamaModule: typeof import('node-llama-cpp') | null = null;
 let llama: Llama | null = null;
@@ -13,7 +15,7 @@ let context: LlamaContext | null = null;
 let session: LlamaChatSession | null = null;
 let abortController: AbortController | null = null;
 let currentModelPath: string | null = null;
-let currentSystemPrompt: string = 'You are a helpful assistant.';
+let currentProfile: Profile | null = null;
 let reloadUnsubscribe: (() => void) | null = null;
 
 let lastResolvedMemory: {
@@ -90,29 +92,23 @@ async function computeLoadParams(loadedModel: LlamaModel): Promise<{
 }
 
 async function reloadCurrentModel() {
-  if (!currentModelPath) return;
-  console.log('[chat] Memory settings changed — reloading model with new params...');
-  await loadModel(currentModelPath, currentSystemPrompt);
+  if (!currentProfile) return;
+  console.log('[chat] Memory settings changed — reloading profile with new params...');
+  await loadProfile(currentProfile);
 }
 
 reloadUnsubscribe = onMemorySettingsChanged(() => {
   reloadCurrentModel().catch((err) => {
-    console.error('[chat] Failed to reload model after memory settings change:', err);
+    console.error('[chat] Failed to reload profile after memory settings change:', err);
   });
 });
 
-export async function loadModel(
-  filepath: string,
-  systemPrompt?: string,
+export async function loadProfile(
+  profile: Profile,
 ): Promise<{ success: boolean; error?: string }> {
-  console.log('[chat] Loading model from:', filepath);
-
-  // Update system prompt if provided, otherwise keep current
-  if (systemPrompt !== undefined) {
-    currentSystemPrompt = systemPrompt;
-  }
-
-  console.log('[chat] Using system prompt:', currentSystemPrompt.substring(0, 100) + '...');
+  console.log('[chat] Loading profile:', profile.name);
+  console.log('[chat] Model path:', profile.model);
+  console.log('[chat] System prompt:', profile.systemPrompt.substring(0, 100) + '...');
 
   await unloadModel();
 
@@ -130,7 +126,7 @@ export async function loadModel(
     let contextSize: number = 2048;
 
     console.log('[chat] Creating temporary model for param calculation...');
-    tempModel = await llamaInstance.loadModel({ modelPath: filepath });
+    tempModel = await llamaInstance.loadModel({ modelPath: profile.model });
 
     try {
       const params = await computeLoadParams(tempModel);
@@ -140,17 +136,14 @@ export async function loadModel(
     } catch (paramError: any) {
       console.error('[chat] computeLoadParams failed:', paramError);
 
-      // Dispose temp model before throwing
       if (tempModel) {
         await tempModel.dispose();
         tempModel = null;
       }
 
-      // Re-throw the error with a clearer message
       throw new Error(`Failed to compute load parameters: ${paramError.message || 'Insufficient memory'}`);
     }
 
-    // Dispose temp model after successful param computation
     if (tempModel) {
       console.log('[chat] Disposing temporary model...');
       await tempModel.dispose();
@@ -159,7 +152,7 @@ export async function loadModel(
 
     console.log('[chat] Creating model instance...');
     model = await llamaInstance.loadModel({
-      modelPath: filepath,
+      modelPath: profile.model,
       ...(gpuLayers !== undefined && { gpuLayers }),
     });
 
@@ -169,26 +162,26 @@ export async function loadModel(
       ignoreMemorySafetyChecks: true,
     });
 
-    console.log('[chat] Creating chat session with system prompt...');
+    console.log('[chat] Creating chat session...');
     const { LlamaChatSession } = module;
 
     session = new LlamaChatSession({
       contextSequence: context.getSequence(),
-      systemPrompt: currentSystemPrompt,
+      systemPrompt: profile.systemPrompt,
     });
 
     console.log('[chat] Preloading system prompt into context...');
     await session.preloadPrompt('');
     console.log('[chat] Context warmed up.');
 
-    currentModelPath = filepath;
+    currentModelPath = profile.model;
+    currentProfile = profile;
 
-    console.log('[chat] Model loaded successfully');
+    console.log('[chat] Profile loaded successfully');
     return { success: true };
   } catch (error: any) {
-    console.error('[chat] Error loading model:', error);
+    console.error('[chat] Error loading profile:', error);
 
-    // Clean up temp model if it still exists
     if (tempModel) {
       try {
         await tempModel.dispose();
@@ -197,14 +190,53 @@ export async function loadModel(
       }
     }
 
-    // Ensure everything is cleaned up
     await unloadModel();
 
     return {
       success: false,
-      error: error?.message || 'Unknown error occurred while loading model'
+      error: error?.message || 'Unknown error occurred while loading profile'
     };
   }
+}
+
+function buildPromptOptions(profile: Profile | null): Partial<LLamaChatPromptOptions> {
+  if (!profile) {
+    return {};
+  }
+
+  const options: Partial<LLamaChatPromptOptions> = {};
+
+  // Temperature
+  if (profile.temperature !== undefined && profile.temperature > 0) {
+    options.temperature = profile.temperature;
+  }
+
+  // Top K
+  if (profile.topK !== undefined && profile.topK > 0) {
+    options.topK = profile.topK;
+  }
+
+  // Top P
+  if (profile.topP !== undefined && profile.topP < 1) {
+    options.topP = profile.topP;
+  }
+
+  // Min P
+  if (profile.minP !== undefined && profile.minP > 0) {
+    options.minP = profile.minP;
+  }
+
+  // Seed
+  if (profile.seed !== undefined) {
+    options.seed = profile.seed;
+  }
+
+  // XTC
+  if (profile.xtc !== undefined) {
+    options.xtc = profile.xtc;
+  }
+
+  return options;
 }
 
 export async function sendMessage(
@@ -212,7 +244,7 @@ export async function sendMessage(
   onToken: (token: string, segmentType?: 'thought' | 'comment') => void,
 ): Promise<string> {
   if (!session) {
-    throw new Error('No model loaded. Please load a model first.');
+    throw new Error('No profile loaded. Please load a profile first.');
   }
 
   abortController = new AbortController();
@@ -220,10 +252,9 @@ export async function sendMessage(
   try {
     console.log('[chat] Sending message:', text);
 
-    const response = await session.prompt(text, {
+    const promptOptions: Partial<LLamaChatPromptOptions> = {
       signal: abortController.signal,
       onResponseChunk: (chunk) => {
-        // Determine segment type from chunk
         let segmentType: 'thought' | 'comment' | undefined = undefined;
 
         if (chunk.type === 'segment') {
@@ -233,7 +264,6 @@ export async function sendMessage(
             segmentType = 'comment';
           }
 
-          // Optional: Log segment boundaries for debugging
           if (chunk.segmentStartTime != null) {
             console.log(`[chat] Segment start: ${chunk.segmentType}`);
           }
@@ -242,10 +272,12 @@ export async function sendMessage(
           }
         }
 
-        // Call the callback with token and optional segment type
         onToken(chunk.text, segmentType);
       },
-    });
+      ...buildPromptOptions(currentProfile),
+    };
+
+    const response = await session.prompt(text, promptOptions);
 
     abortController = null;
     console.log('[chat] Response complete');
@@ -289,23 +321,8 @@ export async function unloadModel() {
   }
 }
 
-// Changing system prompt requires reloading the model
-export async function updateSystemPrompt(systemPrompt: string): Promise<void> {
-  if (!currentModelPath) {
-    throw new Error('No model loaded. Please load a model first.');
-  }
-
-  console.log('[chat] Updating system prompt (will reload model):', systemPrompt.substring(0, 100) + '...');
-
-  // Reload the model with the new system prompt
-  // This clears conversation history but ensures proper system prompt application
-  await loadModel(currentModelPath, systemPrompt);
-
-  console.log('[chat] System prompt updated successfully');
-}
-
-export function getCurrentSystemPrompt(): string {
-  return currentSystemPrompt;
+export function getCurrentProfile(): Profile | null {
+  return currentProfile;
 }
 
 export async function tokenize(text: string): Promise<number | null> {
