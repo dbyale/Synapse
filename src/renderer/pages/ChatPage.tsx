@@ -1,4 +1,11 @@
-import { FormEvent, useEffect, useRef, useState, KeyboardEvent } from 'react';
+import {
+  FormEvent,
+  useEffect,
+  useRef,
+  useState,
+  KeyboardEvent,
+  useCallback,
+} from 'react';
 import {
   SendHorizonal,
   Square,
@@ -7,7 +14,7 @@ import {
   AlertCircle,
   RefreshCw,
 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import MessageContent from '../components/MessageContent';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { Profile } from '../types/profile';
@@ -25,9 +32,7 @@ interface Message {
   content: MessageSegment[];
 }
 
-// ── Persistent state that survives component unmount/remount ──
 let persistentMessages: Message[] = [];
-let persistentSelectedProfileId: string = '';
 let persistentLoadedProfileId: string = '';
 let persistentMessageCounter: number = 0;
 
@@ -39,9 +44,7 @@ export default function ChatPage() {
   const [modelLoading, setModelLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [profiles, setProfiles] = useState<Profile[]>([]);
-  const [selectedProfileId, setSelectedProfileId] = useState<string>(
-    persistentSelectedProfileId,
-  );
+  const [selectedProfileId, setSelectedProfileId] = useState<string>('');
   const [placeholder, setPlaceholder] = useState('Select a profile first...');
   const [usedTokens, setUsedTokens] = useState<number>(0);
   const [maxTokens, setMaxTokens] = useState<number | null>(null);
@@ -56,37 +59,38 @@ export default function ChatPage() {
     cancelled: false,
   });
   const unloadInProgress = useRef(false);
+  const profilesRef = useRef<Profile[]>([]);
 
   const navigate = useNavigate();
+  const location = useLocation();
 
-  // ── Derived: currently selected profile object ──
   const selectedProfile =
     profiles.find((p) => p.id === selectedProfileId) ?? null;
 
-  // ── Helper: load profiles from localStorage ──
-  const loadProfilesFromStorage = () => {
+  const loadProfilesFromStorage = useCallback(() => {
     const stored = localStorage.getItem('profiles');
+    let parsed: Profile[] = [];
+
     if (stored) {
       try {
-        const parsed: Profile[] = JSON.parse(stored);
-        // Sort by order field
+        parsed = JSON.parse(stored);
         const sorted = [...parsed].sort((a, b) => a.order - b.order);
-        setProfiles(sorted);
-
-        // Auto-select first profile if nothing is selected yet
-        if (!persistentSelectedProfileId && sorted.length > 0) {
-          setSelectedProfileId(sorted[0].id);
-        }
-
-        return sorted;
-      } catch (e) {
-        console.error('[ChatPage] Failed to parse profiles:', e);
+        parsed = sorted;
+      } catch {
+        return [];
       }
     }
-    return [];
-  };
 
-  // ── Unload model helper ──
+    const profilesChanged =
+      JSON.stringify(parsed) !== JSON.stringify(profilesRef.current);
+    if (profilesChanged) {
+      setProfiles(parsed);
+      profilesRef.current = parsed;
+    }
+
+    return parsed;
+  }, []);
+
   const unloadModel = async (): Promise<void> => {
     if (unloadInProgress.current) {
       const startTime = Date.now();
@@ -106,57 +110,74 @@ export default function ChatPage() {
     }
 
     unloadInProgress.current = true;
-    console.log('[ChatPage] Unloading current model...');
 
     try {
       await window.electronAPI.chatUnload();
       persistentLoadedProfileId = '';
-      console.log('[ChatPage] Model unloaded successfully');
-    } catch (error) {
-      console.error('[ChatPage] Error unloading model:', error);
     } finally {
       unloadInProgress.current = false;
     }
   };
 
-  // ── Load profiles on mount and listen for storage changes ──
   useEffect(() => {
-    // Initial load
     loadProfilesFromStorage();
 
-    // Listen for storage changes (e.g., from ProfilesPage)
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'profiles') {
-        console.log(
-          '[ChatPage] Profiles changed in localStorage, reloading...',
-        );
-        const updated = loadProfilesFromStorage();
+    const storedSelectedId = localStorage.getItem('selectedProfileId');
+    if (storedSelectedId) {
+      setSelectedProfileId(storedSelectedId);
+    }
 
-        // If the currently loaded profile was modified, reload it
-        if (persistentLoadedProfileId && updated.length > 0) {
-          const currentProfile = updated.find(
-            (p) => p.id === persistentLoadedProfileId,
-          );
-          if (currentProfile) {
-            console.log(
-              '[ChatPage] Currently loaded profile was modified, reloading...',
-            );
-            // Trigger reload by bouncing the selected profile ID
-            setSelectedProfileId('');
-            setTimeout(
-              () => setSelectedProfileId(persistentLoadedProfileId),
-              10,
-            );
-          }
+    const handleProfilesChanged = () => {
+      const updated = loadProfilesFromStorage();
+
+      if (persistentLoadedProfileId && updated.length > 0) {
+        const currentProfile = updated.find(
+          (p) => p.id === persistentLoadedProfileId,
+        );
+        if (currentProfile) {
+          setSelectedProfileId('');
+          setTimeout(() => setSelectedProfileId(persistentLoadedProfileId), 10);
         }
       }
     };
 
-    window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
-  }, []);
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        loadProfilesFromStorage();
 
-  // ── Start new chat with a given profile ──
+        const visibilityStoredId = localStorage.getItem('selectedProfileId');
+        if (
+          visibilityStoredId &&
+          visibilityStoredId !== persistentLoadedProfileId
+        ) {
+          setSelectedProfileId(visibilityStoredId);
+        }
+      }
+    };
+
+    window.addEventListener('profiles-changed', handleProfilesChanged);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('profiles-changed', handleProfilesChanged);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [loadProfilesFromStorage]);
+
+  useEffect(() => {
+    if (location.pathname === '/chat') {
+      loadProfilesFromStorage();
+
+      const navStoredId = localStorage.getItem('selectedProfileId');
+
+      if (navStoredId && navStoredId !== persistentLoadedProfileId) {
+        setSelectedProfileId(navStoredId);
+      } else if (!navStoredId && persistentLoadedProfileId) {
+        setSelectedProfileId('');
+      }
+    }
+  }, [location.pathname, loadProfilesFromStorage]);
+
   const startNewChatWithProfile = async (profileId: string | null) => {
     setMessages([]);
     persistentMessages = [];
@@ -168,14 +189,12 @@ export default function ChatPage() {
       await unloadModel();
     }
 
-    // Trigger reload by bouncing the selected profile ID
     if (profileId) {
       setSelectedProfileId('');
       setTimeout(() => setSelectedProfileId(profileId), 10);
     }
   };
 
-  // ── Confirm dialog handlers ──
   const handleConfirmNewChat = async () => {
     setShowConfirmDialog(false);
     await startNewChatWithProfile(pendingProfileId);
@@ -187,38 +206,48 @@ export default function ChatPage() {
     setPendingProfileId(null);
   };
 
-  // ── Sync persistent state ──
   useEffect(() => {
     persistentMessages = messages;
   }, [messages]);
+
   useEffect(() => {
-    persistentSelectedProfileId = selectedProfileId;
+    if (selectedProfileId) {
+      localStorage.setItem('selectedProfileId', selectedProfileId);
+    } else {
+      localStorage.removeItem('selectedProfileId');
+    }
   }, [selectedProfileId]);
+
   useEffect(() => {
     persistentMessageCounter = messageCounter.current;
   });
 
-  // ── On mount, fetch context size in case model is already loaded ──
   useEffect(() => {
-    async function syncContextSize() {
+    const syncContextSize = async () => {
       const { contextSize } = await window.electronAPI.chatContextSize();
       if (contextSize !== null) setMaxTokens(contextSize);
-    }
+    };
     syncContextSize();
   }, []);
 
-  // ── Load profile when selectedProfileId changes ──
   useEffect(() => {
     const abortController = { cancelled: false };
     loadAbortController.current = abortController;
 
-    async function load() {
-      if (!selectedProfileId || !selectedProfile) {
+    const load = async () => {
+      if (!selectedProfileId) {
         setLoadError(null);
         return;
       }
 
-      // Already loaded — just sync context size
+      const profile =
+        profilesRef.current.find((p) => p.id === selectedProfileId) ?? null;
+
+      if (!profile) {
+        setLoadError(null);
+        return;
+      }
+
       if (persistentLoadedProfileId === selectedProfileId) {
         const { contextSize } = await window.electronAPI.chatContextSize();
         if (!abortController.cancelled) {
@@ -233,26 +262,21 @@ export default function ChatPage() {
       setUsedTokens(0);
       setMaxTokens(null);
 
-      console.log('[ChatPage] Loading profile:', selectedProfile.name);
-
-      // Unload previous model first
       if (persistentLoadedProfileId) {
         await unloadModel();
       }
 
-      // Brief pause to ensure VRAM is freed
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, 1000);
+      });
 
       if (abortController.cancelled) {
-        console.log('[ChatPage] Profile load cancelled during unload wait');
         setModelLoading(false);
         return;
       }
 
       try {
-        const res = await window.electronAPI.chatLoadProfile(selectedProfile);
-
-        console.log('[ChatPage] chatLoadProfile response:', res);
+        const res = await window.electronAPI.chatLoadProfile(profile);
 
         if (abortController.cancelled) {
           setModelLoading(false);
@@ -270,13 +294,7 @@ export default function ChatPage() {
             if (contextSize !== null && contextSize > 0) {
               setMaxTokens(contextSize);
               setLoadError(null);
-              console.log(
-                '[ChatPage] Profile loaded and verified successfully',
-              );
             } else {
-              console.error(
-                '[ChatPage] Profile loaded but context size is invalid',
-              );
               persistentLoadedProfileId = '';
               setLoadError(
                 'Profile loaded but context is invalid. Try reloading.',
@@ -285,13 +303,11 @@ export default function ChatPage() {
             }
           }
         } else {
-          console.error(`[ChatPage] Backend returned error: ${res.error}`);
           persistentLoadedProfileId = '';
           setLoadError(res.error || 'Failed to load profile');
           await unloadModel();
         }
       } catch (error) {
-        console.error('[ChatPage] Exception during profile load:', error);
         setModelLoading(false);
         persistentLoadedProfileId = '';
         setLoadError(
@@ -299,16 +315,15 @@ export default function ChatPage() {
         );
         await unloadModel();
       }
-    }
+    };
 
     load();
 
     return () => {
       abortController.cancelled = true;
     };
-  }, [selectedProfileId, selectedProfile]);
+  }, [selectedProfileId]);
 
-  // ── Poll for context size until available ──
   useEffect(() => {
     const interval = setInterval(() => {
       if (maxTokens !== null || !selectedProfileId) {
@@ -323,15 +338,16 @@ export default function ChatPage() {
             setMaxTokens(contextSize);
             clearInterval(interval);
           }
-          return contextSize;
+          return undefined;
         })
-        .catch(() => {});
+        .catch(() => {
+          // Silently fail on error
+        });
     }, 1000);
 
     return () => clearInterval(interval);
   }, [maxTokens, selectedProfileId]);
 
-  // ── Real-time context usage polling ──
   useEffect(() => {
     if (!selectedProfileId || modelLoading || loadError) return undefined;
 
@@ -351,7 +367,6 @@ export default function ChatPage() {
     return () => clearInterval(interval);
   }, [selectedProfileId, modelLoading, loading, maxTokens, loadError]);
 
-  // ── Listen for streaming tokens ──
   useEffect(() => {
     const removeTokenListener = window.electronAPI.onChatToken(
       ({ token, segmentType }) => {
@@ -418,7 +433,6 @@ export default function ChatPage() {
     };
   }, []);
 
-  // ── Smart auto-scroll ──
   useEffect(() => {
     const container = messagesContainerRef.current;
     if (!container) return;
@@ -433,7 +447,6 @@ export default function ChatPage() {
     }
   }, [messages, loading, processing]);
 
-  // ── Placeholder text ──
   useEffect(() => {
     if (modelLoading) setPlaceholder('Loading profile...');
     else if (loadError) setPlaceholder('Profile failed to load');
@@ -502,7 +515,6 @@ export default function ChatPage() {
       await unloadModel();
     }
 
-    // If there are existing messages, confirm before switching
     if (messages.length > 0) {
       setPendingProfileId(newProfileId);
       setShowConfirmDialog(true);
@@ -511,9 +523,7 @@ export default function ChatPage() {
     }
   };
 
-  // ── Retry loading the profile ──
   const handleRetry = async () => {
-    console.log('[ChatPage] Retrying profile load...');
     setLoadError(null);
 
     if (persistentLoadedProfileId) {
@@ -523,12 +533,10 @@ export default function ChatPage() {
     const tempId = selectedProfileId;
     setSelectedProfileId('');
     setTimeout(() => {
-      console.log('[ChatPage] Reloading profile:', tempId);
       setSelectedProfileId(tempId);
     }, 100);
   };
 
-  // ── Token counter class ──
   const tokenRatio = maxTokens !== null ? usedTokens / maxTokens : 0;
   let tokenCounterClass = 'chat-token-counter';
   if (tokenRatio >= 0.9) tokenCounterClass += ' chat-token-counter--danger';
@@ -539,7 +547,6 @@ export default function ChatPage() {
 
   return (
     <div className="chat-page">
-      {/* Profile Selector */}
       <div className="chat-model-selector">
         <Bot
           size={18}
@@ -568,7 +575,6 @@ export default function ChatPage() {
         )}
         {loadError && <span className="chat-model-error-label">Error</span>}
 
-        {/* Profiles Button */}
         <button
           type="button"
           className="chat-system-prompt-button"
@@ -579,7 +585,6 @@ export default function ChatPage() {
         </button>
       </div>
 
-      {/* Confirmation Dialog */}
       {showConfirmDialog && (
         <ConfirmDialog
           title="Switch Profile?"
@@ -591,9 +596,7 @@ export default function ChatPage() {
         />
       )}
 
-      {/* Messages */}
       <div className="chat-messages" ref={messagesContainerRef}>
-        {/* Error Display */}
         {loadError && !modelLoading && (
           <div className="chat-error">
             <AlertCircle size={32} style={{ marginBottom: 4 }} />
@@ -678,7 +681,6 @@ export default function ChatPage() {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input Area */}
       <div className="chat-input-wrapper">
         <div className="chat-input-row">
           <textarea
@@ -702,7 +704,7 @@ export default function ChatPage() {
           ) : (
             <button
               type="button"
-              className=" chat-send-button"
+              className="chat-send-button"
               disabled={
                 !inputText.trim() ||
                 !selectedProfileId ||

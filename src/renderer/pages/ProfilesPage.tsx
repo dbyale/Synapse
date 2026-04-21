@@ -193,31 +193,13 @@ export default function ProfilesPage() {
     loadLocalModels();
   }, []);
 
-  useEffect(() => {
-    const handleProfilesUpdated = () => {
-      const stored = localStorage.getItem('profiles');
-      if (stored) {
-        try {
-          const parsed = JSON.parse(stored) as Profile[];
-          const sorted = parsed.sort(
-            (a, b) => (a.order ?? a.createdAt) - (b.order ?? b.createdAt),
-          );
-          setProfiles(sorted);
-        } catch {
-          // ignore
-        }
-      }
-    };
-
-    window.addEventListener('profiles-updated', handleProfilesUpdated);
-    return () =>
-      window.removeEventListener('profiles-updated', handleProfilesUpdated);
-  }, []);
-
-  // ── Persist to localStorage ──
+  // ── Persist to localStorage and notify ChatPage ──
   const saveProfiles = (updated: Profile[]) => {
     setProfiles(updated);
     localStorage.setItem('profiles', JSON.stringify(updated));
+
+    // ── Notify ChatPage of the change (storage event only fires in other tabs) ──
+    window.dispatchEvent(new Event('profiles-changed'));
   };
 
   const handleNewProfile = () => {
@@ -357,28 +339,17 @@ export default function ProfilesPage() {
       setSelectedProfileId(null);
       localStorage.removeItem('selectedProfileId');
       setError(null);
-      await window.electronAPI.chatUnload();
+      // Don't unload here — let ChatPage handle it
     } else {
       const profile = profiles.find((p) => p.id === id);
       if (profile) {
-        // ── Show loading spinner on this specific button ──
-        setLoadingId(id);
+        // Just update localStorage and state — don't load the model
+        setSelectedProfileId(id);
+        localStorage.setItem('selectedProfileId', id);
         setError(null);
-        try {
-          const result = await window.electronAPI.chatLoadProfile(profile);
-          if (result.success) {
-            setSelectedProfileId(id);
-            localStorage.setItem('selectedProfileId', id);
-          } else {
-            setError(
-              `Failed to load profile: ${result.error || 'Unknown error'}`,
-            );
-          }
-        } catch {
-          setError('Error loading profile. Please try again.');
-        } finally {
-          setLoadingId(null);
-        }
+
+        // Notify ChatPage that selection changed
+        window.dispatchEvent(new Event('profiles-changed'));
       }
     }
   };
