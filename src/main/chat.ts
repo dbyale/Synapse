@@ -9,9 +9,11 @@ import type {
 } from 'node-llama-cpp';
 import { loadSettings, onMemorySettingsChanged, getModelsDirectory } from './settings';
 import type { Profile } from '../renderer/types/profile';
+import { createChatFunctions } from './chatFunctions';
 import path from 'path';
 
 let llamaModule: typeof import('node-llama-cpp') | null = null;
+let chatFunctions: ReturnType<typeof createChatFunctions> | null = null;
 let llama: Llama | null = null;
 let model: LlamaModel | null = null;
 let context: LlamaContext | null = null;
@@ -33,6 +35,8 @@ async function ensureLlamaLoaded() {
     console.log('[chat] Loading node-llama-cpp module...');
     llamaModule = (await Function('return import("node-llama-cpp")')()) as typeof import('node-llama-cpp');
     console.log('[chat] Module loaded.');
+
+    chatFunctions = createChatFunctions(llamaModule.defineChatSessionFunction);
   }
 
   if (!llama) {
@@ -264,6 +268,7 @@ export async function sendMessage(
 
     const promptOptions: Partial<LLamaChatPromptOptions> = {
       signal: abortController.signal,
+      functions: chatFunctions ?? undefined,
       onResponseChunk: (chunk) => {
         let segmentType: 'thought' | 'comment' | undefined = undefined;
 
