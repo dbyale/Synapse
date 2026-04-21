@@ -184,8 +184,13 @@ export async function loadProfile(
       systemPrompt: profile.systemPrompt,
     });
 
-    console.log('[chat] Preloading system prompt into context...');
-    await session.preloadPrompt('');
+    // Preload with functions so their schemas are cached in the KV cache upfront.
+    // This avoids a context shift on the first real prompt turn, since every
+    // subsequent session.prompt() call will pass the same functions reference.
+    console.log('[chat] Preloading system prompt and function schemas into context...');
+    await session.preloadPrompt('', {
+      functions: chatFunctions ?? undefined,
+    });
     console.log('[chat] Context warmed up.');
 
     currentModelPath = fullModelPath;
@@ -268,6 +273,9 @@ export async function sendMessage(
 
     const promptOptions: Partial<LLamaChatPromptOptions> = {
       signal: abortController.signal,
+      // Always pass the same chatFunctions reference every turn.
+      // This keeps the KV cache valid — changing or omitting functions
+      // between turns causes a context shift and forces re-tokenization.
       functions: chatFunctions ?? undefined,
       onResponseChunk: (chunk) => {
         let segmentType: 'thought' | 'comment' | undefined = undefined;
