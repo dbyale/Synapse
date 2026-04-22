@@ -2,21 +2,18 @@
 // npm install -D @types/turndown
 
 import type { defineChatSessionFunction as DefineChatSessionFunctionType } from 'node-llama-cpp';
-import TurndownService from 'turndown';
 
+import { fetchPage } from './functions/fetchPage';
 import { AVAILABLE_TOOLS, TOOL_METADATA } from '../data/defaultTools';
 
 type DefineFn = typeof DefineChatSessionFunctionType;
-
-const turndown = new TurndownService();
 
 export function createChatFunctions(defineFn: DefineFn) {
   return {
     getCurrentDateTime: defineFn({
       description:
         'Get the current local date, time, and timezone. ' +
-        'Returns an object with date, time, timezone, and ISO 8601 string. ' +
-        'Make sure to use this information in a format readable to humans',
+        'Returns an object with date, time, timezone, and ISO 8601 string. ',
       params: {
         type: 'object',
         properties: {
@@ -55,8 +52,9 @@ export function createChatFunctions(defineFn: DefineFn) {
 
     fetchPage: defineFn({
       description:
-        'Fetches a URL from the internet and extracts its contents as markdown. ' +
-        'Use start_index to read large pages in chunks and find the information you need.',
+        'Fetches information from a URL.' +
+        'Use start_index to read large pages in chunks and find the information you need.' +
+        'When the exact URL is unknown use a search engine to find the correct URL, or, visit the site homepage and use fetchPage to explore the site and find the correct URL.',
       params: {
         type: 'object',
         properties: {
@@ -88,36 +86,14 @@ export function createChatFunctions(defineFn: DefineFn) {
         } = params;
 
         try {
-          new URL(url);
+          const content = await fetchPage(url, raw);
 
-          const response = await fetch(url, {
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            },
-          });
-
-          if (!response.ok) {
-            return `Error: Failed to fetch URL. Status ${response.status}: ${response.statusText}`;
+          // Check if the result is an error message
+          if (content.startsWith('Error:')) {
+            return content;
           }
-
-          const contentType = response.headers.get('content-type') || '';
-          let content = '';
-
-          if (contentType.includes('application/json')) {
-            const json = await response.json();
-            content = JSON.stringify(json, null, 2);
-          } else {
-            content = await response.text();
-
-            if (!raw && contentType.includes('text/html')) {
-              content = turndown.turndown(content);
-            }
-          }
-
-          content = content.replace(/\n{3,}/g, '\n\n').trim();
 
           const sliced = content.slice(start_index, start_index + max_length);
-
           return sliced || 'No content found at the specified index.';
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : String(error);
