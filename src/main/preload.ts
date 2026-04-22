@@ -96,4 +96,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('chat:contextSize'),
 
   openModelsFolder: () => ipcRenderer.invoke('open-models-folder'),
+
+  onChatFunctionCall: (callback: (data: { name: string; params: string }) => void) => {
+    const listener = (_: any, data: { name: string; params: string }) => callback(data);
+    ipcRenderer.on('chat-function-call', listener);
+    return () => ipcRenderer.removeListener('chat-function-call', listener);
+  },
+
+  onChatFunctionResult: (callback: (data: { name: string; result: string }) => void) => {
+    const listener = (_: any, data: { name: string; result: string }) => callback(data);
+    ipcRenderer.on('chat-function-result', listener);
+    return () => ipcRenderer.removeListener('chat-function-result', listener);
+  },
 });

@@ -871,3 +871,172 @@
   color: white;
   opacity: 0.88;
 }
+/* ============================================================================
+   ToolCallSegment Component — BEM Classes
+   ============================================================================ */
+
+@keyframes tool-spin {
+  to { transform: rotate(360deg); }
+}
+
+.tool-call-segment {
+  display: inline-flex;
+  flex-direction: column;
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  transition: all 0.15s ease;
+  font-size: 12px;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+/* ============================================================================
+   Expanded State Modifier
+   ============================================================================ */
+
+.tool-call-segment--expanded {
+  display: flex;
+  width: 100%;
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+/* ============================================================================
+   Header & Child Elements
+   ============================================================================ */
+
+.tool-call-segment__header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background-color: var(--bg-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.tool-call-segment__header:hover {
+  background-color: var(--bg-hover);
+}
+
+.tool-call-segment__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  color: var(--text-secondary);
+}
+
+.tool-call-segment__name {
+  flex: 1;
+  color: var(--text-primary);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tool-call-segment__spinner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: tool-spin 0.75s linear infinite;
+}
+
+.tool-call-segment__check {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  color: #a6e3a1;
+}
+
+.tool-call-segment__chevron {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  color: var(--text-secondary);
+  transition: transform 0.15s ease;
+}
+
+.tool-call-segment__header[aria-expanded="true"] .tool-call-segment__chevron {
+  transform: rotate(180deg);
+}
+
+/* ============================================================================
+   Details Panel
+   ============================================================================ */
+
+.tool-call-segment__details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  background-color: var(--bg-primary);
+  border-top: 1px solid var(--border);
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+/* ============================================================================
+   Labels & Code Display
+   ============================================================================ */
+
+.tool-call-segment__label {
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0;
+}
+
+.tool-call-segment__json {
+  margin: 0;
+  padding: 0.5rem;
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-family: "Menlo", "Monaco", "Courier New", monospace;
+  font-size: 11px;
+  line-height: 1.4;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-wrap: normal;
+  transition: all 0.15s ease;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.tool-call-segment__json::-webkit-scrollbar {
+  height: 4px;
+}
+
+.tool-call-segment__json::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.tool-call-segment__json::-webkit-scrollbar-thumb {
+  background: var(--text-secondary);
+  border-radius: 2px;
+}
+
+.tool-call-segment__json::-webkit-scrollbar-thumb:hover {
+  background: var(--text-primary);
+}

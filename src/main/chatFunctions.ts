@@ -1,11 +1,21 @@
+// npm install duck-duck-scrape node-fetch@2 cheerio
+
 // Import only the TYPE — erased at compile time, webpack never sees a real import
 import type { defineChatSessionFunction as DefineChatSessionFunctionType } from 'node-llama-cpp';
+
+import { search as duckSearch } from 'duck-duck-scrape';
+import fetch from 'node-fetch';
+import * as cheerio from 'cheerio';
 
 import { AVAILABLE_TOOLS, TOOL_METADATA } from '../data/defaultTools';
 
 type DefineFn = typeof DefineChatSessionFunctionType;
 
-const DDG_API_BASE = 'https://api.duckduckgo.com/';
+interface SearchResult {
+  url:     string;
+  title:   string;
+  content: string;
+}
 
 export function createChatFunctions(defineFn: DefineFn) {
   return {
@@ -52,103 +62,87 @@ export function createChatFunctions(defineFn: DefineFn) {
 
     searchWeb: defineFn({
       description:
-        'Search the web using the DuckDuckGo Instant Answer API. ' +
-        'Returns an abstract summary, instant answer, definition, and related topics. ' +
-        'Best for factual lookups, definitions, and topic summaries. ' +
-        'Note: does not return full web search results — use for quick facts only.',
+        'Search the web using DuckDuckGo and scrape the top result pages for full content. ' +
+        'Returns an array of { url, title, content } objects. Best for current information, research, and detailed topic exploration.',
       params: {
         type: 'object',
         properties: {
           query: {
             type: 'string',
           },
-          skip_disambig: {
+          max_results: {
             oneOf: [
               { type: 'null' },
-              { type: 'boolean' },
+              { type: 'number' },
             ],
           },
         },
         required: ['query'],
       },
       async handler(params) {
-        const url = new URL(DDG_API_BASE);
-        url.searchParams.set('q',            params.query);
-        url.searchParams.set('format',       'json');
-        url.searchParams.set('no_html',      '1');
-        url.searchParams.set('skip_disambig', params.skip_disambig ? '1' : '0');
-        url.searchParams.set('t',            'node-llama-cpp-chat');
+        const query = params.query as string;
+        const maxResults = params.max_results ?? 1;
 
         try {
-          const response = await fetch(url.toString(), {
-            headers: { 'Accept': 'application/json' },
-          });
+          const searchResults = await duckSearch(query);
 
-          if (!response.ok) {
-            return `DuckDuckGo API error: ${response.status} ${response.statusText}`;
+          if (!searchResults.results || searchResults.results.length === 0) {
+            return `No search results found for "${query}".`;
           }
 
-          const data = await response.json() as DDGResponse;
-          const result: DDGResult = {};
+          const resultsToFetch = searchResults.results.slice(0, maxResults);
+          const scrapedResults: SearchResult[] = [];
 
-          if (data.Answer)         result.answer         = data.Answer;
-          if (data.AbstractText)   result.abstract        = data.AbstractText;
-          if (data.AbstractSource) result.source          = data.AbstractSource;
-          if (data.AbstractURL)    result.sourceUrl       = data.AbstractURL;
-          if (data.Definition)     result.definition      = data.Definition;
-          if (data.DefinitionURL)  result.definitionUrl   = data.DefinitionURL;
+          for (const result of resultsToFetch) {
+            try {
+              const response = await fetch(result.url, {
+                timeout: 10000,
+                headers: {
+                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                },
+              });
 
-          if (data.RelatedTopics?.length) {
-            result.relatedTopics = data.RelatedTopics
-              .filter((t): t is DDGTopic => 'Text' in t && !!t.Text)
-              .slice(0, 5)
-              .map(t => ({ text: t.Text, url: t.FirstURL }));
+              if (!response.ok) {
+                continue;
+              }
+
+              const html = await response.text();
+              const $ = cheerio.load(html);
+
+              // Remove script, style, nav, footer tags
+              $('script, style, nav, footer').remove();
+
+              // Extract body text
+              const bodyText = $('body').text();
+
+              // Collapse whitespace
+              const cleanedText = bodyText
+                .replace(/\s+/g, ' ')
+                .trim();
+
+              // Cap at 1500 chars
+              const content = cleanedText.substring(0, 1500);
+
+              scrapedResults.push({
+                url:     result.url,
+                title:   result.title,
+                content: content,
+              });
+            } catch {
+              // Skip failed pages silently
+              continue;
+            }
           }
 
-          if (Object.keys(result).length === 0) {
-            return (
-              `No instant answer found for "${params.query}". ` +
-              'Try rephrasing, or use a more specific term.'
-            );
+          if (scrapedResults.length === 0) {
+            return `Could not scrape any content from search results for "${query}".`;
           }
 
-          return result;
-        } catch (err) {
-          return `Failed to fetch search results: ${String(err)}`;
+          return scrapedResults;
+        } catch (error) {
+          return `Search failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
         }
       },
     }),
   };
-}
-
-// ── DuckDuckGo Instant Answer API response types ──────────────────────────────
-
-interface DDGResponse {
-  Answer?:         string;
-  AbstractText?:   string;
-  AbstractSource?: string;
-  AbstractURL?:    string;
-  Definition?:     string;
-  DefinitionURL?:  string;
-  RelatedTopics?:  (DDGTopic | DDGTopicGroup)[];
-}
-
-interface DDGTopic {
-  Text:     string;
-  FirstURL: string;
-}
-
-interface DDGTopicGroup {
-  Name:   string;
-  Topics: DDGTopic[];
-}
-
-interface DDGResult {
-  answer?:        string;
-  abstract?:      string;
-  source?:        string;
-  sourceUrl?:     string;
-  definition?:    string;
-  definitionUrl?: string;
-  relatedTopics?: { text: string; url: string }[];
 }

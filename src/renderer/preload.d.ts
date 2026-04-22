@@ -156,6 +156,9 @@ declare global {
       }) => Promise<{ success: boolean; message?: string }>;
 
       openModelsFolder: () => Promise<void>;
+
+      onChatFunctionCall: (callback: (data: { name: string; params: string }) => void) => () => void;
+      onChatFunctionResult: (callback: (data: { name: string; result: string }) => void) => () => void;
     };
   }
 }

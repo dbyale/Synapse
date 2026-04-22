@@ -13,6 +13,10 @@ import {
   SlidersHorizontal,
   AlertCircle,
   RefreshCw,
+  Wrench,
+  Check,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import MessageContent from '../components/MessageContent';
@@ -23,7 +27,17 @@ import '../styles/ChatPage.css';
 interface MessageSegment {
   id: string;
   text: string;
-  type: 'thought' | 'comment' | 'normal';
+  type: 'thought' | 'comment' | 'normal' | 'tool';
+  toolName?: string;
+  toolStatus?: 'calling' | 'done';
+  toolParams?: string;
+  toolResult?: string;
+}
+
+interface ChatMessage {
+  id: number;
+  role: 'user' | 'assistant';
+  content: MessageSegment[];
 }
 
 interface Message {
@@ -35,6 +49,68 @@ interface Message {
 let persistentMessages: Message[] = [];
 let persistentLoadedProfileId: string = '';
 let persistentMessageCounter: number = 0;
+
+function ToolCallSegment({ segment }: { segment: MessageSegment }) {
+  const [expanded, setExpanded] = useState(false);
+  const hasContent = !!(segment.toolParams || segment.toolResult);
+
+  const prettyPrintJson = (jsonString: string): string => {
+    try {
+      const parsed = JSON.parse(jsonString);
+      return JSON.stringify(parsed, null, 2);
+    } catch {
+      return jsonString;
+    }
+  };
+
+  return (
+    <div
+      className={
+        expanded && hasContent
+          ? 'tool-call-segment tool-call-segment--expanded'
+          : 'tool-call-segment'
+      }
+    >
+      <div
+        className="tool-call-segment__header"
+        onClick={() => setExpanded(!expanded)}
+      >
+        <Wrench className="tool-call-segment__icon" size={16} />
+        <span className="tool-call-segment__name">{segment.toolName}</span>
+        {segment.toolStatus === 'calling' ? (
+          <div className="tool-call-segment__spinner" />
+        ) : segment.toolStatus === 'done' ? (
+          <Check className="tool-call-segment__check" size={16} />
+        ) : null}
+        {segment.toolParams || segment.toolResult ? (
+          <span className="tool-call-segment__chevron">
+            {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          </span>
+        ) : null}
+      </div>
+      {expanded && (segment.toolParams || segment.toolResult) && (
+        <div className="tool-call-segment__details">
+          {segment.toolParams && (
+            <>
+              <div className="tool-call-segment__label">Params</div>
+              <pre className="tool-call-segment__json">
+                {prettyPrintJson(segment.toolParams)}
+              </pre>
+            </>
+          )}
+          {segment.toolResult && (
+            <>
+              <div className="tool-call-segment__label">Result</div>
+              <pre className="tool-call-segment__json">
+                {prettyPrintJson(segment.toolResult)}
+              </pre>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function ChatPage() {
   const [inputText, setInputText] = useState('');
@@ -60,6 +136,7 @@ export default function ChatPage() {
   });
   const unloadInProgress = useRef(false);
   const profilesRef = useRef<Profile[]>([]);
+  const activeToolSegmentId = useRef<string | null>(null);
 
   const navigate = useNavigate();
   const location = useLocation();
@@ -427,9 +504,70 @@ export default function ChatPage() {
       setProcessing(false);
     });
 
+    const unsubscribeFunctionCall = window.electronAPI.onChatFunctionCall(
+      (data) => {
+        setMessages((prevMessages) => {
+          const updatedMessages = [...prevMessages];
+          const lastMessage = updatedMessages[updatedMessages.length - 1];
+
+          const toolSegment: MessageSegment = {
+            id: crypto.randomUUID(),
+            text: '',
+            type: 'tool',
+            toolName: data.name,
+            toolStatus: 'calling',
+            toolParams: data.params,
+          };
+
+          if (lastMessage?.role === 'assistant') {
+            lastMessage.content.push(toolSegment);
+          } else {
+            const assistantMessage: ChatMessage = {
+              id: messageCounter.current,
+              role: 'assistant',
+              content: [toolSegment],
+            };
+            messageCounter.current += 1;
+            updatedMessages.push(assistantMessage);
+          }
+
+          activeToolSegmentId.current = toolSegment.id;
+          setProcessing(true);
+          return updatedMessages;
+        });
+      },
+    );
+
+    const unsubscribeFunctionResult = window.electronAPI.onChatFunctionResult(
+      (data) => {
+        setMessages((prevMessages) => {
+          const updatedMessages = [...prevMessages];
+          const lastMessage = updatedMessages[updatedMessages.length - 1];
+
+          if (
+            lastMessage?.role === 'assistant' &&
+            activeToolSegmentId.current
+          ) {
+            const toolSegment = lastMessage.content.find(
+              (seg) => seg.id === activeToolSegmentId.current,
+            );
+            if (toolSegment && toolSegment.type === 'tool') {
+              toolSegment.toolStatus = 'done';
+              toolSegment.toolResult = data.result;
+            }
+          }
+
+          activeToolSegmentId.current = null;
+          return updatedMessages;
+        });
+      },
+    );
+
     return () => {
       removeTokenListener();
       removeDoneListener();
+      unsubscribeFunctionCall();
+      unsubscribeFunctionResult();
     };
   }, []);
 
@@ -466,9 +604,6 @@ export default function ChatPage() {
     if (!text || loading || modelLoading || !selectedProfileId || loadError)
       return;
 
-    messageCounter.current += 1;
-    segmentCounter.current += 1;
-
     const userMessage: Message = {
       id: messageCounter.current,
       role: 'user',
@@ -480,6 +615,9 @@ export default function ChatPage() {
         },
       ],
     };
+
+    messageCounter.current += 1;
+    segmentCounter.current += 1;
 
     setMessages((prev) => [...prev, userMessage]);
     setInputText('');
@@ -654,7 +792,16 @@ export default function ChatPage() {
               )}
             <div className="chat-message__bubble">
               {msg.role === 'assistant' ? (
-                <MessageContent segments={msg.content} />
+                <div className="chat-message__assistant-content">
+                  {msg.content.map((seg) =>
+                    seg.type === 'tool' ? (
+                      <ToolCallSegment key={seg.id} segment={seg} />
+                    ) : null,
+                  )}
+                  <MessageContent
+                    segments={msg.content.filter((s) => s.type !== 'tool')}
+                  />
+                </div>
               ) : (
                 msg.content[0]?.text || ''
               )}

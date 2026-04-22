@@ -9,7 +9,7 @@ export const TOOL_METADATA: Record<ToolName, { label: string; description: strin
   },
   searchWeb: {
     label: 'Search the Web',
-    description: 'Allows the AI to search the web via the DuckDuckGo Instant Answer API.',
+    description: 'Allows the AI to search the web and read full page content from results.',
     category: 'Web Search',
   },
 };

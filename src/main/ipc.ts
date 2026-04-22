@@ -359,4 +359,16 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     const modelsDir = getModelsDirectory();
     await shell.openPath(modelsDir);
   });
+
+  chatService.setEmitFunctionCallback((event: 'call' | 'result', name: string, data: string) => {
+    // Fresh window lookup to avoid stale closure references
+    const win = BrowserWindow.getAllWindows()[0];
+    if (!win || win.isDestroyed()) return;
+
+    if (event === 'call') {
+      win.webContents.send('chat-function-call', { name, params: data });
+    } else if (event === 'result') {
+      win.webContents.send('chat-function-result', { name, result: data });
+    }
+  });
 }

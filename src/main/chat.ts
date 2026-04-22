@@ -12,8 +12,7 @@ import path from 'path';
 
 let llamaModule: typeof import('node-llama-cpp') | null = null;
 let chatFunctions: ReturnType<typeof createChatFunctions> | null = null;
-// ── Only the tools selected by the active profile ──
-let activeSessionFunctions: Partial<ReturnType<typeof createChatFunctions>> | null = null;  // ← NEW
+let activeSessionFunctions: Partial<ReturnType<typeof createChatFunctions>> | null = null;
 let llama: Llama | null = null;
 let model: LlamaModel | null = null;
 let context: LlamaContext | null = null;
@@ -22,6 +21,7 @@ let abortController: AbortController | null = null;
 let currentModelPath: string | null = null;
 let currentProfile: Profile | null = null;
 let reloadUnsubscribe: (() => void) | null = null;
+let emitFunctionEvent: ((event: 'call' | 'result', name: string, data: string) => void) | null = null;
 
 let lastResolvedMemory: {
   modelVramUsage: number;
@@ -35,10 +35,8 @@ async function ensureLlamaLoaded() {
     console.log('[chat] Loading node-llama-cpp module...');
     llamaModule = (await Function('return import("node-llama-cpp")')()) as typeof import('node-llama-cpp');
     console.log('[chat] Module loaded.');
-
     chatFunctions = createChatFunctions(llamaModule.defineChatSessionFunction);
   }
-
   if (!llama) {
     const { getLlama } = llamaModule;
     llama = await getLlama();
@@ -108,12 +106,10 @@ reloadUnsubscribe = onMemorySettingsChanged(() => {
   });
 });
 
-// ── Build the per-session function map from a profile's tool list ──────────── NEW
 function buildSessionFunctions(
   profile: Profile,
   all: ReturnType<typeof createChatFunctions>,
 ): Partial<ReturnType<typeof createChatFunctions>> | null {
-  // If the profile has no tools array, or an empty one, disable all tools.
   if (!profile.tools || profile.tools.length === 0) {
     console.log('[chat] No tools selected for this profile — functions disabled.');
     return null;
@@ -130,6 +126,44 @@ function buildSessionFunctions(
   const selectedKeys = Object.keys(filtered);
   console.log(`[chat] Active tools for this profile: [${selectedKeys.join(', ')}]`);
   return selectedKeys.length > 0 ? filtered : null;
+}
+
+function wrapFunctionsForIPC(
+  functions: Partial<ReturnType<typeof createChatFunctions>>,
+): Partial<ReturnType<typeof createChatFunctions>> {
+  const wrapped: Partial<ReturnType<typeof createChatFunctions>> = {};
+
+  for (const [key, fn] of Object.entries(functions)) {
+    if (fn && typeof fn === 'object' && 'handler' in fn) {
+      const originalHandler = (fn as any).handler;
+      wrapped[key as keyof ReturnType<typeof createChatFunctions>] = {
+        ...fn,
+        handler: async (params: any) => {
+          const paramsJson = JSON.stringify(params);
+          console.log(`[chat] Function call: ${key} params: ${paramsJson}`);
+          emitFunctionEvent?.('call', key, paramsJson);
+
+          const result = await originalHandler(params);
+
+          const resultJson = JSON.stringify(result);
+          console.log(`[chat] Function result: ${key} result: ${resultJson}`);
+          emitFunctionEvent?.('result', key, resultJson);
+
+          return result;
+        },
+      };
+    } else {
+      wrapped[key as keyof ReturnType<typeof createChatFunctions>] = fn;
+    }
+  }
+
+  return wrapped;
+}
+
+export function setEmitFunctionCallback(
+  callback: ((event: 'call' | 'result', name: string, data: string) => void) | null,
+): void {
+  emitFunctionEvent = callback;
 }
 
 export async function loadProfile(
@@ -156,7 +190,6 @@ export async function loadProfile(
       throw new Error('Llama instance could not be initialized.');
     }
 
-    // ── Resolve which tools are active for this profile ──────────────────── NEW
     activeSessionFunctions = chatFunctions
       ? buildSessionFunctions(profile, chatFunctions)
       : null;
@@ -205,10 +238,9 @@ export async function loadProfile(
       systemPrompt: profile.systemPrompt,
     });
 
-    // Warm the KV cache with only the tools this profile has enabled.
     console.log('[chat] Preloading system prompt and function schemas into context...');
     await session.preloadPrompt('', {
-      functions: activeSessionFunctions ?? undefined,   // ← CHANGED
+      functions: activeSessionFunctions ?? undefined,
     });
     console.log('[chat] Context warmed up.');
 
@@ -262,7 +294,7 @@ export async function sendMessage(
 
     const promptOptions: Partial<LLamaChatPromptOptions> = {
       signal: abortController.signal,
-      functions: activeSessionFunctions ?? undefined,   // ← CHANGED (use filtered set)
+      functions: activeSessionFunctions ? wrapFunctionsForIPC(activeSessionFunctions) : undefined,
       onResponseChunk: (chunk) => {
         let segmentType: 'thought' | 'comment' | undefined = undefined;
 
@@ -306,7 +338,7 @@ export async function unloadModel() {
   console.log('[chat] Unloading model...');
   abort();
   lastResolvedMemory = null;
-  activeSessionFunctions = null;   // ← NEW: clear on unload
+  activeSessionFunctions = null;
   try {
     if (session) session = null;
     if (context) { await context.dispose(); context = null; }
