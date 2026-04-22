@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import type { LocalModel } from '../preload.d';
 import { Profile } from '../types/profile';
-import { AVAILABLE_TOOLS, TOOL_METADATA } from '../../data/defaultTools.ts';
+import { AVAILABLE_TOOLS, TOOL_METADATA } from '../../data/defaultTools';
 import '../styles/ProfilesPage.css';
 
 interface EditSectionProps {
@@ -106,6 +106,112 @@ function CollapsibleSection({
         )}
       </button>
       {isOpen && <div className="sp-card__collapsible-content">{children}</div>}
+    </div>
+  );
+}
+
+interface ToolCategoryCardProps {
+  category: string;
+  toolKeys: string[];
+  editTools: string[];
+  onToolToggle: (toolKey: string) => void;
+  onCategoryToggle: (toolKeys: string[]) => void;
+}
+
+function ToolCategoryCard({
+  category,
+  toolKeys,
+  editTools,
+  onToolToggle,
+  onCategoryToggle,
+}: ToolCategoryCardProps) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  const enabledCount = toolKeys.filter((tk) => editTools.includes(tk)).length;
+  const totalCount = toolKeys.length;
+  const allEnabled = enabledCount === totalCount;
+
+  const handleSelectAll = () => {
+    if (allEnabled) {
+      onCategoryToggle([]);
+    } else {
+      onCategoryToggle(toolKeys.filter((tk) => !editTools.includes(tk)));
+    }
+  };
+
+  return (
+    <div className="sp-card__category-card">
+      <div
+        className={`sp-card__category-header${isOpen ? ' open' : ''}`}
+        onClick={() => setIsOpen(!isOpen)}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            setIsOpen(!isOpen);
+          }
+        }}
+      >
+        <ChevronDown
+          size={18}
+          className={`sp-card__category-chevron ${
+            isOpen ? 'sp-card__category-chevron--open' : ''
+          }`}
+        />
+        <span className="sp-card__category-name">{category}</span>
+        <span
+          className="sp-card__category-badge"
+          onClick={(e) => {
+            e.stopPropagation();
+            handleSelectAll();
+          }}
+          role="button"
+          tabIndex={0}
+          title={allEnabled ? 'Deselect all' : 'Select all'}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              handleSelectAll();
+            }
+          }}
+        >
+          {enabledCount} / {totalCount}
+        </span>
+      </div>
+
+      {isOpen && (
+        <div className="sp-card__category-content">
+          <div className="sp-card__tools-list">
+            {toolKeys.map((toolKey) => {
+              const meta = TOOL_METADATA[toolKey as keyof typeof TOOL_METADATA];
+              const checked = editTools.includes(toolKey);
+              return (
+                <label
+                  key={toolKey}
+                  htmlFor={toolKey}
+                  className={`sp-card__tool-row ${
+                    checked ? 'sp-card__tool-row--checked' : ''
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    className="sp-card__tool-checkbox"
+                    checked={checked}
+                    onChange={() => onToolToggle(toolKey)}
+                  />
+                  <div className="sp-card__tool-info">
+                    <span className="sp-card__tool-label">{meta.label}</span>
+                    <span className="sp-card__tool-description">
+                      {meta.description}
+                    </span>
+                  </div>
+                </label>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -273,12 +379,13 @@ export default function ProfilesPage() {
       const filename = pathParts.pop() || editModel;
       const subfolder = pathParts.pop() || '';
       const author = pathParts.pop() || '';
-      modelRelativePath =
-        author && subfolder
-          ? `${author}/${subfolder}/${filename}`
-          : subfolder
-            ? `${subfolder}/${filename}`
-            : filename;
+      if (author && subfolder) {
+        modelRelativePath = `${author}/${subfolder}/${filename}`;
+      } else if (subfolder) {
+        modelRelativePath = `${subfolder}/${filename}`;
+      } else {
+        modelRelativePath = filename;
+      }
     }
 
     let projectorRelativePath: string | undefined;
@@ -291,12 +398,14 @@ export default function ProfilesPage() {
         const projFilename = projParts.pop() || editProjector;
         const projSubfolder = projParts.pop() || '';
         const projAuthor = projParts.pop() || '';
-        projectorRelativePath =
-          projAuthor && projSubfolder
-            ? `${projAuthor}/${projSubfolder}/${projFilename}`
-            : projSubfolder
-              ? `${projSubfolder}/${projFilename}`
-              : projFilename;
+
+        if (projAuthor && projSubfolder) {
+          projectorRelativePath = `${projAuthor}/${projSubfolder}/${projFilename}`;
+        } else if (projSubfolder) {
+          projectorRelativePath = `${projSubfolder}/${projFilename}`;
+        } else {
+          projectorRelativePath = projFilename;
+        }
       } else {
         projectorRelativePath = editProjector;
       }
@@ -568,6 +677,24 @@ export default function ProfilesPage() {
     return projectors;
   }, [editModel, groupedLocalModels]);
 
+  const categorizedTools = useMemo(() => {
+    const categories: Record<string, string[]> = {};
+
+    AVAILABLE_TOOLS.forEach((toolKey) => {
+      const meta = TOOL_METADATA[toolKey];
+      const category = meta.category || 'Uncategorized';
+
+      if (!categories[category]) {
+        categories[category] = [];
+      }
+      categories[category].push(toolKey);
+    });
+
+    return Object.entries(categories)
+      .sort(([catA], [catB]) => catA.localeCompare(catB))
+      .map(([category, toolKeys]) => ({ category, toolKeys }));
+  }, []);
+
   const displayProfiles =
     draggedId && previewOrder.length > 0 ? previewOrder : profiles;
 
@@ -764,34 +891,32 @@ export default function ProfilesPage() {
                         ]}
                       >
                         <div className="sp-card__collapsible-edit-section">
-                          <div className="sp-card__tools-list">
-                            {AVAILABLE_TOOLS.map((toolKey) => {
-                              const meta = TOOL_METADATA[toolKey];
-                              const checked = editTools.includes(toolKey);
-                              return (
-                                <label
-                                  key={toolKey}
-                                  className={`sp-card__tool-row ${
-                                    checked ? 'sp-card__tool-row--checked' : ''
-                                  }`}
-                                >
-                                  <input
-                                    type="checkbox"
-                                    className="sp-card__tool-checkbox"
-                                    checked={checked}
-                                    onChange={() => handleToolToggle(toolKey)}
-                                  />
-                                  <div className="sp-card__tool-info">
-                                    <span className="sp-card__tool-label">
-                                      {meta.label}
-                                    </span>
-                                    <span className="sp-card__tool-description">
-                                      {meta.description}
-                                    </span>
-                                  </div>
-                                </label>
-                              );
-                            })}
+                          <div className="sp-card__category-cards-container">
+                            {categorizedTools.map(({ category, toolKeys }) => (
+                              <ToolCategoryCard
+                                key={category}
+                                category={category}
+                                toolKeys={toolKeys}
+                                editTools={editTools}
+                                onToolToggle={handleToolToggle}
+                                onCategoryToggle={() => {
+                                  setEditTools((prev) => {
+                                    const allSelected = toolKeys.every((tk) =>
+                                      prev.includes(tk),
+                                    );
+                                    if (allSelected) {
+                                      return prev.filter(
+                                        (t) => !toolKeys.includes(t),
+                                      );
+                                    }
+                                    const newTools = toolKeys.filter(
+                                      (tk) => !prev.includes(tk),
+                                    );
+                                    return [...prev, ...newTools];
+                                  });
+                                }}
+                              />
+                            ))}
                           </div>
                         </div>
                       </CollapsibleSection>

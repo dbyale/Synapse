@@ -1,7 +1,7 @@
 // Import only the TYPE — erased at compile time, webpack never sees a real import
 import type { defineChatSessionFunction as DefineChatSessionFunctionType } from 'node-llama-cpp';
 
-import { AVAILABLE_TOOLS, TOOL_METADATA } from '../data/defaultTools.ts';
+import { AVAILABLE_TOOLS, TOOL_METADATA } from '../data/defaultTools';
 
 type DefineFn = typeof DefineChatSessionFunctionType;
 
