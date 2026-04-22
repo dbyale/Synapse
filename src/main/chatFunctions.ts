@@ -1,21 +1,14 @@
-// npm install duck-duck-scrape node-fetch@2 cheerio
+// npm install turndown
+// npm install -D @types/turndown
 
-// Import only the TYPE — erased at compile time, webpack never sees a real import
 import type { defineChatSessionFunction as DefineChatSessionFunctionType } from 'node-llama-cpp';
-
-import { search as duckSearch } from 'duck-duck-scrape';
-import fetch from 'node-fetch';
-import * as cheerio from 'cheerio';
+import TurndownService from 'turndown';
 
 import { AVAILABLE_TOOLS, TOOL_METADATA } from '../data/defaultTools';
 
 type DefineFn = typeof DefineChatSessionFunctionType;
 
-interface SearchResult {
-  url:     string;
-  title:   string;
-  content: string;
-}
+const turndown = new TurndownService();
 
 export function createChatFunctions(defineFn: DefineFn) {
   return {
@@ -60,87 +53,84 @@ export function createChatFunctions(defineFn: DefineFn) {
       },
     }),
 
-    searchWeb: defineFn({
+    fetchPage: defineFn({
       description:
-        'Search the web using DuckDuckGo and scrape the top result pages for full content. ' +
-        'Returns an array of { url, title, content } objects. Best for current information, research, and detailed topic exploration.',
+        'Fetches a URL from the internet and extracts its contents as markdown. ' +
+        'Use start_index to read large pages in chunks and find the information you need.',
       params: {
         type: 'object',
         properties: {
-          query: {
+          url: {
             type: 'string',
+            description: 'The URL to fetch',
           },
-          max_results: {
-            oneOf: [
-              { type: 'null' },
-              { type: 'number' },
-            ],
+          max_length: {
+            type: 'integer',
+            description: 'Maximum number of characters to return (default: 5000)',
+          },
+          start_index: {
+            type: 'integer',
+            description: 'Start content from this character index (default: 0)',
+          },
+          raw: {
+            type: 'boolean',
+            description: 'Get raw content without markdown conversion (default: false)',
           },
         },
-        required: ['query'],
+        required: ['url'],
       },
       async handler(params) {
-        const query = params.query as string;
-        const maxResults = params.max_results ?? 1;
+        const {
+          url,
+          max_length = 5000,
+          start_index = 0,
+          raw = false,
+        } = params;
 
         try {
-          const searchResults = await duckSearch(query);
+          new URL(url);
 
-          if (!searchResults.results || searchResults.results.length === 0) {
-            return `No search results found for "${query}".`;
+          const response = await fetch(url, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            },
+          });
+
+          if (!response.ok) {
+            return `Error: Failed to fetch URL. Status ${response.status}: ${response.statusText}`;
           }
 
-          const resultsToFetch = searchResults.results.slice(0, maxResults);
-          const scrapedResults: SearchResult[] = [];
+          const contentType = response.headers.get('content-type') || '';
+          let content = '';
 
-          for (const result of resultsToFetch) {
-            try {
-              const response = await fetch(result.url, {
-                timeout: 10000,
-                headers: {
-                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                },
-              });
+          if (contentType.includes('application/json')) {
+            const json = await response.json();
+            content = JSON.stringify(json, null, 2);
+          } else {
+            content = await response.text();
 
-              if (!response.ok) {
-                continue;
-              }
-
-              const html = await response.text();
-              const $ = cheerio.load(html);
-
-              // Remove script, style, nav, footer tags
-              $('script, style, nav, footer').remove();
-
-              // Extract body text
-              const bodyText = $('body').text();
-
-              // Collapse whitespace
-              const cleanedText = bodyText
-                .replace(/\s+/g, ' ')
-                .trim();
-
-              // Cap at 1500 chars
-              const content = cleanedText.substring(0, 1500);
-
-              scrapedResults.push({
-                url:     result.url,
-                title:   result.title,
-                content: content,
-              });
-            } catch {
-              // Skip failed pages silently
-              continue;
+            if (!raw && contentType.includes('text/html')) {
+              content = turndown.turndown(content);
             }
           }
 
-          if (scrapedResults.length === 0) {
-            return `Could not scrape any content from search results for "${query}".`;
+          content = content.replace(/\n{3,}/g, '\n\n').trim();
+
+          const sliced = content.slice(start_index, start_index + max_length);
+
+          return sliced || 'No content found at the specified index.';
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+
+          if (errorMessage.includes('timeout')) {
+            return `Error: Request timeout while fetching ${url}`;
           }
 
-          return scrapedResults;
-        } catch (error) {
-          return `Search failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+          if (errorMessage.includes('Invalid URL')) {
+            return `Error: Invalid URL provided: ${url}`;
+          }
+
+          return `Error: Failed to fetch ${url}. ${errorMessage}`;
         }
       },
     }),

@@ -1,4 +1,4 @@
-export const AVAILABLE_TOOLS = ['getCurrentDateTime', 'searchWeb'] as const;
+export const AVAILABLE_TOOLS = ['getCurrentDateTime', 'fetchPage'] as const;
 export type ToolName = (typeof AVAILABLE_TOOLS)[number];
 
 export const TOOL_METADATA: Record<ToolName, { label: string; description: string; category: string }> = {
@@ -7,9 +7,9 @@ export const TOOL_METADATA: Record<ToolName, { label: string; description: strin
     description: 'Allows the AI to look up the current date, time, and timezone.',
     category: 'Time',
   },
-  searchWeb: {
-    label: 'Search the Web',
-    description: 'Allows the AI to search the web and read full page content from results.',
-    category: 'Web Search',
+  fetchPage: {
+    label: 'Fetch Page',
+    description: 'Allows the AI to fetch a URL and extract its contents as Markdown, with support for chunked reading via start_index.',
+    category: 'Web',
   },
 };
