@@ -719,3 +719,92 @@
     transform: rotate(360deg);
   }
 }
+
+/* ============================================================================
+   TOOLS — edit mode (checkbox list)
+   ============================================================================ */
+
+.sp-card__tools-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sp-card__tool-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+  user-select: none;
+}
+
+.sp-card__tool-row:hover {
+  background: var(--bg-hover);
+}
+
+.sp-card__tool-row--checked {
+  border-color: var(--accent);
+  background: rgba(37, 99, 235, 0.06);
+}
+
+.sp-card__tool-row--checked:hover {
+  background: rgba(37, 99, 235, 0.1);
+}
+
+.sp-card__tool-checkbox {
+  margin-top: 2px;
+  accent-color: var(--accent);
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.sp-card__tool-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.sp-card__tool-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.3;
+}
+
+.sp-card__tool-description {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+/* ============================================================================
+   TOOLS — view mode (pill badges)
+   ============================================================================ */
+
+.sp-card__tool-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.sp-card__tool-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.08);
+  color: var(--accent);
+  border: 1px solid rgba(37, 99, 235, 0.2);
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}

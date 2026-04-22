@@ -1,5 +1,3 @@
-// chat.ts — Update loadProfile to resolve relative paths
-
 import type {
   Llama,
   LlamaChatSession,
@@ -14,6 +12,8 @@ import path from 'path';
 
 let llamaModule: typeof import('node-llama-cpp') | null = null;
 let chatFunctions: ReturnType<typeof createChatFunctions> | null = null;
+// ── Only the tools selected by the active profile ──
+let activeSessionFunctions: Partial<ReturnType<typeof createChatFunctions>> | null = null;  // ← NEW
 let llama: Llama | null = null;
 let model: LlamaModel | null = null;
 let context: LlamaContext | null = null;
@@ -51,8 +51,6 @@ async function computeLoadParams(loadedModel: LlamaModel): Promise<{
   contextSize: number;
 }> {
   const settings = loadSettings();
-
-  // Settings are stored in MB — convert to bytes
   const allocatedVRAMBytes = (settings.allocatedVRAM ?? 0) * 1024 * 1024;
   const allocatedRAMBytes  = (settings.allocatedRAM  ?? 4096) * 1024 * 1024;
 
@@ -110,12 +108,35 @@ reloadUnsubscribe = onMemorySettingsChanged(() => {
   });
 });
 
+// ── Build the per-session function map from a profile's tool list ──────────── NEW
+function buildSessionFunctions(
+  profile: Profile,
+  all: ReturnType<typeof createChatFunctions>,
+): Partial<ReturnType<typeof createChatFunctions>> | null {
+  // If the profile has no tools array, or an empty one, disable all tools.
+  if (!profile.tools || profile.tools.length === 0) {
+    console.log('[chat] No tools selected for this profile — functions disabled.');
+    return null;
+  }
+
+  const filtered: Partial<ReturnType<typeof createChatFunctions>> = {};
+  for (const key of profile.tools) {
+    if (key in all) {
+      (filtered as Record<string, unknown>)[key] =
+        (all as Record<string, unknown>)[key];
+    }
+  }
+
+  const selectedKeys = Object.keys(filtered);
+  console.log(`[chat] Active tools for this profile: [${selectedKeys.join(', ')}]`);
+  return selectedKeys.length > 0 ? filtered : null;
+}
+
 export async function loadProfile(
   profile: Profile,
 ): Promise<{ success: boolean; error?: string }> {
   console.log('[chat] Loading profile:', profile.name);
 
-  // Resolve the full model path: models directory + author/filename
   const modelsDir = getModelsDirectory();
   const fullModelPath = path.join(modelsDir, profile.model);
 
@@ -135,6 +156,11 @@ export async function loadProfile(
       throw new Error('Llama instance could not be initialized.');
     }
 
+    // ── Resolve which tools are active for this profile ──────────────────── NEW
+    activeSessionFunctions = chatFunctions
+      ? buildSessionFunctions(profile, chatFunctions)
+      : null;
+
     console.log('[chat] Computing load params...');
     let gpuLayers: number | undefined = undefined;
     let contextSize: number = 2048;
@@ -149,12 +175,7 @@ export async function loadProfile(
       console.log(`[chat] Params computed: gpuLayers=${gpuLayers}, contextSize=${contextSize}`);
     } catch (paramError: any) {
       console.error('[chat] computeLoadParams failed:', paramError);
-
-      if (tempModel) {
-        await tempModel.dispose();
-        tempModel = null;
-      }
-
+      if (tempModel) { await tempModel.dispose(); tempModel = null; }
       throw new Error(`Failed to compute load parameters: ${paramError.message || 'Insufficient memory'}`);
     }
 
@@ -184,12 +205,10 @@ export async function loadProfile(
       systemPrompt: profile.systemPrompt,
     });
 
-    // Preload with functions so their schemas are cached in the KV cache upfront.
-    // This avoids a context shift on the first real prompt turn, since every
-    // subsequent session.prompt() call will pass the same functions reference.
+    // Warm the KV cache with only the tools this profile has enabled.
     console.log('[chat] Preloading system prompt and function schemas into context...');
     await session.preloadPrompt('', {
-      functions: chatFunctions ?? undefined,
+      functions: activeSessionFunctions ?? undefined,   // ← CHANGED
     });
     console.log('[chat] Context warmed up.');
 
@@ -202,59 +221,29 @@ export async function loadProfile(
     console.error('[chat] Error loading profile:', error);
 
     if (tempModel) {
-      try {
-        await tempModel.dispose();
-      } catch (disposeError) {
-        console.error('[chat] Error disposing temp model:', disposeError);
+      try { await tempModel.dispose(); } catch (e) {
+        console.error('[chat] Error disposing temp model:', e);
       }
     }
 
     await unloadModel();
-
     return {
       success: false,
-      error: error?.message || 'Unknown error occurred while loading profile'
+      error: error?.message || 'Unknown error occurred while loading profile',
     };
   }
 }
 
 function buildPromptOptions(profile: Profile | null): Partial<LLamaChatPromptOptions> {
-  if (!profile) {
-    return {};
-  }
+  if (!profile) return {};
 
   const options: Partial<LLamaChatPromptOptions> = {};
-
-  // Temperature
-  if (profile.temperature !== undefined && profile.temperature > 0) {
-    options.temperature = profile.temperature;
-  }
-
-  // Top K
-  if (profile.topK !== undefined && profile.topK > 0) {
-    options.topK = profile.topK;
-  }
-
-  // Top P
-  if (profile.topP !== undefined && profile.topP < 1) {
-    options.topP = profile.topP;
-  }
-
-  // Min P
-  if (profile.minP !== undefined && profile.minP > 0) {
-    options.minP = profile.minP;
-  }
-
-  // Seed
-  if (profile.seed !== undefined) {
-    options.seed = profile.seed;
-  }
-
-  // XTC
-  if (profile.xtc !== undefined) {
-    options.xtc = profile.xtc;
-  }
-
+  if (profile.temperature !== undefined && profile.temperature > 0) options.temperature = profile.temperature;
+  if (profile.topK !== undefined && profile.topK > 0)               options.topK        = profile.topK;
+  if (profile.topP !== undefined && profile.topP < 1)               options.topP        = profile.topP;
+  if (profile.minP !== undefined && profile.minP > 0)               options.minP        = profile.minP;
+  if (profile.seed !== undefined)                                    options.seed        = profile.seed;
+  if (profile.xtc  !== undefined)                                    options.xtc         = profile.xtc;
   return options;
 }
 
@@ -273,26 +262,16 @@ export async function sendMessage(
 
     const promptOptions: Partial<LLamaChatPromptOptions> = {
       signal: abortController.signal,
-      // Always pass the same chatFunctions reference every turn.
-      // This keeps the KV cache valid — changing or omitting functions
-      // between turns causes a context shift and forces re-tokenization.
-      functions: chatFunctions ?? undefined,
+      functions: activeSessionFunctions ?? undefined,   // ← CHANGED (use filtered set)
       onResponseChunk: (chunk) => {
         let segmentType: 'thought' | 'comment' | undefined = undefined;
 
         if (chunk.type === 'segment') {
-          if (chunk.segmentType === 'thought') {
-            segmentType = 'thought';
-          } else if (chunk.segmentType === 'comment') {
-            segmentType = 'comment';
-          }
+          if (chunk.segmentType === 'thought')       segmentType = 'thought';
+          else if (chunk.segmentType === 'comment')  segmentType = 'comment';
 
-          if (chunk.segmentStartTime != null) {
-            console.log(`[chat] Segment start: ${chunk.segmentType}`);
-          }
-          if (chunk.segmentEndTime != null) {
-            console.log(`[chat] Segment end: ${chunk.segmentType}`);
-          }
+          if (chunk.segmentStartTime != null) console.log(`[chat] Segment start: ${chunk.segmentType}`);
+          if (chunk.segmentEndTime   != null) console.log(`[chat] Segment end: ${chunk.segmentType}`);
         }
 
         onToken(chunk.text, segmentType);
@@ -301,7 +280,6 @@ export async function sendMessage(
     };
 
     const response = await session.prompt(text, promptOptions);
-
     abortController = null;
     console.log('[chat] Response complete');
     return response;
@@ -328,56 +306,38 @@ export async function unloadModel() {
   console.log('[chat] Unloading model...');
   abort();
   lastResolvedMemory = null;
+  activeSessionFunctions = null;   // ← NEW: clear on unload
   try {
     if (session) session = null;
-    if (context) {
-      await context.dispose();
-      context = null;
-    }
-    if (model) {
-      await model.dispose();
-      model = null;
-    }
+    if (context) { await context.dispose(); context = null; }
+    if (model)   { await model.dispose();   model   = null; }
     console.log('[chat] Model unloaded');
   } catch (error) {
     console.error('[chat] Error unloading model:', error);
   }
 }
 
-export function getCurrentProfile(): Profile | null {
-  return currentProfile;
-}
+export function getCurrentProfile(): Profile | null { return currentProfile; }
 
 export async function tokenize(text: string): Promise<number | null> {
   if (!model) return null;
-  const tokens = model.tokenize(text);
-  return tokens.length;
+  return model.tokenize(text).length;
 }
 
 export function getContextSize(): number | null {
-  if (!context) return null;
-  return context.contextSize;
+  return context ? context.contextSize : null;
 }
 
 export function getContextUsage(): { used: number; total: number } | null {
   if (!context || !session) return null;
-
   try {
-    const sequence = session.sequence;
+    const sequence    = session.sequence;
     const inputTokens = sequence.tokenMeter.usedInputTokens;
     const outputTokens = sequence.tokenMeter.usedOutputTokens;
-    const totalUsed = inputTokens + outputTokens;
-    const totalTokens = context.contextSize;
-
-    return {
-      used: totalUsed,
-      total: totalTokens
-    };
-  } catch (error) {
+    return { used: inputTokens + outputTokens, total: context.contextSize };
+  } catch {
     return null;
   }
 }
 
-export function getModelMemoryUsage() {
-  return lastResolvedMemory;
-}
+export function getModelMemoryUsage() { return lastResolvedMemory; }

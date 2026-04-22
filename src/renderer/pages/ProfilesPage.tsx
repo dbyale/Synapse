@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import type { LocalModel } from '../preload.d';
 import { Profile } from '../types/profile';
+import { AVAILABLE_TOOLS, TOOL_METADATA } from '../../data/defaultTools.ts';
 import '../styles/ProfilesPage.css';
 
 interface EditSectionProps {
@@ -151,7 +152,7 @@ export default function ProfilesPage() {
   const [editSeed, setEditSeed] = useState('');
   const [editModel, setEditModel] = useState('');
   const [editProjector, setEditProjector] = useState('');
-  // ── Replace global `loading` bool with per-profile loadingId ──
+  const [editTools, setEditTools] = useState<string[]>([...AVAILABLE_TOOLS]);
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [draggedId, setDraggedId] = useState<string | null>(null);
@@ -159,6 +160,15 @@ export default function ProfilesPage() {
   const dragLeaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
+
+  // ── Toggle a single tool on/off ──
+  const handleToolToggle = (toolKey: string) => {
+    setEditTools((prev) =>
+      prev.includes(toolKey)
+        ? prev.filter((t) => t !== toolKey)
+        : [...prev, toolKey],
+    );
+  };
 
   // ── Load profiles and local models on mount ──
   useEffect(() => {
@@ -197,8 +207,6 @@ export default function ProfilesPage() {
   const saveProfiles = (updated: Profile[]) => {
     setProfiles(updated);
     localStorage.setItem('profiles', JSON.stringify(updated));
-
-    // ── Notify ChatPage of the change (storage event only fires in other tabs) ──
     window.dispatchEvent(new Event('profiles-changed'));
   };
 
@@ -214,6 +222,7 @@ export default function ProfilesPage() {
       topP: 0.8,
       minP: 0.05,
       seed: 0,
+      tools: [...AVAILABLE_TOOLS],
       order: Date.now(),
       createdAt: Date.now(),
     };
@@ -231,6 +240,7 @@ export default function ProfilesPage() {
     setEditSeed(String(newProfile.seed));
     setEditModel('');
     setEditProjector('');
+    setEditTools([...AVAILABLE_TOOLS]);
   };
 
   const handleEdit = (profile: Profile) => {
@@ -246,6 +256,8 @@ export default function ProfilesPage() {
     setEditSeed(String(profile.seed || 0));
     setEditModel(profile.model);
     setEditProjector(profile.projector || '');
+    // Fall back to all tools enabled if the profile predates this feature
+    setEditTools(profile.tools ?? [...AVAILABLE_TOOLS]);
   };
 
   const handleSaveEdit = () => {
@@ -303,6 +315,7 @@ export default function ProfilesPage() {
             seed: parseInt(editSeed, 10),
             model: modelRelativePath,
             projector: projectorRelativePath || undefined,
+            tools: editTools,
           }
         : p,
     );
@@ -339,16 +352,12 @@ export default function ProfilesPage() {
       setSelectedProfileId(null);
       localStorage.removeItem('selectedProfileId');
       setError(null);
-      // Don't unload here — let ChatPage handle it
     } else {
       const profile = profiles.find((p) => p.id === id);
       if (profile) {
-        // Just update localStorage and state — don't load the model
         setSelectedProfileId(id);
         localStorage.setItem('selectedProfileId', id);
         setError(null);
-
-        // Notify ChatPage that selection changed
         window.dispatchEvent(new Event('profiles-changed'));
       }
     }
@@ -744,6 +753,49 @@ export default function ProfilesPage() {
                         </div>
                       </CollapsibleSection>
 
+                      {/* ── Tools ── */}
+                      <CollapsibleSection
+                        title="Tools"
+                        defaultOpen={false}
+                        tooltip={[
+                          'Choose which built-in tools the AI can use',
+                          'Disabled tools are never passed to the model',
+                          'Changes take effect the next time the profile is loaded',
+                        ]}
+                      >
+                        <div className="sp-card__collapsible-edit-section">
+                          <div className="sp-card__tools-list">
+                            {AVAILABLE_TOOLS.map((toolKey) => {
+                              const meta = TOOL_METADATA[toolKey];
+                              const checked = editTools.includes(toolKey);
+                              return (
+                                <label
+                                  key={toolKey}
+                                  className={`sp-card__tool-row ${
+                                    checked ? 'sp-card__tool-row--checked' : ''
+                                  }`}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    className="sp-card__tool-checkbox"
+                                    checked={checked}
+                                    onChange={() => handleToolToggle(toolKey)}
+                                  />
+                                  <div className="sp-card__tool-info">
+                                    <span className="sp-card__tool-label">
+                                      {meta.label}
+                                    </span>
+                                    <span className="sp-card__tool-description">
+                                      {meta.description}
+                                    </span>
+                                  </div>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </CollapsibleSection>
+
                       <CollapsibleSection
                         title="Advanced Parameters"
                         defaultOpen={false}
@@ -915,6 +967,21 @@ export default function ProfilesPage() {
                           <strong>Model:</strong>{' '}
                           {profile.model.split(/[/\\]/).pop()}
                         </p>
+                        {/* ── Tool badges ── */}
+                        {profile.tools && profile.tools.length > 0 && (
+                          <div className="sp-card__tool-badges">
+                            {profile.tools.map((toolKey) => (
+                              <span
+                                key={toolKey}
+                                className="sp-card__tool-badge"
+                              >
+                                {TOOL_METADATA[
+                                  toolKey as keyof typeof TOOL_METADATA
+                                ]?.label ?? toolKey}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                         <span className="sp-card__date">
                           Created{' '}
                           {new Date(profile.createdAt).toLocaleDateString(

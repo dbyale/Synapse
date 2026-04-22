@@ -1,8 +1,8 @@
 export interface Profile {
   id: string;
   name: string;
-  model: string; // filepath to model
-  projector?: string; // optional filepath to projector
+  model: string;
+  projector?: string;
   systemPrompt: string;
   temperature?: number;
   topK?: number;
@@ -13,6 +13,7 @@ export interface Profile {
     probability: number;
     threshold: number;
   };
+  tools?: string[];   // ← NEW: keys of selected tools from chatFunctions
   order: number;
   createdAt: number;
 }

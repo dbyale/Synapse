@@ -1,6 +1,8 @@
 // Import only the TYPE — erased at compile time, webpack never sees a real import
 import type { defineChatSessionFunction as DefineChatSessionFunctionType } from 'node-llama-cpp';
 
+import { AVAILABLE_TOOLS, TOOL_METADATA } from '../data/defaultTools.ts';
+
 type DefineFn = typeof DefineChatSessionFunctionType;
 
 const DDG_API_BASE = 'https://api.duckduckgo.com/';
@@ -18,7 +20,7 @@ export function createChatFunctions(defineFn: DefineFn) {
           timezone: {
             oneOf: [
               { type: 'null' },
-              { type: 'string' }, // e.g. "America/New_York"
+              { type: 'string' },
             ],
           },
         },
@@ -58,12 +60,12 @@ export function createChatFunctions(defineFn: DefineFn) {
         type: 'object',
         properties: {
           query: {
-            type: 'string', // The search query
+            type: 'string',
           },
           skip_disambig: {
             oneOf: [
               { type: 'null' },
-              { type: 'boolean' }, // Skip disambiguation pages (default: false)
+              { type: 'boolean' },
             ],
           },
         },
@@ -73,9 +75,9 @@ export function createChatFunctions(defineFn: DefineFn) {
         const url = new URL(DDG_API_BASE);
         url.searchParams.set('q',            params.query);
         url.searchParams.set('format',       'json');
-        url.searchParams.set('no_html',      '1');       // Strip HTML tags from results
+        url.searchParams.set('no_html',      '1');
         url.searchParams.set('skip_disambig', params.skip_disambig ? '1' : '0');
-        url.searchParams.set('t',            'node-llama-cpp-chat'); // Required attribution param
+        url.searchParams.set('t',            'node-llama-cpp-chat');
 
         try {
           const response = await fetch(url.toString(), {
@@ -87,8 +89,6 @@ export function createChatFunctions(defineFn: DefineFn) {
           }
 
           const data = await response.json() as DDGResponse;
-
-          // Build a structured result from the available fields
           const result: DDGResult = {};
 
           if (data.Answer)         result.answer         = data.Answer;
@@ -101,11 +101,10 @@ export function createChatFunctions(defineFn: DefineFn) {
           if (data.RelatedTopics?.length) {
             result.relatedTopics = data.RelatedTopics
               .filter((t): t is DDGTopic => 'Text' in t && !!t.Text)
-              .slice(0, 5)                               // Limit to top 5 related topics
+              .slice(0, 5)
               .map(t => ({ text: t.Text, url: t.FirstURL }));
           }
 
-          // If nothing useful came back, say so
           if (Object.keys(result).length === 0) {
             return (
               `No instant answer found for "${params.query}". ` +
