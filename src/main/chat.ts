@@ -190,6 +190,22 @@ export async function loadProfile(
       throw new Error('Llama instance could not be initialized.');
     }
 
+    // Sanitize profile tools — remove any that are not registered in chatFunctions
+    if (profile.tools && profile.tools.length > 0 && chatFunctions) {
+      const validKeys = Object.keys(chatFunctions) as Array<keyof ReturnType<typeof createChatFunctions>>;
+      const before = profile.tools.length;
+      profile.tools = profile.tools.filter((tool) => {
+        const isValid = (validKeys as string[]).includes(tool);
+        if (!isValid) {
+          console.warn(`[chat] Removing invalid tool from profile: "${tool}"`);
+        }
+        return isValid;
+      });
+      if (profile.tools.length < before) {
+        console.log(`[chat] Sanitized profile tools: [${profile.tools.join(', ')}]`);
+      }
+    }
+
     activeSessionFunctions = chatFunctions
       ? buildSessionFunctions(profile, chatFunctions)
       : null;
