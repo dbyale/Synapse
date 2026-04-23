@@ -258,7 +258,7 @@ export default function ProfilesPage() {
   const [editSeed, setEditSeed] = useState('');
   const [editModel, setEditModel] = useState('');
   const [editProjector, setEditProjector] = useState('');
-  const [editTools, setEditTools] = useState<string[]>([...AVAILABLE_TOOLS]);
+  const [editTools, setEditTools] = useState<string[]>([]);
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [draggedId, setDraggedId] = useState<string | null>(null);
@@ -328,7 +328,7 @@ export default function ProfilesPage() {
       topP: 0.8,
       minP: 0.05,
       seed: 0,
-      tools: [...AVAILABLE_TOOLS],
+      tools: [],
       order: Date.now(),
       createdAt: Date.now(),
     };
@@ -346,7 +346,7 @@ export default function ProfilesPage() {
     setEditSeed(String(newProfile.seed));
     setEditModel('');
     setEditProjector('');
-    setEditTools([...AVAILABLE_TOOLS]);
+    setEditTools([]);
   };
 
   const handleEdit = (profile: Profile) => {
@@ -363,7 +363,7 @@ export default function ProfilesPage() {
     setEditModel(profile.model);
     setEditProjector(profile.projector || '');
     // Fall back to all tools enabled if the profile predates this feature
-    setEditTools(profile.tools ?? [...AVAILABLE_TOOLS]);
+    setEditTools(profile.tools ?? []);
   };
 
   const handleSaveEdit = () => {
@@ -424,7 +424,9 @@ export default function ProfilesPage() {
             seed: parseInt(editSeed, 10),
             model: modelRelativePath,
             projector: projectorRelativePath || undefined,
-            tools: editTools,
+            tools: editTools.filter((t) =>
+              (AVAILABLE_TOOLS as readonly string[]).includes(t),
+            ),
           }
         : p,
     );
