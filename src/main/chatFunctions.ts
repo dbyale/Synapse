@@ -4,6 +4,21 @@
 import type { defineChatSessionFunction as DefineChatSessionFunctionType } from 'node-llama-cpp';
 
 import { fetchPage } from './functions/fetchPage';
+import {
+  readTextFile,
+  readMediaFile,
+  readMultipleFiles,
+  writeFile,
+  editFile,
+  createDirectory,
+  listDirectory,
+  listDirectoryWithSizes,
+  moveFile,
+  searchFiles,
+  directoryTree,
+  getFileInfo,
+  listAllowedDirectories,
+} from './functions/fileSystem';
 import { AVAILABLE_TOOLS, TOOL_METADATA } from '../data/defaultTools';
 
 type DefineFn = typeof DefineChatSessionFunctionType;
@@ -299,6 +314,275 @@ export function createChatFunctions(defineFn: DefineFn) {
 
           return `Error: Failed to fetch ${url}. ${errorMessage}`;
         }
+      },
+    }),
+
+    // ========================================================================
+    // Filesystem Functions (13 new tools)
+    // ========================================================================
+
+    read_text_file: defineFn({
+      description: 'Read a text file. Optionally retrieve only the first N or last N lines.',
+      params: {
+        type: 'object',
+        properties: {
+          path: {
+            type: 'string',
+            description: 'Path to the text file',
+          },
+          head: {
+            type: 'number',
+            description: 'Return only the first N lines',
+          },
+          tail: {
+            type: 'number',
+            description: 'Return only the last N lines',
+          },
+        },
+      },
+      async handler(params: { path: string; head?: number; tail?: number }) {
+        return await readTextFile(params);
+      },
+    }),
+
+    read_media_file: defineFn({
+      description:
+        'Read a media file (image, video, audio, PDF) and return it as base64-encoded data with MIME type.',
+      params: {
+        type: 'object',
+        properties: {
+          path: {
+            type: 'string',
+            description: 'Path to the media file',
+          },
+        },
+      },
+      async handler(params: { path: string }) {
+        return await readMediaFile(params);
+      },
+    }),
+
+    read_multiple_files: defineFn({
+      description: 'Read multiple text files in one operation.',
+      params: {
+        type: 'object',
+        properties: {
+          paths: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Array of file paths to read',
+          },
+        },
+      },
+      async handler(params: { paths: string[] }) {
+        return await readMultipleFiles(params);
+      },
+    }),
+
+    write_file: defineFn({
+      description: 'Write content to a file. Creates the file and parent directories if needed.',
+      params: {
+        type: 'object',
+        properties: {
+          path: {
+            type: 'string',
+            description: 'Path where the file will be written',
+          },
+          content: {
+            type: 'string',
+            description: 'Content to write to the file',
+          },
+        },
+      },
+      async handler(params: { path: string; content: string }) {
+        return await writeFile(params);
+      },
+    }),
+
+    edit_file: defineFn({
+      description:
+        'Edit a file by replacing text. Supports dryRun mode to preview changes without writing.',
+      params: {
+        type: 'object',
+        properties: {
+          path: {
+            type: 'string',
+            description: 'Path to the file to edit',
+          },
+          edits: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                oldText: { type: 'string' },
+                newText: { type: 'string' },
+              },
+            },
+            description: 'Array of text replacements to apply',
+          },
+          dryRun: {
+            type: 'boolean',
+            description: 'If true, preview changes without writing (default: false)',
+          },
+        },
+      },
+      async handler(params: {
+        path: string;
+        edits: Array<{ oldText: string; newText: string }>;
+        dryRun?: boolean;
+      }) {
+        return await editFile(params);
+      },
+    }),
+
+    create_directory: defineFn({
+      description: 'Create a directory and any parent directories as needed.',
+      params: {
+        type: 'object',
+        properties: {
+          path: {
+            type: 'string',
+            description: 'Path of the directory to create',
+          },
+        },
+      },
+      async handler(params: { path: string }) {
+        return await createDirectory(params);
+      },
+    }),
+
+    list_directory: defineFn({
+      description: 'List the contents of a directory.',
+      params: {
+        type: 'object',
+        properties: {
+          path: {
+            type: 'string',
+            description: 'Path of the directory to list',
+          },
+        },
+      },
+      async handler(params: { path: string }) {
+        return await listDirectory(params);
+      },
+    }),
+
+    list_directory_with_sizes: defineFn({
+      description: 'List directory contents with file sizes. This operation is much slower than list_directory and should only be used when sizes are important. Optionally sort by name or size.',
+      params: {
+        type: 'object',
+        properties: {
+          path: {
+            type: 'string',
+            description: 'Path of the directory to list',
+          },
+          sortBy: {
+            type: 'string',
+            description: 'Sort by "name" or "size" (optional)',
+          },
+        },
+      },
+      async handler(params: { path: string; sortBy?: string }) {
+        return await listDirectoryWithSizes(params);
+      },
+    }),
+
+    move_file: defineFn({
+      description: 'Move or rename a file to a new location.',
+      params: {
+        type: 'object',
+        properties: {
+          source: {
+            type: 'string',
+            description: 'Current path of the file',
+          },
+          destination: {
+            type: 'string',
+            description: 'New path for the file',
+          },
+        },
+      },
+      async handler(params: { source: string; destination: string }) {
+        return await moveFile(params);
+      },
+    }),
+
+    search_files: defineFn({
+      description:
+        'Search for files matching a glob pattern in a directory (recursively).',
+      params: {
+        type: 'object',
+        properties: {
+          path: {
+            type: 'string',
+            description: 'Root directory to search in',
+          },
+          pattern: {
+            type: 'string',
+            description: 'Glob pattern to match (e.g., "*.json", "test-*.ts")',
+          },
+          excludePatterns: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Patterns to exclude from search (optional)',
+          },
+        },
+      },
+      async handler(params: {
+        path: string;
+        pattern: string;
+        excludePatterns?: string[];
+      }) {
+        return await searchFiles(params);
+      },
+    }),
+
+    directory_tree: defineFn({
+      description: 'Generate a tree representation of a directory structure.',
+      params: {
+        type: 'object',
+        properties: {
+          path: {
+            type: 'string',
+            description: 'Root directory for the tree',
+          },
+          excludePatterns: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Patterns to exclude from the tree (optional)',
+          },
+        },
+      },
+      async handler(params: { path: string; excludePatterns?: string[] }) {
+        return await directoryTree(params);
+      },
+    }),
+
+    get_file_info: defineFn({
+      description:
+        'Get detailed information about a file or directory (size, permissions, timestamps, etc.).',
+      params: {
+        type: 'object',
+        properties: {
+          path: {
+            type: 'string',
+            description: 'Path to the file or directory',
+          },
+        },
+      },
+      async handler(params: { path: string }) {
+        return await getFileInfo(params);
+      },
+    }),
+
+    list_allowed_directories: defineFn({
+      description: 'List all configured allowed directories for filesystem operations.',
+      params: {
+        type: 'object',
+        properties: {},
+      },
+      async handler() {
+        return await listAllowedDirectories();
       },
     }),
   };

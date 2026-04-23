@@ -5,6 +5,7 @@ import {
   useState,
   KeyboardEvent,
   useCallback,
+  ReactNode,
 } from 'react';
 import {
   SendHorizonal,
@@ -793,14 +794,50 @@ export default function ChatPage() {
             <div className="chat-message__bubble">
               {msg.role === 'assistant' ? (
                 <div className="chat-message__assistant-content">
-                  {msg.content.map((seg) =>
-                    seg.type === 'tool' ? (
-                      <ToolCallSegment key={seg.id} segment={seg} />
-                    ) : null,
-                  )}
-                  <MessageContent
-                    segments={msg.content.filter((s) => s.type !== 'tool')}
-                  />
+                  {/* Approach: Group consecutive non-tool segments and interleave with tool segments.
+                  This preserves insertion order while allowing MessageContent to handle
+                  consecutive text/thought/comment segments as a single logical unit. */}
+                  {(() => {
+                    const elements: ReactNode[] = [];
+                    let currentTextSegments: MessageSegment[] = [];
+
+                    msg.content.forEach((segment) => {
+                      if (segment.type === 'tool') {
+                        // Flush any accumulated text segments before rendering the tool call
+                        if (currentTextSegments.length > 0) {
+                          elements.push(
+                            <MessageContent
+                              key={`text-batch-${elements.length}`}
+                              segments={currentTextSegments}
+                            />,
+                          );
+                          currentTextSegments = [];
+                        }
+                        // Render the tool call segment inline
+                        elements.push(
+                          <ToolCallSegment
+                            key={segment.id}
+                            segment={segment}
+                          />,
+                        );
+                      } else {
+                        // Accumulate non-tool segments
+                        currentTextSegments.push(segment);
+                      }
+                    });
+
+                    // Flush any remaining text segments at the end
+                    if (currentTextSegments.length > 0) {
+                      elements.push(
+                        <MessageContent
+                          key={`text-batch-${elements.length}`}
+                          segments={currentTextSegments}
+                        />,
+                      );
+                    }
+
+                    return elements;
+                  })()}
                 </div>
               ) : (
                 msg.content[0]?.text || ''
