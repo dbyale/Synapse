@@ -1,159 +1,209 @@
-<img src=".erb/img/erb-banner.svg" width="100%" />
+# Synapse
 
-<br>
+**Synapse** is a powerful, cross-platform desktop application for running AI models locally. Built with Electron, React, and TypeScript, it provides a user-friendly interface for chatting with local AI models while offering advanced features like profile management, hardware detection, and tool calling capabilities.
 
-<p>
-  Electron React Boilerplate uses <a href="https://electron.atom.io/">Electron</a>, <a href="https://facebook.github.io/react/">React</a>, <a href="https://github.com/reactjs/react-router">React Router</a>, <a href="https://webpack.js.org/">Webpack</a> and <a href="https://www.npmjs.com/package/react-refresh">React Fast Refresh</a>.
-</p>
+## Features
 
-<br>
+### Core Functionality
+- **Local AI Model Execution**: Run AI models directly on your machine for privacy and low-latency responses
+- **Chat Interface**: Intuitive chat UI with support for tool calls and extended conversation contexts
+- **Model Management**: Browse, download, and manage AI models with automatic profile creation
+- **Profile System**: Create and customize chat profiles with different model configurations, system prompts, and temperature settings
 
-<div align="center">
+### Advanced Features
+- **Hardware Detection**: Automatic detection of CPU, RAM, and GPU/VRAM to recommend optimal model configurations
+- **Tool Calling**: Built-in filesystem and Git tools for AI agents to interact with your local environment
+- **Multi-Model Support**: Support for various model formats including GGUF
+- **Settings Management**: Comprehensive settings for model parameters (temperature, top-k, top-p, min-p, seed, etc.)
 
-[![Build Status][github-actions-status]][github-actions-url]
-[![Github Tag][github-tag-image]][github-tag-url]
-[![Discord](https://badgen.net/badge/icon/discord?icon=discord&label)](https://discord.gg/Fjy3vfgy5q)
+### Technical Highlights
+- **Electron + React + TypeScript**: Modern tech stack for cross-platform desktop development
+- **WebGPU Support**: Leverages modern GPU acceleration for AI inference
+- **IPC Communication**: Efficient main/renderer process communication via Electron IPC
+- **State Management**: React Context and hooks for managing application state
 
-[![OpenCollective](https://opencollective.com/electron-react-boilerplate-594/backers/badge.svg)](#backers)
-[![OpenCollective](https://opencollective.com/electron-react-boilerplate-594/sponsors/badge.svg)](#sponsors)
-[![StackOverflow][stackoverflow-img]][stackoverflow-url]
+## Getting Started
 
-</div>
+### Prerequisites
+- Node.js 18+ and npm or yarn
+- A modern system with at least 8GB RAM recommended
+- GPU with WebGPU support (optional, for accelerated inference)
 
-## Install
+### Installation
 
-Clone the repo and install dependencies:
-
+1. Clone the repository:
 ```bash
-git clone --depth 1 --branch main https://github.com/electron-react-boilerplate/electron-react-boilerplate.git your-project-name
-cd your-project-name
+git clone https://github.com/your-repo/synapse.git
+cd synapse
+```
+
+2. Install dependencies:
+```bash
 npm install
 ```
 
-**Having issues installing? See our [debugging guide](https://github.com/electron-react-boilerplate/electron-react-boilerplate/issues/400)**
-
-## Starting Development
-
-Start the app in the `dev` environment:
-
+3. Start the development server:
 ```bash
 npm start
 ```
 
-## Packaging for Production
+### Building for Production
 
-To package apps for the local platform:
+To build the application for your platform:
 
 ```bash
 npm run package
 ```
 
-## Docs
+## Usage
 
-See our [docs and guides here](https://electron-react-boilerplate.js.org/docs/installation)
+### Chat
+- Start a conversation with your selected AI model
+- View tool calls with expandable details
+- Copy responses and manage chat history
 
-## Community
+### Models
+- Browse available AI models
+- Download and install models automatically
+- Create default profiles for new models
 
-Join our Discord: https://discord.gg/Fjy3vfgy5q
+### Profiles
+- Create custom chat profiles with specific model configurations
+- Set system prompts for each profile
+- Adjust model parameters (temperature, top-k, top-p, etc.)
+- Import/export profiles
 
-## Sponsors
+### Settings
+- Configure model preferences
+- Set hardware limits (RAM/VRAM allocation)
+- Manage API keys (e.g., Hugging Face token)
+- Configure auto-detection settings
 
-<a href="https://palette.dev">
-  <img src=".erb/img/palette-sponsor-banner.svg" width="100%" />
-</a>
+## Architecture
 
-## Donations
+```
+src/
+├── main/                 # Electron main process
+│   ├── main.ts          # Main entry point
+│   └── preload.ts       # Preload script for IPC
+├── renderer/            # React renderer process
+│   ├── pages/           # Application pages
+│   │   ├── ChatPage.tsx
+│   │   ├── ModelsPage.tsx
+│   │   ├── ProfilesPage.tsx
+│   │   └── SettingsPage.tsx
+│   ├── components/      # Reusable React components
+│   ├── styles/          # CSS modules
+│   └── types/           # TypeScript type definitions
+└── data/                # Static data files
+    ├── defaultTools.ts  # Available AI tools
+    └── languages.ts     # Language support
+```
 
-**Donations will ensure the following:**
+## Available Tools
 
-- 🔨 Long term maintenance of the project
-- 🛣 Progress on the [roadmap](https://electron-react-boilerplate.js.org/docs/roadmap)
-- 🐛 Quick responses to bug reports and help requests
+Synapse includes built-in tools that AI models can use to interact with your system:
 
-## Backers
+### Filesystem Tools
+- `read_text_file`: Read text files with optional line ranges
+- `read_media_file`: Read media files (images, videos, PDFs) as base64
+- `read_multiple_files`: Read multiple text files simultaneously
+- `write_file`: Write content to files
+- `edit_file`: Edit files with text replacements
+- `create_directory`: Create directories recursively
+- `list_directory`: List directory contents
+- `list_directory_with_sizes`: List with file sizes
+- `move_file`: Move or rename files
+- `search_files`: Search for files by glob pattern
+- `directory_tree`: Generate directory tree view
+- `get_file_info`: Get detailed file metadata
+- `list_allowed_directories`: List configured allowed directories
 
-Support us with a monthly donation and help us continue our activities. [[Become a backer](https://opencollective.com/electron-react-boilerplate-594#backer)]
+### Git Tools
+- `git_status`: Get repository working tree status
+- `git_diff_unstaged`: Show unstaged changes
+- `git_diff_staged`: Show staged changes
+- `git_diff`: Compare against branches/commits
+- `git_commit`: Commit staged changes
+- `git_add`: Stage files for commit
+- `git_reset`: Unstage all changes
+- `git_log`: View commit history
+- `git_create_branch`: Create new branch
+- `git_checkout`: Switch branches
+- `git_show`: Show commit contents
+- `git_branch`: List branches
 
-<a href="https://opencollective.com/electron-react-boilerplate-594/backer/0/website" target="_blank"><img src="https://opencollective.com/electron-react-boilerplate-594/backer/0/avatar.svg"></a>
-<a href="https://opencollective.com/electron-react-boilerplate-594/backer/1/website" target="_blank"><img src="https://opencollective.com/electron-react-boilerplate-594/backer/1/avatar.svg"></a>
-<a href="https://opencollective.com/electron-react-boilerplate-594/backer/2/website" target="_blank"><img src="https://opencollective.com/electron-react-boilerplate-594/backer/2/avatar.svg"></a>
-<a href="https://opencollective.com/electron-react-boilerplate-594/backer/3/website" target="_blank"><img src="https://opencollective.com/electron-react-boilerplate-594/backer/3/avatar.svg"></a>
-<a href="https://opencollective.com/electron-react-boilerplate-594/backer/4/website" target="_blank"><img src="https://opencollective.com/electron-react-boilerplate-594/backer/4/avatar.svg"></a>
-<a href="https://opencollective.com/electron-react-boilerplate-594/backer/5/website" target="_blank"><img src="https://opencollective.com/electron-react-boilerplate-594/backer/5/avatar.svg"></a>
-<a href="https://opencollective.com/electron-react-boilerplate-594/backer/6/website" target="_blank"><img src="https://opencollective.com/electron-react-boilerplate-594/backer/6/avatar.svg"></a>
-<a href="https://opencollective.com/electron-react-boilerplate-594/backer/7/website" target="_blank"><img src="https://opencollective.com/electron-react-boilerplate-594/backer/7/avatar.svg"></a>
-<a href="https://opencollective.com/electron-react-boilerplate-594/backer/8/website" target="_blank"><img src="https://opencollective.com/electron-react-boilerplate-594/backer/8/avatar.svg"></a>
-<a href="https://opencollective.com/electron-react-boilerplate-594/backer/9/website" target="_blank"><img src="https://opencollective.com/electron-react-boilerplate-594/backer/9/avatar.svg"></a>
-<a href="https://opencollective.com/electron-react-boilerplate-594/backer/10/website" target="_blank"><img src="https://opencollective.com/electron-react-boilerplate-594/backer/10/avatar.svg"></a>
-<a href="https://opencollective.com/electron-react-boilerplate-594/backer/11/website" target="_blank"><img src="https://opencollective.com/electron-react-boilerplate-594/backer/11/avatar.svg"></a>
-<a href="https://opencollective.com/electron-react-boilerplate-594/backer/12/website" target="_blank"><img src="https://opencollective.com/electron-react-boilerplate-594/backer/12/avatar.svg"></a>
-<a href="https://opencollective.com/electron-react-boilerplate-594/backer/13/website" target="_blank"><img src="https://opencollective.com/electron-react-boilerplate-594/backer/13/avatar.svg"></a>
-<a href="https://opencollective.com/electron-react-boilerplate-594/backer/14/website" target="_blank"><img src="https://opencollective.com/electron-react-boilerplate-594/backer/14/avatar.svg"></a>
-<a href="https://opencollective.com/electron-react-boilerplate-594/backer/15/website" target="_blank"><img src="https://opencollective.com/electron-react-boilerplate-594/backer/15/avatar.svg"></a>
-<a href="https://opencollective.com/electron-react-boilerplate-594/backer/16/website" target="_blank"><img src="https://opencollective.com/electron-react-boilerplate-594/backer/16/avatar.svg"></a>
-<a href="https://opencollective.com/electron-react-boilerplate-594/backer/17/website" target="_blank"><img src="https://opencollective.com/electron-react-boilerplate-594/backer/17/avatar.svg"></a>
-<a href="https://opencollective.com/electron-react-boilerplate-594/backer/18/website" target="_blank"><img src="https://opencollective.com/electron-react-boilerplate-594/backer/18/avatar.svg"></a>
-<a href="https://opencollective.com/electron-react-boilerplate-594/backer/19/website" target="_blank"><img src="https://opencollective.com/electron-react-boilerplate-594/backer/19/avatar.svg"></a>
-<a href="https://opencollective.com/electron-react-boilerplate-594/backer/20/website" target="_blank"><img src="https://opencollective.com/electron-react-boilerplate-594/backer/20/avatar.svg"></a>
-<a href="https://opencollective.com/electron-react-boilerplate-594/backer/21/website" target="_blank"><img src="https://opencollective.com/electron-react-boilerplate-594/backer/21/avatar.svg"></a>
-<a href="https://opencollective.com/electron-react-boilerplate-594/backer/22/website" target="_blank"><img src="https://opencollective.com/electron-react-boilerplate-594/backer/22/avatar.svg"></a>
-<a href="https://opencollective.com/electron-react-boilerplate-594/backer/23/website" target="_blank"><img src="https://opencollective.com/electron-react-boilerplate-594/backer/23/avatar.svg"></a>
-<a href="https://opencollective.com/electron-react-boilerplate-594/backer/24/website" target="_blank"><img src="https://opencollective.com/electron-react-boilerplate-594/backer/24/avatar.svg"></a>
-<a href="https://opencollective.com/electron-react-boilerplate-594/backer/25/website" target="_blank"><img src="https://opencollective.com/electron-react-boilerplate-594/backer/25/avatar.svg"></a>
-<a href="https://opencollective.com/electron-react-boilerplate-594/backer/26/website" target="_blank"><img src="https://opencollective.com/electron-react-boilerplate-594/backer/26/avatar.svg"></a>
-<a href="https://opencollective.com/electron-react-boilerplate-594/backer/27/website" target="_blank"><img src="https://opencollective.com/electron-react-boilerplate-594/backer/27/avatar.svg"></a>
-<a href="https://opencollective.com/electron-react-boilerplate-594/backer/28/website" target="_blank"><img src="https://opencollective.com/electron-react-boilerplate-594/backer/28/avatar.svg"></a>
-<a href="https://opencollective.com/electron-react-boilerplate-594/backer/29/website" target="_blank"><img src="https://opencollective.com/electron-react-boilerplate-594/backer/29/avatar.svg"></a>
+## Configuration
 
-## Sponsors
+### Model Parameters
+- **Temperature**: Controls randomness in responses (0.0-2.0)
+- **Top-K**: Limits sampling to top K tokens (1-100)
+- **Top-P**: Nucleus sampling threshold (0.0-1.0)
+- **Min-P**: Minimum probability threshold
+- **Seed**: Random seed for reproducibility
 
-Become a sponsor and get your logo on our README on Github with a link to your site. [[Become a sponsor](https://opencollective.com/electron-react-boilerplate-594-594#sponsor)]
+### Hardware Settings
+- **RAM Allocation**: Recommended based on model size
+- **VRAM Allocation**: For GPU-accelerated inference
+- **GPU Selection**: Choose specific GPU for multi-GPU systems
 
-<a href="https://opencollective.com/electron-react-boilerplate-594/sponsor/0/website" target="_blank"><img src="https://opencollective.com/electron-react-boilerplate-594/sponsor/0/avatar.svg"></a>
-<a href="https://opencollective.com/electron-react-boilerplate-594/sponsor/1/website" target="_blank"><img src="https://opencollective.com/electron-react-boilerplate-594/sponsor/1/avatar.svg"></a>
-<a href="https://opencollective.com/electron-react-boilerplate-594/sponsor/2/website" target="_blank"><img src="https://opencollective.com/electron-react-boilerplate-594/sponsor/2/avatar.svg"></a>
-<a href="https://opencollective.com/electron-react-boilerplate-594/sponsor/3/website" target="_blank"><img src="https://opencollective.com/electron-react-boilerplate-594/sponsor/3/avatar.svg"></a>
-<a href="https://opencollective.com/electron-react-boilerplate-594/sponsor/4/website" target="_blank"><img src="https://opencollective.com/electron-react-boilerplate-594/sponsor/4/avatar.svg"></a>
-<a href="https://opencollective.com/electron-react-boilerplate-594/sponsor/5/website" target="_blank"><img src="https://opencollective.com/electron-react-boilerplate-594/sponsor/5/avatar.svg"></a>
-<a href="https://opencollective.com/electron-react-boilerplate-594/sponsor/6/website" target="_blank"><img src="https://opencollective.com/electron-react-boilerplate-594/sponsor/6/avatar.svg"></a>
-<a href="https://opencollective.com/electron-react-boilerplate-594/sponsor/7/website" target="_blank"><img src="https://opencollective.com/electron-react-boilerplate-594/sponsor/7/avatar.svg"></a>
-<a href="https://opencollective.com/electron-react-boilerplate-594/sponsor/8/website" target="_blank"><img src="https://opencollective.com/electron-react-boilerplate-594/sponsor/8/avatar.svg"></a>
-<a href="https://opencollective.com/electron-react-boilerplate-594/sponsor/9/website" target="_blank"><img src="https://opencollective.com/electron-react-boilerplate-594/sponsor/9/avatar.svg"></a>
-<a href="https://opencollective.com/electron-react-boilerplate-594/sponsor/10/website" target="_blank"><img src="https://opencollective.com/electron-react-boilerplate-594/sponsor/10/avatar.svg"></a>
-<a href="https://opencollective.com/electron-react-boilerplate-594/sponsor/11/website" target="_blank"><img src="https://opencollective.com/electron-react-boilerplate-594/sponsor/11/avatar.svg"></a>
-<a href="https://opencollective.com/electron-react-boilerplate-594/sponsor/12/website" target="_blank"><img src="https://opencollective.com/electron-react-boilerplate-594/sponsor/12/avatar.svg"></a>
-<a href="https://opencollective.com/electron-react-boilerplate-594/sponsor/13/website" target="_blank"><img src="https://opencollective.com/electron-react-boilerplate-594/sponsor/13/avatar.svg"></a>
-<a href="https://opencollective.com/electron-react-boilerplate-594/sponsor/14/website" target="_blank"><img src="https://opencollective.com/electron-react-boilerplate-594/sponsor/14/avatar.svg"></a>
-<a href="https://opencollective.com/electron-react-boilerplate-594/sponsor/15/website" target="_blank"><img src="https://opencollective.com/electron-react-boilerplate-594/sponsor/15/avatar.svg"></a>
-<a href="https://opencollective.com/electron-react-boilerplate-594/sponsor/16/website" target="_blank"><img src="https://opencollective.com/electron-react-boilerplate-594/sponsor/16/avatar.svg"></a>
-<a href="https://opencollective.com/electron-react-boilerplate-594/sponsor/17/website" target="_blank"><img src="https://opencollective.com/electron-react-boilerplate-594/sponsor/17/avatar.svg"></a>
-<a href="https://opencollective.com/electron-react-boilerplate-594/sponsor/18/website" target="_blank"><img src="https://opencollective.com/electron-react-boilerplate-594/sponsor/18/avatar.svg"></a>
-<a href="https://opencollective.com/electron-react-boilerplate-594/sponsor/19/website" target="_blank"><img src="https://opencollective.com/electron-react-boilerplate-594/sponsor/19/avatar.svg"></a>
-<a href="https://opencollective.com/electron-react-boilerplate-594/sponsor/20/website" target="_blank"><img src="https://opencollective.com/electron-react-boilerplate-594/sponsor/20/avatar.svg"></a>
-<a href="https://opencollective.com/electron-react-boilerplate-594/sponsor/21/website" target="_blank"><img src="https://opencollective.com/electron-react-boilerplate-594/sponsor/21/avatar.svg"></a>
-<a href="https://opencollective.com/electron-react-boilerplate-594/sponsor/22/website" target="_blank"><img src="https://opencollective.com/electron-react-boilerplate-594/sponsor/22/avatar.svg"></a>
-<a href="https://opencollective.com/electron-react-boilerplate-594/sponsor/23/website" target="_blank"><img src="https://opencollective.com/electron-react-boilerplate-594/sponsor/23/avatar.svg"></a>
-<a href="https://opencollective.com/electron-react-boilerplate-594/sponsor/24/website" target="_blank"><img src="https://opencollective.com/electron-react-boilerplate-594/sponsor/24/avatar.svg"></a>
-<a href="https://opencollective.com/electron-react-boilerplate-594/sponsor/25/website" target="_blank"><img src="https://opencollective.com/electron-react-boilerplate-594/sponsor/25/avatar.svg"></a>
-<a href="https://opencollective.com/electron-react-boilerplate-594/sponsor/26/website" target="_blank"><img src="https://opencollective.com/electron-react-boilerplate-594/sponsor/26/avatar.svg"></a>
-<a href="https://opencollective.com/electron-react-boilerplate-594/sponsor/27/website" target="_blank"><img src="https://opencollective.com/electron-react-boilerplate-594/sponsor/27/avatar.svg"></a>
-<a href="https://opencollective.com/electron-react-boilerplate-594/sponsor/28/website" target="_blank"><img src="https://opencollective.com/electron-react-boilerplate-594/sponsor/28/avatar.svg"></a>
-<a href="https://opencollective.com/electron-react-boilerplate-594/sponsor/29/website" target="_blank"><img src="https://opencollective.com/electron-react-boilerplate-594/sponsor/29/avatar.svg"></a>
+## Development
 
-## Maintainers
+### Scripts
 
-- [Amila Welihinda](https://github.com/amilajack)
-- [John Tran](https://github.com/jooohhn)
-- [C. T. Lin](https://github.com/chentsulin)
-- [Jhen-Jie Hong](https://github.com/jhen0409)
+```bash
+# Development
+npm start              # Start development server
+npm run lint           # Run ESLint
+npm run lint:fix       # Fix linting issues
+
+# Build
+npm run build          # Build for production
+npm run build:main     # Build main process
+npm run build:renderer # Build renderer process
+
+# Package
+npm run package        # Package application
+```
+
+### Project Structure
+- `.erb/`: Electron React Boilerplate configuration
+- `node_modules/`: Dependencies
+- `public/`: Public assets
+- `release/`: Build artifacts
+
+## Roadmap
+
+- [ ] Auto-detect and recommend optimal model settings on first boot
+- [ ] Cache hardware configuration for faster startup
+- [ ] Add support for more AI model formats
+- [ ] Implement cloud model integration
+- [ ] Add export/import for chat history
+- [ ] Enhance tool calling with custom tool definitions
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
 
 ## License
 
-MIT © [Electron React Boilerplate](https://github.com/electron-react-boilerplate)
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-[github-actions-status]: https://github.com/electron-react-boilerplate/electron-react-boilerplate/workflows/Test/badge.svg
-[github-actions-url]: https://github.com/electron-react-boilerplate/electron-react-boilerplate/actions
-[github-tag-image]: https://img.shields.io/github/tag/electron-react-boilerplate/electron-react-boilerplate.svg?label=version
-[github-tag-url]: https://github.com/electron-react-boilerplate/electron-react-boilerplate/releases/latest
-[stackoverflow-img]: https://img.shields.io/badge/stackoverflow-electron_react_boilerplate-blue.svg
-[stackoverflow-url]: https://stackoverflow.com/questions/tagged/electron-react-boilerplate
+## Acknowledgments
+
+- [Electron](https://www.electronjs.org/) for the desktop framework
+- [React](https://react.dev/) for the UI library
+- [TypeScript](https://www.typescriptlang.org/) for type safety
+- [WebGPU](https://gpuweb.github.io/gpuweb/) for GPU acceleration
+
+---
+
+**Built with ❤️ for the AI community**
+
+For more information and documentation, please visit our [documentation](https://synapse-docs.com) (placeholder).
