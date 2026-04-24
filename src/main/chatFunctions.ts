@@ -31,8 +31,11 @@ import {
   gitBranch,
 } from './functions/git';
 import { AVAILABLE_TOOLS, TOOL_METADATA } from '../data/defaultTools';
+import { createMemoryManager } from './functions/memory';
 
 type DefineFn = typeof DefineChatSessionFunctionType;
+
+const memory = createMemoryManager('./memory.json');
 
 function isDSTActive(timezone: string, date: Date): boolean {
   try {
@@ -594,6 +597,245 @@ export function createChatFunctions(defineFn: DefineFn) {
       },
       async handler(params: { repo_path: string; branch_type?: string; contains?: string; not_contains?: string }) {
         return await gitBranch(params);
+      },
+    }),
+
+    // === Memory Tools ===
+    create_entities: defineFn({
+      description: 'Create new entities in the memory graph.',
+      params: {
+        type: 'object',
+        properties: {
+          entities: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                name: { type: 'string', description: 'Name of the entity' },
+                entityType: { type: 'string', description: 'Type of the entity' },
+                observations: { type: 'array', items: { type: 'string' }, description: 'Initial observations about the entity (optional)' },
+              },
+            },
+            description: 'Array of entities to create',
+          },
+        },
+        required: ['entities'],
+      },
+      async handler(params: { entities: Array<{ name: string; entityType: string; observations?: string[] }> }) {
+        try {
+          const result = await memory.createEntities(params.entities);
+          return result;
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          return { error: `Failed to create entities: ${errorMessage}` };
+        }
+      },
+    }),
+
+    create_relations: defineFn({
+      description: 'Create new relations between entities in the memory graph.',
+      params: {
+        type: 'object',
+        properties: {
+          relations: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                from: { type: 'string', description: 'Source entity name' },
+                to: { type: 'string', description: 'Target entity name' },
+                relationType: { type: 'string', description: 'Type of the relation' },
+              },
+            },
+            description: 'Array of relations to create',
+          },
+        },
+        required: ['relations'],
+      },
+      async handler(params: { relations: Array<{ from: string; to: string; relationType: string }> }) {
+        try {
+          const result = await memory.createRelations(params.relations);
+          return result;
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          return { error: `Failed to create relations: ${errorMessage}` };
+        }
+      },
+    }),
+
+    add_observations: defineFn({
+      description: 'Add observations to existing entities in the memory graph.',
+      params: {
+        type: 'object',
+        properties: {
+          updates: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                entityName: { type: 'string', description: 'Name of the entity' },
+                observations: { type: 'array', items: { type: 'string' }, description: 'Observations to add' },
+              },
+            },
+            description: 'Array of entity updates with observations',
+          },
+        },
+        required: ['updates'],
+      },
+      async handler(params: { updates: Array<{ entityName: string; observations: string[] }> }) {
+        try {
+          const result = await memory.addObservations(params.updates);
+          return result;
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          return { error: `Failed to add observations: ${errorMessage}` };
+        }
+      },
+    }),
+
+    delete_entities: defineFn({
+      description: 'Delete entities from the memory graph.',
+      params: {
+        type: 'object',
+        properties: {
+          entityNames: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Names of entities to delete',
+          },
+        },
+        required: ['entityNames'],
+      },
+      async handler(params: { entityNames: string[] }) {
+        try {
+          const result = await memory.deleteEntities(params.entityNames);
+          return result;
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          return { error: `Failed to delete entities: ${errorMessage}` };
+        }
+      },
+    }),
+
+    delete_observations: defineFn({
+      description: 'Delete observations from entities in the memory graph.',
+      params: {
+        type: 'object',
+        properties: {
+          updates: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                entityName: { type: 'string', description: 'Name of the entity' },
+                observations: { type: 'array', items: { type: 'string' }, description: 'Observations to delete' },
+              },
+            },
+            description: 'Array of entity updates with observations to delete',
+          },
+        },
+        required: ['updates'],
+      },
+      async handler(params: { updates: Array<{ entityName: string; observations: string[] }> }) {
+        try {
+          const result = await memory.deleteObservations(params.updates);
+          return result;
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          return { error: `Failed to delete observations: ${errorMessage}` };
+        }
+      },
+    }),
+
+    delete_relations: defineFn({
+      description: 'Delete relations between entities in the memory graph.',
+      params: {
+        type: 'object',
+        properties: {
+          relations: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                from: { type: 'string', description: 'Source entity name' },
+                to: { type: 'string', description: 'Target entity name' },
+                relationType: { type: 'string', description: 'Type of the relation' },
+              },
+            },
+            description: 'Array of relations to delete',
+          },
+        },
+        required: ['relations'],
+      },
+      async handler(params: { relations: Array<{ from: string; to: string; relationType: string }> }) {
+        try {
+          const result = await memory.deleteRelations(params.relations);
+          return result;
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          return { error: `Failed to delete relations: ${errorMessage}` };
+        }
+      },
+    }),
+
+    read_graph: defineFn({
+      description: 'Read and return the entire memory graph.',
+      params: {
+        type: 'object',
+        properties: {},
+      },
+      async handler() {
+        try {
+          const result = await memory.readGraph();
+          return result;
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          return { error: `Failed to read graph: ${errorMessage}` };
+        }
+      },
+    }),
+
+    search_nodes: defineFn({
+      description: 'Search for nodes in the memory graph by name or observation keyword.',
+      params: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'Search query term' },
+        },
+        required: ['query'],
+      },
+      async handler(params: { query: string }) {
+        try {
+          const result = await memory.searchNodes({ searchTerm: params.query, observationKeyword: params.query });
+          return result;
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          return { error: `Failed to search nodes: ${errorMessage}` };
+        }
+      },
+    }),
+
+    open_nodes: defineFn({
+      description: 'Open and retrieve specific nodes from the memory graph by name.',
+      params: {
+        type: 'object',
+        properties: {
+          names: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Names of nodes to open',
+          },
+        },
+        required: ['names'],
+      },
+      async handler(params: { names: string[] }) {
+        try {
+          const result = await memory.openNodes(params.names);
+          return result;
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          return { error: `Failed to open nodes: ${errorMessage}` };
+        }
       },
     }),
   };

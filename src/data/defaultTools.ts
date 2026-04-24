@@ -1,4 +1,4 @@
-export const AVAILABLE_TOOLS = ['get_current_time', 'convert_time', 'fetchPage', 'read_text_file', 'read_media_file', 'read_multiple_files', 'write_file', 'edit_file', 'create_directory', 'list_directory', 'list_directory_with_sizes', 'move_file', 'search_files', 'directory_tree', 'get_file_info', 'list_allowed_directories', 'git_status', 'git_diff_unstaged', 'git_diff_staged', 'git_diff', 'git_commit', 'git_add', 'git_reset', 'git_log', 'git_create_branch', 'git_checkout', 'git_show', 'git_branch'] as const;
+export const AVAILABLE_TOOLS = ['get_current_time', 'convert_time', 'fetchPage', 'read_text_file', 'read_media_file', 'read_multiple_files', 'write_file', 'edit_file', 'create_directory', 'list_directory', 'list_directory_with_sizes', 'move_file', 'search_files', 'directory_tree', 'get_file_info', 'list_allowed_directories', 'git_status', 'git_diff_unstaged', 'git_diff_staged', 'git_diff', 'git_commit', 'git_add', 'git_reset', 'git_log', 'git_create_branch', 'git_checkout', 'git_show', 'git_branch', 'create_entities', 'create_relations', 'add_observations', 'delete_entities', 'delete_observations', 'delete_relations', 'read_graph', 'search_nodes', 'open_nodes'] as const;
 export type ToolName = (typeof AVAILABLE_TOOLS)[number];
 
 export const TOOL_METADATA: Record<ToolName, { label: string; description: string; category: string }> = {
@@ -30,4 +30,13 @@ export const TOOL_METADATA: Record<ToolName, { label: string; description: strin
   git_checkout: { label: 'Git Checkout', description: 'Switch to a different branch in a Git repository', category: 'Git' },
   git_show: { label: 'Git Show', description: 'Show the contents of a commit including message, author, date, and changes', category: 'Git' },
   git_branch: { label: 'Git Branch', description: 'List branches in a Git repository with filtering by type and content patterns', category: 'Git' },
+  create_entities: { label: 'Create Entities', description: 'Create new entities in the memory knowledge graph', category: 'Memory' },
+  create_relations: { label: 'Create Relations', description: 'Create relations between existing entities in the memory graph', category: 'Memory' },
+  add_observations: { label: 'Add Observations', description: 'Add observations to an existing entity in the memory graph', category: 'Memory' },
+  delete_entities: { label: 'Delete Entities', description: 'Delete entities and their associated relations from the memory graph', category: 'Memory' },
+  delete_observations: { label: 'Delete Observations', description: 'Delete specific observations from an entity in the memory graph', category: 'Memory' },
+  delete_relations: { label: 'Delete Relations', description: 'Delete specific relations between entities in the memory graph', category: 'Memory' },
+  read_graph: { label: 'Read Graph', description: 'Read the full memory knowledge graph including all entities and relations', category: 'Memory' },
+  search_nodes: { label: 'Search Nodes', description: 'Search entities and observations in the memory graph by keyword', category: 'Memory' },
+  open_nodes: { label: 'Open Nodes', description: 'Retrieve specific entities and the relations between them from the memory graph', category: 'Memory' },
 };
