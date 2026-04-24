@@ -360,12 +360,14 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     await shell.openPath(modelsDir);
   });
 
-  chatService.setEmitFunctionCallback((event: 'call' | 'result', name: string, data: string) => {
-    // Fresh window lookup to avoid stale closure references
+  chatService.setEmitFunctionCallback((event: 'calling' | 'call' | 'result', name: string, data: string) => {
     const win = BrowserWindow.getAllWindows()[0];
     if (!win || win.isDestroyed()) return;
 
-    if (event === 'call') {
+    if (event === 'calling') {
+      // Notify renderer that a function call is initiating, before params are available
+      win.webContents.send('chat-function-calling', { name });
+    } else if (event === 'call') {
       win.webContents.send('chat-function-call', { name, params: data });
     } else if (event === 'result') {
       win.webContents.send('chat-function-result', { name, result: data });

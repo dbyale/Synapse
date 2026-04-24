@@ -21,7 +21,7 @@ let abortController: AbortController | null = null;
 let currentModelPath: string | null = null;
 let currentProfile: Profile | null = null;
 let reloadUnsubscribe: (() => void) | null = null;
-let emitFunctionEvent: ((event: 'call' | 'result', name: string, data: string) => void) | null = null;
+let emitFunctionEvent: ((event: 'calling' | 'call' | 'result', name: string, data: string) => void) | null = null;
 
 let lastResolvedMemory: {
   modelVramUsage: number;
@@ -161,7 +161,7 @@ function wrapFunctionsForIPC(
 }
 
 export function setEmitFunctionCallback(
-  callback: ((event: 'call' | 'result', name: string, data: string) => void) | null,
+  callback: ((event: 'calling' | 'call' | 'result', name: string, data: string) => void) | null,
 ): void {
   emitFunctionEvent = callback;
 }
@@ -308,6 +308,8 @@ export async function sendMessage(
   try {
     console.log('[chat] Sending message:', text);
 
+    const seenCallIndices = new Set<number>();
+
     const promptOptions: Partial<LLamaChatPromptOptions> = {
       signal: abortController.signal,
       functions: activeSessionFunctions ? wrapFunctionsForIPC(activeSessionFunctions) : undefined,
@@ -323,6 +325,12 @@ export async function sendMessage(
         }
 
         onToken(chunk.text, segmentType);
+      },
+      onFunctionCallParamsChunk: (chunk: { functionName: string; callIndex: number; paramsChunk: string; done: boolean }) => {
+        if (!seenCallIndices.has(chunk.callIndex)) {
+          seenCallIndices.add(chunk.callIndex);
+          emitFunctionEvent?.('calling', chunk.functionName, '');
+        }
       },
       ...buildPromptOptions(currentProfile),
     };

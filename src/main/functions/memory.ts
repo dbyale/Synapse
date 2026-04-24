@@ -133,15 +133,15 @@ export class MemoryManager {
     const entityMap = new Map(graph.entities.map((e) => [e.name, e]));
 
     let updated = 0;
+    const errors: string[] = [];
+
     for (const update of updates) {
       const entity = entityMap.get(update.entityName);
       if (!entity) {
-        return {
-          success: false,
-          message: `Entity "${update.entityName}" not found`,
-          updated,
-        };
+        errors.push(`Entity "${update.entityName}" not found`);
+        continue; // ← skip, don't return
       }
+
       // Add non-duplicate observations
       const existingSet = new Set(entity.observations);
       for (const obs of update.observations) {
@@ -153,8 +153,17 @@ export class MemoryManager {
       updated++;
     }
 
+    // Always save — even if some entities were missing
     await this.saveGraph(graph);
-    return { success: true, message: 'Observations added', updated };
+
+    return {
+      success: errors.length === 0,
+      message:
+        errors.length === 0
+          ? 'Observations added'
+          : `Partial success — errors: ${errors.join('; ')}`,
+      updated,
+    };
   }
 
   /**

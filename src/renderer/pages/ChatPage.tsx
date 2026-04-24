@@ -18,11 +18,13 @@ import {
   Check,
   ChevronDown,
   ChevronUp,
+  Gauge,
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import MessageContent from '../components/MessageContent';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { Profile } from '../types/profile';
+import { TOOL_METADATA } from '../../data/defaultTools';
 import '../styles/ChatPage.css';
 
 interface MessageSegment {
@@ -77,7 +79,9 @@ function ToolCallSegment({ segment }: { segment: MessageSegment }) {
         onClick={() => setExpanded(!expanded)}
       >
         <Wrench className="tool-call-segment__icon" size={16} />
-        <span className="tool-call-segment__name">{segment.toolName}</span>
+        <span className="tool-call-segment__name">
+          {(segment.toolName && TOOL_METADATA[segment.toolName as keyof typeof TOOL_METADATA]?.label) ?? segment.toolName}
+        </span>
         {segment.toolStatus === 'calling' ? (
           <div className="tool-call-segment__spinner" />
         ) : segment.toolStatus === 'done' ? (
@@ -127,6 +131,7 @@ export default function ChatPage() {
   const [maxTokens, setMaxTokens] = useState<number | null>(null);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [pendingProfileId, setPendingProfileId] = useState<string | null>(null);
+  const [tps, setTps] = useState<number>(0);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -138,6 +143,8 @@ export default function ChatPage() {
   const unloadInProgress = useRef(false);
   const profilesRef = useRef<Profile[]>([]);
   const activeToolSegmentId = useRef<string | null>(null);
+  const generationBaselineTokens = useRef<number | null>(null);
+  const lastTokenSnapshot = useRef<{ tokens: number; time: number } | null>(null);
 
   const navigate = useNavigate();
   const location = useLocation();
@@ -435,6 +442,32 @@ export default function ChatPage() {
       if (usage.total > 0 && maxTokens === null) {
         setMaxTokens(usage.total);
       }
+
+      if (loading && usage.used > 0) {
+        // PHASE 1: First poll — silently absorb the prompt encoding spike
+        if (!lastTokenSnapshot.current) {
+          lastTokenSnapshot.current = { tokens: usage.used, time: Date.now() };
+          if (generationBaselineTokens.current === null) {
+            generationBaselineTokens.current = usage.used;
+          }
+          // Intentionally skip setTps — prompt spike absorbed here
+        }
+        // PHASE 2: Subsequent polls — compute delta from previous snapshot only
+        else if (usage.used > lastTokenSnapshot.current.tokens) {
+          const deltaTokens =
+            usage.used - lastTokenSnapshot.current.tokens;
+          const deltaTime =
+            (Date.now() - lastTokenSnapshot.current.time) / 1000;
+          const instantTps = deltaTime > 0 ? deltaTokens / deltaTime : 0;
+          // EMA with smoother alpha = 0.15
+          setTps((prev) => 0.15 * instantTps + 0.85 * prev);
+          lastTokenSnapshot.current = { tokens: usage.used, time: Date.now() };
+        }
+      } else if (!loading) {
+        generationBaselineTokens.current = null;
+        lastTokenSnapshot.current = null;
+        setTps(0);
+      }
     };
 
     updateContextUsage();
@@ -503,9 +536,10 @@ export default function ChatPage() {
     const removeDoneListener = window.electronAPI.onChatDone(() => {
       setLoading(false);
       setProcessing(false);
+      setTps(0);
     });
 
-    const unsubscribeFunctionCall = window.electronAPI.onChatFunctionCall(
+    const unsubscribeFunctionCalling = window.electronAPI.onChatFunctionCalling(
       (data) => {
         setMessages((prevMessages) => {
           const updatedMessages = [...prevMessages];
@@ -517,7 +551,6 @@ export default function ChatPage() {
             type: 'tool',
             toolName: data.name,
             toolStatus: 'calling',
-            toolParams: data.params,
           };
 
           if (lastMessage?.role === 'assistant') {
@@ -534,6 +567,29 @@ export default function ChatPage() {
 
           activeToolSegmentId.current = toolSegment.id;
           setProcessing(true);
+          return updatedMessages;
+        });
+      },
+    );
+
+    const unsubscribeFunctionCall = window.electronAPI.onChatFunctionCall(
+      (data) => {
+        setMessages((prevMessages) => {
+          const updatedMessages = [...prevMessages];
+          const lastMessage = updatedMessages[updatedMessages.length - 1];
+
+          if (
+            lastMessage?.role === 'assistant' &&
+            activeToolSegmentId.current
+          ) {
+            const toolSegment = lastMessage.content.find(
+              (seg) => seg.id === activeToolSegmentId.current,
+            );
+            if (toolSegment && toolSegment.type === 'tool') {
+              toolSegment.toolParams = data.params;
+            }
+          }
+
           return updatedMessages;
         });
       },
@@ -567,6 +623,7 @@ export default function ChatPage() {
     return () => {
       removeTokenListener();
       removeDoneListener();
+      unsubscribeFunctionCalling();
       unsubscribeFunctionCall();
       unsubscribeFunctionResult();
     };
@@ -627,6 +684,10 @@ export default function ChatPage() {
 
     const textarea = document.querySelector('textarea');
     if (textarea) textarea.style.height = 'auto';
+
+    generationBaselineTokens.current = null;
+    lastTokenSnapshot.current = null;
+    setTps(0);
 
     await window.electronAPI.chatSend(text);
   };
@@ -794,16 +855,12 @@ export default function ChatPage() {
             <div className="chat-message__bubble">
               {msg.role === 'assistant' ? (
                 <div className="chat-message__assistant-content">
-                  {/* Approach: Group consecutive non-tool segments and interleave with tool segments.
-                  This preserves insertion order while allowing MessageContent to handle
-                  consecutive text/thought/comment segments as a single logical unit. */}
                   {(() => {
                     const elements: ReactNode[] = [];
                     let currentTextSegments: MessageSegment[] = [];
 
                     msg.content.forEach((segment) => {
                       if (segment.type === 'tool') {
-                        // Flush any accumulated text segments before rendering the tool call
                         if (currentTextSegments.length > 0) {
                           elements.push(
                             <MessageContent
@@ -813,7 +870,6 @@ export default function ChatPage() {
                           );
                           currentTextSegments = [];
                         }
-                        // Render the tool call segment inline
                         elements.push(
                           <ToolCallSegment
                             key={segment.id}
@@ -821,12 +877,10 @@ export default function ChatPage() {
                           />,
                         );
                       } else {
-                        // Accumulate non-tool segments
                         currentTextSegments.push(segment);
                       }
                     });
 
-                    // Flush any remaining text segments at the end
                     if (currentTextSegments.length > 0) {
                       elements.push(
                         <MessageContent
@@ -904,6 +958,20 @@ export default function ChatPage() {
         </div>
 
         <div className={tokenCounterClass}>
+          {loading && tps > 0 && (
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+                marginRight: '10px',
+                opacity: 0.75,
+              }}
+            >
+              <Gauge size={13} />
+              {tps.toFixed(1)} t/s
+            </span>
+          )}
           {maxTokens !== null ? (
             <span>
               {usedTokens.toLocaleString()} / {maxTokens.toLocaleString()}{' '}

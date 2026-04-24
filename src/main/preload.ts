@@ -103,6 +103,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('chat-function-call', listener);
   },
 
+  onChatFunctionCalling: (callback: (data: { name: string }) => void) => {
+    const listener = (_: any, data: { name: string }) => callback(data);
+    ipcRenderer.on('chat-function-calling', listener);
+    return () => ipcRenderer.removeListener('chat-function-calling', listener);
+  },
+
   onChatFunctionResult: (callback: (data: { name: string; result: string }) => void) => {
     const listener = (_: any, data: { name: string; result: string }) => callback(data);
     ipcRenderer.on('chat-function-result', listener);
