@@ -2,12 +2,10 @@ Chat:
   * Configuration like Temp, TopP/K, etc
   * Other options
   * TPS Display
-  * MMPROJ selection and upload
   * Set default model
   * Cancel model loading
 
 Models:
-  * Open models folder
   * Search
     * Return more data per query
     * Check for equivelent HF Resolvers (higher API Limit)
@@ -18,5 +16,4 @@ Models:
 Settings:
   * Optional HF token
   * Models returned per API request
-  * Auto-sets RAM/VRAM on first boot
   * Caches RAM/VRAM config (slow to open)
