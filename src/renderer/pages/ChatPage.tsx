@@ -459,8 +459,8 @@ export default function ChatPage() {
           const deltaTime =
             (Date.now() - lastTokenSnapshot.current.time) / 1000;
           const instantTps = deltaTime > 0 ? deltaTokens / deltaTime : 0;
-          // EMA with smoother alpha = 0.15
-          setTps((prev) => 0.15 * instantTps + 0.85 * prev);
+          // EMA smoothing with 0.3 weight on the new sample
+          setTps((prev) => 0.3 * instantTps + 0.7 * prev);
           lastTokenSnapshot.current = { tokens: usage.used, time: Date.now() };
         }
       } else if (!loading) {

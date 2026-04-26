@@ -1,4 +1,4 @@
-export const AVAILABLE_TOOLS = ['get_current_time', 'convert_time', 'fetchPage', 'read_text_file', 'read_media_file', 'read_multiple_files', 'write_file', 'edit_file', 'create_directory', 'list_directory', 'list_directory_with_sizes', 'move_file', 'search_files', 'directory_tree', 'get_file_info', 'list_allowed_directories', 'git_status', 'git_diff_unstaged', 'git_diff_staged', 'git_diff', 'git_commit', 'git_add', 'git_reset', 'git_log', 'git_create_branch', 'git_checkout', 'git_show', 'git_branch', 'create_entities', 'create_relations', 'add_observations', 'delete_entities', 'delete_observations', 'delete_relations', 'read_graph', 'search_nodes', 'open_nodes'] as const;
+export const AVAILABLE_TOOLS = ['get_current_time', 'convert_time', 'fetchPage', 'read_text_file', 'read_media_file', 'read_multiple_files', 'write_file', 'edit_file', 'create_directory', 'list_directory', 'list_directory_with_sizes', 'move_file', 'search_files', 'directory_tree', 'get_file_info', 'list_allowed_directories', 'git_status', 'git_diff_unstaged', 'git_diff_staged', 'git_diff', 'git_commit', 'git_add', 'git_reset', 'git_log', 'git_create_branch', 'git_checkout', 'git_show', 'git_branch', 'create_entities', 'create_relations', 'add_observations', 'delete_entities', 'delete_observations', 'delete_relations', 'read_graph', 'search_nodes', 'open_nodes',  'python_environment_info', 'run_python',] as const;
 export type ToolName = (typeof AVAILABLE_TOOLS)[number];
 
 export const TOOL_METADATA: Record<ToolName, { label: string; description: string; category: string }> = {
@@ -39,4 +39,6 @@ export const TOOL_METADATA: Record<ToolName, { label: string; description: strin
   read_graph: { label: 'Read Graph', description: 'Read the full memory knowledge graph including all entities and relations', category: 'Memory' },
   search_nodes: { label: 'Search Nodes', description: 'Search entities and observations in the memory graph by keyword', category: 'Memory' },
   open_nodes: { label: 'Open Nodes', description: 'Retrieve specific entities and the relations between them from the memory graph', category: 'Memory' },
+  python_environment_info:     { label: 'Python Environment Info',       description: 'Check whether Python is installed and available.',    category: 'Python'     },
+  run_python:                  { label: 'Run Python',                    description: 'Execute a sandboxed Python script and return its output. Supports some built-in modules. Typically used as a tool like a Calculator.', category: 'Python' },
 };
