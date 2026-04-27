@@ -16,6 +16,8 @@ import {
   Info,
   GripVertical,
   Loader2,
+  PackageCheck,
+  PackageMinus,
 } from 'lucide-react';
 import type { LocalModel } from '../preload.d';
 import { Profile } from '../types/profile';
@@ -1094,21 +1096,57 @@ export default function ProfilesPage() {
                           <strong>Model:</strong>{' '}
                           {profile.model.split(/[/\\]/).pop()}
                         </p>
-                        {/* ── Tool badges ── */}
-                        {profile.tools && profile.tools.length > 0 && (
-                          <div className="sp-card__tool-badges">
-                            {profile.tools.map((toolKey) => (
-                              <span
-                                key={toolKey}
-                                className="sp-card__tool-badge"
-                              >
-                                {TOOL_METADATA[
+                        {/* ── Tool badges (grouped by package/category) ── */}
+                        {profile.tools &&
+                          profile.tools.length > 0 &&
+                          (() => {
+                            const categoryMap: Record<
+                              string,
+                              { total: number; enabled: number }
+                            > = {};
+
+                            AVAILABLE_TOOLS.forEach((toolKey) => {
+                              const meta =
+                                TOOL_METADATA[
                                   toolKey as keyof typeof TOOL_METADATA
-                                ]?.label ?? toolKey}
-                              </span>
-                            ))}
-                          </div>
-                        )}
+                                ];
+                              const category = meta.category || 'Uncategorized';
+                              if (!categoryMap[category]) {
+                                categoryMap[category] = {
+                                  total: 0,
+                                  enabled: 0,
+                                };
+                              }
+                              categoryMap[category].total += 1;
+                              if ((profile.tools ?? []).includes(toolKey)) {
+                                categoryMap[category].enabled += 1;
+                              }
+                            });
+
+                            const activeCategories = Object.entries(categoryMap)
+                              .filter(([, { enabled }]) => enabled > 0)
+                              .sort(([a], [b]) => a.localeCompare(b));
+
+                            return (
+                              <div className="sp-card__tool-badges">
+                                {activeCategories.map(
+                                  ([category, { total, enabled }]) => (
+                                    <span
+                                      key={category}
+                                      className="sp-card__tool-badge"
+                                    >
+                                      {enabled === total ? (
+                                        <PackageCheck size={11} />
+                                      ) : (
+                                        <PackageMinus size={11} />
+                                      )}
+                                      {category}
+                                    </span>
+                                  ),
+                                )}
+                              </div>
+                            );
+                          })()}
                         <span className="sp-card__date">
                           Created{' '}
                           {new Date(profile.createdAt).toLocaleDateString(
