@@ -13,7 +13,15 @@ export interface Profile {
     probability: number;
     threshold: number;
   };
-  tools?: string[];   // ← NEW: keys of selected tools from chatFunctions
+  repeatPenalty?: {
+    enabled?: boolean;
+    lastTokens?: number;
+    penalizeNewLine?: boolean;
+    penalty?: number;
+    frequencyPenalty?: number;
+    presencePenalty?: number;
+  };
+  tools?: string[];
   order: number;
   createdAt: number;
 }

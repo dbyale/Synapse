@@ -4,6 +4,7 @@ import type {
   LlamaContext,
   LlamaModel,
   LLamaChatPromptOptions,
+  LlamaChatSessionRepeatPenalty,
 } from 'node-llama-cpp';
 import { loadSettings, onMemorySettingsChanged, getModelsDirectory } from './settings';
 import type { Profile } from '../renderer/types/profile';
@@ -287,11 +288,30 @@ function buildPromptOptions(profile: Profile | null): Partial<LLamaChatPromptOpt
 
   const options: Partial<LLamaChatPromptOptions> = {};
   if (profile.temperature !== undefined && profile.temperature > 0) options.temperature = profile.temperature;
-  if (profile.topK !== undefined && profile.topK > 0)               options.topK        = profile.topK;
-  if (profile.topP !== undefined && profile.topP < 1)               options.topP        = profile.topP;
-  if (profile.minP !== undefined && profile.minP > 0)               options.minP        = profile.minP;
-  if (profile.seed !== undefined)                                    options.seed        = profile.seed;
-  if (profile.xtc  !== undefined)                                    options.xtc         = profile.xtc;
+  if (profile.topK        !== undefined && profile.topK > 0)        options.topK        = profile.topK;
+  if (profile.topP        !== undefined && profile.topP < 1)         options.topP        = profile.topP;
+  if (profile.minP        !== undefined && profile.minP > 0)         options.minP        = profile.minP;
+  if (profile.seed        !== undefined)                             options.seed        = profile.seed;
+  if (profile.xtc         !== undefined)                             options.xtc         = profile.xtc;
+
+  // ── Repeat Penalty ────────────────────────────────────────────────────────
+  if (profile.repeatPenalty !== undefined) {
+    if (profile.repeatPenalty.enabled === false) {
+      // Explicitly disable all repeat penalty logic in node-llama-cpp
+      options.repeatPenalty = false;
+    } else {
+      const rp: LlamaChatSessionRepeatPenalty = {};
+      if (profile.repeatPenalty.lastTokens      !== undefined) rp.lastTokens      = profile.repeatPenalty.lastTokens;
+      if (profile.repeatPenalty.penalizeNewLine  !== undefined) rp.penalizeNewLine  = profile.repeatPenalty.penalizeNewLine;
+      if (profile.repeatPenalty.penalty          !== undefined) rp.penalty          = profile.repeatPenalty.penalty;
+      if (profile.repeatPenalty.frequencyPenalty !== undefined) rp.frequencyPenalty = profile.repeatPenalty.frequencyPenalty;
+      if (profile.repeatPenalty.presencePenalty  !== undefined) rp.presencePenalty  = profile.repeatPenalty.presencePenalty;
+      // Only attach the object if at least one field was set
+      if (Object.keys(rp).length > 0) options.repeatPenalty = rp;
+    }
+  }
+  // ─────────────────────────────────────────────────────────────────────────
+
   return options;
 }
 

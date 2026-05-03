@@ -218,7 +218,7 @@ function ToolCategoryCard({
   );
 }
 
-// ── File group type (same as ModelsPage) ──
+// ── File group type ──
 interface LocalFileGroup {
   id: string;
   quantization: string;
@@ -227,7 +227,7 @@ interface LocalFileGroup {
   totalSize: number;
 }
 
-// ── Model group type (same as ModelsPage) ──
+// ── Model group type ──
 interface LocalModelGroup {
   name: string;
   fileGroups: LocalFileGroup[];
@@ -268,6 +268,14 @@ export default function ProfilesPage() {
   const dragLeaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
+
+  // ── Repeat Penalty state ──
+  const [editRpEnabled, setEditRpEnabled] = useState(true);
+  const [editRpLastTokens, setEditRpLastTokens] = useState('');
+  const [editRpPenalizeNewLine, setEditRpPenalizeNewLine] = useState(true);
+  const [editRpPenalty, setEditRpPenalty] = useState('');
+  const [editRpFrequencyPenalty, setEditRpFrequencyPenalty] = useState('0.02');
+  const [editRpPresencePenalty, setEditRpPresencePenalty] = useState('');
 
   // ── Toggle a single tool on/off ──
   const handleToolToggle = (toolKey: string) => {
@@ -318,6 +326,41 @@ export default function ProfilesPage() {
     window.dispatchEvent(new Event('profiles-changed'));
   };
 
+  // ── Reset all repeat penalty state fields ──
+  const resetRepeatPenaltyState = (rp?: Profile['repeatPenalty']) => {
+    setEditRpEnabled(rp?.enabled !== false);
+    setEditRpLastTokens(
+      rp?.lastTokens !== undefined ? String(rp.lastTokens) : '',
+    );
+    setEditRpPenalizeNewLine(rp?.penalizeNewLine !== false);
+    setEditRpPenalty(rp?.penalty !== undefined ? String(rp.penalty) : '');
+    setEditRpFrequencyPenalty(
+      rp?.frequencyPenalty !== undefined ? String(rp.frequencyPenalty) : '0.02',
+    );
+    setEditRpPresencePenalty(
+      rp?.presencePenalty !== undefined ? String(rp.presencePenalty) : '',
+    );
+  };
+
+  // ── Build the repeatPenalty object to persist ──
+  const buildRepeatPenalty = (): Profile['repeatPenalty'] => {
+    // User explicitly disabled the whole feature
+    if (!editRpEnabled) return { enabled: false };
+
+    const rp: NonNullable<Profile['repeatPenalty']> = {};
+    if (editRpLastTokens !== '') rp.lastTokens = parseInt(editRpLastTokens, 10);
+    // Only persist false — true is the library default, no need to store it
+    if (!editRpPenalizeNewLine) rp.penalizeNewLine = false;
+    if (editRpPenalty !== '') rp.penalty = parseFloat(editRpPenalty);
+    if (editRpFrequencyPenalty !== '')
+      rp.frequencyPenalty = parseFloat(editRpFrequencyPenalty);
+    if (editRpPresencePenalty !== '')
+      rp.presencePenalty = parseFloat(editRpPresencePenalty);
+
+    // If no fields were actually set, don't persist an empty object
+    return Object.keys(rp).length > 0 ? rp : undefined;
+  };
+
   const handleNewProfile = () => {
     setError(null);
     const newProfile: Profile = {
@@ -330,6 +373,9 @@ export default function ProfilesPage() {
       topP: 0.8,
       minP: 0.05,
       seed: 0,
+      repeatPenalty: {
+        frequencyPenalty: 0.02,
+      },
       tools: [],
       order: Date.now(),
       createdAt: Date.now(),
@@ -349,6 +395,8 @@ export default function ProfilesPage() {
     setEditModel('');
     setEditProjector('');
     setEditTools([]);
+    // New profiles start with repeat penalty enabled and frequency penalty set
+    resetRepeatPenaltyState(newProfile.repeatPenalty);
   };
 
   const handleEdit = (profile: Profile) => {
@@ -364,8 +412,9 @@ export default function ProfilesPage() {
     setEditSeed(String(profile.seed || 0));
     setEditModel(profile.model);
     setEditProjector(profile.projector || '');
-    // Fall back to all tools enabled if the profile predates this feature
     setEditTools(profile.tools ?? []);
+    // Load persisted repeat penalty values (or defaults if never set)
+    resetRepeatPenaltyState(profile.repeatPenalty);
   };
 
   const handleSaveEdit = () => {
@@ -429,6 +478,7 @@ export default function ProfilesPage() {
             tools: editTools.filter((t) =>
               (AVAILABLE_TOOLS as readonly string[]).includes(t),
             ),
+            repeatPenalty: buildRepeatPenalty(),
           }
         : p,
     );
@@ -925,11 +975,13 @@ export default function ProfilesPage() {
                         </div>
                       </CollapsibleSection>
 
+                      {/* ── Advanced Parameters ── */}
                       <CollapsibleSection
                         title="Advanced Parameters"
                         defaultOpen={false}
                         tooltip={[]}
                       >
+                        {/* Sampling parameters grid */}
                         <div className="sp-card__edit-grid">
                           <EditSection
                             label="Temperature"
@@ -1051,7 +1103,261 @@ export default function ProfilesPage() {
                             />
                           </EditSection>
                         </div>
+
+                        {/* ── Repeat Penalty nested collapsible ── */}
+                        <div style={{ marginTop: '12px' }}>
+                          <CollapsibleSection
+                            title="Repeat Penalty"
+                            defaultOpen={false}
+                            tooltip={[
+                              'Discourages the model from repeating recent tokens',
+                              'Uncheck Enabled to fully disable (passes false to the engine)',
+                              'Leave numeric fields blank to use library defaults',
+                            ]}
+                          >
+                            <div className="sp-card__collapsible-edit-section">
+                              {/* Enabled toggle */}
+                              <div
+                                className="sp-card__edit-section"
+                                style={{ marginBottom: '12px' }}
+                              >
+                                <label
+                                  className="sp-card__label-row"
+                                  style={{
+                                    cursor: 'pointer',
+                                    userSelect: 'none',
+                                  }}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    className="sp-card__tool-checkbox"
+                                    checked={editRpEnabled}
+                                    onChange={(e) =>
+                                      setEditRpEnabled(e.target.checked)
+                                    }
+                                  />
+                                  <div className="sp-card__label-with-tooltip">
+                                    <span
+                                      style={{
+                                        fontSize: '13px',
+                                        fontWeight: 600,
+                                        color: 'var(--text-primary)',
+                                      }}
+                                    >
+                                      Enabled
+                                    </span>
+                                    <div className="sp-card__tooltip-wrapper">
+                                      <Info
+                                        size={14}
+                                        className="sp-card__info-icon"
+                                      />
+                                      <div className="sp-card__tooltip">
+                                        <div className="sp-card__tooltip-title">
+                                          Enabled
+                                        </div>
+                                        <ul className="sp-card__tooltip-list">
+                                          <li>
+                                            When unchecked, repeat penalty is
+                                            fully disabled
+                                          </li>
+                                          <li>
+                                            Passes{' '}
+                                            <code>repeatPenalty: false</code> to
+                                            the engine
+                                          </li>
+                                          <li>
+                                            All sub-fields below are ignored
+                                            when disabled
+                                          </li>
+                                        </ul>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </label>
+                              </div>
+
+                              {/* Sub-fields — greyed out when disabled */}
+                              <div
+                                className={
+                                  !editRpEnabled
+                                    ? 'sp-card__repeat-penalty-fields--disabled'
+                                    : undefined
+                                }
+                              >
+                                <div className="sp-card__edit-grid">
+                                  {/* Last Tokens */}
+                                  <EditSection
+                                    label="Last Tokens"
+                                    htmlFor={`edit-rp-lasttokens-${profile.id}`}
+                                    helper="Default: 64"
+                                    tooltip={[
+                                      'Number of recent tokens to apply penalties to',
+                                      'Higher = penalises repetition over a longer window',
+                                      'Leave blank to use the library default of 64',
+                                    ]}
+                                  >
+                                    <input
+                                      id={`edit-rp-lasttokens-${profile.id}`}
+                                      type="number"
+                                      className="sp-card__edit-input"
+                                      placeholder="64"
+                                      min={1}
+                                      step={1}
+                                      value={editRpLastTokens}
+                                      onChange={(e) =>
+                                        setEditRpLastTokens(e.target.value)
+                                      }
+                                    />
+                                  </EditSection>
+
+                                  {/* Penalty */}
+                                  <EditSection
+                                    label="Penalty"
+                                    htmlFor={`edit-rp-penalty-${profile.id}`}
+                                    helper="Default: 1.1  •  1 = off"
+                                    tooltip={[
+                                      'Multiplier applied to repeated token probabilities',
+                                      '1.1 = repeated tokens are 10% less likely',
+                                      'Set to 1 to disable this specific multiplier',
+                                      'Leave blank to use the library default of 1.1',
+                                    ]}
+                                  >
+                                    <input
+                                      id={`edit-rp-penalty-${profile.id}`}
+                                      type="number"
+                                      className="sp-card__edit-input"
+                                      placeholder="1.1"
+                                      min={0}
+                                      step={0.01}
+                                      value={editRpPenalty}
+                                      onChange={(e) =>
+                                        setEditRpPenalty(e.target.value)
+                                      }
+                                    />
+                                  </EditSection>
+
+                                  {/* Frequency Penalty */}
+                                  <EditSection
+                                    label="Frequency Penalty"
+                                    htmlFor={`edit-rp-freq-${profile.id}`}
+                                    helper="Default: 0.02  •  range 0–1"
+                                    tooltip={[
+                                      'Scales penalty by how many times a token appeared',
+                                      'A token seen N times is penalised N × frequencyPenalty',
+                                      '0 = disabled',
+                                      'Range: 0 to 1',
+                                    ]}
+                                  >
+                                    <input
+                                      id={`edit-rp-freq-${profile.id}`}
+                                      type="number"
+                                      className="sp-card__edit-input"
+                                      placeholder="0.02"
+                                      min={0}
+                                      max={1}
+                                      step={0.01}
+                                      value={editRpFrequencyPenalty}
+                                      onChange={(e) =>
+                                        setEditRpFrequencyPenalty(
+                                          e.target.value,
+                                        )
+                                      }
+                                    />
+                                  </EditSection>
+
+                                  {/* Presence Penalty */}
+                                  <EditSection
+                                    label="Presence Penalty"
+                                    htmlFor={`edit-rp-presence-${profile.id}`}
+                                    helper="Default: 0 (off)  •  range 0–1"
+                                    tooltip={[
+                                      'Flat penalty for any token that has already appeared',
+                                      'Applied once regardless of how many times it appeared',
+                                      '0 = disabled (default)',
+                                      'Range: 0 to 1',
+                                    ]}
+                                  >
+                                    <input
+                                      id={`edit-rp-presence-${profile.id}`}
+                                      type="number"
+                                      className="sp-card__edit-input"
+                                      placeholder="0"
+                                      min={0}
+                                      max={1}
+                                      step={0.01}
+                                      value={editRpPresencePenalty}
+                                      onChange={(e) =>
+                                        setEditRpPresencePenalty(e.target.value)
+                                      }
+                                    />
+                                  </EditSection>
+                                </div>
+
+                                {/* Penalize New Line — full-width checkbox */}
+                                <div
+                                  className="sp-card__edit-section"
+                                  style={{ marginTop: '12px' }}
+                                >
+                                  <label
+                                    className="sp-card__label-row"
+                                    style={{
+                                      cursor: 'pointer',
+                                      userSelect: 'none',
+                                    }}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      className="sp-card__tool-checkbox"
+                                      checked={editRpPenalizeNewLine}
+                                      onChange={(e) =>
+                                        setEditRpPenalizeNewLine(
+                                          e.target.checked,
+                                        )
+                                      }
+                                    />
+                                    <div className="sp-card__label-with-tooltip">
+                                      <span
+                                        style={{
+                                          fontSize: '13px',
+                                          fontWeight: 600,
+                                          color: 'var(--text-primary)',
+                                        }}
+                                      >
+                                        Penalize New Line
+                                      </span>
+                                      <div className="sp-card__tooltip-wrapper">
+                                        <Info
+                                          size={14}
+                                          className="sp-card__info-icon"
+                                        />
+                                        <div className="sp-card__tooltip">
+                                          <div className="sp-card__tooltip-title">
+                                            Penalize New Line
+                                          </div>
+                                          <ul className="sp-card__tooltip-list">
+                                            <li>
+                                              Whether newline tokens are
+                                              included in repeat penalty
+                                            </li>
+                                            <li>Enabled by default</li>
+                                            <li>
+                                              Uncheck to let the model freely
+                                              use newlines without penalty
+                                            </li>
+                                          </ul>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </label>
+                                </div>
+                              </div>
+                              {/* end sub-fields wrapper */}
+                            </div>
+                          </CollapsibleSection>
+                        </div>
+                        {/* end repeat penalty wrapper */}
                       </CollapsibleSection>
+                      {/* end Advanced Parameters */}
 
                       <div className="sp-card__edit-actions">
                         <button

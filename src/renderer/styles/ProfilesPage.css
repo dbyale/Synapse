@@ -915,3 +915,14 @@
   color: var(--accent);
   background: rgba(37, 99, 235, 0.06);
 }
+
+/* ============================================================================
+   REPEAT PENALTY — sub-fields disabled state
+   ============================================================================ */
+
+.sp-card__repeat-penalty-fields--disabled {
+  opacity: 0.45;
+  pointer-events: none;
+  user-select: none;
+  transition: opacity 0.2s ease;
+}
