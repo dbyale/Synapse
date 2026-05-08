@@ -80,7 +80,10 @@ function ToolCallSegment({ segment }: { segment: MessageSegment }) {
       >
         <Wrench className="tool-call-segment__icon" size={16} />
         <span className="tool-call-segment__name">
-          {(segment.toolName && TOOL_METADATA[segment.toolName as keyof typeof TOOL_METADATA]?.label) ?? segment.toolName}
+          {(segment.toolName &&
+            TOOL_METADATA[segment.toolName as keyof typeof TOOL_METADATA]
+              ?.label) ??
+            segment.toolName}
         </span>
         {segment.toolStatus === 'calling' ? (
           <div className="tool-call-segment__spinner" />
@@ -144,7 +147,9 @@ export default function ChatPage() {
   const profilesRef = useRef<Profile[]>([]);
   const activeToolSegmentId = useRef<string | null>(null);
   const generationBaselineTokens = useRef<number | null>(null);
-  const lastTokenSnapshot = useRef<{ tokens: number; time: number } | null>(null);
+  const lastTokenSnapshot = useRef<{ tokens: number; time: number } | null>(
+    null,
+  );
 
   const navigate = useNavigate();
   const location = useLocation();
@@ -454,8 +459,7 @@ export default function ChatPage() {
         }
         // PHASE 2: Subsequent polls — compute delta from previous snapshot only
         else if (usage.used > lastTokenSnapshot.current.tokens) {
-          const deltaTokens =
-            usage.used - lastTokenSnapshot.current.tokens;
+          const deltaTokens = usage.used - lastTokenSnapshot.current.tokens;
           const deltaTime =
             (Date.now() - lastTokenSnapshot.current.time) / 1000;
           const instantTps = deltaTime > 0 ? deltaTokens / deltaTime : 0;

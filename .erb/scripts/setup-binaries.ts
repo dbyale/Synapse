@@ -5,21 +5,16 @@ import AdmZip from 'adm-zip';
 import * as tar from 'tar';
 
 const LLAMA_VERSION = 'b9049';
+const PARSER_VERSION = 'v0.24.0';
 const ASSETS_BIN = path.join(__dirname, '../../assets/bin');
 
-// Mapping: [Release FileName, Target Folder Name]
 const TARGETS: [string, string][] = [
-  // macOS
   [`llama-${LLAMA_VERSION}-bin-macos-arm64.tar.gz`, 'macos-arm64'],
   [`llama-${LLAMA_VERSION}-bin-macos-x64.tar.gz`, 'macos-x64'],
-
-  // Windows
   [`llama-${LLAMA_VERSION}-bin-win-cuda-12.4-x64.zip`, 'win-cuda-12.4-x64'],
   [`llama-${LLAMA_VERSION}-bin-win-cuda-13.1-x64.zip`, 'win-cuda-13.1-x64'],
   [`llama-${LLAMA_VERSION}-bin-win-vulkan-x64.zip`, 'win-vulkan-x64'],
   [`llama-${LLAMA_VERSION}-bin-win-cpu-x64.zip`, 'win-cpu-x64'],
-
-  // Linux
   [`llama-${LLAMA_VERSION}-bin-ubuntu-x64.tar.gz`, 'ubuntu-x64'],
   [`llama-${LLAMA_VERSION}-bin-ubuntu-vulkan-x64.tar.gz`, 'ubuntu-vulkan-x64'],
 ];
@@ -38,51 +33,70 @@ async function downloadAndExtract(url: string, targetFolder: string) {
   if (!response.ok) throw new Error(`Failed to download ${url}: ${response.statusText}`);
 
   const buffer = await response.buffer();
-  const isZip = url.endsWith('.zip');
 
-  if (isZip) {
+  if (url.endsWith('.zip')) {
     const zip = new AdmZip(buffer);
-    // Explicitly typing the entry to fix TS7006
     zip.getEntries().forEach((entry: AdmZip.IZipEntry) => {
-      if (
-        entry.entryName.includes('llama-server') ||
-        entry.entryName.includes('gguf-parser') ||
-        entry.entryName.endsWith('.dll')
-      ) {
+      if (entry.entryName.includes('llama-server') || entry.entryName.endsWith('.dll')) {
         zip.extractEntryTo(entry, targetDir, false, true);
       }
     });
-  } else {
+  } else if (url.endsWith('.tar.gz')) {
     const tempTar = path.join(ASSETS_BIN, `temp-${targetFolder}.tar.gz`);
     fs.writeFileSync(tempTar, buffer);
-
     await tar.x({
       file: tempTar,
       cwd: targetDir,
-      // Explicitly typing the path string
-      filter: (p: string) => p.includes('llama-server') || p.includes('gguf-parser'),
+      filter: (p: string) => p.includes('llama-server'),
     });
-
     fs.unlinkSync(tempTar);
+  } else {
+    // Handling raw binary files from gguf-parser releases (no extension)
+    const isWin = url.includes('windows') || url.endsWith('.exe');
+    const fileName = isWin ? 'gguf-parser.exe' : 'gguf-parser';
+    const filePath = path.join(targetDir, fileName);
+    fs.writeFileSync(filePath, buffer);
+  }
+
+  // Set executable permissions for Unix
+  if (process.platform !== 'win32') {
+    const binPath = path.join(targetDir, 'llama-server');
+    const parserPath = path.join(targetDir, 'gguf-parser');
+    if (fs.existsSync(binPath)) fs.chmodSync(binPath, '755');
+    if (fs.existsSync(parserPath)) fs.chmodSync(parserPath, '755');
   }
 }
 
 async function run() {
-  const llamaBaseUrl = `https://github.com/ggerganov/llama.cpp/releases/download/${LLAMA_VERSION}`;
+  const llamaBase = `https://github.com/ggerganov/llama.cpp/releases/download/${LLAMA_VERSION}`;
+  const parserBase = `https://github.com/gpustack/gguf-parser-go/releases/download/${PARSER_VERSION}`;
 
-  console.log('--- Starting Llama Binary Setup ---');
+  console.log('--- Starting Binary Setup ---');
 
-  // 1. Download Main Backends
+  // 1. Download Llama Backends
   for (const [file, folder] of TARGETS) {
-    await downloadAndExtract(`${llamaBaseUrl}/${file}`, folder);
+    await downloadAndExtract(`${llamaBase}/${file}`, folder);
   }
 
-  // 2. Merge CUDA DLLs
+  // 2. Download CUDA Runtimes
   for (const [file, folder] of CUDA_RUNTIMES) {
-    await downloadAndExtract(`${llamaBaseUrl}/${file}`, folder);
+    await downloadAndExtract(`${llamaBase}/${file}`, folder);
   }
 
-  console.log('--- All backends set up in assets/bin ---');
+  // 3. Download Parser (Detect OS and Arch for v0.24.0 naming convention)
+  let parserFile = '';
+  if (process.platform === 'win32') {
+    parserFile = 'gguf-parser-windows-amd64.exe';
+  } else if (process.platform === 'darwin') {
+    parserFile = process.arch === 'arm64' ? 'gguf-parser-darwin-arm64' : 'gguf-parser-darwin-amd64';
+  } else {
+    parserFile = 'gguf-parser-linux-amd64';
+  }
+
+  // Save parser in a central 'utils' folder
+  await downloadAndExtract(`${parserBase}/${parserFile}`, 'utils');
+
+  console.log('--- All binaries set up successfully ---');
 }
 
 run().catch((err) => {

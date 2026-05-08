@@ -1,236 +1,154 @@
 import { spawn, ChildProcess } from 'child_process';
 import { app } from 'electron';
 import path from 'path';
-import { execFile } from 'child_process';
-import { promisify } from 'util';
 import { graphics } from 'systeminformation';
 import { loadSettings, onMemorySettingsChanged, getModelsDirectory } from './settings';
 import type { Profile } from '../renderer/types/profile';
 import { createChatFunctions } from './chatFunctions';
+import { solveMaxConfig } from './estimator';
 
-const execFileAsync = promisify(execFile);
-
-// --- State Management ---
+// --- State ---
 let serverProcess: ChildProcess | null = null;
 let messageHistory: any[] = [];
 let abortController: AbortController | null = null;
 let currentProfile: Profile | null = null;
 let chatFunctions: any = null;
 let activeTools: any[] = [];
-let emitFunctionEvent: ((event: 'calling' | 'call' | 'result', name: string, data: string) => void) | null = null;
+let emitFunctionEvent: any = null;
 
-// Caches for IPC compatibility (Prevents "Object could not be cloned" errors)
 let lastResolvedMemory: any = null;
 let currentContextSize: number | null = null;
 let lastUsage: { used: number; total: number } | null = null;
 
-// --- Internal Helpers ---
-
-/**
- * Resolves paths for the 'assets' folder in both Development and Production (ERB specific)
- */
 function getAssetPath(...paths: string[]): string {
-  const isProd = app.isPackaged;
-  const base = isProd
-    ? path.join(process.resourcesPath, 'assets')
-    : path.join(__dirname, '../../assets');
+  const base = app.isPackaged ? path.join(process.resourcesPath, 'assets') : path.join(__dirname, '../../assets');
   return path.join(base, ...paths);
 }
 
-/**
- * Detects the best available hardware backend
- */
 async function detectBackend(): Promise<string> {
   const platform = process.platform;
-  const arch = process.arch;
-
-  if (platform === 'darwin') {
-    return `macos-${arch}`;
-  }
-
-  if (platform === 'win32') {
-    try {
-      const gpu = await graphics();
-      const isNvidia = gpu.controllers.some(c =>
-        c.vendor.toLowerCase().includes('nvidia')
-      );
-      if (isNvidia) return 'win-cuda-12.4-x64';
-      return 'win-vulkan-x64';
-    } catch (e) {
-      return 'win-cpu-x64';
-    }
-  }
-
-  return 'ubuntu-x64';
-}
-
-/**
- * Runs gguf-parser to get recommended GPU layers (ngl)
- */
-async function getNglEstimation(modelPath: string, vramMB: number, ctxSize: number, backendPath: string) {
-  const parserBin = process.platform === 'win32' ? 'gguf-parser.exe' : 'gguf-parser';
-  const parserPath = path.join(backendPath, parserBin);
-
+  if (platform === 'darwin') return `macos-${process.arch}`;
   try {
-    const { stdout } = await execFileAsync(parserPath, [
-      'estimate', '--model', modelPath, '--vram', vramMB.toString(), '--ctx', ctxSize.toString(), '--json'
-    ]);
-    const data = JSON.parse(stdout);
-    return {
-      ngl: data.offload_layers ?? 0,
-      memory: {
-        modelVramUsage: data.model_vram ?? 0,
-        contextVramUsage: data.ctx_vram ?? 0,
-        modelRamUsage: data.model_ram ?? 0,
-        contextRamUsage: data.ctx_ram ?? 0
-      }
-    };
-  } catch (e) {
-    console.error('[chat] gguf-parser estimation failed:', e);
-    return { ngl: 0, memory: null };
-  }
+    const gpu = await graphics();
+    const isNvidia = gpu.controllers.some(c => c.vendor.toLowerCase().includes('nvidia'));
+    if (platform === 'win32') return isNvidia ? 'win-cuda-12.4-x64' : 'win-vulkan-x64';
+  } catch (e) {}
+  return platform === 'win32' ? 'win-cpu-x64' : 'ubuntu-x64';
 }
 
-/**
- * Periodically updates the token usage from the server slots
- */
-async function updateUsageCache() {
-  try {
-    const res = await fetch('http://127.0.0.1:8080/slots');
-    if (!res.ok) return;
-    const slots = await res.json();
-    if (slots && slots[0]) {
-      lastUsage = {
-        used: slots[0].n_past,
-        total: currentContextSize || 2048
-      };
-    }
-  } catch (e) {
-    // Server might be closed
-  }
-}
-
-// --- Public API ---
-
-export function setEmitFunctionCallback(callback: any): void {
-  emitFunctionEvent = callback;
-}
+export function setEmitFunctionCallback(cb: any) { emitFunctionEvent = cb; }
 
 export async function loadProfile(profile: Profile): Promise<{ success: boolean; error?: string }> {
-  console.log('[chat] Loading profile:', profile.name);
+  console.log('[chat] Loading Profile:', profile.name);
   await unloadModel();
+
+  let serverErrorLog = '';
 
   try {
     const settings = loadSettings();
-    const modelsDir = getModelsDirectory();
-    const fullModelPath = path.join(modelsDir, profile.model);
-
-    // 1. Detect Backend Folder
+    const fullModelPath = path.join(getModelsDirectory(), profile.model);
     const backendFolder = await detectBackend();
-    const backendPath = getAssetPath('bin', backendFolder);
     const serverBin = process.platform === 'win32' ? 'llama-server.exe' : 'llama-server';
-    const serverPath = path.join(backendPath, serverBin);
+    const serverPath = path.join(getAssetPath('bin', backendFolder), serverBin);
 
-    // 2. Perform Memory Estimation
-    const vramLimit = settings.allocatedVRAM ?? 4096;
-    const ctxSize = 2048; // Standard context fallback
-    const estimation = await getNglEstimation(fullModelPath, vramLimit, ctxSize, backendPath);
+    const vramMB = settings.allocatedVRAM ?? 4096;
+    const ramMB = settings.allocatedRAM ?? 8192;
+    const result = await solveMaxConfig(fullModelPath, vramMB, ramMB);
 
-    // Cache for IPC getters
-    lastResolvedMemory = estimation.memory;
-    currentContextSize = ctxSize;
-    lastUsage = { used: 0, total: ctxSize };
+    lastResolvedMemory = result.memory;
+    currentContextSize = result.ctx;
 
-    // 3. Prepare Tools (converts existing chatFunctions to OpenAI schema)
-    if (!chatFunctions) {
-      // Pass a dummy function to strip node-llama-cpp dependency
-      chatFunctions = createChatFunctions(((fn: any) => fn) as any);
-    }
+    if (!chatFunctions) chatFunctions = createChatFunctions(((fn: any) => fn) as any);
+    activeTools = (profile.tools || []).map(t => chatFunctions[t]).filter(Boolean).map(f => ({
+      type: 'function',
+      function: { name: f.name || Object.keys(chatFunctions).find(k => chatFunctions[k] === f), description: f.description, parameters: f.parameters }
+    }));
 
-    activeTools = (profile.tools || [])
-      .map(toolName => {
-        const fn = chatFunctions[toolName];
-        if (!fn) return null;
-        return {
-          type: 'function',
-          function: {
-            name: toolName,
-            description: fn.description,
-            parameters: fn.parameters
-          }
-        };
-      })
-      .filter(Boolean);
-
-    // 4. Start Server Process
-    console.log(`[chat] Spawning ${backendFolder} server with NGL: ${estimation.ngl}`);
     serverProcess = spawn(serverPath, [
       '--model', fullModelPath,
-      '--n-gpu-layers', estimation.ngl.toString(),
-      '--ctx-size', ctxSize.toString(),
+      '--n-gpu-layers', result.ngl.toString(),
+      '--ctx-size', result.ctx.toString(),
       '--port', '8080',
       '--host', '127.0.0.1',
-      '--no-mmap'
+      '--parallel', '1',
+      '--metrics',
+      '--log-disable'
     ]);
 
-    // 5. Wait for server readiness
-    let isReady = false;
-    for (let i = 0; i < 30; i++) {
+    serverProcess.stderr?.on('data', (d) => {
+      serverErrorLog += d.toString();
+    });
+
+    let ready = false;
+    for (let i = 0; i < 45; i++) {
       try {
         const res = await fetch('http://127.0.0.1:8080/health');
-        if (res.ok) { isReady = true; break; }
-      } catch (e) { /* ignore */ }
+        if (res.ok) { ready = true; break; }
+      } catch (e) {}
       await new Promise(r => setTimeout(r, 1000));
     }
 
-    if (!isReady) throw new Error("Llama server failed to start within timeout.");
+    if (!ready) {
+      console.error('[llama-server] Startup failed. Logs:\n', serverErrorLog);
+      throw new Error("Inference server failed to respond.");
+    }
+
+    // Seed used-token count from system prompt + serialised tool definitions.
+    // The server is healthy here so /tokenize is available.
+    const systemTokens = (await tokenize(profile.systemPrompt)) ?? 0;
+    const toolTokens =
+      activeTools.length > 0
+        ? (await tokenize(JSON.stringify(activeTools))) ?? 0
+        : 0;
+    lastUsage = { used: systemTokens + toolTokens, total: result.ctx };
 
     currentProfile = profile;
     messageHistory = [{ role: 'system', content: profile.systemPrompt }];
-
-    console.log('[chat] Profile loaded successfully');
+    console.log(`[chat] Server Ready | NGL: ${result.ngl} | CTX: ${result.ctx}`);
     return { success: true };
   } catch (error: any) {
-    console.error('[chat] Error loading profile:', error);
-    await unloadModel();
-    return { success: false, error: error?.message || 'Unknown error' };
+    console.error('[chat] Load error:', error);
+    return { success: false, error: error.message };
   }
 }
 
-export async function sendMessage(
-  text: string,
-  onToken: (token: string, segmentType?: 'thought' | 'comment') => void,
-): Promise<string> {
-  if (!currentProfile) throw new Error('No profile loaded.');
+export async function sendMessage(text: string, onToken: (t: string, type?: 'thought' | 'comment') => void): Promise<string> {
+  if (!currentProfile) throw new Error("No profile loaded");
+
+  // Immediately advance the counter by the user message token count so that
+  // the frontend polling sees a rise the moment the prompt is submitted,
+  // before any stream data arrives.
+  const userTokens = (await tokenize(text)) ?? 0;
+  if (lastUsage) {
+    lastUsage = { used: lastUsage.used + userTokens, total: lastUsage.total };
+  }
 
   messageHistory.push({ role: 'user', content: text });
   abortController = new AbortController();
 
-  try {
-    const runInference = async (): Promise<string> => {
-      const response = await fetch('http://127.0.0.1:8080/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: messageHistory,
-          tools: activeTools.length > 0 ? activeTools : undefined,
-          stream: true,
-          temperature: currentProfile?.temperature,
-          top_p: currentProfile?.topP,
-          repeat_penalty: currentProfile?.repeatPenalty?.penalty
-        }),
-        signal: abortController?.signal
-      });
+  const runCompletion = async (): Promise<string> => {
+    const response = await fetch('http://127.0.0.1:8080/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messages: messageHistory,
+        tools: activeTools.length > 0 ? activeTools : undefined,
+        stream: true,
+        stream_options: { include_usage: true },
+        temperature: currentProfile?.temperature ?? 0.7
+      }),
+      signal: abortController?.signal
+    });
 
-      if (!response.body) throw new Error('No response body');
+    if (!response.body) throw new Error('No response body');
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let fullResponse = "";
+    let toolCalls: any[] = [];
 
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let fullText = "";
-      let currentToolCalls: any[] = [];
-
+    try {
       while (true) {
-        const { done, value } = await reader.read();
+        const { done, value } = await reader!.read();
         if (done) break;
 
         const chunk = decoder.decode(value);
@@ -243,136 +161,90 @@ export async function sendMessage(
 
           try {
             const data = JSON.parse(dataStr);
-            const delta = data.choices[0].delta;
 
-            // Tokens
-            if (delta.content) {
-              fullText += delta.content;
-              onToken(delta.content);
+            // Source of truth: when the model reports final usage, override
+            // our running estimate with the authoritative figure.
+            if (data.usage) {
+              lastUsage = {
+                used: data.usage.total_tokens,
+                total: currentContextSize || 2048
+              };
             }
 
-            // Reasoning (Thought)
+            const delta = data.choices[0]?.delta;
+            if (!delta) continue;
+
+            if (delta.content) {
+              fullResponse += delta.content;
+              onToken(delta.content);
+            }
             if (delta.reasoning_content) {
               onToken(delta.reasoning_content, 'thought');
             }
-
-            // Tools
             if (delta.tool_calls) {
-              for (const tc of delta.tool_calls) {
-                const idx = tc.index;
-                if (!currentToolCalls[idx]) {
-                  currentToolCalls[idx] = { id: tc.id, name: '', args: '' };
-                  if (tc.function?.name) {
-                    currentToolCalls[idx].name = tc.function.name;
-                    emitFunctionEvent?.('calling', tc.function.name, '');
-                  }
-                }
-                if (tc.function?.arguments) {
-                  currentToolCalls[idx].args += tc.function.arguments;
-                }
-              }
+              delta.tool_calls.forEach((tc: any) => {
+                if (!toolCalls[tc.index]) toolCalls[tc.index] = { id: tc.id, name: '', args: '' };
+                if (tc.function?.name) toolCalls[tc.index].name = tc.function.name;
+                if (tc.function?.arguments) toolCalls[tc.index].args += tc.function.arguments;
+              });
             }
-          } catch (e) { /* partial json */ }
+
+            // Increment by 1 per delta — each SSE chunk carries one token.
+            // data.usage above will override this with the authoritative total
+            // when it arrives at the end of the stream.
+            if (lastUsage) {
+              lastUsage = { used: lastUsage.used + 1, total: lastUsage.total };
+            }
+          } catch (e) {}
         }
       }
+    } finally {
+      reader.releaseLock();
+    }
 
-      // If tools were called, execute them and recurse
-      if (currentToolCalls.length > 0) {
-        const assistantMsg = {
-          role: 'assistant',
-          tool_calls: currentToolCalls.map(tc => ({
-            id: tc.id,
-            type: 'function',
-            function: { name: tc.name, arguments: tc.args }
-          }))
-        };
-        messageHistory.push(assistantMsg);
-
-        for (const tc of currentToolCalls) {
-          const handler = chatFunctions[tc.name]?.handler;
-          const args = JSON.parse(tc.args);
-
-          emitFunctionEvent?.('call', tc.name, tc.args);
-          const result = await handler(args);
-          emitFunctionEvent?.('result', tc.name, JSON.stringify(result));
-
-          messageHistory.push({
-            role: 'tool',
-            tool_call_id: tc.id,
-            content: JSON.stringify(result)
-          });
-        }
-
-        return runInference(); // Recursive loop
+    if (toolCalls.length > 0) {
+      messageHistory.push({ role: 'assistant', tool_calls: toolCalls.map(tc => ({ id: tc.id, type: 'function', function: { name: tc.name, arguments: tc.args } })) });
+      for (const tc of toolCalls) {
+        const handler = chatFunctions[tc.name]?.handler;
+        if (emitFunctionEvent) emitFunctionEvent('call', tc.name, tc.args);
+        const result = await handler(JSON.parse(tc.args));
+        if (emitFunctionEvent) emitFunctionEvent('result', tc.name, JSON.stringify(result));
+        messageHistory.push({ role: 'tool', tool_call_id: tc.id, content: JSON.stringify(result) });
       }
+      return runCompletion();
+    }
+    return fullResponse;
+  };
 
-      return fullText;
-    };
-
-    const result = await runInference();
+  try {
+    const result = await runCompletion();
     messageHistory.push({ role: 'assistant', content: result });
-    updateUsageCache(); // Async update for next poll
     return result;
-
-  } catch (error: any) {
-    if (error.name === 'AbortError') return 'Generation aborted.';
-    throw error;
-  } finally {
-    abortController = null;
+  } catch (e: any) {
+    if (e.name === 'AbortError') return 'Aborted';
+    throw e;
   }
 }
 
-export function abort() {
-  abortController?.abort();
-}
+export function abort() { abortController?.abort(); }
 
 export async function unloadModel() {
-  abort();
-  if (serverProcess) {
-    serverProcess.kill();
-    serverProcess = null;
-  }
-  currentProfile = null;
+  if (serverProcess) { serverProcess.kill(); serverProcess = null; }
   messageHistory = [];
-  lastResolvedMemory = null;
   currentContextSize = null;
   lastUsage = null;
 }
 
-// --- IPC Compatible Getters (Synchronous data return) ---
-
-export function getContextSize(): number | null {
-  return currentContextSize;
-}
-
-export function getContextUsage(): { used: number; total: number } | null {
-  return lastUsage;
-}
-
-export function getModelMemoryUsage() {
-  return lastResolvedMemory ? { ...lastResolvedMemory } : null;
-}
-
-export function getCurrentProfile(): Profile | null {
-  return currentProfile;
-}
+export function getContextSize() { return currentContextSize; }
+export function getContextUsage() { return lastUsage; }
+export function getModelMemoryUsage() { return lastResolvedMemory ? { ...lastResolvedMemory } : null; }
+export function getCurrentProfile() { return currentProfile; }
 
 export async function tokenize(text: string): Promise<number | null> {
   try {
-    const res = await fetch('http://127.0.0.1:8080/tokenize', {
-      method: 'POST',
-      body: JSON.stringify({ content: text })
-    });
-    const data = await res.json();
-    return data.tokens?.length || 0;
-  } catch {
-    return null;
-  }
+    const res = await fetch('http://127.0.0.1:8080/tokenize', { method: 'POST', body: JSON.stringify({ content: text }) });
+    return (await res.json()).tokens?.length || 0;
+  } catch { return null; }
 }
 
-// Listener for settings change
-onMemorySettingsChanged(() => {
-  if (currentProfile) {
-    loadProfile(currentProfile).catch(console.error);
-  }
-});
+onMemorySettingsChanged(() => { if (currentProfile) loadProfile(currentProfile).catch(console.error); });
