@@ -25,27 +25,25 @@ function getParserPath(): string {
   return path.join(base, binName);
 }
 
-/**
- * THE SOLVER
- * This finds the highest NGL that allows for a "useful" context,
- * then pushes that context to the absolute VRAM/RAM limit.
- */
 export async function solveMaxConfig(
   modelPath: string,
   vramMB: number,
   ramMB: number
 ): Promise<MemoryEstimation> {
   const parserPath = getParserPath();
-  const vramLimitBytes = vramMB * 1024 * 1024;
-  const ramLimitBytes = ramMB * 1024 * 1024;
 
-  // 1. Get Model Metadata
+  // 1. Define Safety Buffers
+  // LLama.cpp needs 'scratch' memory and the OS needs some overhead.
+  const overheadBuffer = 256 * 1024 * 1024; // 256MB hard safety buffer
+  const vramLimitBytes = (vramMB * 1024 * 1024) - overheadBuffer;
+  const ramLimitBytes = (ramMB * 1024 * 1024) - overheadBuffer;
+
+  // 2. Get Model Metadata
   const { stdout: metaOut } = await execFileAsync(parserPath, ['--path', modelPath, '--json', '--skip-estimate']);
   const meta = JSON.parse(metaOut);
   const modelMaxCtx = meta.architecture?.maximumContextLength || 32768;
 
-  // 2. Get all offload scenarios for a baseline context (e.g., 512)
-  // We use the parser's step logic to see weight distribution per layer
+  // 3. Get scenarios with a small baseline (512) to calculate KV cost
   const { stdout: stepOut } = await execFileAsync(parserPath, [
     '--path', modelPath,
     '--ctx-size', '512',
@@ -58,60 +56,63 @@ export async function solveMaxConfig(
 
   let bestNgl = 0;
   let finalCtx = 512;
-  let finalMem = null;
+  let finalMemUsage = null;
 
-  /**
-   * 3. THE OPTIMIZATION LOOP
-   * We look at every NGL scenario from Max down to 0.
-   * For each NGL, we see how much VRAM is left and fill it with Context.
-   */
+  // Iterate from Max GPU offload down to 0
   for (let i = items.length - 1; i >= 0; i--) {
     const item = items[i];
     const layers = item.offloadLayers;
     const currentNgl = typeof layers === 'number' ? layers : parseInt(layers.split(' ')[0], 10);
 
-    // Weight sizes for this NGL
+    // Weights sizes
     const weightVram = item.vrams?.[0]?.nonuma ?? item.vrams?.[0]?.uma ?? 0;
     const weightRam = item.ram?.nonuma ?? item.ram?.uma ?? 0;
 
-    // If weights alone don't fit in RAM/VRAM, skip
-    if (weightVram > vramLimitBytes * 0.9 || weightRam > ramLimitBytes * 0.9) continue;
+    // If weights alone exceed our limits, this NGL is impossible
+    if (weightVram > vramLimitBytes || weightRam > ramLimitBytes) continue;
 
-    // How much VRAM is left for KV Cache?
-    const availableVramForKV = (vramLimitBytes * 0.9) - weightVram;
+    // Calculate KV Cache cost per token
+    // We compare the total VRAM usage at 512 context vs the weights
+    const totalVramAt512 = item.vrams?.[0]?.nonuma || weightVram;
+    const vramFor512Tokens = Math.max(0, totalVramAt512 - weightVram);
 
-    // estimate context size based on available VRAM
-    // KV Cache is roughly proportional to context size.
-    // We'll use a binary search or a simple multiplier if the parser supported it,
-    // but here we can estimate: (Total VRAM / Baseline VRAM) * Baseline Context
-    const kvPerToken = (item.vrams?.[0]?.nonuma - weightVram) / 512; // bytes per token
-    let possibleCtx = Math.floor(availableVramForKV / kvPerToken);
+    // If vramFor512Tokens is 0, it means the parser thinks context is in RAM
+    // or it's a very small model. We'll fallback to a safe estimate if needed.
+    const kvBytesPerToken = vramFor512Tokens > 0 ? vramFor512Tokens / 512 : 1024 * 0.5; // default 0.5kb/token fallback
 
-    // Clamp to model limits
+    // Calculate how many more tokens can fit in the REMAINING VRAM
+    const remainingVram = vramLimitBytes - weightVram;
+
+    // Total possible tokens = (Remaining VRAM / bytes per token)
+    // We add the 512 we already accounted for in the 'totalVramAt512'
+    let possibleCtx = Math.floor(remainingVram / (kvBytesPerToken || 1));
+
+    // Clamp to model's architectural limit
     possibleCtx = Math.min(possibleCtx, modelMaxCtx);
-    // Round to nearest 512
-    possibleCtx = Math.max(512, Math.floor(possibleCtx / 512) * 512);
 
-    // If we found a configuration that allows at least 2048 context, we take it.
-    // This prioritizes Speed (NGL) as long as Context is usable.
+    // Round down to a power of 2 or multiple of 512 for stability
+    possibleCtx = Math.floor(possibleCtx / 512) * 512;
+
+    // A "usable" context is generally 2048+.
+    // If we can't even fit 2048, we'll try the next NGL (fewer layers on GPU)
     if (possibleCtx >= 2048 || i === 0) {
       bestNgl = currentNgl;
-      finalCtx = possibleCtx;
-      finalMem = item;
+      finalCtx = Math.max(512, possibleCtx); // Ensure at least 512
+      finalMemUsage = {
+        modelVramUsage: weightVram,
+        contextVramUsage: finalCtx * kvBytesPerToken,
+        modelRamUsage: weightRam,
+        contextRamUsage: 0 // In this logic, we prefer VRAM context
+      };
       break;
     }
   }
 
-  console.log(`[estimator] Final Decision -> NGL: ${bestNgl}, CTX: ${finalCtx}`);
+  console.log(`[estimator] NGL: ${bestNgl}, CTX: ${finalCtx}`);
 
   return {
     ngl: bestNgl,
     ctx: finalCtx,
-    memory: finalMem ? {
-      modelVramUsage: finalMem.vrams?.[0]?.nonuma || 0,
-      contextVramUsage: 0,
-      modelRamUsage: finalMem.ram?.nonuma || 0,
-      contextRamUsage: 0
-    } : null
+    memory: finalMemUsage
   };
 }
