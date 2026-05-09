@@ -7,6 +7,17 @@ import type { Profile } from '../renderer/types/profile';
 import { createChatFunctions } from './chatFunctions';
 import { solveMaxConfig } from './estimator';
 
+export interface GenerationStats {
+  tokens: number;
+  timeMs: number;
+  tokensPerSecond: number;
+}
+
+export interface SendMessageResponse {
+  content: string;
+  stats?: GenerationStats;
+}
+
 // --- State ---
 let serverProcess: ChildProcess | null = null;
 let messageHistory: any[] = [];
@@ -61,7 +72,7 @@ export async function loadProfile(profile: Profile): Promise<{ success: boolean;
     if (!chatFunctions) chatFunctions = createChatFunctions(((fn: any) => fn) as any);
     activeTools = (profile.tools || []).map(t => chatFunctions[t]).filter(Boolean).map(f => ({
       type: 'function',
-      function: { name: f.name || Object.keys(chatFunctions).find(k => chatFunctions[k] === f), description: f.description, parameters: f.parameters }
+      function: { name: f.name || Object.keys(chatFunctions).find(k => chatFunctions[k] === f), description: f.description, parameters: f.params }
     }));
 
     serverProcess = spawn(serverPath, [
@@ -93,31 +104,21 @@ export async function loadProfile(profile: Profile): Promise<{ success: boolean;
       throw new Error("Inference server failed to respond.");
     }
 
-    // Seed used-token count from system prompt + serialised tool definitions.
-    // The server is healthy here so /tokenize is available.
     const systemTokens = (await tokenize(profile.systemPrompt)) ?? 0;
-    const toolTokens =
-      activeTools.length > 0
-        ? (await tokenize(JSON.stringify(activeTools))) ?? 0
-        : 0;
+    const toolTokens = activeTools.length > 0 ? (await tokenize(JSON.stringify(activeTools))) ?? 0 : 0;
     lastUsage = { used: systemTokens + toolTokens, total: result.ctx };
 
     currentProfile = profile;
     messageHistory = [{ role: 'system', content: profile.systemPrompt }];
-    console.log(`[chat] Server Ready | NGL: ${result.ngl} | CTX: ${result.ctx}`);
     return { success: true };
   } catch (error: any) {
-    console.error('[chat] Load error:', error);
     return { success: false, error: error.message };
   }
 }
 
-export async function sendMessage(text: string, onToken: (t: string, type?: 'thought' | 'comment') => void): Promise<string> {
+export async function sendMessage(text: string, onToken: (t: string, type?: 'thought' | 'comment') => void): Promise<SendMessageResponse> {
   if (!currentProfile) throw new Error("No profile loaded");
 
-  // Immediately advance the counter by the user message token count so that
-  // the frontend polling sees a rise the moment the prompt is submitted,
-  // before any stream data arrives.
   const userTokens = (await tokenize(text)) ?? 0;
   if (lastUsage) {
     lastUsage = { used: lastUsage.used + userTokens, total: lastUsage.total };
@@ -126,7 +127,7 @@ export async function sendMessage(text: string, onToken: (t: string, type?: 'tho
   messageHistory.push({ role: 'user', content: text });
   abortController = new AbortController();
 
-  const runCompletion = async (): Promise<string> => {
+  const runCompletion = async (): Promise<SendMessageResponse> => {
     const response = await fetch('http://127.0.0.1:8080/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -145,6 +146,7 @@ export async function sendMessage(text: string, onToken: (t: string, type?: 'tho
     const decoder = new TextDecoder();
     let fullResponse = "";
     let toolCalls: any[] = [];
+    let stats: GenerationStats | undefined;
 
     try {
       while (true) {
@@ -162,12 +164,15 @@ export async function sendMessage(text: string, onToken: (t: string, type?: 'tho
           try {
             const data = JSON.parse(dataStr);
 
-            // Source of truth: when the model reports final usage, override
-            // our running estimate with the authoritative figure.
             if (data.usage) {
-              lastUsage = {
-                used: data.usage.total_tokens,
-                total: currentContextSize || 2048
+              lastUsage = { used: data.usage.total_tokens, total: currentContextSize || 2048 };
+
+              // Map llama-server usage/timings to our stats object
+              // Note: llama-server provides 'timings' in the final SSE chunks
+              stats = {
+                tokens: data.usage.completion_tokens,
+                timeMs: data.timings?.predicted_ms || 0,
+                tokensPerSecond: data.timings?.predicted_per_second || 0
               };
             }
 
@@ -189,10 +194,7 @@ export async function sendMessage(text: string, onToken: (t: string, type?: 'tho
               });
             }
 
-            // Increment by 1 per delta — each SSE chunk carries one token.
-            // data.usage above will override this with the authoritative total
-            // when it arrives at the end of the stream.
-            if (lastUsage) {
+            if (lastUsage && !data.usage) {
               lastUsage = { used: lastUsage.used + 1, total: lastUsage.total };
             }
           } catch (e) {}
@@ -213,15 +215,15 @@ export async function sendMessage(text: string, onToken: (t: string, type?: 'tho
       }
       return runCompletion();
     }
-    return fullResponse;
+    return { content: fullResponse, stats };
   };
 
   try {
     const result = await runCompletion();
-    messageHistory.push({ role: 'assistant', content: result });
+    messageHistory.push({ role: 'assistant', content: result.content });
     return result;
   } catch (e: any) {
-    if (e.name === 'AbortError') return 'Aborted';
+    if (e.name === 'AbortError') return { content: 'Aborted' };
     throw e;
   }
 }

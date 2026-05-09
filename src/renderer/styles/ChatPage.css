@@ -1040,3 +1040,49 @@
 .tool-call-segment__json::-webkit-scrollbar-thumb:hover {
   background: var(--text-primary);
 }
+
+/* Statistics display underneath assistant bubbles */
+.chat-message__stats {
+  display: flex;
+  gap: 12px;
+  margin-top: 6px;
+  padding: 0 4px;
+  opacity: 0.6; /* Subtler than the bubble text */
+  transition: opacity 0.2s ease;
+  animation: stats-fade-in 0.4s ease forwards;
+}
+
+.chat-message__stats:hover {
+  opacity: 1;
+}
+
+.chat-stat-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.chat-stat-item svg {
+  color: var(--accent); /* Matches your theme's accent color */
+  flex-shrink: 0;
+}
+
+@keyframes stats-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 0.6;
+    transform: translateY(0);
+  }
+}
+
+/* Adjust assistant layout to account for stats */
+.chat-message--assistant {
+  margin-bottom: 8px; /* Extra breathing room between messages */
+}

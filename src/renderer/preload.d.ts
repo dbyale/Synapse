@@ -133,7 +133,7 @@ declare global {
       chatGetCurrentProfile: () => Promise<Profile | null>;
       chatSend: (text: string) => Promise<{ success: boolean; error?: string; aborted?: boolean }>;
       onChatToken: (callback: (data: { token: string; segmentType?: 'thought' | 'comment' }) => void) => () => void;
-      onChatDone: (callback: () => void) => () => void;
+      onChatDone: (callback: (stats?: { tokens: number; timeMs: number; tokensPerSecond: number }) => void) => () => void;
       onChatError: (callback: (error: string) => void) => () => void;
       chatAbort: () => Promise<void>;
       chatUnload: () => Promise<void>;

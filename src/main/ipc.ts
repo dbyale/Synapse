@@ -147,10 +147,10 @@ export function registerIpcHandlers(win: BrowserWindow): void {
         }
       };
 
-      await chatService.sendMessage(text, onTokenCallback);
+      const result = await chatService.sendMessage(text, onTokenCallback);
 
       if (!event.sender.isDestroyed()) {
-        event.sender.send('chat:done');
+        event.sender.send('chat:done', result.stats);
       }
 
       return { success: true };

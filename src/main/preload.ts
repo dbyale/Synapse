@@ -67,8 +67,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('chat:token', listener);
   },
 
-  onChatDone: (callback: () => void) => {
-    const listener = () => callback();
+    onChatDone: (callback: (stats?: any) => void) => {
+    const listener = (_event: any, stats?: any) => callback(stats);
     ipcRenderer.on('chat:done', listener);
     return () => ipcRenderer.removeListener('chat:done', listener);
   },

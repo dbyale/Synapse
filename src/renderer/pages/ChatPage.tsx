@@ -19,6 +19,9 @@ import {
   ChevronDown,
   ChevronUp,
   Gauge,
+  Hash,
+  Timer,
+  Zap,
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import MessageContent from '../components/MessageContent';
@@ -37,16 +40,15 @@ interface MessageSegment {
   toolResult?: string;
 }
 
-interface ChatMessage {
-  id: number;
-  role: 'user' | 'assistant';
-  content: MessageSegment[];
-}
-
 interface Message {
   id: number;
   role: 'user' | 'assistant';
   content: MessageSegment[];
+  stats?: {
+    tokens: number;
+    timeMs: number;
+    tokensPerSecond: number;
+  };
 }
 
 let persistentMessages: Message[] = [];
@@ -449,21 +451,16 @@ export default function ChatPage() {
       }
 
       if (loading && usage.used > 0) {
-        // PHASE 1: First poll — silently absorb the prompt encoding spike
         if (!lastTokenSnapshot.current) {
           lastTokenSnapshot.current = { tokens: usage.used, time: Date.now() };
           if (generationBaselineTokens.current === null) {
             generationBaselineTokens.current = usage.used;
           }
-          // Intentionally skip setTps — prompt spike absorbed here
-        }
-        // PHASE 2: Subsequent polls — compute delta from previous snapshot only
-        else if (usage.used > lastTokenSnapshot.current.tokens) {
+        } else if (usage.used > lastTokenSnapshot.current.tokens) {
           const deltaTokens = usage.used - lastTokenSnapshot.current.tokens;
           const deltaTime =
             (Date.now() - lastTokenSnapshot.current.time) / 1000;
           const instantTps = deltaTime > 0 ? deltaTokens / deltaTime : 0;
-          // EMA smoothing with 0.3 weight on the new sample
           setTps((prev) => 0.3 * instantTps + 0.7 * prev);
           lastTokenSnapshot.current = { tokens: usage.used, time: Date.now() };
         }
@@ -537,10 +534,23 @@ export default function ChatPage() {
       },
     );
 
-    const removeDoneListener = window.electronAPI.onChatDone(() => {
+    const removeDoneListener = window.electronAPI.onChatDone((stats) => {
       setLoading(false);
       setProcessing(false);
       setTps(0);
+
+      if (stats) {
+        setMessages((prev) => {
+          const last = prev[prev.length - 1];
+          // Ensure we only apply stats to the assistant message that just finished
+          if (last && last.role === 'assistant' && !last.stats) {
+            const updated = [...prev];
+            updated[updated.length - 1] = { ...last, stats };
+            return updated;
+          }
+          return prev;
+        });
+      }
     });
 
     const unsubscribeFunctionCalling = window.electronAPI.onChatFunctionCalling(
@@ -560,7 +570,7 @@ export default function ChatPage() {
           if (lastMessage?.role === 'assistant') {
             lastMessage.content.push(toolSegment);
           } else {
-            const assistantMessage: ChatMessage = {
+            const assistantMessage: Message = {
               id: messageCounter.current,
               role: 'assistant',
               content: [toolSegment],
@@ -901,6 +911,24 @@ export default function ChatPage() {
                 msg.content[0]?.text || ''
               )}
             </div>
+
+            {/* Display generation statistics below assistant responses */}
+            {msg.role === 'assistant' && msg.stats && (
+              <div className="chat-message__stats">
+                <div className="chat-stat-item" title="Tokens generated">
+                  <Hash size={12} />
+                  <span>{msg.stats.tokens} tokens</span>
+                </div>
+                <div className="chat-stat-item" title="Generation time">
+                  <Timer size={12} />
+                  <span>{(msg.stats.timeMs / 1000).toFixed(2)}s</span>
+                </div>
+                <div className="chat-stat-item" title="Generation speed">
+                  <Zap size={12} />
+                  <span>{msg.stats.tokensPerSecond.toFixed(1)} t/s</span>
+                </div>
+              </div>
+            )}
           </div>
         ))}
 
