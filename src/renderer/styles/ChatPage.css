@@ -1092,7 +1092,9 @@
   font-size: 11px;
   color: var(--text-secondary, #888);
   opacity: 0.6;
-  padding: 2px 0 6px;
+  margin-top: -8px;
+  margin-bottom: -20px;
+  padding: 0;
   user-select: none;
   pointer-events: none;
 }
