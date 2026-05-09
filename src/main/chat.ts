@@ -208,6 +208,7 @@ export async function sendMessage(text: string, onToken: (t: string, type?: 'tho
       messageHistory.push({ role: 'assistant', tool_calls: toolCalls.map(tc => ({ id: tc.id, type: 'function', function: { name: tc.name, arguments: tc.args } })) });
       for (const tc of toolCalls) {
         const handler = chatFunctions[tc.name]?.handler;
+        if (emitFunctionEvent) emitFunctionEvent('calling', tc.name, '');
         if (emitFunctionEvent) emitFunctionEvent('call', tc.name, tc.args);
         const result = await handler(JSON.parse(tc.args));
         if (emitFunctionEvent) emitFunctionEvent('result', tc.name, JSON.stringify(result));
