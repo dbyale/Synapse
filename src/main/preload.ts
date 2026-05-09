@@ -114,4 +114,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('chat-function-result', listener);
     return () => ipcRenderer.removeListener('chat-function-result', listener);
   },
+
+  chatCumulativeTokenUsage: (): Promise<{
+    totalInputTokens: number;
+    totalOutputTokens: number;
+  }> => ipcRenderer.invoke('chat:cumulativeTokenUsage'),
 });

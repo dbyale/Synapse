@@ -142,6 +142,8 @@ declare global {
       chatContextUsage: () => Promise<{ used: number; total: number }>;
       chatContextSize: () => Promise<{ contextSize: number | null }>;
 
+      chatCumulativeTokenUsage: () => Promise<{ totalInputTokens: number; totalOutputTokens: number }>;
+
       browseForFiles: (options: {
         title: string;
         filters?: { name: string; extensions: string[] }[];

@@ -1,3 +1,4 @@
+import * as fs from 'fs';
 import { spawn, ChildProcess } from 'child_process';
 import { app } from 'electron';
 import path from 'path';
@@ -18,6 +19,11 @@ export interface SendMessageResponse {
   stats?: GenerationStats;
 }
 
+interface TokenUsageStore {
+  totalInputTokens: number;
+  totalOutputTokens: number;
+}
+
 // --- State ---
 let serverProcess: ChildProcess | null = null;
 let messageHistory: any[] = [];
@@ -30,6 +36,38 @@ let emitFunctionEvent: any = null;
 let lastResolvedMemory: any = null;
 let currentContextSize: number | null = null;
 let lastUsage: { used: number; total: number } | null = null;
+
+function getTokenUsagePath(): string {
+  return path.join(app.getPath('userData'), 'tokenUsage.json');
+}
+
+function loadTokenUsage(): TokenUsageStore {
+  try {
+    return JSON.parse(fs.readFileSync(getTokenUsagePath(), 'utf-8'));
+  } catch {
+    return { totalInputTokens: 0, totalOutputTokens: 0 };
+  }
+}
+
+function saveTokenUsage(store: TokenUsageStore): void {
+  try {
+    fs.writeFileSync(getTokenUsagePath(), JSON.stringify(store), 'utf-8');
+  } catch (e) {
+    console.error('[chat] Failed to save token usage:', e);
+  }
+}
+
+function addTokenUsage(inputTokens: number, outputTokens: number): void {
+  const current = loadTokenUsage();
+  saveTokenUsage({
+    totalInputTokens: current.totalInputTokens + inputTokens,
+    totalOutputTokens: current.totalOutputTokens + outputTokens,
+  });
+}
+
+export function getCumulativeTokenUsage(): TokenUsageStore {
+  return loadTokenUsage();
+}
 
 function getAssetPath(...paths: string[]): string {
   const base = app.isPackaged ? path.join(process.resourcesPath, 'assets') : path.join(__dirname, '../../assets');
@@ -167,8 +205,11 @@ export async function sendMessage(text: string, onToken: (t: string, type?: 'tho
             if (data.usage) {
               lastUsage = { used: data.usage.total_tokens, total: currentContextSize || 2048 };
 
-              // Map llama-server usage/timings to our stats object
-              // Note: llama-server provides 'timings' in the final SSE chunks
+              addTokenUsage(
+                data.usage.prompt_tokens ?? 0,
+                data.usage.completion_tokens ?? 0,
+              );
+
               stats = {
                 tokens: data.usage.completion_tokens,
                 timeMs: data.timings?.predicted_ms || 0,

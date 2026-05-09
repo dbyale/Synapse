@@ -373,4 +373,8 @@ export function registerIpcHandlers(win: BrowserWindow): void {
       win.webContents.send('chat-function-result', { name, result: data });
     }
   });
+
+  ipcMain.handle('chat:cumulativeTokenUsage', () => {
+    return chatService.getCumulativeTokenUsage();
+  });
 }

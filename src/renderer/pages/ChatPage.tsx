@@ -51,6 +51,9 @@ interface Message {
   };
 }
 
+const INPUT_PRICE_PER_MILLION = 150.0;
+const OUTPUT_PRICE_PER_MILLION = 600.0;
+
 let persistentMessages: Message[] = [];
 let persistentLoadedProfileId: string = '';
 let persistentMessageCounter: number = 0;
@@ -137,6 +140,10 @@ export default function ChatPage() {
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [pendingProfileId, setPendingProfileId] = useState<string | null>(null);
   const [tps, setTps] = useState<number>(0);
+  const [cumulativeTokens, setCumulativeTokens] = useState<{
+    totalInputTokens: number;
+    totalOutputTokens: number;
+  }>({ totalInputTokens: 0, totalOutputTokens: 0 });
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -155,6 +162,23 @@ export default function ChatPage() {
 
   const navigate = useNavigate();
   const location = useLocation();
+
+  const refreshCumulativeTokens = useCallback(async () => {
+    try {
+      const usage = await window.electronAPI.chatCumulativeTokenUsage();
+      setCumulativeTokens(usage);
+    } catch {
+      // Silently fail
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshCumulativeTokens();
+  }, [refreshCumulativeTokens]);
+
+  const estimatedCost =
+    (cumulativeTokens.totalInputTokens / 1_000_000) * INPUT_PRICE_PER_MILLION +
+    (cumulativeTokens.totalOutputTokens / 1_000_000) * OUTPUT_PRICE_PER_MILLION;
 
   const selectedProfile =
     profiles.find((p) => p.id === selectedProfileId) ?? null;
@@ -538,6 +562,7 @@ export default function ChatPage() {
       setLoading(false);
       setProcessing(false);
       setTps(0);
+      refreshCumulativeTokens();
 
       if (stats) {
         setMessages((prev) => {
@@ -641,7 +666,7 @@ export default function ChatPage() {
       unsubscribeFunctionCall();
       unsubscribeFunctionResult();
     };
-  }, []);
+  }, [refreshCumulativeTokens]);
 
   useEffect(() => {
     const container = messagesContainerRef.current;
@@ -1014,6 +1039,12 @@ export default function ChatPage() {
           )}
         </div>
       </div>
+
+      {estimatedCost > 0 && (
+        <div className="chat-cost-display">
+          {`Estimated savings: $${estimatedCost.toFixed(2)}`}
+        </div>
+      )}
     </div>
   );
 }
