@@ -25,94 +25,145 @@ function getParserPath(): string {
   return path.join(base, binName);
 }
 
+function extractTotals(data: any) {
+  if (!data?.estimate?.items?.[0]) return { vram: 0, ram: 0 };
+  const item = data.estimate.items[0];
+  const ram = item.ram?.nonuma ?? 0;
+  const vram = (item.vrams || []).reduce((acc: number, v: any) => acc + (v.nonuma || 0), 0);
+  return { vram, ram };
+}
+
 export async function solveMaxConfig(
   modelPath: string,
   vramMB: number,
-  ramMB: number
+  ramMB: number,
+  ctk: string = 'f16',
+  ctv: string = 'f16',
+  flashAttention: boolean = false,
+  noKvOffload: boolean = true,
+  mmap: boolean = false,
+  maximizeNGL: boolean = true
 ): Promise<MemoryEstimation> {
-  const parserPath = getParserPath();
+  const vramHardwareMax = vramMB * 1024 * 1024;
+  const ramLimitBytes = ramMB * 1024 * 1024;
 
-  // 1. Define Safety Buffers
-  // LLama.cpp needs 'scratch' memory and the OS needs some overhead.
-  const overheadBuffer = 256 * 1024 * 1024; // 256MB hard safety buffer
-  const vramLimitBytes = (vramMB * 1024 * 1024) - overheadBuffer;
-  const ramLimitBytes = (ramMB * 1024 * 1024) - overheadBuffer;
+  async function getParserDataLocal(ngl: number, ctx: number) {
+    const args = [
+      '--path', modelPath,
+      '--ngl', ngl.toString(),
+      '--ctx-size', ctx.toString(),
+      '--cache-type-k', ctk,
+      '--cache-type-v', ctv,
+      '--json'
+    ];
+    if (flashAttention) args.push('--flash-attention');
+    if (noKvOffload) args.push('--no-kv-offload');
+    if (mmap) args.push('--mmap'); else args.push('--no-mmap');
 
-  // 2. Get Model Metadata
-  const { stdout: metaOut } = await execFileAsync(parserPath, ['--path', modelPath, '--json', '--skip-estimate']);
-  const meta = JSON.parse(metaOut);
-  const modelMaxCtx = meta.architecture?.maximumContextLength || 32768;
+    try {
+      const { stdout } = await execFileAsync(getParserPath(), args);
+      return JSON.parse(stdout);
+    } catch (e) { return null; }
+  }
 
-  // 3. Get scenarios with a small baseline (512) to calculate KV cost
-  const { stdout: stepOut } = await execFileAsync(parserPath, [
-    '--path', modelPath,
-    '--ctx-size', '512',
-    '--gpu-layers-step', '1',
-    '--json'
-  ]);
-
-  const stepData = JSON.parse(stepOut);
-  const items = stepData.estimate?.items || [];
+  const meta = await getParserDataLocal(0, 512);
+  const totalLayers = meta.architecture.blockCount || 0;
+  const maxModelCtx = meta.architecture.maximumContextLength || 4096;
 
   let bestNgl = 0;
-  let finalCtx = 512;
-  let finalMemUsage = null;
+  let bestCtx = 512;
+  let finalEstimateTotals = { vram: 0, ram: 0 };
 
-  // Iterate from Max GPU offload down to 0
-  for (let i = items.length - 1; i >= 0; i--) {
-    const item = items[i];
-    const layers = item.offloadLayers;
-    const currentNgl = typeof layers === 'number' ? layers : parseInt(layers.split(' ')[0], 10);
-
-    // Weights sizes
-    const weightVram = item.vrams?.[0]?.nonuma ?? item.vrams?.[0]?.uma ?? 0;
-    const weightRam = item.ram?.nonuma ?? item.ram?.uma ?? 0;
-
-    // If weights alone exceed our limits, this NGL is impossible
-    if (weightVram > vramLimitBytes || weightRam > ramLimitBytes) continue;
-
-    // Calculate KV Cache cost per token
-    // We compare the total VRAM usage at 512 context vs the weights
-    const totalVramAt512 = item.vrams?.[0]?.nonuma || weightVram;
-    const vramFor512Tokens = Math.max(0, totalVramAt512 - weightVram);
-
-    // If vramFor512Tokens is 0, it means the parser thinks context is in RAM
-    // or it's a very small model. We'll fallback to a safe estimate if needed.
-    const kvBytesPerToken = vramFor512Tokens > 0 ? vramFor512Tokens / 512 : 1024 * 0.5; // default 0.5kb/token fallback
-
-    // Calculate how many more tokens can fit in the REMAINING VRAM
-    const remainingVram = vramLimitBytes - weightVram;
-
-    // Total possible tokens = (Remaining VRAM / bytes per token)
-    // We add the 512 we already accounted for in the 'totalVramAt512'
-    let possibleCtx = Math.floor(remainingVram / (kvBytesPerToken || 1));
-
-    // Clamp to model's architectural limit
-    possibleCtx = Math.min(possibleCtx, modelMaxCtx);
-
-    // Round down to a power of 2 or multiple of 512 for stability
-    possibleCtx = Math.floor(possibleCtx / 512) * 512;
-
-    // A "usable" context is generally 2048+.
-    // If we can't even fit 2048, we'll try the next NGL (fewer layers on GPU)
-    if (possibleCtx >= 2048 || i === 0) {
-      bestNgl = currentNgl;
-      finalCtx = Math.max(512, possibleCtx); // Ensure at least 512
-      finalMemUsage = {
-        modelVramUsage: weightVram,
-        contextVramUsage: finalCtx * kvBytesPerToken,
-        modelRamUsage: weightRam,
-        contextRamUsage: 0 // In this logic, we prefer VRAM context
-      };
-      break;
+  // 1. Initial Search: Find the highest possible NGL that fits VRAM baseline
+  let highNgl = totalLayers;
+  let lowNgl = 0;
+  while (lowNgl <= highNgl) {
+    let midNgl = Math.floor((lowNgl + highNgl) / 2);
+    const totals = extractTotals(await getParserDataLocal(midNgl, 512));
+    if (totals.vram <= vramHardwareMax && totals.ram <= ramLimitBytes) {
+      bestNgl = midNgl;
+      lowNgl = midNgl + 1;
+    } else {
+      highNgl = midNgl - 1;
     }
   }
 
-  console.log(`[estimator] NGL: ${bestNgl}, CTX: ${finalCtx}`);
+  console.log(`Starting search from NGL: ${bestNgl} (MaximizeNGL: ${maximizeNGL})`);
+
+  // 2. Main Optimization Loop
+  for (let currentNgl = bestNgl; currentNgl >= 0; currentNgl--) {
+    let tempBestCtx = 512;
+    let lowCtx = 512;
+    let highCtx = maxModelCtx;
+    let tempTotals = { vram: 0, ram: 0 };
+
+    // Binary search for max context at this NGL
+    while (lowCtx <= highCtx) {
+      let midCtx = Math.floor((lowCtx + highCtx) / 2);
+      midCtx = Math.max(512, Math.floor(midCtx / 512) * 512);
+
+      const totals = extractTotals(await getParserDataLocal(currentNgl, midCtx));
+
+      if (totals.vram <= vramHardwareMax && totals.ram <= ramLimitBytes) {
+        tempBestCtx = midCtx;
+        tempTotals = totals;
+        lowCtx = midCtx + 512;
+      } else {
+        highCtx = midCtx - 512;
+      }
+    }
+
+    bestNgl = currentNgl;
+    bestCtx = tempBestCtx;
+    finalEstimateTotals = tempTotals;
+
+    // EXIT CRITERIA
+    if (maximizeNGL) {
+      // If we are maximizing NGL, we stop after the very first valid context search
+      console.log(`Maximized NGL at ${bestNgl}. Skipping RAM backtracking.`);
+      break;
+    }
+
+    const ramUtilization = finalEstimateTotals.ram / ramLimitBytes;
+    if (ramUtilization > 0.90 || bestCtx >= maxModelCtx) {
+      console.log(`Target reached at NGL ${currentNgl} (${(ramUtilization * 100).toFixed(1)}% RAM used).`);
+      break;
+    }
+
+    if (currentNgl === 0) break; // Cannot drop lower
+    console.log(`NGL ${currentNgl} only filled RAM to ${(ramUtilization * 100).toFixed(1)}%. Dropping NGL...`);
+  }
+
+  // 3. Final Breakdown Calculation
+  const modelEst = await getParserDataLocal(bestNgl, 1);
+  const modelOnly = extractTotals(modelEst);
+  const toGB = (bytes: number) => (bytes / (1024 ** 3)).toFixed(2) + " GB";
+
+  console.log(`
+--- Optimization Results ---
+Strategy:              ${maximizeNGL ? 'Maximize Speed (NGL)' : 'Maximize Context (RAM)'}
+Best GPU Layers (NGL): ${bestNgl}
+Best Context (CTX):    ${bestCtx} tokens
+
+Memory Breakdown:
+- Model Weights in VRAM:  ${toGB(modelOnly.vram)}
+- Context VRAM (Compute): ${toGB(finalEstimateTotals.vram - modelOnly.vram)}
+- Context RAM (KV Cache): ${toGB(finalEstimateTotals.ram - modelOnly.ram)}
+
+Hardware Utilization:
+- VRAM: ${toGB(finalEstimateTotals.vram)} / ${toGB(vramHardwareMax)} (${((finalEstimateTotals.vram / vramHardwareMax) * 100).toFixed(1)}%)
+- RAM:  ${toGB(finalEstimateTotals.ram)} / ${toGB(ramLimitBytes)} (${((finalEstimateTotals.ram / ramLimitBytes) * 100).toFixed(1)}%)
+----------------------------------
+`);
 
   return {
     ngl: bestNgl,
-    ctx: finalCtx,
-    memory: finalMemUsage
+    ctx: bestCtx,
+    memory: {
+      modelVramUsage: modelOnly.vram,
+      modelRamUsage: modelOnly.ram,
+      contextVramUsage: Math.max(0, finalEstimateTotals.vram - modelOnly.vram),
+      contextRamUsage: Math.max(0, finalEstimateTotals.ram - modelOnly.ram)
+    }
   };
 }
