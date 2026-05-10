@@ -42,7 +42,7 @@ export async function solveMaxConfig(
   flashAttention: boolean = false,
   noKvOffload: boolean = true,
   mmap: boolean = false,
-  maximizeNGL: boolean = true
+  maximizeNGL: boolean = false
 ): Promise<MemoryEstimation> {
   const vramHardwareMax = vramMB * 1024 * 1024;
   const ramLimitBytes = ramMB * 1024 * 1024;
