@@ -47,7 +47,8 @@ async function downloadAndExtract(url: string, targetFolder: string) {
     await tar.x({
       file: tempTar,
       cwd: targetDir,
-      filter: (p: string) => p.includes('llama-server'),
+      strip: 1,
+      filter: (p: string) => p.includes('llama-server') || p.endsWith('.dylib'),
     });
     fs.unlinkSync(tempTar);
   } else {
@@ -72,6 +73,9 @@ async function run() {
   const parserBase = `https://github.com/gpustack/gguf-parser-go/releases/download/${PARSER_VERSION}`;
 
   console.log('--- Starting Binary Setup ---');
+
+  fs.rmSync(ASSETS_BIN, { recursive: true, force: true });
+  fs.mkdirSync(ASSETS_BIN, { recursive: true });
 
   // 1. Download Llama Backends
   for (const [file, folder] of TARGETS) {

@@ -12,6 +12,10 @@ Models:
       * Warn on other
         * Not sure what file is, will be treated as model
 
+Estimator:
+  * Reports missing model
+  * Reports model too large
+
 
 Settings:
   * Optional HF token

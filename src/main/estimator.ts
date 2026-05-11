@@ -63,7 +63,16 @@ export async function solveMaxConfig(
     try {
       const { stdout } = await execFileAsync(getParserPath(), args);
       return JSON.parse(stdout);
-    } catch (e) { return null; }
+    } catch (e) {
+      console.error('gguf-parser execution failed');
+      console.error('Parser path:', getParserPath());
+      console.error('Arguments:', args);
+      console.error('Error:', e instanceof Error ? e.message : String(e));
+      if (e && typeof e === 'object' && 'stderr' in e) {
+        console.error('Stderr:', (e as any).stderr);
+      }
+      return null;
+    }
   }
 
   const meta = await getParserDataLocal(0, 512);
