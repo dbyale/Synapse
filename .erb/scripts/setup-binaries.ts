@@ -4,7 +4,7 @@ import fetch from 'node-fetch';
 import AdmZip from 'adm-zip';
 import * as tar from 'tar';
 
-const LLAMA_VERSION = 'b9049';
+const LLAMA_VERSION = 'b9106';
 const PARSER_VERSION = 'v0.24.0';
 const ASSETS_BIN = path.join(__dirname, '../../assets/bin');
 
