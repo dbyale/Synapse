@@ -70,7 +70,9 @@ export function getCumulativeTokenUsage(): TokenUsageStore {
 }
 
 function getAssetPath(...paths: string[]): string {
-  const base = app.isPackaged ? path.join(process.resourcesPath, 'assets') : path.join(__dirname, '../../assets');
+  const base = app.isPackaged
+    ? path.join(process.resourcesPath, 'assets')
+    : path.join(__dirname, '../../assets');
   return path.join(base, ...paths);
 }
 
@@ -86,6 +88,40 @@ async function detectBackend(): Promise<string> {
 }
 
 export function setEmitFunctionCallback(cb: any) { emitFunctionEvent = cb; }
+
+// --- Build request body, only including profile fields that are defined ---
+function buildChatBody(messages: any[], tools: any[]): Record<string, any> {
+  const p = currentProfile;
+
+  const body: Record<string, any> = {
+    messages,
+    stream: true,
+    stream_options: { include_usage: true },
+    ...(tools.length > 0 && { tools }),
+  };
+
+  // Standard sampling
+  if (p?.temperature !== undefined)  body.temperature = p.temperature;
+  if (p?.topK       !== undefined)   body.top_k       = p.topK;
+  if (p?.topP       !== undefined)   body.top_p       = p.topP;
+  if (p?.minP       !== undefined)   body.min_p       = p.minP;
+  if (p?.seed       !== undefined)   body.seed        = p.seed;
+
+  // XTC sampler
+  if (p?.xtc?.probability !== undefined) body.xtc_probability = p.xtc.probability;
+  if (p?.xtc?.threshold   !== undefined) body.xtc_threshold   = p.xtc.threshold;
+
+  // Repeat penalty — only apply the block if enabled
+  if (p?.repeatPenalty?.enabled) {
+    const rp = p.repeatPenalty;
+    if (rp.penalty          !== undefined) body.repeat_penalty    = rp.penalty;
+    if (rp.lastTokens       !== undefined) body.repeat_last_n     = rp.lastTokens;
+    if (rp.frequencyPenalty !== undefined) body.frequency_penalty = rp.frequencyPenalty;
+    if (rp.presencePenalty  !== undefined) body.presence_penalty  = rp.presencePenalty;
+  }
+
+  return body;
+}
 
 export async function loadProfile(profile: Profile): Promise<{ success: boolean; error?: string }> {
   console.log('[chat] Loading Profile:', profile.name);
@@ -110,7 +146,11 @@ export async function loadProfile(profile: Profile): Promise<{ success: boolean;
     if (!chatFunctions) chatFunctions = createChatFunctions(((fn: any) => fn) as any);
     activeTools = (profile.tools || []).map(t => chatFunctions[t]).filter(Boolean).map(f => ({
       type: 'function',
-      function: { name: f.name || Object.keys(chatFunctions).find(k => chatFunctions[k] === f), description: f.description, parameters: f.params }
+      function: {
+        name: f.name || Object.keys(chatFunctions).find(k => chatFunctions[k] === f),
+        description: f.description,
+        parameters: f.params,
+      }
     }));
 
     serverProcess = spawn(serverPath, [
@@ -121,7 +161,7 @@ export async function loadProfile(profile: Profile): Promise<{ success: boolean;
       '--host', '127.0.0.1',
       '--parallel', '1',
       '--metrics',
-      '--log-disable'
+      '--log-disable',
     ]);
 
     serverProcess.stderr?.on('data', (d) => {
@@ -154,7 +194,10 @@ export async function loadProfile(profile: Profile): Promise<{ success: boolean;
   }
 }
 
-export async function sendMessage(text: string, onToken: (t: string, type?: 'thought' | 'comment') => void): Promise<SendMessageResponse> {
+export async function sendMessage(
+  text: string,
+  onToken: (t: string, type?: 'thought' | 'comment') => void
+): Promise<SendMessageResponse> {
   if (!currentProfile) throw new Error("No profile loaded");
 
   const userTokens = (await tokenize(text)) ?? 0;
@@ -169,14 +212,8 @@ export async function sendMessage(text: string, onToken: (t: string, type?: 'tho
     const response = await fetch('http://127.0.0.1:8080/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        messages: messageHistory,
-        tools: activeTools.length > 0 ? activeTools : undefined,
-        stream: true,
-        stream_options: { include_usage: true },
-        temperature: currentProfile?.temperature ?? 0.7
-      }),
-      signal: abortController?.signal
+      body: JSON.stringify(buildChatBody(messageHistory, activeTools)),
+      signal: abortController?.signal,
     });
 
     if (!response.body) throw new Error('No response body');
@@ -204,16 +241,14 @@ export async function sendMessage(text: string, onToken: (t: string, type?: 'tho
 
             if (data.usage) {
               lastUsage = { used: data.usage.total_tokens, total: currentContextSize || 2048 };
-
               addTokenUsage(
                 data.usage.prompt_tokens ?? 0,
                 data.usage.completion_tokens ?? 0,
               );
-
               stats = {
                 tokens: data.usage.completion_tokens,
                 timeMs: data.timings?.predicted_ms || 0,
-                tokensPerSecond: data.timings?.predicted_per_second || 0
+                tokensPerSecond: data.timings?.predicted_per_second || 0,
               };
             }
 
@@ -246,7 +281,14 @@ export async function sendMessage(text: string, onToken: (t: string, type?: 'tho
     }
 
     if (toolCalls.length > 0) {
-      messageHistory.push({ role: 'assistant', tool_calls: toolCalls.map(tc => ({ id: tc.id, type: 'function', function: { name: tc.name, arguments: tc.args } })) });
+      messageHistory.push({
+        role: 'assistant',
+        tool_calls: toolCalls.map(tc => ({
+          id: tc.id,
+          type: 'function',
+          function: { name: tc.name, arguments: tc.args },
+        })),
+      });
       for (const tc of toolCalls) {
         const handler = chatFunctions[tc.name]?.handler;
         if (emitFunctionEvent) emitFunctionEvent('calling', tc.name, '');
@@ -257,6 +299,7 @@ export async function sendMessage(text: string, onToken: (t: string, type?: 'tho
       }
       return runCompletion();
     }
+
     return { content: fullResponse, stats };
   };
 
@@ -279,10 +322,10 @@ export async function unloadModel() {
   lastUsage = null;
 }
 
-export function getContextSize() { return currentContextSize; }
-export function getContextUsage() { return lastUsage; }
+export function getContextSize()      { return currentContextSize; }
+export function getContextUsage()     { return lastUsage; }
 export function getModelMemoryUsage() { return lastResolvedMemory ? { ...lastResolvedMemory } : null; }
-export function getCurrentProfile() { return currentProfile; }
+export function getCurrentProfile()   { return currentProfile; }
 
 export async function tokenize(text: string): Promise<number | null> {
   try {
