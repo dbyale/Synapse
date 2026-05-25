@@ -286,7 +286,10 @@ export function getCurrentProfile() { return currentProfile; }
 
 export async function tokenize(text: string): Promise<number | null> {
   try {
-    const res = await fetch('http://127.0.0.1:8080/tokenize', { method: 'POST', body: JSON.stringify({ content: text }) });
+    const res = await fetch('http://127.0.0.1:8080/tokenize', {
+      method: 'POST',
+      body: JSON.stringify({ content: text }),
+    });
     return (await res.json()).tokens?.length || 0;
   } catch { return null; }
 }
