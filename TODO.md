@@ -39,6 +39,9 @@
       * Also set per profile
       * Set total and final count #s
 
+# Profiles:
+  * Remove and replace penalize NewLine (it does nothing right now)
+
 # Settings:
   * Optional HF token
   * Models returned per API request
