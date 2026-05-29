@@ -6,7 +6,6 @@
   * Cancel model loading
   * Modal to select profile
   ## Tools
-    * Redo Implementation (remove node-llama-cpp dependency)
     * Vector Icons Per-Tools
   ## Uploads
     * Add text-based filetypes to upload [File->MD](https://github.com/microsoft/markitdown)

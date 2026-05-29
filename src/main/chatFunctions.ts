@@ -1,5 +1,3 @@
-import type { defineChatSessionFunction as DefineChatSessionFunctionType } from 'node-llama-cpp';
-
 import { fetchPage } from './functions/fetchPage';
 import {
   readTextFile,
@@ -34,7 +32,14 @@ import { AVAILABLE_TOOLS, TOOL_METADATA } from '../data/defaultTools';
 import { createMemoryManager } from './functions/memory';
 import { getPythonEnvironmentInfo, runPython } from './functions/pythonRunner';
 
-type DefineFn = typeof DefineChatSessionFunctionType;
+type ChatFunctionDef<P = any> = {
+  description: string;
+  params: Record<string, any>;
+  handler: (params: P) => any;
+  name?: string;
+};
+
+type DefineFn = <P = any>(def: ChatFunctionDef<P>) => ChatFunctionDef<P>;
 
 const memory = createMemoryManager('./memory.json');
 

@@ -116,7 +116,6 @@
     "katex": "^0.16.45",
     "lucide-react": "^1.7.0",
     "minimatch": "^10.2.5",
-    "node-llama-cpp": "^3.18.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-markdown": "^10.1.0",
