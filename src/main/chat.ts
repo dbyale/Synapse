@@ -1,419 +1,378 @@
-import type {
-  Llama,
-  LlamaChatSession,
-  LlamaContext,
-  LlamaModel,
-  LLamaChatPromptOptions,
-  LlamaChatSessionRepeatPenalty,
-} from 'node-llama-cpp';
+import * as fs from 'fs';
+import { spawn, ChildProcess } from 'child_process';
+import { app } from 'electron';
+import path from 'path';
+import { graphics } from 'systeminformation';
 import { loadSettings, onMemorySettingsChanged, getModelsDirectory } from './settings';
 import type { Profile } from '../renderer/types/profile';
 import { createChatFunctions } from './chatFunctions';
-import path from 'path';
+import { solveMaxConfig } from './estimator';
 
-let llamaModule: typeof import('node-llama-cpp') | null = null;
-let chatFunctions: ReturnType<typeof createChatFunctions> | null = null;
-let activeSessionFunctions: Partial<ReturnType<typeof createChatFunctions>> | null = null;
-let llama: Llama | null = null;
-let model: LlamaModel | null = null;
-let context: LlamaContext | null = null;
-let session: LlamaChatSession | null = null;
-let abortController: AbortController | null = null;
-let currentModelPath: string | null = null;
-let currentProfile: Profile | null = null;
-let reloadUnsubscribe: (() => void) | null = null;
-let emitFunctionEvent: ((event: 'calling' | 'call' | 'result', name: string, data: string) => void) | null = null;
-
-let lastResolvedMemory: {
-  modelVramUsage: number;
-  contextVramUsage: number;
-  modelRamUsage: number;
-  contextRamUsage: number;
-} | null = null;
-
-async function ensureLlamaLoaded() {
-  if (!llamaModule) {
-    console.log('[chat] Loading node-llama-cpp module...');
-    llamaModule = (await Function('return import("node-llama-cpp")')()) as typeof import('node-llama-cpp');
-    console.log('[chat] Module loaded.');
-    chatFunctions = createChatFunctions(llamaModule.defineChatSessionFunction);
-  }
-  if (!llama) {
-    const { getLlama } = llamaModule;
-    llama = await getLlama();
-  }
-  return { llamaModule, llama };
+export interface GenerationStats {
+  tokens: number;
+  timeMs: number;
+  tokensPerSecond: number;
 }
 
-async function computeLoadParams(loadedModel: LlamaModel): Promise<{
-  gpuLayers: number;
-  contextSize: number;
-}> {
-  const settings = loadSettings();
-  const allocatedVRAMBytes = (settings.allocatedVRAM ?? 0) * 1024 * 1024;
-  const allocatedRAMBytes  = (settings.allocatedRAM  ?? 4096) * 1024 * 1024;
+export interface SendMessageResponse {
+  content: string;
+  stats?: GenerationStats;
+}
 
-  console.log(
-    `[chat] Memory budget — VRAM: ${(allocatedVRAMBytes / 1024 / 1024).toFixed(0)} MB, ` +
-    `RAM: ${(allocatedRAMBytes / 1024 / 1024).toFixed(0)} MB`,
-  );
+interface TokenUsageStore {
+  totalInputTokens: number;
+  totalOutputTokens: number;
+}
 
-  const resolved = await loadedModel.fileInsights.configurationResolver
-    .resolveAndScoreConfig(
-      {},
-      {
-        getVramState: () => Promise.resolve({
-          total: allocatedVRAMBytes,
-          free:  allocatedVRAMBytes,
-          unifiedSize: 0,
-        }),
-        getRamState: () => Promise.resolve({
-          total: allocatedRAMBytes,
-          free:  allocatedRAMBytes,
-        }),
-      },
-    );
+// --- State ---
+let serverProcess: ChildProcess | null = null;
+let messageHistory: any[] = [];
+let abortController: AbortController | null = null;
+let currentProfile: Profile | null = null;
+let currentProjector: string | null = null;
+let chatFunctions: any = null;
+let activeTools: any[] = [];
+let emitFunctionEvent: any = null;
 
-  const { gpuLayers, contextSize } = resolved.resolvedValues;
+let lastResolvedMemory: any = null;
+let currentContextSize: number | null = null;
+let lastUsage: { used: number; total: number } | null = null;
 
-  lastResolvedMemory = {
-    modelVramUsage:   resolved.resolvedValues.modelVramUsage,
-    contextVramUsage: resolved.resolvedValues.contextVramUsage,
-    modelRamUsage:    resolved.resolvedValues.modelRamUsage,
-    contextRamUsage:  resolved.resolvedValues.contextRamUsage,
+function getTokenUsagePath(): string {
+  return path.join(app.getPath('userData'), 'tokenUsage.json');
+}
+
+function loadTokenUsage(): TokenUsageStore {
+  try {
+    return JSON.parse(fs.readFileSync(getTokenUsagePath(), 'utf-8'));
+  } catch {
+    return { totalInputTokens: 0, totalOutputTokens: 0 };
+  }
+}
+
+function saveTokenUsage(store: TokenUsageStore): void {
+  try {
+    fs.writeFileSync(getTokenUsagePath(), JSON.stringify(store), 'utf-8');
+  } catch (e) {
+    console.error('[chat] Failed to save token usage:', e);
+  }
+}
+
+function addTokenUsage(inputTokens: number, outputTokens: number): void {
+  const current = loadTokenUsage();
+  saveTokenUsage({
+    totalInputTokens: current.totalInputTokens + inputTokens,
+    totalOutputTokens: current.totalOutputTokens + outputTokens,
+  });
+}
+
+export function getCumulativeTokenUsage(): TokenUsageStore {
+  return loadTokenUsage();
+}
+
+function getAssetPath(...paths: string[]): string {
+  const base = app.isPackaged
+    ? path.join(process.resourcesPath, 'assets')
+    : path.join(__dirname, '../../assets');
+  return path.join(base, ...paths);
+}
+
+async function detectBackend(): Promise<string> {
+  const platform = process.platform;
+  if (platform === 'darwin') return `macos-${process.arch}`;
+  try {
+    const gpu = await graphics();
+    const isNvidia = gpu.controllers.some(c => c.vendor.toLowerCase().includes('nvidia'));
+    if (platform === 'win32') return isNvidia ? 'win-cuda-12.4-x64' : 'win-vulkan-x64';
+  } catch (e) {}
+  return platform === 'win32' ? 'win-cpu-x64' : 'ubuntu-x64';
+}
+
+export function setEmitFunctionCallback(cb: any) { emitFunctionEvent = cb; }
+
+// --- Build request body, only including profile fields that are defined ---
+function buildChatBody(messages: any[], tools: any[]): Record<string, any> {
+  const p = currentProfile;
+
+  const body: Record<string, any> = {
+    messages,
+    stream: true,
+    stream_options: { include_usage: true },
+    ...(tools.length > 0 && { tools }),
   };
 
-  console.log(
-    `[chat] Resolved — gpuLayers: ${gpuLayers}, contextSize: ${contextSize}\n` +
-    `  modelRamUsage:    ${(resolved.resolvedValues.modelRamUsage    / 1024 / 1024).toFixed(0)} MB\n` +
-    `  contextRamUsage:  ${(resolved.resolvedValues.contextRamUsage  / 1024 / 1024).toFixed(0)} MB\n` +
-    `  modelVramUsage:   ${(resolved.resolvedValues.modelVramUsage   / 1024 / 1024).toFixed(0)} MB\n` +
-    `  contextVramUsage: ${(resolved.resolvedValues.contextVramUsage / 1024 / 1024).toFixed(0)} MB\n` +
-    `  compatibilityScore: ${resolved.compatibilityScore}, bonusScore: ${resolved.bonusScore}`,
-  );
+  // Standard sampling
+  if (p?.temperature !== undefined)  body.temperature = p.temperature;
+  if (p?.topK       !== undefined)   body.top_k       = p.topK;
+  if (p?.topP       !== undefined)   body.top_p       = p.topP;
+  if (p?.minP       !== undefined)   body.min_p       = p.minP;
+  if (p?.seed       !== undefined)   body.seed        = p.seed;
 
-  return { gpuLayers, contextSize };
-}
+  // XTC sampler
+  if (p?.xtc?.probability !== undefined) body.xtc_probability = p.xtc.probability;
+  if (p?.xtc?.threshold   !== undefined) body.xtc_threshold   = p.xtc.threshold;
 
-async function reloadCurrentModel() {
-  if (!currentProfile) return;
-  console.log('[chat] Memory settings changed — reloading profile with new params...');
-  await loadProfile(currentProfile);
-}
-
-reloadUnsubscribe = onMemorySettingsChanged(() => {
-  reloadCurrentModel().catch((err) => {
-    console.error('[chat] Failed to reload profile after memory settings change:', err);
-  });
-});
-
-function buildSessionFunctions(
-  profile: Profile,
-  all: ReturnType<typeof createChatFunctions>,
-): Partial<ReturnType<typeof createChatFunctions>> | null {
-  if (!profile.tools || profile.tools.length === 0) {
-    console.log('[chat] No tools selected for this profile — functions disabled.');
-    return null;
+  // Repeat penalty — only apply the block if enabled
+  if (p?.repeatPenalty?.enabled) {
+    const rp = p.repeatPenalty;
+    if (rp.penalty          !== undefined) body.repeat_penalty    = rp.penalty;
+    if (rp.lastTokens       !== undefined) body.repeat_last_n     = rp.lastTokens;
+    if (rp.frequencyPenalty !== undefined) body.frequency_penalty = rp.frequencyPenalty;
+    if (rp.presencePenalty  !== undefined) body.presence_penalty  = rp.presencePenalty;
   }
 
-  const filtered: Partial<ReturnType<typeof createChatFunctions>> = {};
-  for (const key of profile.tools) {
-    if (key in all) {
-      (filtered as Record<string, unknown>)[key] =
-        (all as Record<string, unknown>)[key];
-    }
-  }
-
-  const selectedKeys = Object.keys(filtered);
-  console.log(`[chat] Active tools for this profile: [${selectedKeys.join(', ')}]`);
-  return selectedKeys.length > 0 ? filtered : null;
+  return body;
 }
 
-function wrapFunctionsForIPC(
-  functions: Partial<ReturnType<typeof createChatFunctions>>,
-): Partial<ReturnType<typeof createChatFunctions>> {
-  const wrapped: Partial<ReturnType<typeof createChatFunctions>> = {};
-
-  for (const [key, fn] of Object.entries(functions)) {
-    if (fn && typeof fn === 'object' && 'handler' in fn) {
-      const originalHandler = (fn as any).handler;
-      wrapped[key as keyof ReturnType<typeof createChatFunctions>] = {
-        ...fn,
-        handler: async (params: any) => {
-          const paramsJson = JSON.stringify(params);
-          console.log(`[chat] Function call: ${key} params: ${paramsJson}`);
-          emitFunctionEvent?.('call', key, paramsJson);
-
-          const result = await originalHandler(params);
-
-          const resultJson = JSON.stringify(result);
-          console.log(`[chat] Function result: ${key} result: ${resultJson}`);
-          emitFunctionEvent?.('result', key, resultJson);
-
-          return result;
-        },
-      };
-    } else {
-      wrapped[key as keyof ReturnType<typeof createChatFunctions>] = fn;
-    }
-  }
-
-  return wrapped;
-}
-
-export function setEmitFunctionCallback(
-  callback: ((event: 'calling' | 'call' | 'result', name: string, data: string) => void) | null,
-): void {
-  emitFunctionEvent = callback;
-}
-
-export async function loadProfile(
-  profile: Profile,
-): Promise<{ success: boolean; error?: string }> {
-  console.log('[chat] Loading profile:', profile.name);
-
-  const modelsDir = getModelsDirectory();
-  const fullModelPath = path.join(modelsDir, profile.model);
-
-  console.log('[chat] Model relative path:', profile.model);
-  console.log('[chat] Models directory:', modelsDir);
-  console.log('[chat] Full model path:', fullModelPath);
-  console.log('[chat] System prompt:', profile.systemPrompt.substring(0, 100) + '...');
-
+export async function loadProfile(profile: Profile): Promise<{ success: boolean; error?: string }> {
+  console.log('[chat] Loading Profile:', profile.name);
   await unloadModel();
 
-  let tempModel: LlamaModel | null = null;
+  let serverErrorLog = '';
 
   try {
-    const { llama: llamaInstance, llamaModule: module } = await ensureLlamaLoaded();
+    const settings = loadSettings();
+    const fullModelPath = path.join(getModelsDirectory(), profile.model);
+    const backendFolder = await detectBackend();
+    const serverBin = process.platform === 'win32' ? 'llama-server.exe' : 'llama-server';
+    const serverPath = path.join(getAssetPath('bin', backendFolder), serverBin);
 
-    if (!llamaInstance) {
-      throw new Error('Llama instance could not be initialized.');
-    }
+    const vramMB = settings.allocatedVRAM ?? 4096;
+    const ramMB = settings.allocatedRAM ?? 8192;
 
-    // Sanitize profile tools — remove any that are not registered in chatFunctions
-    if (profile.tools && profile.tools.length > 0 && chatFunctions) {
-      const validKeys = Object.keys(chatFunctions) as Array<keyof ReturnType<typeof createChatFunctions>>;
-      const before = profile.tools.length;
-      profile.tools = profile.tools.filter((tool) => {
-        const isValid = (validKeys as string[]).includes(tool);
-        if (!isValid) {
-          console.warn(`[chat] Removing invalid tool from profile: "${tool}"`);
-        }
-        return isValid;
-      });
-      if (profile.tools.length < before) {
-        console.log(`[chat] Sanitized profile tools: [${profile.tools.join(', ')}]`);
+    const fullProjectorPath = profile.projector
+      ? path.join(getModelsDirectory(), profile.projector)
+      : undefined;
+
+    const result = await solveMaxConfig(
+      fullModelPath,
+      vramMB,
+      ramMB,
+      undefined, // ctk (defaults to 'f16')
+      undefined, // ctv (defaults to 'f16')
+      undefined, // flashAttention (defaults false)
+      undefined, // noKvOffload (defaults true)
+      undefined, // mmap (defaults false)
+      undefined, // maximizeNGL (defaults false)
+      fullProjectorPath,
+    );
+
+    lastResolvedMemory = result.memory;
+    currentContextSize = result.ctx;
+
+    if (!chatFunctions) chatFunctions = createChatFunctions(((fn: any) => fn) as any);
+    activeTools = (profile.tools || []).map(t => chatFunctions[t]).filter(Boolean).map(f => ({
+      type: 'function',
+      function: {
+        name: f.name || Object.keys(chatFunctions).find(k => chatFunctions[k] === f),
+        description: f.description,
+        parameters: f.params,
       }
+    }));
+
+    const spawnArgs = [
+      '--model', fullModelPath,
+      '--n-gpu-layers', result.ngl.toString(),
+      '--ctx-size', result.ctx.toString(),
+      '--port', '8080',
+      '--host', '127.0.0.1',
+      '--parallel', '1',
+      '--metrics',
+      '--log-disable',
+    ];
+
+    if (fullProjectorPath) {
+      spawnArgs.push('--mmproj', fullProjectorPath);
+      currentProjector = fullProjectorPath;
+    } else {
+      currentProjector = null;
     }
 
-    activeSessionFunctions = chatFunctions
-      ? buildSessionFunctions(profile, chatFunctions)
-      : null;
+    serverProcess = spawn(serverPath, spawnArgs);
 
-    console.log('[chat] Computing load params...');
-    let gpuLayers: number | undefined = undefined;
-    let contextSize: number = 2048;
+    serverProcess.stderr?.on('data', (d) => {
+      serverErrorLog += d.toString();
+    });
 
-    console.log('[chat] Creating temporary model for param calculation...');
-    tempModel = await llamaInstance.loadModel({ modelPath: fullModelPath });
-
-    try {
-      const params = await computeLoadParams(tempModel);
-      gpuLayers   = params.gpuLayers;
-      contextSize = params.contextSize;
-      console.log(`[chat] Params computed: gpuLayers=${gpuLayers}, contextSize=${contextSize}`);
-    } catch (paramError: any) {
-      console.error('[chat] computeLoadParams failed:', paramError);
-      if (tempModel) { await tempModel.dispose(); tempModel = null; }
-      throw new Error(`Failed to compute load parameters: ${paramError.message || 'Insufficient memory'}`);
+    let ready = false;
+    for (let i = 0; i < 45; i++) {
+      try {
+        const res = await fetch('http://127.0.0.1:8080/health');
+        if (res.ok) { ready = true; break; }
+      } catch (e) {}
+      await new Promise(r => setTimeout(r, 1000));
     }
 
-    if (tempModel) {
-      console.log('[chat] Disposing temporary model...');
-      await tempModel.dispose();
-      tempModel = null;
+    if (!ready) {
+      console.error('[llama-server] Startup failed. Logs:\n', serverErrorLog);
+      throw new Error("Inference server failed to respond.");
     }
 
-    console.log('[chat] Creating model instance...');
-    model = await llamaInstance.loadModel({
-      modelPath: fullModelPath,
-      ...(gpuLayers !== undefined && { gpuLayers }),
-    });
+    const systemTokens = (await tokenize(profile.systemPrompt)) ?? 0;
+    const toolTokens = activeTools.length > 0 ? (await tokenize(JSON.stringify(activeTools))) ?? 0 : 0;
+    lastUsage = { used: systemTokens + toolTokens, total: result.ctx };
 
-    console.log(`[chat] Creating context — contextSize: ${contextSize}`);
-    context = await model.createContext({
-      contextSize,
-      ignoreMemorySafetyChecks: true,
-    });
-
-    console.log('[chat] Creating chat session...');
-    const { LlamaChatSession } = module;
-
-    session = new LlamaChatSession({
-      contextSequence: context.getSequence(),
-      systemPrompt: profile.systemPrompt,
-    });
-
-    console.log('[chat] Preloading system prompt and function schemas into context...');
-    await session.preloadPrompt('', {
-      functions: activeSessionFunctions ?? undefined,
-    });
-    console.log('[chat] Context warmed up.');
-
-    currentModelPath = fullModelPath;
     currentProfile = profile;
-
-    console.log('[chat] Profile loaded successfully');
+    messageHistory = [{ role: 'system', content: profile.systemPrompt }];
     return { success: true };
   } catch (error: any) {
-    console.error('[chat] Error loading profile:', error);
-
-    if (tempModel) {
-      try { await tempModel.dispose(); } catch (e) {
-        console.error('[chat] Error disposing temp model:', e);
-      }
-    }
-
-    await unloadModel();
-    return {
-      success: false,
-      error: error?.message || 'Unknown error occurred while loading profile',
-    };
+    return { success: false, error: error.message };
   }
-}
-
-function buildPromptOptions(profile: Profile | null): Partial<LLamaChatPromptOptions> {
-  if (!profile) return {};
-
-  const options: Partial<LLamaChatPromptOptions> = {};
-  if (profile.temperature !== undefined && profile.temperature > 0) options.temperature = profile.temperature;
-  if (profile.topK        !== undefined && profile.topK > 0)        options.topK        = profile.topK;
-  if (profile.topP        !== undefined && profile.topP < 1)         options.topP        = profile.topP;
-  if (profile.minP        !== undefined && profile.minP > 0)         options.minP        = profile.minP;
-  if (profile.seed        !== undefined)                             options.seed        = profile.seed;
-  if (profile.xtc         !== undefined)                             options.xtc         = profile.xtc;
-
-  // ── Repeat Penalty ────────────────────────────────────────────────────────
-  if (profile.repeatPenalty !== undefined) {
-    if (profile.repeatPenalty.enabled === false) {
-      // Explicitly disable all repeat penalty logic in node-llama-cpp
-      options.repeatPenalty = false;
-    } else {
-      const rp: LlamaChatSessionRepeatPenalty = {};
-      if (profile.repeatPenalty.lastTokens      !== undefined) rp.lastTokens      = profile.repeatPenalty.lastTokens;
-      if (profile.repeatPenalty.penalizeNewLine  !== undefined) rp.penalizeNewLine  = profile.repeatPenalty.penalizeNewLine;
-      if (profile.repeatPenalty.penalty          !== undefined) rp.penalty          = profile.repeatPenalty.penalty;
-      if (profile.repeatPenalty.frequencyPenalty !== undefined) rp.frequencyPenalty = profile.repeatPenalty.frequencyPenalty;
-      if (profile.repeatPenalty.presencePenalty  !== undefined) rp.presencePenalty  = profile.repeatPenalty.presencePenalty;
-      // Only attach the object if at least one field was set
-      if (Object.keys(rp).length > 0) options.repeatPenalty = rp;
-    }
-  }
-  // ─────────────────────────────────────────────────────────────────────────
-
-  return options;
 }
 
 export async function sendMessage(
   text: string,
-  onToken: (token: string, segmentType?: 'thought' | 'comment') => void,
-): Promise<string> {
-  if (!session) {
-    throw new Error('No profile loaded. Please load a profile first.');
+  onToken: (t: string, type?: 'thought' | 'comment') => void,
+  imageDataUrl?: string,
+): Promise<SendMessageResponse> {
+  if (!currentProfile) throw new Error("No profile loaded");
+
+  const userTokens = (await tokenize(text)) ?? 0;
+  if (lastUsage) {
+    lastUsage = { used: lastUsage.used + userTokens, total: lastUsage.total };
   }
 
+  const userContent: any = imageDataUrl
+    ? [
+        { type: 'image_url', image_url: { url: imageDataUrl } },
+        { type: 'text', text },
+      ]
+    : text;
+  messageHistory.push({ role: 'user', content: userContent });
   abortController = new AbortController();
 
-  try {
-    console.log('[chat] Sending message:', text);
+  const runCompletion = async (): Promise<SendMessageResponse> => {
+    const response = await fetch('http://127.0.0.1:8080/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(buildChatBody(messageHistory, activeTools)),
+      signal: abortController?.signal,
+    });
 
-    const seenCallIndices = new Set<number>();
+    if (!response.body) throw new Error('No response body');
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let fullResponse = "";
+    let toolCalls: any[] = [];
+    let stats: GenerationStats | undefined;
 
-    const promptOptions: Partial<LLamaChatPromptOptions> = {
-      signal: abortController.signal,
-      functions: activeSessionFunctions ? wrapFunctionsForIPC(activeSessionFunctions) : undefined,
-      onResponseChunk: (chunk) => {
-        let segmentType: 'thought' | 'comment' | undefined = undefined;
+    try {
+      while (true) {
+        const { done, value } = await reader!.read();
+        if (done) break;
 
-        if (chunk.type === 'segment') {
-          if (chunk.segmentType === 'thought')       segmentType = 'thought';
-          else if (chunk.segmentType === 'comment')  segmentType = 'comment';
+        const chunk = decoder.decode(value);
+        const lines = chunk.split('\n');
 
-          if (chunk.segmentStartTime != null) console.log(`[chat] Segment start: ${chunk.segmentType}`);
-          if (chunk.segmentEndTime   != null) console.log(`[chat] Segment end: ${chunk.segmentType}`);
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const dataStr = line.slice(6).trim();
+          if (dataStr === '[DONE]') break;
+
+          try {
+            const data = JSON.parse(dataStr);
+
+            if (data.usage) {
+              lastUsage = { used: data.usage.total_tokens, total: currentContextSize || 2048 };
+              addTokenUsage(
+                data.usage.prompt_tokens ?? 0,
+                data.usage.completion_tokens ?? 0,
+              );
+              stats = {
+                tokens: data.usage.completion_tokens,
+                timeMs: data.timings?.predicted_ms || 0,
+                tokensPerSecond: data.timings?.predicted_per_second || 0,
+              };
+            }
+
+            const delta = data.choices[0]?.delta;
+            if (!delta) continue;
+
+            if (delta.content) {
+              fullResponse += delta.content;
+              onToken(delta.content);
+            }
+            if (delta.reasoning_content) {
+              onToken(delta.reasoning_content, 'thought');
+            }
+            if (delta.tool_calls) {
+              delta.tool_calls.forEach((tc: any) => {
+                if (!toolCalls[tc.index]) toolCalls[tc.index] = { id: tc.id, name: '', args: '' };
+                if (tc.function?.name) toolCalls[tc.index].name = tc.function.name;
+                if (tc.function?.arguments) toolCalls[tc.index].args += tc.function.arguments;
+              });
+            }
+
+            if (lastUsage && !data.usage) {
+              lastUsage = { used: lastUsage.used + 1, total: lastUsage.total };
+            }
+          } catch (e) {}
         }
-
-        onToken(chunk.text, segmentType);
-      },
-      onFunctionCallParamsChunk: (chunk: { functionName: string; callIndex: number; paramsChunk: string; done: boolean }) => {
-        if (!seenCallIndices.has(chunk.callIndex)) {
-          seenCallIndices.add(chunk.callIndex);
-          emitFunctionEvent?.('calling', chunk.functionName, '');
-        }
-      },
-      ...buildPromptOptions(currentProfile),
-    };
-
-    const response = await session.prompt(text, promptOptions);
-    abortController = null;
-    console.log('[chat] Response complete');
-    return response;
-  } catch (error: any) {
-    abortController = null;
-    if (error.name === 'AbortError') {
-      console.log('[chat] Generation aborted by user');
-      return 'Generation aborted.';
+      }
+    } finally {
+      reader.releaseLock();
     }
-    console.error('[chat] Error during generation:', error);
-    throw error;
+
+    if (toolCalls.length > 0) {
+      messageHistory.push({
+        role: 'assistant',
+        tool_calls: toolCalls.map(tc => ({
+          id: tc.id,
+          type: 'function',
+          function: { name: tc.name, arguments: tc.args },
+        })),
+      });
+      for (const tc of toolCalls) {
+        const handler = chatFunctions[tc.name]?.handler;
+        if (emitFunctionEvent) emitFunctionEvent('calling', tc.name, '');
+        if (emitFunctionEvent) emitFunctionEvent('call', tc.name, tc.args);
+        const result = await handler(JSON.parse(tc.args));
+        if (emitFunctionEvent) emitFunctionEvent('result', tc.name, JSON.stringify(result));
+        messageHistory.push({ role: 'tool', tool_call_id: tc.id, content: JSON.stringify(result) });
+      }
+      return runCompletion();
+    }
+
+    return { content: fullResponse, stats };
+  };
+
+  try {
+    const result = await runCompletion();
+    messageHistory.push({ role: 'assistant', content: result.content });
+    return result;
+  } catch (e: any) {
+    if (e.name === 'AbortError') return { content: 'Aborted' };
+    throw e;
   }
 }
 
-export function abort() {
-  if (abortController) {
-    console.log('[chat] Aborting generation...');
-    abortController.abort();
-    abortController = null;
-  }
-}
+export function abort() { abortController?.abort(); }
 
 export async function unloadModel() {
-  console.log('[chat] Unloading model...');
-  abort();
-  lastResolvedMemory = null;
-  activeSessionFunctions = null;
-  try {
-    if (session) session = null;
-    if (context) { await context.dispose(); context = null; }
-    if (model)   { await model.dispose();   model   = null; }
-    console.log('[chat] Model unloaded');
-  } catch (error) {
-    console.error('[chat] Error unloading model:', error);
+  if (serverProcess) {
+    serverProcess.kill();
+    serverProcess = null;
+    currentProjector = null;
   }
+  messageHistory = [];
+  currentContextSize = null;
+  lastUsage = null;
 }
 
-export function getCurrentProfile(): Profile | null { return currentProfile; }
+export function getContextSize()      { return currentContextSize; }
+export function getContextUsage()     { return lastUsage; }
+export function getModelMemoryUsage() { return lastResolvedMemory ? { ...lastResolvedMemory } : null; }
+export function getCurrentProfile()   { return currentProfile; }
+export function hasProjector()        { return currentProjector !== null; }
 
 export async function tokenize(text: string): Promise<number | null> {
-  if (!model) return null;
-  return model.tokenize(text).length;
-}
-
-export function getContextSize(): number | null {
-  return context ? context.contextSize : null;
-}
-
-export function getContextUsage(): { used: number; total: number } | null {
-  if (!context || !session) return null;
   try {
-    const sequence    = session.sequence;
-    const inputTokens = sequence.tokenMeter.usedInputTokens;
-    const outputTokens = sequence.tokenMeter.usedOutputTokens;
-    return { used: inputTokens + outputTokens, total: context.contextSize };
-  } catch {
-    return null;
-  }
+    const res = await fetch('http://127.0.0.1:8080/tokenize', {
+      method: 'POST',
+      body: JSON.stringify({ content: text }),
+    });
+    return (await res.json()).tokens?.length || 0;
+  } catch { return null; }
 }
 
-export function getModelMemoryUsage() { return lastResolvedMemory; }
+onMemorySettingsChanged(() => { if (currentProfile) loadProfile(currentProfile).catch(console.error); });

@@ -131,9 +131,10 @@ declare global {
       // Chat
       chatLoadProfile: (profile: Profile) => Promise<{ success: boolean; error?: string }>;
       chatGetCurrentProfile: () => Promise<Profile | null>;
-      chatSend: (text: string) => Promise<{ success: boolean; error?: string; aborted?: boolean }>;
+      chatHasProjector: () => Promise<boolean>;
+      chatSend: (text: string, imageDataUrl?: string) => Promise<{ success: boolean; error?: string; aborted?: boolean }>;
       onChatToken: (callback: (data: { token: string; segmentType?: 'thought' | 'comment' }) => void) => () => void;
-      onChatDone: (callback: () => void) => () => void;
+      onChatDone: (callback: (stats?: { tokens: number; timeMs: number; tokensPerSecond: number }) => void) => () => void;
       onChatError: (callback: (error: string) => void) => () => void;
       chatAbort: () => Promise<void>;
       chatUnload: () => Promise<void>;
@@ -141,6 +142,8 @@ declare global {
       chatTokenize: (text: string) => Promise<{ count: number | null }>;
       chatContextUsage: () => Promise<{ used: number; total: number }>;
       chatContextSize: () => Promise<{ contextSize: number | null }>;
+
+      chatCumulativeTokenUsage: () => Promise<{ totalInputTokens: number; totalOutputTokens: number }>;
 
       browseForFiles: (options: {
         title: string;
@@ -160,6 +163,8 @@ declare global {
       onChatFunctionCall: (callback: (data: { name: string; params: string }) => void) => () => void;
       onChatFunctionCalling: (callback: (data: { name: string; params: string }) => void) => () => void;
       onChatFunctionResult: (callback: (data: { name: string; result: string }) => void) => () => void;
+
+      readImageAsDataUrl: (filePath: string) => Promise<string>;
     };
   }
 }

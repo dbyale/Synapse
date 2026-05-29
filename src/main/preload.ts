@@ -59,7 +59,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // ── Chat API ──
   chatLoadProfile: (profile: any) => ipcRenderer.invoke('chat:loadProfile', profile),
   chatGetCurrentProfile: () => ipcRenderer.invoke('chat:getCurrentProfile'),
-  chatSend: (text: string) => ipcRenderer.invoke('chat:send', text),
+  chatSend: (text: string, imageDataUrl?: string) => ipcRenderer.invoke('chat:send', text, imageDataUrl),
 
   onChatToken: (callback: (data: { token: string; segmentType?: 'thought' | 'comment' }) => void) => {
     const listener = (_: any, data: { token: string; segmentType?: 'thought' | 'comment' }) => callback(data);
@@ -67,8 +67,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('chat:token', listener);
   },
 
-  onChatDone: (callback: () => void) => {
-    const listener = () => callback();
+    onChatDone: (callback: (stats?: any) => void) => {
+    const listener = (_event: any, stats?: any) => callback(stats);
     ipcRenderer.on('chat:done', listener);
     return () => ipcRenderer.removeListener('chat:done', listener);
   },
@@ -114,4 +114,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('chat-function-result', listener);
     return () => ipcRenderer.removeListener('chat-function-result', listener);
   },
+
+  chatCumulativeTokenUsage: (): Promise<{
+    totalInputTokens: number;
+    totalOutputTokens: number;
+  }> => ipcRenderer.invoke('chat:cumulativeTokenUsage'),
+
+  chatHasProjector: (): Promise<boolean> => ipcRenderer.invoke('chat:hasProjector'),
+
+  readImageAsDataUrl: (filePath: string): Promise<string> =>
+  ipcRenderer.invoke('files:readImageAsDataUrl', filePath),
 });

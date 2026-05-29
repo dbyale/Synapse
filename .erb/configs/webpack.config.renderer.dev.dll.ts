@@ -26,9 +26,7 @@ const configuration: webpack.Configuration = {
   externals: [
     'fsevents',
     'crypto-browserify',
-    'node-llama-cpp',
     '@reflink/reflink',
-    /^@node-llama-cpp\/.*/,
     /^@reflink\/.*/,
   ],
 

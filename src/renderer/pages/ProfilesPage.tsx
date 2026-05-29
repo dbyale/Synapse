@@ -253,9 +253,9 @@ export default function ProfilesPage() {
   const [isNewProfile, setIsNewProfile] = useState(false);
   const [editName, setEditName] = useState('');
   const [editSystemPrompt, setEditSystemPrompt] = useState('');
-  const [editTemperature, setEditTemperature] = useState('0.7');
-  const [editTopK, setEditTopK] = useState('20');
-  const [editTopP, setEditTopP] = useState('0.8');
+  const [editTemperature, setEditTemperature] = useState('0.8');
+  const [editTopK, setEditTopK] = useState('40');
+  const [editTopP, setEditTopP] = useState('0.95');
   const [editMinP, setEditMinP] = useState('0.05');
   const [editSeed, setEditSeed] = useState('');
   const [editModel, setEditModel] = useState('');
@@ -272,10 +272,9 @@ export default function ProfilesPage() {
   // ── Repeat Penalty state ──
   const [editRpEnabled, setEditRpEnabled] = useState(true);
   const [editRpLastTokens, setEditRpLastTokens] = useState('');
-  const [editRpPenalizeNewLine, setEditRpPenalizeNewLine] = useState(true);
-  const [editRpPenalty, setEditRpPenalty] = useState('');
-  const [editRpFrequencyPenalty, setEditRpFrequencyPenalty] = useState('0.02');
-  const [editRpPresencePenalty, setEditRpPresencePenalty] = useState('');
+  const [editRpPenalty, setEditRpPenalty] = useState('1.00');
+  const [editRpFrequencyPenalty, setEditRpFrequencyPenalty] = useState('0.00');
+  const [editRpPresencePenalty, setEditRpPresencePenalty] = useState('0.00');
 
   // ── Toggle a single tool on/off ──
   const handleToolToggle = (toolKey: string) => {
@@ -332,13 +331,12 @@ export default function ProfilesPage() {
     setEditRpLastTokens(
       rp?.lastTokens !== undefined ? String(rp.lastTokens) : '',
     );
-    setEditRpPenalizeNewLine(rp?.penalizeNewLine !== false);
     setEditRpPenalty(rp?.penalty !== undefined ? String(rp.penalty) : '');
     setEditRpFrequencyPenalty(
-      rp?.frequencyPenalty !== undefined ? String(rp.frequencyPenalty) : '0.02',
+      rp?.frequencyPenalty !== undefined ? String(rp.frequencyPenalty) : '0.00',
     );
     setEditRpPresencePenalty(
-      rp?.presencePenalty !== undefined ? String(rp.presencePenalty) : '',
+      rp?.presencePenalty !== undefined ? String(rp.presencePenalty) : '0.00',
     );
   };
 
@@ -350,7 +348,6 @@ export default function ProfilesPage() {
     const rp: NonNullable<Profile['repeatPenalty']> = {};
     if (editRpLastTokens !== '') rp.lastTokens = parseInt(editRpLastTokens, 10);
     // Only persist false — true is the library default, no need to store it
-    if (!editRpPenalizeNewLine) rp.penalizeNewLine = false;
     if (editRpPenalty !== '') rp.penalty = parseFloat(editRpPenalty);
     if (editRpFrequencyPenalty !== '')
       rp.frequencyPenalty = parseFloat(editRpFrequencyPenalty);
@@ -368,13 +365,13 @@ export default function ProfilesPage() {
       name: 'New Profile',
       model: '',
       systemPrompt: 'You are a helpful assistant.',
-      temperature: 0.7,
-      topK: 20,
-      topP: 0.8,
+      temperature: 0.8,
+      topK: 40,
+      topP: 0.95,
       minP: 0.05,
-      seed: 0,
+      seed: -1,
       repeatPenalty: {
-        frequencyPenalty: 0.02,
+        frequencyPenalty: 0.0,
       },
       tools: [],
       order: Date.now(),
@@ -409,7 +406,7 @@ export default function ProfilesPage() {
     setEditTopK(String(profile.topK));
     setEditTopP(String(profile.topP));
     setEditMinP(String(profile.minP));
-    setEditSeed(String(profile.seed || 0));
+    setEditSeed(String(profile.seed || -1));
     setEditModel(profile.model);
     setEditProjector(profile.projector || '');
     setEditTools(profile.tools ?? []);
@@ -450,7 +447,11 @@ export default function ProfilesPage() {
         const projSubfolder = projParts.pop() || '';
         const projAuthor = projParts.pop() || '';
 
-        if (projAuthor && projSubfolder) {
+        if (projSubfolder.toLowerCase() === 'projectors') {
+          const modelFolder = projAuthor;
+          const author = projParts.pop() || '';
+          projectorRelativePath = `${author}/${modelFolder}/projectors/${projFilename}`;
+        } else if (projAuthor && projSubfolder) {
           projectorRelativePath = `${projAuthor}/${projSubfolder}/${projFilename}`;
         } else if (projSubfolder) {
           projectorRelativePath = `${projSubfolder}/${projFilename}`;
@@ -986,11 +987,11 @@ export default function ProfilesPage() {
                           <EditSection
                             label="Temperature"
                             htmlFor={`edit-temp-${profile.id}`}
-                            helper="Default: 0.7"
+                            helper="Default: 0.8"
                             tooltip={[
                               'Controls how creative vs. predictable responses are',
                               '0 = always picks the most likely word (boring, repetitive)',
-                              '0.7 = balanced',
+                              '0.8 = balanced',
                               '1.5+ = very creative and unpredictable',
                               'Higher for creative writing, lower for factual answers',
                             ]}
@@ -1012,11 +1013,11 @@ export default function ProfilesPage() {
                           <EditSection
                             label="Top K"
                             htmlFor={`edit-topk-${profile.id}`}
-                            helper="Default: 20"
+                            helper="Default: 40"
                             tooltip={[
                               'Limits choices to the K most likely next words',
                               'Only used when Temperature > 0',
-                              '20 = pick from top 20 candidates',
+                              '40 = pick from top 40 candidates',
                               '0 = disable (consider all words)',
                               'Higher = more variety, lower = more focused',
                             ]}
@@ -1035,11 +1036,11 @@ export default function ProfilesPage() {
                           <EditSection
                             label="Top P"
                             htmlFor={`edit-topp-${profile.id}`}
-                            helper="Default: 0.8"
+                            helper="Default: 0.95"
                             tooltip={[
                               'Picks words until reaching a probability threshold',
                               'Only used when Temperature > 0',
-                              '0.8 = keep picking until 80% probability is reached',
+                              '0.95 = keep picking until 95% probability is reached',
                               '1 = disable (consider all words)',
                               'Lower = more focused, higher = more variety',
                             ]}
@@ -1083,11 +1084,11 @@ export default function ProfilesPage() {
                           <EditSection
                             label="Seed"
                             htmlFor={`edit-seed-${profile.id}`}
-                            helper="Default: 0 (random)"
+                            helper="Default: -1 (random)"
                             tooltip={[
                               'Makes responses reproducible',
                               'Only used when Temperature > 0',
-                              '0 = different response every time',
+                              '-1 = different response every time',
                               'Same seed = identical outputs',
                               'Use when you need consistent behavior',
                             ]}
@@ -1193,7 +1194,8 @@ export default function ProfilesPage() {
                                     tooltip={[
                                       'Number of recent tokens to apply penalties to',
                                       'Higher = penalises repetition over a longer window',
-                                      'Leave blank to use the library default of 64',
+                                      'Set to 0 to disable',
+                                      'Set to -1 for entire context',
                                     ]}
                                   >
                                     <input
@@ -1210,23 +1212,22 @@ export default function ProfilesPage() {
                                     />
                                   </EditSection>
 
-                                  {/* Penalty */}
+                                  {/* Repeat Penalty */}
                                   <EditSection
-                                    label="Penalty"
+                                    label="Repeat Penalty"
                                     htmlFor={`edit-rp-penalty-${profile.id}`}
-                                    helper="Default: 1.1  •  1 = off"
+                                    helper="Default: 1.00  •  1 = off"
                                     tooltip={[
                                       'Multiplier applied to repeated token probabilities',
-                                      '1.1 = repeated tokens are 10% less likely',
+                                      '1.10 = repeated tokens are 10% less likely',
                                       'Set to 1 to disable this specific multiplier',
-                                      'Leave blank to use the library default of 1.1',
                                     ]}
                                   >
                                     <input
                                       id={`edit-rp-penalty-${profile.id}`}
                                       type="number"
                                       className="sp-card__edit-input"
-                                      placeholder="1.1"
+                                      placeholder="1.0"
                                       min={0}
                                       step={0.01}
                                       value={editRpPenalty}
@@ -1240,11 +1241,11 @@ export default function ProfilesPage() {
                                   <EditSection
                                     label="Frequency Penalty"
                                     htmlFor={`edit-rp-freq-${profile.id}`}
-                                    helper="Default: 0.02  •  range 0–1"
+                                    helper="Default: 0.00  •  range 0–1"
                                     tooltip={[
                                       'Scales penalty by how many times a token appeared',
                                       'A token seen N times is penalised N × frequencyPenalty',
-                                      '0 = disabled',
+                                      '0.0 = disabled',
                                       'Range: 0 to 1',
                                     ]}
                                   >
@@ -1252,7 +1253,7 @@ export default function ProfilesPage() {
                                       id={`edit-rp-freq-${profile.id}`}
                                       type="number"
                                       className="sp-card__edit-input"
-                                      placeholder="0.02"
+                                      placeholder="0.00"
                                       min={0}
                                       max={1}
                                       step={0.01}
@@ -1269,11 +1270,11 @@ export default function ProfilesPage() {
                                   <EditSection
                                     label="Presence Penalty"
                                     htmlFor={`edit-rp-presence-${profile.id}`}
-                                    helper="Default: 0 (off)  •  range 0–1"
+                                    helper="Default: 0.00  •  range 0–1"
                                     tooltip={[
                                       'Flat penalty for any token that has already appeared',
                                       'Applied once regardless of how many times it appeared',
-                                      '0 = disabled (default)',
+                                      '0.0 = disabled (default)',
                                       'Range: 0 to 1',
                                     ]}
                                   >
@@ -1291,64 +1292,6 @@ export default function ProfilesPage() {
                                       }
                                     />
                                   </EditSection>
-                                </div>
-
-                                {/* Penalize New Line — full-width checkbox */}
-                                <div
-                                  className="sp-card__edit-section"
-                                  style={{ marginTop: '12px' }}
-                                >
-                                  <label
-                                    className="sp-card__label-row"
-                                    style={{
-                                      cursor: 'pointer',
-                                      userSelect: 'none',
-                                    }}
-                                  >
-                                    <input
-                                      type="checkbox"
-                                      className="sp-card__tool-checkbox"
-                                      checked={editRpPenalizeNewLine}
-                                      onChange={(e) =>
-                                        setEditRpPenalizeNewLine(
-                                          e.target.checked,
-                                        )
-                                      }
-                                    />
-                                    <div className="sp-card__label-with-tooltip">
-                                      <span
-                                        style={{
-                                          fontSize: '13px',
-                                          fontWeight: 600,
-                                          color: 'var(--text-primary)',
-                                        }}
-                                      >
-                                        Penalize New Line
-                                      </span>
-                                      <div className="sp-card__tooltip-wrapper">
-                                        <Info
-                                          size={14}
-                                          className="sp-card__info-icon"
-                                        />
-                                        <div className="sp-card__tooltip">
-                                          <div className="sp-card__tooltip-title">
-                                            Penalize New Line
-                                          </div>
-                                          <ul className="sp-card__tooltip-list">
-                                            <li>
-                                              Whether newline tokens are
-                                              included in repeat penalty
-                                            </li>
-                                            <li>Enabled by default</li>
-                                            <li>
-                                              Uncheck to let the model freely
-                                              use newlines without penalty
-                                            </li>
-                                          </ul>
-                                        </div>
-                                      </div>
-                                    </div>
-                                  </label>
                                 </div>
                               </div>
                               {/* end sub-fields wrapper */}

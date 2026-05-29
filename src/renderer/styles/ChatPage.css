@@ -1040,3 +1040,267 @@
 .tool-call-segment__json::-webkit-scrollbar-thumb:hover {
   background: var(--text-primary);
 }
+
+/* Statistics display underneath assistant bubbles */
+.chat-message__stats {
+  display: flex;
+  gap: 12px;
+  margin-top: 6px;
+  padding: 0 4px;
+  opacity: 0.6; /* Subtler than the bubble text */
+  transition: opacity 0.2s ease;
+  animation: stats-fade-in 0.4s ease forwards;
+}
+
+.chat-message__stats:hover {
+  opacity: 1;
+}
+
+.chat-stat-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.chat-stat-item svg {
+  color: var(--accent); /* Matches your theme's accent color */
+  flex-shrink: 0;
+}
+
+@keyframes stats-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 0.6;
+    transform: translateY(0);
+  }
+}
+
+/* Adjust assistant layout to account for stats */
+.chat-message--assistant {
+  margin-bottom: 8px; /* Extra breathing room between messages */
+}
+
+.chat-cost-display {
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-secondary, #888);
+  opacity: 0.6;
+  margin-top: -8px;
+  margin-bottom: -20px;
+  padding: 0;
+  user-select: none;
+  pointer-events: none;
+}
+
+/* ============================================================================
+   ATTACH BUTTON
+   ============================================================================ */
+
+.chat-attach-button {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  min-height: 36px;
+  margin-bottom: 3px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+  padding: 0;
+}
+
+.chat-attach-button:hover:not(.chat-attach-button--disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--accent);
+}
+
+.chat-attach-button--disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+/* ============================================================================
+   INPUT INNER WRAPPER (stacks preview above textarea)
+   ============================================================================ */
+
+.chat-input-inner {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* ============================================================================
+   PENDING IMAGE THUMBNAIL
+   ============================================================================ */
+
+.chat-image-preview {
+  position: relative;
+  align-self: flex-start;
+  margin-top: 6px;
+  margin-bottom: 2px;
+}
+
+.chat-image-preview img {
+  display: block;
+  height: 64px;
+  width: auto;
+  max-width: 120px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1.5px solid var(--border);
+}
+
+.chat-image-preview__remove {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: none;
+  background: var(--text-secondary);
+  color: #fff;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transition: background 0.15s ease;
+}
+
+.chat-image-preview__remove:hover {
+  background: #ef4444;
+}
+
+/* ============================================================================
+   IMAGE ATTACH MODAL
+   ============================================================================ */
+
+.image-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: confirm-overlay-in 0.15s ease;
+}
+
+.image-modal {
+  position: relative;
+  background: var(--bg-secondary);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 32px 40px 28px;
+  width: min(70vw, 900px);
+  min-height: 60vh;
+  max-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  animation: confirm-dialog-in 0.18s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: border-color 0.15s ease;
+}
+
+.image-modal--dragging {
+  border-color: var(--accent);
+}
+
+.image-modal__close {
+  position: absolute;
+  top: 10px;
+  right: 14px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.image-modal__close:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.image-modal__drop-zone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 28px 24px;
+  border: 2px dashed var(--border);
+  border-radius: var(--radius-md);
+  width: 100%;
+  flex: 1;
+  box-sizing: border-box;
+}
+
+.image-modal--dragging .image-modal__drop-zone {
+  border-color: var(--accent);
+  background: rgba(37, 99, 235, 0.05);
+}
+
+.image-modal__icon {
+  width: 40px;
+  height: 40px;
+  color: var(--accent);
+}
+
+.image-modal__label {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.image-modal__sublabel {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.image-modal__browse {
+  margin-top: 4px;
+  padding: 7px 20px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.image-modal__browse:hover {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+}
