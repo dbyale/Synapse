@@ -7,6 +7,8 @@
   ## Tools
     * Redo Implementation (remove node-llama-cpp dependency)
     * Vector Icons Per-Tools
+  ## Uploads
+    * Add text-based filetypes to upload [File->MD](https://github.com/microsoft/markitdown)
 
 # Models:
   * Search
@@ -41,6 +43,7 @@
 
 # Profiles:
   * Remove and replace penalize NewLine (it does nothing right now)
+  * Add new settings for models, projectors, performance, etc [LLama Server Flags](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md)
 
 # Settings:
   * Optional HF token
