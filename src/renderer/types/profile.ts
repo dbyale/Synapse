@@ -16,7 +16,6 @@ export interface Profile {
   repeatPenalty?: {
     enabled?: boolean;
     lastTokens?: number;
-    penalizeNewLine?: boolean;
     penalty?: number;
     frequencyPenalty?: number;
     presencePenalty?: number;

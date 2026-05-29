@@ -43,7 +43,6 @@
       * Set total and final count #s
 
 # Profiles:
-  * Remove and replace penalize NewLine (it does nothing right now)
   * Add new settings for models, projectors, performance, etc [LLama Server Flags](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md)
 
 # Settings:

@@ -272,7 +272,6 @@ export default function ProfilesPage() {
   // ── Repeat Penalty state ──
   const [editRpEnabled, setEditRpEnabled] = useState(true);
   const [editRpLastTokens, setEditRpLastTokens] = useState('');
-  const [editRpPenalizeNewLine, setEditRpPenalizeNewLine] = useState(true);
   const [editRpPenalty, setEditRpPenalty] = useState('1.00');
   const [editRpFrequencyPenalty, setEditRpFrequencyPenalty] = useState('0.00');
   const [editRpPresencePenalty, setEditRpPresencePenalty] = useState('0.00');
@@ -332,7 +331,6 @@ export default function ProfilesPage() {
     setEditRpLastTokens(
       rp?.lastTokens !== undefined ? String(rp.lastTokens) : '',
     );
-    setEditRpPenalizeNewLine(rp?.penalizeNewLine !== false);
     setEditRpPenalty(rp?.penalty !== undefined ? String(rp.penalty) : '');
     setEditRpFrequencyPenalty(
       rp?.frequencyPenalty !== undefined ? String(rp.frequencyPenalty) : '0.00',
@@ -350,7 +348,6 @@ export default function ProfilesPage() {
     const rp: NonNullable<Profile['repeatPenalty']> = {};
     if (editRpLastTokens !== '') rp.lastTokens = parseInt(editRpLastTokens, 10);
     // Only persist false — true is the library default, no need to store it
-    if (!editRpPenalizeNewLine) rp.penalizeNewLine = false;
     if (editRpPenalty !== '') rp.penalty = parseFloat(editRpPenalty);
     if (editRpFrequencyPenalty !== '')
       rp.frequencyPenalty = parseFloat(editRpFrequencyPenalty);
@@ -1295,64 +1292,6 @@ export default function ProfilesPage() {
                                       }
                                     />
                                   </EditSection>
-                                </div>
-
-                                {/* Penalize New Line — full-width checkbox */}
-                                <div
-                                  className="sp-card__edit-section"
-                                  style={{ marginTop: '12px' }}
-                                >
-                                  <label
-                                    className="sp-card__label-row"
-                                    style={{
-                                      cursor: 'pointer',
-                                      userSelect: 'none',
-                                    }}
-                                  >
-                                    <input
-                                      type="checkbox"
-                                      className="sp-card__tool-checkbox"
-                                      checked={editRpPenalizeNewLine}
-                                      onChange={(e) =>
-                                        setEditRpPenalizeNewLine(
-                                          e.target.checked,
-                                        )
-                                      }
-                                    />
-                                    <div className="sp-card__label-with-tooltip">
-                                      <span
-                                        style={{
-                                          fontSize: '13px',
-                                          fontWeight: 600,
-                                          color: 'var(--text-primary)',
-                                        }}
-                                      >
-                                        Penalize New Line
-                                      </span>
-                                      <div className="sp-card__tooltip-wrapper">
-                                        <Info
-                                          size={14}
-                                          className="sp-card__info-icon"
-                                        />
-                                        <div className="sp-card__tooltip">
-                                          <div className="sp-card__tooltip-title">
-                                            Penalize New Line
-                                          </div>
-                                          <ul className="sp-card__tooltip-list">
-                                            <li>
-                                              Whether newline tokens are
-                                              included in repeat penalty
-                                            </li>
-                                            <li>Enabled by default</li>
-                                            <li>
-                                              Uncheck to let the model freely
-                                              use newlines without penalty
-                                            </li>
-                                          </ul>
-                                        </div>
-                                      </div>
-                                    </div>
-                                  </label>
                                 </div>
                               </div>
                               {/* end sub-fields wrapper */}
