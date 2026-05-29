@@ -450,7 +450,11 @@ export default function ProfilesPage() {
         const projSubfolder = projParts.pop() || '';
         const projAuthor = projParts.pop() || '';
 
-        if (projAuthor && projSubfolder) {
+        if (projSubfolder.toLowerCase() === 'projectors') {
+          const modelFolder = projAuthor;
+          const author = projParts.pop() || '';
+          projectorRelativePath = `${author}/${modelFolder}/projectors/${projFilename}`;
+        } else if (projAuthor && projSubfolder) {
           projectorRelativePath = `${projAuthor}/${projSubfolder}/${projFilename}`;
         } else if (projSubfolder) {
           projectorRelativePath = `${projSubfolder}/${projFilename}`;

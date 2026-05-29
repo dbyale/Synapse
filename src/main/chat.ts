@@ -29,6 +29,7 @@ let serverProcess: ChildProcess | null = null;
 let messageHistory: any[] = [];
 let abortController: AbortController | null = null;
 let currentProfile: Profile | null = null;
+let currentProjector: string | null = null;
 let chatFunctions: any = null;
 let activeTools: any[] = [];
 let emitFunctionEvent: any = null;
@@ -138,7 +139,23 @@ export async function loadProfile(profile: Profile): Promise<{ success: boolean;
 
     const vramMB = settings.allocatedVRAM ?? 4096;
     const ramMB = settings.allocatedRAM ?? 8192;
-    const result = await solveMaxConfig(fullModelPath, vramMB, ramMB);
+
+    const fullProjectorPath = profile.projector
+      ? path.join(getModelsDirectory(), profile.projector)
+      : undefined;
+
+    const result = await solveMaxConfig(
+      fullModelPath,
+      vramMB,
+      ramMB,
+      undefined, // ctk (defaults to 'f16')
+      undefined, // ctv (defaults to 'f16')
+      undefined, // flashAttention (defaults false)
+      undefined, // noKvOffload (defaults true)
+      undefined, // mmap (defaults false)
+      undefined, // maximizeNGL (defaults false)
+      fullProjectorPath,
+    );
 
     lastResolvedMemory = result.memory;
     currentContextSize = result.ctx;
@@ -153,7 +170,7 @@ export async function loadProfile(profile: Profile): Promise<{ success: boolean;
       }
     }));
 
-    serverProcess = spawn(serverPath, [
+    const spawnArgs = [
       '--model', fullModelPath,
       '--n-gpu-layers', result.ngl.toString(),
       '--ctx-size', result.ctx.toString(),
@@ -162,7 +179,16 @@ export async function loadProfile(profile: Profile): Promise<{ success: boolean;
       '--parallel', '1',
       '--metrics',
       '--log-disable',
-    ]);
+    ];
+
+    if (fullProjectorPath) {
+      spawnArgs.push('--mmproj', fullProjectorPath);
+      currentProjector = fullProjectorPath;
+    } else {
+      currentProjector = null;
+    }
+
+    serverProcess = spawn(serverPath, spawnArgs);
 
     serverProcess.stderr?.on('data', (d) => {
       serverErrorLog += d.toString();
@@ -196,7 +222,8 @@ export async function loadProfile(profile: Profile): Promise<{ success: boolean;
 
 export async function sendMessage(
   text: string,
-  onToken: (t: string, type?: 'thought' | 'comment') => void
+  onToken: (t: string, type?: 'thought' | 'comment') => void,
+  imageDataUrl?: string,
 ): Promise<SendMessageResponse> {
   if (!currentProfile) throw new Error("No profile loaded");
 
@@ -205,7 +232,13 @@ export async function sendMessage(
     lastUsage = { used: lastUsage.used + userTokens, total: lastUsage.total };
   }
 
-  messageHistory.push({ role: 'user', content: text });
+  const userContent: any = imageDataUrl
+    ? [
+        { type: 'image_url', image_url: { url: imageDataUrl } },
+        { type: 'text', text },
+      ]
+    : text;
+  messageHistory.push({ role: 'user', content: userContent });
   abortController = new AbortController();
 
   const runCompletion = async (): Promise<SendMessageResponse> => {
@@ -316,7 +349,11 @@ export async function sendMessage(
 export function abort() { abortController?.abort(); }
 
 export async function unloadModel() {
-  if (serverProcess) { serverProcess.kill(); serverProcess = null; }
+  if (serverProcess) {
+    serverProcess.kill();
+    serverProcess = null;
+    currentProjector = null;
+  }
   messageHistory = [];
   currentContextSize = null;
   lastUsage = null;
@@ -326,6 +363,7 @@ export function getContextSize()      { return currentContextSize; }
 export function getContextUsage()     { return lastUsage; }
 export function getModelMemoryUsage() { return lastResolvedMemory ? { ...lastResolvedMemory } : null; }
 export function getCurrentProfile()   { return currentProfile; }
+export function hasProjector()        { return currentProjector !== null; }
 
 export async function tokenize(text: string): Promise<number | null> {
   try {

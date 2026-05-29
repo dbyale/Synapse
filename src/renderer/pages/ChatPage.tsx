@@ -6,6 +6,7 @@ import {
   KeyboardEvent,
   useCallback,
   ReactNode,
+  DragEvent,
 } from 'react';
 import {
   SendHorizonal,
@@ -22,6 +23,8 @@ import {
   Hash,
   Timer,
   Zap,
+  ImagePlus,
+  X,
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import MessageContent from '../components/MessageContent';
@@ -125,6 +128,81 @@ function ToolCallSegment({ segment }: { segment: MessageSegment }) {
   );
 }
 
+function ImageAttachModal({
+  onAttach,
+  onClose,
+}: {
+  onAttach: (dataUrl: string) => void;
+  onClose: () => void;
+}) {
+  const [dragging, setDragging] = useState(false);
+
+  const processFile = (file: File) => {
+    if (!file.type.startsWith('image/')) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const result = e.target?.result;
+      if (typeof result === 'string') {
+        onAttach(result);
+        onClose();
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleDrop = (e: DragEvent) => {
+    e.preventDefault();
+    setDragging(false);
+    const file = e.dataTransfer.files[0];
+    if (file) processFile(file);
+  };
+
+  const handleSelectFromDisk = async () => {
+    const paths = await window.electronAPI.browseForFiles({
+      title: 'Select Image',
+      filters: [
+        { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp'] },
+      ],
+    });
+    if (paths.length === 0) return;
+    // Read the file via fetch (file:// protocol works in Electron renderer)
+    const dataUrl = await window.electronAPI.readImageAsDataUrl(paths[0]);
+    onAttach(dataUrl);
+    onClose();
+  };
+
+  return (
+    <div className="image-modal-overlay" onClick={onClose}>
+      <div
+        className={`image-modal${dragging ? ' image-modal--dragging' : ''}`}
+        onClick={(e) => e.stopPropagation()}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragging(true);
+        }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={handleDrop}
+      >
+        <button className="image-modal__close" onClick={onClose} type="button">
+          <X size={18} />
+        </button>
+        <div className="image-modal__drop-zone">
+          <ImagePlus className="image-modal__icon" size={40} />
+          <p className="image-modal__label">Drop an image here</p>
+          <p className="image-modal__sublabel">or</p>
+          <button
+            type="button"
+            className="image-modal__browse"
+            onClick={handleSelectFromDisk}
+          >
+            Select from disk
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function ChatPage() {
   const [inputText, setInputText] = useState('');
   const [messages, setMessages] = useState<Message[]>(persistentMessages);
@@ -144,6 +222,9 @@ export default function ChatPage() {
     totalInputTokens: number;
     totalOutputTokens: number;
   }>({ totalInputTokens: 0, totalOutputTokens: 0 });
+  const [projectorLoaded, setProjectorLoaded] = useState(false);
+  const [showImageModal, setShowImageModal] = useState(false);
+  const [pendingImage, setPendingImage] = useState<string | null>(null); // base64 data URL
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -206,6 +287,17 @@ export default function ChatPage() {
 
     return parsed;
   }, []);
+
+  useEffect(() => {
+    if (!selectedProfileId || modelLoading || loadError) {
+      setProjectorLoaded(false);
+      return;
+    }
+    window.electronAPI
+      .chatHasProjector()
+      .then(setProjectorLoaded)
+      .catch(() => setProjectorLoaded(false));
+  }, [selectedProfileId, modelLoading, loadError]);
 
   const unloadModel = async (): Promise<void> => {
     if (unloadInProgress.current) {
@@ -728,7 +820,8 @@ export default function ChatPage() {
     lastTokenSnapshot.current = null;
     setTps(0);
 
-    await window.electronAPI.chatSend(text);
+    await window.electronAPI.chatSend(text, pendingImage ?? undefined);
+    setPendingImage(null);
   };
 
   const handleAbort = () => window.electronAPI.chatAbort();
@@ -978,14 +1071,40 @@ export default function ChatPage() {
 
       <div className="chat-input-wrapper">
         <div className="chat-input-row">
-          <textarea
-            value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
-            placeholder={placeholder}
-            rows={1}
-            onInput={autoResize}
-            onKeyDown={handleKeyDown}
-          />
+          <button
+            type="button"
+            className={`chat-attach-button${projectorLoaded ? '' : ' chat-attach-button--disabled'}`}
+            onClick={() => {
+              if (projectorLoaded) setShowImageModal(true);
+            }}
+            title={projectorLoaded ? 'Attach image' : 'No vision model loaded'}
+          >
+            <ImagePlus size={18} />
+          </button>
+
+          <div className="chat-input-inner">
+            {pendingImage && (
+              <div className="chat-image-preview">
+                <img src={pendingImage} alt="Attached" />
+                <button
+                  type="button"
+                  className="chat-image-preview__remove"
+                  onClick={() => setPendingImage(null)}
+                  title="Remove image"
+                >
+                  ×
+                </button>
+              </div>
+            )}
+            <textarea
+              value={inputText}
+              onChange={(e) => setInputText(e.target.value)}
+              placeholder={placeholder}
+              rows={1}
+              onInput={autoResize}
+              onKeyDown={handleKeyDown}
+            />
+          </div>
 
           {loading ? (
             <button
@@ -1044,6 +1163,13 @@ export default function ChatPage() {
         <div className="chat-cost-display">
           {`Estimated savings: $${estimatedCost.toFixed(2)}`}
         </div>
+      )}
+
+      {showImageModal && (
+        <ImageAttachModal
+          onAttach={(dataUrl) => setPendingImage(dataUrl)}
+          onClose={() => setShowImageModal(false)}
+        />
       )}
     </div>
   );

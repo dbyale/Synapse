@@ -1,5 +1,7 @@
 import { ipcMain, dialog, BrowserWindow, app, shell } from 'electron';
 import os from 'os';
+import * as fs from 'fs';
+import path from 'path';
 import util from 'util';
 import { exec } from 'child_process';
 import si from 'systeminformation';
@@ -139,7 +141,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     return chatService.getCurrentProfile();
   });
 
-  ipcMain.handle('chat:send', async (event, text: string) => {
+  ipcMain.handle('chat:send', async (event, text: string, imageDataUrl?: string) => {
     try {
       const onTokenCallback = (token: string, segmentType?: 'thought' | 'comment') => {
         if (!event.sender.isDestroyed()) {
@@ -147,7 +149,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
         }
       };
 
-      const result = await chatService.sendMessage(text, onTokenCallback);
+      const result = await chatService.sendMessage(text, onTokenCallback, imageDataUrl);
 
       if (!event.sender.isDestroyed()) {
         event.sender.send('chat:done', result.stats);
@@ -377,4 +379,24 @@ export function registerIpcHandlers(win: BrowserWindow): void {
   ipcMain.handle('chat:cumulativeTokenUsage', () => {
     return chatService.getCumulativeTokenUsage();
   });
+
+  ipcMain.handle('chat:hasProjector', () => {
+    return chatService.hasProjector();
+  });
+
+  ipcMain.handle('files:readImageAsDataUrl', async (_event, filePath: string) => {
+  const ext = path.extname(filePath).toLowerCase();
+  const mime =
+    ext === '.png'  ? 'image/png'  :
+    ext === '.jpg'  ? 'image/jpeg' :
+    ext === '.jpeg' ? 'image/jpeg' :
+    ext === '.gif'  ? 'image/gif'  :
+    ext === '.webp' ? 'image/webp' :
+    null;
+
+  if (!mime) throw new Error(`Unsupported image type: ${ext}`);
+
+  const buf = await fs.promises.readFile(filePath);
+  return `data:${mime};base64,${buf.toString('base64')}`;
+});
 }

@@ -46,3 +46,11 @@
   * Optional HF token
   * Models returned per API request
   * Caches RAM/VRAM config (slow to open)
+
+# Maintenance:
+  * Clear unnecessary packages
+  * Update packages
+  * Clean up ipc.ts, preload.ts, preload.d.ts
+    * Remove unused
+    * Organize existing into readable sections
+  * Add file name as top comment to all files

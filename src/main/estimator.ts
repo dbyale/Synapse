@@ -42,7 +42,8 @@ export async function solveMaxConfig(
   flashAttention: boolean = false,
   noKvOffload: boolean = true,
   mmap: boolean = false,
-  maximizeNGL: boolean = false
+  maximizeNGL: boolean = false,
+  projectorPath?: string
 ): Promise<MemoryEstimation> {
   const vramHardwareMax = vramMB * 1024 * 1024;
   const ramLimitBytes = ramMB * 1024 * 1024;
@@ -59,6 +60,7 @@ export async function solveMaxConfig(
     if (flashAttention) args.push('--flash-attention');
     if (noKvOffload) args.push('--no-kv-offload');
     if (mmap) args.push('--mmap'); else args.push('--no-mmap');
+    if (projectorPath) args.push('--mmproj', projectorPath);
 
     try {
       const { stdout } = await execFileAsync(getParserPath(), args);
