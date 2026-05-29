@@ -57,3 +57,4 @@
     * Organize existing into readable sections
   * Add file name as top comment to all files
   * Set up Metadata in package.json
+  * Update README before 1.0.0
