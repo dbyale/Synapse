@@ -4,15 +4,20 @@ import fetch from 'node-fetch';
 import AdmZip from 'adm-zip';
 import * as tar from 'tar';
 
-const LLAMA_VERSION = 'b9106';
-const PARSER_VERSION = 'v0.24.0';
 const ASSETS_BIN = path.join(__dirname, '../../assets/bin');
+
+const JSON_PATH = path.join(__dirname, '../../package.json');
+const packageJson = JSON.parse(fs.readFileSync(JSON_PATH, 'utf8'));
+
+// NOTICE: Some versions like CUDA may vary depending on the targeted build
+const LLAMA_VERSION = packageJson.binaryVersions.llama;
+const PARSER_VERSION = packageJson.binaryVersions.parser;
 
 const TARGETS: [string, string][] = [
   [`llama-${LLAMA_VERSION}-bin-macos-arm64.tar.gz`, 'macos-arm64'],
   [`llama-${LLAMA_VERSION}-bin-macos-x64.tar.gz`, 'macos-x64'],
   [`llama-${LLAMA_VERSION}-bin-win-cuda-12.4-x64.zip`, 'win-cuda-12.4-x64'],
-  [`llama-${LLAMA_VERSION}-bin-win-cuda-13.1-x64.zip`, 'win-cuda-13.1-x64'],
+  [`llama-${LLAMA_VERSION}-bin-win-cuda-13.3-x64.zip`, 'win-cuda-13.3-x64'],
   [`llama-${LLAMA_VERSION}-bin-win-vulkan-x64.zip`, 'win-vulkan-x64'],
   [`llama-${LLAMA_VERSION}-bin-win-cpu-x64.zip`, 'win-cpu-x64'],
   [`llama-${LLAMA_VERSION}-bin-ubuntu-x64.tar.gz`, 'ubuntu-x64'],
@@ -21,7 +26,7 @@ const TARGETS: [string, string][] = [
 
 const CUDA_RUNTIMES: [string, string][] = [
   [`cudart-llama-bin-win-cuda-12.4-x64.zip`, 'win-cuda-12.4-x64'],
-  [`cudart-llama-bin-win-cuda-13.1-x64.zip`, 'win-cuda-13.1-x64'],
+  [`cudart-llama-bin-win-cuda-13.3-x64.zip`, 'win-cuda-13.3-x64'],
 ];
 
 async function downloadAndExtract(url: string, targetFolder: string) {

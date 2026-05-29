@@ -1,5 +1,10 @@
 {
   "name": "synapse",
+  "version": "1.0.0",
+  "binaryVersions": {
+    "llama": "b9412",
+    "parser": "v0.24.0"
+  },
   "description": "A foundation for scalable desktop apps",
   "keywords": [
     "electron",
@@ -20,7 +25,7 @@
     "type": "git",
     "url": "git+https://github.com/electron-react-boilerplate/electron-react-boilerplate.git"
   },
-  "license": "MIT",
+  "license": "ARR",
   "author": {
     "name": "Electron React Boilerplate Maintainers",
     "email": "electronreactboilerplate@gmail.com",

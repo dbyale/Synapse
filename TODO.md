@@ -4,6 +4,7 @@
 # Chat:
   * Set default model
   * Cancel model loading
+  * Modal to select profile
   ## Tools
     * Redo Implementation (remove node-llama-cpp dependency)
     * Vector Icons Per-Tools
@@ -57,3 +58,4 @@
     * Remove unused
     * Organize existing into readable sections
   * Add file name as top comment to all files
+  * Set up Metadata in package.json
