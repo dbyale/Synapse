@@ -43,10 +43,14 @@
 
 # Profiles:
   * Add new settings for models, projectors, performance, etc [LLama Server Flags](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md)
+  * Autosave
+  * Better list auto-selection
+    * Recreate lists to be a modal with search
 
 # Settings:
   * Optional HF token
   * Models returned per API request
+    * (Maybe limit those shown at a time?, Performance problems seem to stem from extreme amount of elements rendered)
   * Caches RAM/VRAM config (slow to open)
 
 # Maintenance:
