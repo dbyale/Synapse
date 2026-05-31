@@ -1,11 +1,18 @@
 import React, { CSSProperties, useState, useCallback, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { MessageSquare, Bot, Settings, SlidersHorizontal } from 'lucide-react';
+import {
+  MessageSquare,
+  Bot,
+  Settings,
+  SlidersHorizontal,
+  GitBranch,
+} from 'lucide-react';
 
 const navItems = [
   { path: '/', icon: MessageSquare, label: 'Chat' },
   { path: '/profiles', icon: SlidersHorizontal, label: 'Profiles' },
   { path: '/models', icon: Bot, label: 'Models' },
+  { path: '/workflows', icon: GitBranch, label: 'Workflows' },
   { path: '/settings', icon: Settings, label: 'Settings' },
 ];
 

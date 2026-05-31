@@ -5,6 +5,7 @@ import ChatPage from './pages/ChatPage';
 import ModelsPage from './pages/ModelsPage';
 import SettingsPage from './pages/SettingsPage';
 import ProfilesPage from './pages/ProfilesPage';
+import WorkflowsPage from './pages/WorkflowPage';
 
 export default function App() {
   return (
@@ -14,6 +15,7 @@ export default function App() {
           <Route index element={<ChatPage />} />
           <Route path="profiles" element={<ProfilesPage />} />
           <Route path="models" element={<ModelsPage />} />
+          <Route path="workflows" element={<WorkflowsPage />} />
           <Route path="settings" element={<SettingsPage />} />
         </Route>
       </Routes>
