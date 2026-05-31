@@ -165,6 +165,19 @@
   letter-spacing: 0.5px;
   color: var(--text-secondary);
   padding: 0 2px;
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.chat-message__label-chevron {
+  transition: transform 0.2s ease;
+}
+
+.chat-message__label-chevron--collapsed {
+  transform: rotate(-90deg);
 }
 
 .chat-message--user .chat-message__label {

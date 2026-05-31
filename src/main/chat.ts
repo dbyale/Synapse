@@ -279,7 +279,7 @@ export async function sendMessage(
 
             // Progress event during prompt processing (return_progress: true sends prompt_progress)
             if (data.prompt_progress && !data.usage) {
-              const { total, processed, time_ms } = data.prompt_progress;
+              const { total, processed, time_ms, cache } = data.prompt_progress;
               const pct = total > 0
                 ? Math.min(100, Math.round((processed / total) * 100))
                 : 0;
@@ -288,11 +288,12 @@ export async function sendMessage(
               }
               // Prompt processing complete — send stats immediately
               if (total > 0 && processed >= total && !promptStats) {
+                const newTokens = Math.max(0, total - (cache || 0));
                 const timeS = (time_ms || 0) / 1000;
                 const pStats: GenerationStats = {
-                  tokens: total,
+                  tokens: newTokens,
                   timeMs: time_ms || 0,
-                  tokensPerSecond: timeS > 0 ? total / timeS : 0,
+                  tokensPerSecond: timeS > 0 ? newTokens / timeS : 0,
                 };
                 promptStats = pStats;
                 if (onPromptDone) onPromptDone(pStats);
@@ -312,7 +313,7 @@ export async function sendMessage(
                 tokensPerSecond: data.timings?.predicted_per_second || 0,
               };
               const pFromUsage: GenerationStats = {
-                tokens: data.usage.prompt_tokens ?? 0,
+                tokens: data.timings?.prompt_n ?? data.usage.prompt_tokens ?? 0,
                 timeMs: data.timings?.prompt_ms || 0,
                 tokensPerSecond: data.timings?.prompt_per_second || 0,
               };

@@ -48,6 +48,7 @@ interface Message {
   id: number;
   role: 'user' | 'assistant';
   content: MessageSegment[];
+  collapsed?: boolean;
   stats?: {
     tokens: number;
     timeMs: number;
@@ -996,76 +997,117 @@ export default function ChatPage() {
             key={msg.id}
             className={`chat-message chat-message--${msg.role}`}
           >
-            <div className="chat-message__label">
-              {msg.role === 'user' ? 'You' : 'Assistant'}
+            <div
+              className="chat-message__label"
+              role="button"
+              tabIndex={0}
+              onClick={() =>
+                setMessages((prev) => {
+                  const updated = [...prev];
+                  const idx = updated.findIndex((m) => m.id === msg.id);
+                  if (idx >= 0) {
+                    updated[idx] = {
+                      ...updated[idx],
+                      collapsed: !updated[idx].collapsed,
+                    };
+                  }
+                  return updated;
+                })
+              }
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  setMessages((prev) => {
+                    const updated = [...prev];
+                    const idx = updated.findIndex((m) => m.id === msg.id);
+                    if (idx >= 0) {
+                      updated[idx] = {
+                        ...updated[idx],
+                        collapsed: !updated[idx].collapsed,
+                      };
+                    }
+                    return updated;
+                  });
+                }
+              }}
+            >
+              {msg.role === 'user'
+                ? 'You'
+                : selectedProfile?.name || 'Assistant'}
+              <ChevronDown
+                size={12}
+                className={`chat-message__label-chevron${msg.collapsed ? ' chat-message__label-chevron--collapsed' : ''}`}
+              />
             </div>
-            {loading &&
-              msg === messages[messages.length - 1] &&
-              msg.role === 'assistant' && (
-                <div className="chat-message__indicator-box">
-                  <div className="chat-indicator">
-                    <div className="chat-indicator__spinner" />
-                    <span className="chat-indicator__label">
-                      {processing
-                        ? `Processing prompt… (${progressPercent}%)`
-                        : 'Generating…'}
-                    </span>
-                  </div>
-                  {processing && (
-                    <div className="chat-progress-bar">
-                      <div
-                        className="chat-progress-bar__fill"
-                        style={{ width: `${progressPercent}%` }}
-                      />
+            {!msg.collapsed && (<>
+              {loading &&
+                msg === messages[messages.length - 1] &&
+                msg.role === 'assistant' && (
+                  <div className="chat-message__indicator-box">
+                    <div className="chat-indicator">
+                      <div className="chat-indicator__spinner" />
+                      <span className="chat-indicator__label">
+                        {processing
+                          ? `Processing prompt… (${progressPercent}%)`
+                          : 'Generating…'}
+                      </span>
                     </div>
-                  )}
-                </div>
-              )}
-            <div className="chat-message__bubble">
-              {msg.role === 'assistant' ? (
-                <div className="chat-message__assistant-content">
-                  {(() => {
-                    const elements: ReactNode[] = [];
-                    let currentTextSegments: MessageSegment[] = [];
+                    {processing && (
+                      <div className="chat-progress-bar">
+                        <div
+                          className="chat-progress-bar__fill"
+                          style={{ width: `${progressPercent}%` }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+              <div className="chat-message__bubble">
+                {msg.role === 'assistant' ? (
+                  <div className="chat-message__assistant-content">
+                    {(() => {
+                      const elements: ReactNode[] = [];
+                      let currentTextSegments: MessageSegment[] = [];
 
-                    msg.content.forEach((segment) => {
-                      if (segment.type === 'tool') {
-                        if (currentTextSegments.length > 0) {
+                      msg.content.forEach((segment) => {
+                        if (segment.type === 'tool') {
+                          if (currentTextSegments.length > 0) {
+                            elements.push(
+                              <MessageContent
+                                key={`text-batch-${elements.length}`}
+                                segments={currentTextSegments}
+                              />,
+                            );
+                            currentTextSegments = [];
+                          }
                           elements.push(
-                            <MessageContent
-                              key={`text-batch-${elements.length}`}
-                              segments={currentTextSegments}
+                            <ToolCallSegment
+                              key={segment.id}
+                              segment={segment}
                             />,
                           );
-                          currentTextSegments = [];
+                        } else {
+                          currentTextSegments.push(segment);
                         }
+                      });
+
+                      if (currentTextSegments.length > 0) {
                         elements.push(
-                          <ToolCallSegment
-                            key={segment.id}
-                            segment={segment}
+                          <MessageContent
+                            key={`text-batch-${elements.length}`}
+                            segments={currentTextSegments}
                           />,
                         );
-                      } else {
-                        currentTextSegments.push(segment);
                       }
-                    });
 
-                    if (currentTextSegments.length > 0) {
-                      elements.push(
-                        <MessageContent
-                          key={`text-batch-${elements.length}`}
-                          segments={currentTextSegments}
-                        />,
-                      );
-                    }
-
-                    return elements;
-                  })()}
-                </div>
-              ) : (
-                msg.content[0]?.text || ''
-              )}
-            </div>
+                      return elements;
+                    })()}
+                  </div>
+                ) : (
+                  msg.content[0]?.text || ''
+                )}
+              </div>
+            </>)}
 
             {/* Display prompt processing statistics below user messages */}
             {msg.role === 'user' && msg.promptStats && (
