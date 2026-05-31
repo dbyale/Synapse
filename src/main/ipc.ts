@@ -185,7 +185,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
   });
 
   ipcMain.handle('chat:abort', async () => {
-    chatService.abort();
+    await chatService.abort();
   });
 
   ipcMain.handle('chat:unload', async () => {

@@ -831,6 +831,7 @@ export default function ChatPage() {
           type: 'normal',
         },
       ],
+      collapsed: text.length >= 20 && text.split('\n').length > 5,
     };
 
     messageCounter.current += 1;
@@ -997,49 +998,90 @@ export default function ChatPage() {
             key={msg.id}
             className={`chat-message chat-message--${msg.role}`}
           >
-            <div
-              className="chat-message__label"
-              role="button"
-              tabIndex={0}
-              onClick={() =>
-                setMessages((prev) => {
-                  const updated = [...prev];
-                  const idx = updated.findIndex((m) => m.id === msg.id);
-                  if (idx >= 0) {
-                    updated[idx] = {
-                      ...updated[idx],
-                      collapsed: !updated[idx].collapsed,
-                    };
-                  }
-                  return updated;
-                })
-              }
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
+            {(() => {
+              const text = msg.content[0]?.text || '';
+              const collapsible = msg.role !== 'user' || text.length >= 20;
+              return (
+                <div
+                  className="chat-message__label"
+                  role="button"
+                  tabIndex={collapsible ? 0 : undefined}
+                  onClick={() => {
+                    if (!collapsible) return;
+                    setMessages((prev) => {
+                      const updated = [...prev];
+                      const idx = updated.findIndex((m) => m.id === msg.id);
+                      if (idx >= 0) {
+                        updated[idx] = {
+                          ...updated[idx],
+                          collapsed: !updated[idx].collapsed,
+                        };
+                      }
+                      return updated;
+                    });
+                  }}
+                  onKeyDown={(e) => {
+                    if (!collapsible) return;
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setMessages((prev) => {
+                        const updated = [...prev];
+                        const idx = updated.findIndex((m) => m.id === msg.id);
+                        if (idx >= 0) {
+                          updated[idx] = {
+                            ...updated[idx],
+                            collapsed: !updated[idx].collapsed,
+                          };
+                        }
+                        return updated;
+                      });
+                    }
+                  }}
+                >
+                  {msg.role === 'user'
+                    ? 'You'
+                    : selectedProfile?.name || 'Assistant'}
+                  {collapsible && (
+                    <ChevronDown
+                      size={12}
+                      className={`chat-message__label-chevron${msg.collapsed ? ' chat-message__label-chevron--collapsed' : ''}`}
+                    />
+                  )}
+                </div>
+              );
+            })()}
+            {msg.collapsed && msg.role === 'user' ? (
+              <div
+                className="chat-message__bubble chat-message__bubble--collapsed"
+                role="button"
+                tabIndex={0}
+                onClick={() =>
                   setMessages((prev) => {
                     const updated = [...prev];
                     const idx = updated.findIndex((m) => m.id === msg.id);
                     if (idx >= 0) {
-                      updated[idx] = {
-                        ...updated[idx],
-                        collapsed: !updated[idx].collapsed,
-                      };
+                      updated[idx] = { ...updated[idx], collapsed: false };
                     }
                     return updated;
-                  });
+                  })
                 }
-              }}
-            >
-              {msg.role === 'user'
-                ? 'You'
-                : selectedProfile?.name || 'Assistant'}
-              <ChevronDown
-                size={12}
-                className={`chat-message__label-chevron${msg.collapsed ? ' chat-message__label-chevron--collapsed' : ''}`}
-              />
-            </div>
-            {!msg.collapsed && (<>
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    setMessages((prev) => {
+                      const updated = [...prev];
+                      const idx = updated.findIndex((m) => m.id === msg.id);
+                      if (idx >= 0) {
+                        updated[idx] = { ...updated[idx], collapsed: false };
+                      }
+                      return updated;
+                    });
+                  }
+                }}
+              >
+                {(msg.content[0]?.text || '').slice(0, 20)}…
+              </div>
+            ) : !msg.collapsed && (<>
               {loading &&
                 msg === messages[messages.length - 1] &&
                 msg.role === 'assistant' && (

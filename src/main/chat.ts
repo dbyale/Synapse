@@ -29,6 +29,8 @@ interface TokenUsageStore {
 let serverProcess: ChildProcess | null = null;
 let messageHistory: any[] = [];
 let abortController: AbortController | null = null;
+let currentReader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+let aborted = false;
 let currentProfile: Profile | null = null;
 let currentProjector: string | null = null;
 let chatFunctions: any = null;
@@ -244,6 +246,7 @@ export async function sendMessage(
     : text;
   messageHistory.push({ role: 'user', content: userContent });
   abortController = new AbortController();
+  aborted = false;
 
   const runCompletion = async (): Promise<SendMessageResponse> => {
     const response = await fetch('http://127.0.0.1:8080/v1/chat/completions', {
@@ -255,6 +258,7 @@ export async function sendMessage(
 
     if (!response.body) throw new Error('No response body');
     const reader = response.body.getReader();
+    currentReader = reader;
     const decoder = new TextDecoder();
     let fullResponse = "";
     let toolCalls: any[] = [];
@@ -264,7 +268,7 @@ export async function sendMessage(
     try {
       while (true) {
         const { done, value } = await reader!.read();
-        if (done) break;
+        if (done || aborted) break;
 
         const chunk = decoder.decode(value);
         const lines = chunk.split('\n');
@@ -350,7 +354,10 @@ export async function sendMessage(
       }
     } finally {
       reader.releaseLock();
+      currentReader = null;
     }
+
+    if (aborted) return { content: 'Aborted' };
 
     if (toolCalls.length > 0) {
       messageHistory.push({
@@ -380,12 +387,19 @@ export async function sendMessage(
     messageHistory.push({ role: 'assistant', content: result.content });
     return result;
   } catch (e: any) {
-    if (e.name === 'AbortError') return { content: 'Aborted' };
+    if (e.name === 'AbortError' || aborted) return { content: 'Aborted' };
     throw e;
   }
 }
 
-export function abort() { abortController?.abort(); }
+export async function abort() {
+  aborted = true;
+  const r = currentReader;
+  currentReader = null;
+  if (r) {
+    try { await r.cancel(); } catch {}
+  }
+}
 
 export async function unloadModel() {
   if (serverProcess) {
