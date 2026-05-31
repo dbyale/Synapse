@@ -31,6 +31,7 @@ import MessageContent from '../components/MessageContent';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { Profile } from '../types/profile';
 import { TOOL_METADATA } from '../../data/defaultTools';
+import { resolveIcon } from '../components/workflows/IconPicker';
 import '../styles/ChatPage.css';
 
 interface MessageSegment {
@@ -86,12 +87,13 @@ function ToolCallSegment({ segment }: { segment: MessageSegment }) {
         className="tool-call-segment__header"
         onClick={() => setExpanded(!expanded)}
       >
-        <Wrench className="tool-call-segment__icon" size={16} />
+        {(() => {
+          const meta = segment.toolName ? TOOL_METADATA[segment.toolName as keyof typeof TOOL_METADATA] : undefined;
+          const IconComp = meta?.icon ? resolveIcon(meta.icon) : Wrench;
+          return <IconComp className="tool-call-segment__icon" size={16} />;
+        })()}
         <span className="tool-call-segment__name">
-          {(segment.toolName &&
-            TOOL_METADATA[segment.toolName as keyof typeof TOOL_METADATA]
-              ?.label) ??
-            segment.toolName}
+          {(segment.toolName && TOOL_METADATA[segment.toolName as keyof typeof TOOL_METADATA]?.label) ?? segment.toolName}
         </span>
         {segment.toolStatus === 'calling' ? (
           <div className="tool-call-segment__spinner" />
