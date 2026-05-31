@@ -177,11 +177,12 @@ const RAW: Record<string, LucideIcon | undefined> = {
   Search,
 };
 
-export const ICON_REGISTRY: Record<string, LucideIcon> = Object.fromEntries(
-  Object.entries(RAW).filter(
-    (entry): entry is [string, LucideIcon] => typeof entry[1] === 'function',
-  ),
-);
+export const ICON_REGISTRY: Record<string, LucideIcon> = {};
+
+for (const key of Object.keys(RAW)) {
+  const val = RAW[key];
+  if (val) ICON_REGISTRY[key] = val;
+}
 
 export const ICON_NAMES: string[] = Object.keys(ICON_REGISTRY).sort();
 
