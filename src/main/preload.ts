@@ -67,10 +67,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('chat:token', listener);
   },
 
-    onChatDone: (callback: (stats?: any) => void) => {
+    onChatDone: (callback: (stats?: { tokens: number; timeMs: number; tokensPerSecond: number }) => void) => {
     const listener = (_event: any, stats?: any) => callback(stats);
     ipcRenderer.on('chat:done', listener);
     return () => ipcRenderer.removeListener('chat:done', listener);
+  },
+
+  onChatProgress: (callback: (data: { progress: number; promptN: number; promptMs: number; total: number }) => void) => {
+    const listener = (_event: any, data: { progress: number; promptN: number; promptMs: number; total: number }) => callback(data);
+    ipcRenderer.on('chat:progress', listener);
+    return () => ipcRenderer.removeListener('chat:progress', listener);
+  },
+
+  onChatPromptDone: (callback: (stats: { tokens: number; timeMs: number; tokensPerSecond: number }) => void) => {
+    const listener = (_event: any, stats: { tokens: number; timeMs: number; tokensPerSecond: number }) => callback(stats);
+    ipcRenderer.on('chat:prompt-done', listener);
+    return () => ipcRenderer.removeListener('chat:prompt-done', listener);
   },
 
   onChatError: (callback: (error: string) => void) => {
@@ -85,6 +97,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   removeChatListeners: () => {
     ipcRenderer.removeAllListeners('chat:token');
     ipcRenderer.removeAllListeners('chat:done');
+    ipcRenderer.removeAllListeners('chat:progress');
+    ipcRenderer.removeAllListeners('chat:prompt-done');
   },
 
   chatContextUsage: () => ipcRenderer.invoke('chat:contextUsage'),

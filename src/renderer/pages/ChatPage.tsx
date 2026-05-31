@@ -53,6 +53,11 @@ interface Message {
     timeMs: number;
     tokensPerSecond: number;
   };
+  promptStats?: {
+    tokens: number;
+    timeMs: number;
+    tokensPerSecond: number;
+  };
 }
 
 const INPUT_PRICE_PER_MILLION = 150.0;
@@ -227,6 +232,7 @@ export default function ChatPage() {
   const [projectorLoaded, setProjectorLoaded] = useState(false);
   const [showImageModal, setShowImageModal] = useState(false);
   const [pendingImage, setPendingImage] = useState<string | null>(null); // base64 data URL
+  const [progressPercent, setProgressPercent] = useState(0);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -656,12 +662,12 @@ export default function ChatPage() {
       setLoading(false);
       setProcessing(false);
       setTps(0);
+      setProgressPercent(0);
       refreshCumulativeTokens();
 
       if (stats) {
         setMessages((prev) => {
           const last = prev[prev.length - 1];
-          // Ensure we only apply stats to the assistant message that just finished
           if (last && last.role === 'assistant' && !last.stats) {
             const updated = [...prev];
             updated[updated.length - 1] = { ...last, stats };
@@ -670,6 +676,23 @@ export default function ChatPage() {
           return prev;
         });
       }
+    });
+
+    const removeProgressListener = window.electronAPI.onChatProgress((data) => {
+      setProgressPercent(data.progress);
+    });
+
+    const removePromptDoneListener = window.electronAPI.onChatPromptDone((promptStats) => {
+      setMessages((prev) => {
+        const updated = [...prev];
+        for (let i = updated.length - 1; i >= 0; i--) {
+          if (updated[i].role === 'user' && !updated[i].promptStats) {
+            updated[i] = { ...updated[i], promptStats };
+            break;
+          }
+        }
+        return updated;
+      });
     });
 
     const unsubscribeFunctionCalling = window.electronAPI.onChatFunctionCalling(
@@ -756,6 +779,8 @@ export default function ChatPage() {
     return () => {
       removeTokenListener();
       removeDoneListener();
+      removeProgressListener();
+      removePromptDoneListener();
       unsubscribeFunctionCalling();
       unsubscribeFunctionCall();
       unsubscribeFunctionResult();
@@ -981,9 +1006,19 @@ export default function ChatPage() {
                   <div className="chat-indicator">
                     <div className="chat-indicator__spinner" />
                     <span className="chat-indicator__label">
-                      {processing ? 'Processing prompt…' : 'Generating…'}
+                      {processing
+                        ? `Processing prompt… (${progressPercent}%)`
+                        : 'Generating…'}
                     </span>
                   </div>
+                  {processing && (
+                    <div className="chat-progress-bar">
+                      <div
+                        className="chat-progress-bar__fill"
+                        style={{ width: `${progressPercent}%` }}
+                      />
+                    </div>
+                  )}
                 </div>
               )}
             <div className="chat-message__bubble">
@@ -1032,6 +1067,24 @@ export default function ChatPage() {
               )}
             </div>
 
+            {/* Display prompt processing statistics below user messages */}
+            {msg.role === 'user' && msg.promptStats && (
+              <div className="chat-message__stats">
+                <div className="chat-stat-item" title="Prompt tokens">
+                  <Hash size={12} />
+                  <span>{msg.promptStats.tokens} tokens</span>
+                </div>
+                <div className="chat-stat-item" title="Prompt processing time">
+                  <Timer size={12} />
+                  <span>{(msg.promptStats.timeMs / 1000).toFixed(2)}s</span>
+                </div>
+                <div className="chat-stat-item" title="Prompt processing speed">
+                  <Zap size={12} />
+                  <span>{msg.promptStats.tokensPerSecond.toFixed(1)} t/s</span>
+                </div>
+              </div>
+            )}
+
             {/* Display generation statistics below assistant responses */}
             {msg.role === 'assistant' && msg.stats && (
               <div className="chat-message__stats">
@@ -1061,9 +1114,19 @@ export default function ChatPage() {
                 <div className="chat-indicator">
                   <div className="chat-indicator__spinner" />
                   <span className="chat-indicator__label">
-                    {processing ? 'Processing prompt…' : 'Generating…'}
+                    {processing
+                      ? `Processing prompt… (${progressPercent}%)`
+                      : 'Generating…'}
                   </span>
                 </div>
+                {processing && (
+                  <div className="chat-progress-bar">
+                    <div
+                      className="chat-progress-bar__fill"
+                      style={{ width: `${progressPercent}%` }}
+                    />
+                  </div>
+                )}
               </div>
             </div>
           )}

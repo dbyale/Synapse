@@ -149,7 +149,19 @@ export function registerIpcHandlers(win: BrowserWindow): void {
         }
       };
 
-      const result = await chatService.sendMessage(text, onTokenCallback, imageDataUrl);
+      const onProgressCallback = (data: { progress: number; promptN: number; promptMs: number; total: number }) => {
+        if (!event.sender.isDestroyed()) {
+          event.sender.send('chat:progress', data);
+        }
+      };
+
+      const onPromptDoneCallback = (stats: { tokens: number; timeMs: number; tokensPerSecond: number }) => {
+        if (!event.sender.isDestroyed()) {
+          event.sender.send('chat:prompt-done', stats);
+        }
+      };
+
+      const result = await chatService.sendMessage(text, onTokenCallback, imageDataUrl, onProgressCallback, onPromptDoneCallback);
 
       if (!event.sender.isDestroyed()) {
         event.sender.send('chat:done', result.stats);

@@ -17,6 +17,7 @@ export interface GenerationStats {
 export interface SendMessageResponse {
   content: string;
   stats?: GenerationStats;
+  promptStats?: GenerationStats;
 }
 
 interface TokenUsageStore {
@@ -98,6 +99,7 @@ function buildChatBody(messages: any[], tools: any[]): Record<string, any> {
     messages,
     stream: true,
     stream_options: { include_usage: true },
+    return_progress: true,
     ...(tools.length > 0 && { tools }),
   };
 
@@ -224,10 +226,12 @@ export async function sendMessage(
   text: string,
   onToken: (t: string, type?: 'thought' | 'comment') => void,
   imageDataUrl?: string,
+  onProgress?: (data: { progress: number; promptN: number; promptMs: number; total: number }) => void,
+  onPromptDone?: (stats: GenerationStats) => void,
 ): Promise<SendMessageResponse> {
   if (!currentProfile) throw new Error("No profile loaded");
 
-  const userTokens = (await tokenize(text)) ?? 0;
+    const userTokens = (await tokenize(text)) ?? 0;
   if (lastUsage) {
     lastUsage = { used: lastUsage.used + userTokens, total: lastUsage.total };
   }
@@ -255,6 +259,7 @@ export async function sendMessage(
     let fullResponse = "";
     let toolCalls: any[] = [];
     let stats: GenerationStats | undefined;
+    let promptStats: GenerationStats | undefined;
 
     try {
       while (true) {
@@ -272,6 +277,29 @@ export async function sendMessage(
           try {
             const data = JSON.parse(dataStr);
 
+            // Progress event during prompt processing (return_progress: true sends prompt_progress)
+            if (data.prompt_progress && !data.usage) {
+              const { total, processed, time_ms } = data.prompt_progress;
+              const pct = total > 0
+                ? Math.min(100, Math.round((processed / total) * 100))
+                : 0;
+              if (onProgress) {
+                onProgress({ progress: pct, promptN: processed, promptMs: time_ms || 0, total });
+              }
+              // Prompt processing complete — send stats immediately
+              if (total > 0 && processed >= total && !promptStats) {
+                const timeS = (time_ms || 0) / 1000;
+                const pStats: GenerationStats = {
+                  tokens: total,
+                  timeMs: time_ms || 0,
+                  tokensPerSecond: timeS > 0 ? total / timeS : 0,
+                };
+                promptStats = pStats;
+                if (onPromptDone) onPromptDone(pStats);
+              }
+              continue;
+            }
+
             if (data.usage) {
               lastUsage = { used: data.usage.total_tokens, total: currentContextSize || 2048 };
               addTokenUsage(
@@ -283,6 +311,16 @@ export async function sendMessage(
                 timeMs: data.timings?.predicted_ms || 0,
                 tokensPerSecond: data.timings?.predicted_per_second || 0,
               };
+              const pFromUsage: GenerationStats = {
+                tokens: data.usage.prompt_tokens ?? 0,
+                timeMs: data.timings?.prompt_ms || 0,
+                tokensPerSecond: data.timings?.prompt_per_second || 0,
+              };
+              // Only set if not already sent via progress events
+              if (!promptStats) {
+                promptStats = pFromUsage;
+                if (onPromptDone) onPromptDone(pFromUsage);
+              }
             }
 
             const delta = data.choices[0]?.delta;
@@ -333,7 +371,7 @@ export async function sendMessage(
       return runCompletion();
     }
 
-    return { content: fullResponse, stats };
+    return { content: fullResponse, stats, promptStats };
   };
 
   try {

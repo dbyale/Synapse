@@ -135,6 +135,8 @@ declare global {
       chatSend: (text: string, imageDataUrl?: string) => Promise<{ success: boolean; error?: string; aborted?: boolean }>;
       onChatToken: (callback: (data: { token: string; segmentType?: 'thought' | 'comment' }) => void) => () => void;
       onChatDone: (callback: (stats?: { tokens: number; timeMs: number; tokensPerSecond: number }) => void) => () => void;
+      onChatProgress: (callback: (data: { progress: number; promptN: number; promptMs: number; total: number }) => void) => () => void;
+      onChatPromptDone: (callback: (stats: { tokens: number; timeMs: number; tokensPerSecond: number }) => void) => () => void;
       onChatError: (callback: (error: string) => void) => () => void;
       chatAbort: () => Promise<void>;
       chatUnload: () => Promise<void>;
