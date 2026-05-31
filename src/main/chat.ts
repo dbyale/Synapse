@@ -3,7 +3,11 @@ import { spawn, ChildProcess } from 'child_process';
 import { app } from 'electron';
 import path from 'path';
 import { graphics } from 'systeminformation';
-import { loadSettings, onMemorySettingsChanged, getModelsDirectory } from './settings';
+import {
+  loadSettings,
+  onMemorySettingsChanged,
+  getModelsDirectory,
+} from './settings';
 import type { Profile } from '../renderer/types/profile';
 import { createChatFunctions } from './chatFunctions';
 import { solveMaxConfig } from './estimator';
@@ -81,17 +85,22 @@ function getAssetPath(...paths: string[]): string {
 }
 
 async function detectBackend(): Promise<string> {
-  const platform = process.platform;
+  const { platform } = process;
   if (platform === 'darwin') return `macos-${process.arch}`;
   try {
     const gpu = await graphics();
-    const isNvidia = gpu.controllers.some(c => c.vendor.toLowerCase().includes('nvidia'));
-    if (platform === 'win32') return isNvidia ? 'win-cuda-12.4-x64' : 'win-vulkan-x64';
+    const isNvidia = gpu.controllers.some((c) =>
+      c.vendor.toLowerCase().includes('nvidia'),
+    );
+    if (platform === 'win32')
+      return isNvidia ? 'win-cuda-12.4-x64' : 'win-vulkan-x64';
   } catch (e) {}
   return platform === 'win32' ? 'win-cpu-x64' : 'ubuntu-x64';
 }
 
-export function setEmitFunctionCallback(cb: any) { emitFunctionEvent = cb; }
+export function setEmitFunctionCallback(cb: any) {
+  emitFunctionEvent = cb;
+}
 
 // --- Build request body, only including profile fields that are defined ---
 function buildChatBody(messages: any[], tools: any[]): Record<string, any> {
@@ -106,29 +115,34 @@ function buildChatBody(messages: any[], tools: any[]): Record<string, any> {
   };
 
   // Standard sampling
-  if (p?.temperature !== undefined)  body.temperature = p.temperature;
-  if (p?.topK       !== undefined)   body.top_k       = p.topK;
-  if (p?.topP       !== undefined)   body.top_p       = p.topP;
-  if (p?.minP       !== undefined)   body.min_p       = p.minP;
-  if (p?.seed       !== undefined)   body.seed        = p.seed;
+  if (p?.temperature !== undefined) body.temperature = p.temperature;
+  if (p?.topK !== undefined) body.top_k = p.topK;
+  if (p?.topP !== undefined) body.top_p = p.topP;
+  if (p?.minP !== undefined) body.min_p = p.minP;
+  if (p?.seed !== undefined) body.seed = p.seed;
 
   // XTC sampler
-  if (p?.xtc?.probability !== undefined) body.xtc_probability = p.xtc.probability;
-  if (p?.xtc?.threshold   !== undefined) body.xtc_threshold   = p.xtc.threshold;
+  if (p?.xtc?.probability !== undefined)
+    body.xtc_probability = p.xtc.probability;
+  if (p?.xtc?.threshold !== undefined) body.xtc_threshold = p.xtc.threshold;
 
   // Repeat penalty — only apply the block if enabled
   if (p?.repeatPenalty?.enabled) {
     const rp = p.repeatPenalty;
-    if (rp.penalty          !== undefined) body.repeat_penalty    = rp.penalty;
-    if (rp.lastTokens       !== undefined) body.repeat_last_n     = rp.lastTokens;
-    if (rp.frequencyPenalty !== undefined) body.frequency_penalty = rp.frequencyPenalty;
-    if (rp.presencePenalty  !== undefined) body.presence_penalty  = rp.presencePenalty;
+    if (rp.penalty !== undefined) body.repeat_penalty = rp.penalty;
+    if (rp.lastTokens !== undefined) body.repeat_last_n = rp.lastTokens;
+    if (rp.frequencyPenalty !== undefined)
+      body.frequency_penalty = rp.frequencyPenalty;
+    if (rp.presencePenalty !== undefined)
+      body.presence_penalty = rp.presencePenalty;
   }
 
   return body;
 }
 
-export async function loadProfile(profile: Profile): Promise<{ success: boolean; error?: string }> {
+export async function loadProfile(
+  profile: Profile,
+): Promise<{ success: boolean; error?: string }> {
   console.log('[chat] Loading Profile:', profile.name);
   await unloadModel();
 
@@ -138,7 +152,8 @@ export async function loadProfile(profile: Profile): Promise<{ success: boolean;
     const settings = loadSettings();
     const fullModelPath = path.join(getModelsDirectory(), profile.model);
     const backendFolder = await detectBackend();
-    const serverBin = process.platform === 'win32' ? 'llama-server.exe' : 'llama-server';
+    const serverBin =
+      process.platform === 'win32' ? 'llama-server.exe' : 'llama-server';
     const serverPath = path.join(getAssetPath('bin', backendFolder), serverBin);
 
     const vramMB = settings.allocatedVRAM ?? 4096;
@@ -164,23 +179,35 @@ export async function loadProfile(profile: Profile): Promise<{ success: boolean;
     lastResolvedMemory = result.memory;
     currentContextSize = result.ctx;
 
-    if (!chatFunctions) chatFunctions = createChatFunctions(((fn: any) => fn) as any);
-    activeTools = (profile.tools || []).map(t => chatFunctions[t]).filter(Boolean).map(f => ({
-      type: 'function',
-      function: {
-        name: f.name || Object.keys(chatFunctions).find(k => chatFunctions[k] === f),
-        description: f.description,
-        parameters: f.params,
-      }
-    }));
+    if (!chatFunctions)
+      chatFunctions = createChatFunctions(((fn: any) => fn) as any);
+    activeTools = (profile.tools || [])
+      .map((t) => chatFunctions[t])
+      .filter(Boolean)
+      .map((f) => ({
+        type: 'function',
+        function: {
+          name:
+            f.name ||
+            Object.keys(chatFunctions).find((k) => chatFunctions[k] === f),
+          description: f.description,
+          parameters: f.params,
+        },
+      }));
 
     const spawnArgs = [
-      '--model', fullModelPath,
-      '--n-gpu-layers', result.ngl.toString(),
-      '--ctx-size', result.ctx.toString(),
-      '--port', '8080',
-      '--host', '127.0.0.1',
-      '--parallel', '1',
+      '--model',
+      fullModelPath,
+      '--n-gpu-layers',
+      result.ngl.toString(),
+      '--ctx-size',
+      result.ctx.toString(),
+      '--port',
+      '8080',
+      '--host',
+      '127.0.0.1',
+      '--parallel',
+      '1',
       '--metrics',
       '--log-disable',
     ];
@@ -202,18 +229,24 @@ export async function loadProfile(profile: Profile): Promise<{ success: boolean;
     for (let i = 0; i < 45; i++) {
       try {
         const res = await fetch('http://127.0.0.1:8080/health');
-        if (res.ok) { ready = true; break; }
+        if (res.ok) {
+          ready = true;
+          break;
+        }
       } catch (e) {}
-      await new Promise(r => setTimeout(r, 1000));
+      await new Promise((r) => setTimeout(r, 1000));
     }
 
     if (!ready) {
       console.error('[llama-server] Startup failed. Logs:\n', serverErrorLog);
-      throw new Error("Inference server failed to respond.");
+      throw new Error('Inference server failed to respond.');
     }
 
     const systemTokens = (await tokenize(profile.systemPrompt)) ?? 0;
-    const toolTokens = activeTools.length > 0 ? (await tokenize(JSON.stringify(activeTools))) ?? 0 : 0;
+    const toolTokens =
+      activeTools.length > 0
+        ? ((await tokenize(JSON.stringify(activeTools))) ?? 0)
+        : 0;
     lastUsage = { used: systemTokens + toolTokens, total: result.ctx };
 
     currentProfile = profile;
@@ -228,12 +261,17 @@ export async function sendMessage(
   text: string,
   onToken: (t: string, type?: 'thought' | 'comment') => void,
   imageDataUrl?: string,
-  onProgress?: (data: { progress: number; promptN: number; promptMs: number; total: number }) => void,
+  onProgress?: (data: {
+    progress: number;
+    promptN: number;
+    promptMs: number;
+    total: number;
+  }) => void,
   onPromptDone?: (stats: GenerationStats) => void,
 ): Promise<SendMessageResponse> {
-  if (!currentProfile) throw new Error("No profile loaded");
+  if (!currentProfile) throw new Error('No profile loaded');
 
-    const userTokens = (await tokenize(text)) ?? 0;
+  const userTokens = (await tokenize(text)) ?? 0;
   if (lastUsage) {
     lastUsage = { used: lastUsage.used + userTokens, total: lastUsage.total };
   }
@@ -260,8 +298,8 @@ export async function sendMessage(
     const reader = response.body.getReader();
     currentReader = reader;
     const decoder = new TextDecoder();
-    let fullResponse = "";
-    let toolCalls: any[] = [];
+    let fullResponse = '';
+    const toolCalls: any[] = [];
     let stats: GenerationStats | undefined;
     let promptStats: GenerationStats | undefined;
 
@@ -284,11 +322,17 @@ export async function sendMessage(
             // Progress event during prompt processing (return_progress: true sends prompt_progress)
             if (data.prompt_progress && !data.usage) {
               const { total, processed, time_ms, cache } = data.prompt_progress;
-              const pct = total > 0
-                ? Math.min(100, Math.round((processed / total) * 100))
-                : 0;
+              const pct =
+                total > 0
+                  ? Math.min(100, Math.round((processed / total) * 100))
+                  : 0;
               if (onProgress) {
-                onProgress({ progress: pct, promptN: processed, promptMs: time_ms || 0, total });
+                onProgress({
+                  progress: pct,
+                  promptN: processed,
+                  promptMs: time_ms || 0,
+                  total,
+                });
               }
               // Prompt processing complete — send stats immediately
               if (total > 0 && processed >= total && !promptStats) {
@@ -306,7 +350,10 @@ export async function sendMessage(
             }
 
             if (data.usage) {
-              lastUsage = { used: data.usage.total_tokens, total: currentContextSize || 2048 };
+              lastUsage = {
+                used: data.usage.total_tokens,
+                total: currentContextSize || 2048,
+              };
               addTokenUsage(
                 data.usage.prompt_tokens ?? 0,
                 data.usage.completion_tokens ?? 0,
@@ -340,9 +387,12 @@ export async function sendMessage(
             }
             if (delta.tool_calls) {
               delta.tool_calls.forEach((tc: any) => {
-                if (!toolCalls[tc.index]) toolCalls[tc.index] = { id: tc.id, name: '', args: '' };
-                if (tc.function?.name) toolCalls[tc.index].name = tc.function.name;
-                if (tc.function?.arguments) toolCalls[tc.index].args += tc.function.arguments;
+                if (!toolCalls[tc.index])
+                  toolCalls[tc.index] = { id: tc.id, name: '', args: '' };
+                if (tc.function?.name)
+                  toolCalls[tc.index].name = tc.function.name;
+                if (tc.function?.arguments)
+                  toolCalls[tc.index].args += tc.function.arguments;
               });
             }
 
@@ -362,7 +412,7 @@ export async function sendMessage(
     if (toolCalls.length > 0) {
       messageHistory.push({
         role: 'assistant',
-        tool_calls: toolCalls.map(tc => ({
+        tool_calls: toolCalls.map((tc) => ({
           id: tc.id,
           type: 'function',
           function: { name: tc.name, arguments: tc.args },
@@ -373,8 +423,13 @@ export async function sendMessage(
         if (emitFunctionEvent) emitFunctionEvent('calling', tc.name, '');
         if (emitFunctionEvent) emitFunctionEvent('call', tc.name, tc.args);
         const result = await handler(JSON.parse(tc.args));
-        if (emitFunctionEvent) emitFunctionEvent('result', tc.name, JSON.stringify(result));
-        messageHistory.push({ role: 'tool', tool_call_id: tc.id, content: JSON.stringify(result) });
+        if (emitFunctionEvent)
+          emitFunctionEvent('result', tc.name, JSON.stringify(result));
+        messageHistory.push({
+          role: 'tool',
+          tool_call_id: tc.id,
+          content: JSON.stringify(result),
+        });
       }
       return runCompletion();
     }
@@ -397,7 +452,9 @@ export async function abort() {
   const r = currentReader;
   currentReader = null;
   if (r) {
-    try { await r.cancel(); } catch {}
+    try {
+      await r.cancel();
+    } catch {}
   }
 }
 
@@ -412,11 +469,21 @@ export async function unloadModel() {
   lastUsage = null;
 }
 
-export function getContextSize()      { return currentContextSize; }
-export function getContextUsage()     { return lastUsage; }
-export function getModelMemoryUsage() { return lastResolvedMemory ? { ...lastResolvedMemory } : null; }
-export function getCurrentProfile()   { return currentProfile; }
-export function hasProjector()        { return currentProjector !== null; }
+export function getContextSize() {
+  return currentContextSize;
+}
+export function getContextUsage() {
+  return lastUsage;
+}
+export function getModelMemoryUsage() {
+  return lastResolvedMemory ? { ...lastResolvedMemory } : null;
+}
+export function getCurrentProfile() {
+  return currentProfile;
+}
+export function hasProjector() {
+  return currentProjector !== null;
+}
 
 export async function tokenize(text: string): Promise<number | null> {
   try {
@@ -425,7 +492,11 @@ export async function tokenize(text: string): Promise<number | null> {
       body: JSON.stringify({ content: text }),
     });
     return (await res.json()).tokens?.length || 0;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
-onMemorySettingsChanged(() => { if (currentProfile) loadProfile(currentProfile).catch(console.error); });
+onMemorySettingsChanged(() => {
+  if (currentProfile) loadProfile(currentProfile).catch(console.error);
+});

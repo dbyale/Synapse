@@ -2,14 +2,14 @@ import path from 'path';
 import fs from 'fs';
 import https from 'https';
 import { BrowserWindow } from 'electron';
-import { getModelsDirectory } from '../../main/settings';
 import { ClientRequest } from 'http';
+import { getModelsDirectory } from '../../main/settings';
 import type {
   ModelSearchResult,
   SearchFilter,
   LocalModel,
   DownloadProgress,
-  RemoteModelFile
+  RemoteModelFile,
 } from '../preload.d';
 
 // ── Raw shape returned by HuggingFace REST API ──
@@ -63,12 +63,12 @@ export async function searchModels(
   filters: SearchFilter[] = [],
   sort: string = 'trendingScore',
   direction: number = -1,
-  limit: number = 20
+  limit: number = 20,
 ): Promise<ModelSearchResult[]> {
   const params = new URLSearchParams({
     limit: String(limit),
-    sort: sort,
-    direction: String(direction)
+    sort,
+    direction: String(direction),
   });
 
   // Only append search parameter if it's not empty
@@ -108,7 +108,9 @@ export async function searchModels(
   try {
     const response = await fetch(url);
     if (!response.ok) {
-      throw new Error(`HuggingFace API returned ${response.status}: ${response.statusText}`);
+      throw new Error(
+        `HuggingFace API returned ${response.status}: ${response.statusText}`,
+      );
     }
 
     const models: HFApiModel[] = await response.json();
@@ -120,7 +122,7 @@ export async function searchModels(
 
       let parameters: string | null = null;
       const paramMatch = repoId.match(
-        /(\d+(?:\.\d+)?[bBmM](?:-[A-Za-z]\d+(?:\.\d+)?[bBmM])?|\d+x\d+(?:\.\d+)?[bBmM])/
+        /(\d+(?:\.\d+)?[bBmM](?:-[A-Za-z]\d+(?:\.\d+)?[bBmM])?|\d+x\d+(?:\.\d+)?[bBmM])/,
       );
       if (paramMatch) {
         parameters = paramMatch[0].toUpperCase();
@@ -146,9 +148,13 @@ export async function searchModels(
 }
 
 // ── List GGUF files and parse file sizes + quantizations ──
-export async function listModelFiles(repoId: string): Promise<RemoteModelFile[]> {
+export async function listModelFiles(
+  repoId: string,
+): Promise<RemoteModelFile[]> {
   try {
-    const response = await fetch(`https://huggingface.co/api/models/${repoId}/tree/main?recursive=true`);
+    const response = await fetch(
+      `https://huggingface.co/api/models/${repoId}/tree/main?recursive=true`,
+    );
     if (!response.ok) return [];
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -185,7 +191,7 @@ export async function listModelFiles(repoId: string): Promise<RemoteModelFile[]>
           filename,
           sizeBytes: file.size,
           quantization: quant,
-          bits
+          bits,
         });
       }
     });
@@ -235,7 +241,9 @@ export function registerLocalModel(payload: {
       try {
         fs.copyFileSync(srcPath, destPath);
       } catch (err: any) {
-        throw new Error(`Failed to copy model file ${filename}: ${err.message}`);
+        throw new Error(
+          `Failed to copy model file ${filename}: ${err.message}`,
+        );
       }
     }
   }
@@ -249,7 +257,9 @@ export function registerLocalModel(payload: {
         fs.mkdirSync(projectorDir, { recursive: true });
       } catch (err: any) {
         if (err.code !== 'EEXIST') {
-          throw new Error(`Failed to create projector directory: ${err.message}`);
+          throw new Error(
+            `Failed to create projector directory: ${err.message}`,
+          );
         }
       }
     }
@@ -267,7 +277,9 @@ export function registerLocalModel(payload: {
         try {
           fs.copyFileSync(srcPath, destPath);
         } catch (err: any) {
-          throw new Error(`Failed to copy projector file ${filename}: ${err.message}`);
+          throw new Error(
+            `Failed to copy projector file ${filename}: ${err.message}`,
+          );
         }
       }
     }
@@ -276,8 +288,11 @@ export function registerLocalModel(payload: {
   return { success: true };
 }
 
-
-export function downloadModel(repoId: string, filename: string, win: BrowserWindow | null): Promise<string> {
+export function downloadModel(
+  repoId: string,
+  filename: string,
+  win: BrowserWindow | null,
+): Promise<string> {
   return new Promise((resolve, reject) => {
     const modelsDir = getModelsDirectory();
     const isProjector = filename.toLowerCase().includes('mmproj');
@@ -342,7 +357,7 @@ export function downloadModel(repoId: string, filename: string, win: BrowserWind
             downloadedBytes: 0,
             totalBytes: 0,
             percent: 0,
-            status: 'failed'
+            status: 'failed',
           } as DownloadProgress);
 
           reject(err);
@@ -350,17 +365,27 @@ export function downloadModel(repoId: string, filename: string, win: BrowserWind
       };
 
       const req = https.get(downloadUrl, (response) => {
-        if (response.statusCode && response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
+        if (
+          response.statusCode &&
+          response.statusCode >= 300 &&
+          response.statusCode < 400 &&
+          response.headers.location
+        ) {
           request(response.headers.location);
           return;
         }
 
         if (response.statusCode !== 200) {
-          cleanupAndReject(new Error(`Download failed with status ${response.statusCode}`));
+          cleanupAndReject(
+            new Error(`Download failed with status ${response.statusCode}`),
+          );
           return;
         }
 
-        const totalBytes = parseInt(response.headers['content-length'] ?? '0', 10);
+        const totalBytes = parseInt(
+          response.headers['content-length'] ?? '0',
+          10,
+        );
         let downloadedBytes = 0;
 
         response.on('data', (chunk: Buffer) => {
@@ -372,7 +397,10 @@ export function downloadModel(repoId: string, filename: string, win: BrowserWind
             filename,
             downloadedBytes,
             totalBytes,
-            percent: totalBytes > 0 ? Math.round((downloadedBytes / totalBytes) * 100) : 0,
+            percent:
+              totalBytes > 0
+                ? Math.round((downloadedBytes / totalBytes) * 100)
+                : 0,
           };
 
           win?.webContents.send('download-progress', progress);
@@ -407,7 +435,7 @@ export function cancelDownload(filename: string): boolean {
       downloadedBytes: 0,
       totalBytes: 0,
       percent: 0,
-      status: 'cancelled'
+      status: 'cancelled',
     } as DownloadProgress);
 
     record.req.destroy();
@@ -448,7 +476,8 @@ export function listLocalModels(): LocalModel[] {
       }
 
       // Recreate the repo ID equivalent for UI grouping
-      const generalName = pathParts.length >= 3 ? `${author}/${modelName}` : modelName;
+      const generalName =
+        pathParts.length >= 3 ? `${author}/${modelName}` : modelName;
 
       // Extract details from the filename
       const lowerName = filename.toLowerCase();
@@ -476,7 +505,7 @@ export function listLocalModels(): LocalModel[] {
         // Metadata required for ExtendedLocalModel by the LocalModelGroupCard
         generalName,
         quantization: quant,
-        isProjector
+        isProjector,
       });
     }
   });
@@ -508,7 +537,10 @@ export function deleteLocalModel(identifier: string): boolean {
     const normalizedModelsDir = path.normalize(modelsDir);
 
     // Keep going up the directory tree while we're inside modelsDir
-    while (currentDir.startsWith(normalizedModelsDir) && currentDir !== normalizedModelsDir) {
+    while (
+      currentDir.startsWith(normalizedModelsDir) &&
+      currentDir !== normalizedModelsDir
+    ) {
       try {
         const contents = fs.readdirSync(currentDir);
 

@@ -116,7 +116,11 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: 20px;
-  transition: border-color 0.15s ease, background 0.15s ease, opacity 0.15s ease, transform 0.2s ease;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    opacity 0.15s ease,
+    transform 0.2s ease;
 }
 
 .sp-card--active {

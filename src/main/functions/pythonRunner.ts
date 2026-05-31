@@ -19,28 +19,82 @@ const SANDBOX_CONFIG = {
   recursionLimit: 200,
   allowedModules: new Set([
     // Numeric / scientific
-    'numpy', 'pandas', 'scipy', 'sklearn', 'statsmodels', 'sympy',
+    'numpy',
+    'pandas',
+    'scipy',
+    'sklearn',
+    'statsmodels',
+    'sympy',
     // Plotting
-    'matplotlib', 'matplotlib.pyplot', 'matplotlib.figure', 'matplotlib.axes',
+    'matplotlib',
+    'matplotlib.pyplot',
+    'matplotlib.figure',
+    'matplotlib.axes',
     // Image
-    'PIL', 'PIL.Image', 'PIL.ImageDraw', 'PIL.ImageFilter',
+    'PIL',
+    'PIL.Image',
+    'PIL.ImageDraw',
+    'PIL.ImageFilter',
     // HTTP (read-only use — network is not blocked at OS level in Electron,
     //        so only allow if your use-case requires it; remove if not)
-    'requests', 'httpx',
+    'requests',
+    'httpx',
     // Standard library — safe subset
-    'math', 'cmath', 'random', 'statistics', 'decimal', 'fractions',
-    'datetime', 'time', 'calendar', 'zoneinfo',
-    'collections', 'collections.abc', 'itertools', 'functools', 'operator',
-    'json', 're', 'string', 'textwrap', 'unicodedata', 'difflib',
-    'typing', 'types', 'dataclasses', 'enum', 'abc', 'copy', 'pprint',
-    'struct', 'io', 'base64', 'hashlib', 'hmac', 'secrets',
-    'heapq', 'bisect', 'array', 'queue',
-    'contextlib', 'warnings', 'traceback', 'inspect',
+    'math',
+    'cmath',
+    'random',
+    'statistics',
+    'decimal',
+    'fractions',
+    'datetime',
+    'time',
+    'calendar',
+    'zoneinfo',
+    'collections',
+    'collections.abc',
+    'itertools',
+    'functools',
+    'operator',
+    'json',
+    're',
+    'string',
+    'textwrap',
+    'unicodedata',
+    'difflib',
+    'typing',
+    'types',
+    'dataclasses',
+    'enum',
+    'abc',
+    'copy',
+    'pprint',
+    'struct',
+    'io',
+    'base64',
+    'hashlib',
+    'hmac',
+    'secrets',
+    'heapq',
+    'bisect',
+    'array',
+    'queue',
+    'contextlib',
+    'warnings',
+    'traceback',
+    'inspect',
     // sklearn submodules
-    'sklearn.linear_model', 'sklearn.ensemble', 'sklearn.tree',
-    'sklearn.preprocessing', 'sklearn.model_selection', 'sklearn.metrics',
-    'sklearn.cluster', 'sklearn.decomposition', 'sklearn.pipeline',
-    'sklearn.svm', 'sklearn.neighbors', 'sklearn.naive_bayes',
+    'sklearn.linear_model',
+    'sklearn.ensemble',
+    'sklearn.tree',
+    'sklearn.preprocessing',
+    'sklearn.model_selection',
+    'sklearn.metrics',
+    'sklearn.cluster',
+    'sklearn.decomposition',
+    'sklearn.pipeline',
+    'sklearn.svm',
+    'sklearn.neighbors',
+    'sklearn.naive_bayes',
   ]),
 } as const;
 
@@ -79,64 +133,64 @@ interface SpawnResult {
 // Each entry: [regex, human-readable reason]
 const BLOCKED_PATTERNS: Array<[RegExp, string]> = [
   // Blocked built-in calls
-  [/\beval\s*\(/,                      'eval() is not allowed'],
-  [/\bexec\s*\(/,                      'exec() is not allowed'],
-  [/\bcompile\s*\(/,                   'compile() is not allowed'],
-  [/\b__import__\s*\(/,               '__import__() is not allowed'],
-  [/\bopen\s*\(/,                      'open() is not allowed — no filesystem access'],
-  [/\binput\s*\(/,                     'input() is not allowed — no stdin interaction'],
-  [/\bbreakpoint\s*\(/,               'breakpoint() is not allowed'],
-  [/\bmemoryview\s*\(/,               'memoryview() is not allowed'],
-  [/\bgetattr\s*\(/,                  'getattr() is not allowed'],
-  [/\bsetattr\s*\(/,                  'setattr() is not allowed'],
+  [/\beval\s*\(/, 'eval() is not allowed'],
+  [/\bexec\s*\(/, 'exec() is not allowed'],
+  [/\bcompile\s*\(/, 'compile() is not allowed'],
+  [/\b__import__\s*\(/, '__import__() is not allowed'],
+  [/\bopen\s*\(/, 'open() is not allowed — no filesystem access'],
+  [/\binput\s*\(/, 'input() is not allowed — no stdin interaction'],
+  [/\bbreakpoint\s*\(/, 'breakpoint() is not allowed'],
+  [/\bmemoryview\s*\(/, 'memoryview() is not allowed'],
+  [/\bgetattr\s*\(/, 'getattr() is not allowed'],
+  [/\bsetattr\s*\(/, 'setattr() is not allowed'],
 
   // Dangerous attribute access (sandbox escape chains)
-  [/__class__/,                        '__class__ attribute access is not allowed'],
-  [/__bases__/,                        '__bases__ attribute access is not allowed'],
-  [/__subclasses__/,                   '__subclasses__ attribute access is not allowed'],
-  [/__mro__/,                          '__mro__ attribute access is not allowed'],
-  [/__globals__/,                      '__globals__ attribute access is not allowed'],
-  [/__builtins__/,                     '__builtins__ attribute access is not allowed'],
-  [/__code__/,                         '__code__ attribute access is not allowed'],
-  [/\bgetattr\s*\(/,                  'getattr() is not allowed'],
-  [/\bsetattr\s*\(/,                  'setattr() is not allowed'],
-  [/\bdelattr\s*\(/,                  'delattr() is not allowed'],
-  [/\bvars\s*\(/,                     'vars() is not allowed'],
-  [/\bdir\s*\(/,                      'dir() is not allowed'],
-  [/\bglobals\s*\(/,                  'globals() is not allowed'],
-  [/\blocals\s*\(/,                   'locals() is not allowed'],
+  [/__class__/, '__class__ attribute access is not allowed'],
+  [/__bases__/, '__bases__ attribute access is not allowed'],
+  [/__subclasses__/, '__subclasses__ attribute access is not allowed'],
+  [/__mro__/, '__mro__ attribute access is not allowed'],
+  [/__globals__/, '__globals__ attribute access is not allowed'],
+  [/__builtins__/, '__builtins__ attribute access is not allowed'],
+  [/__code__/, '__code__ attribute access is not allowed'],
+  [/\bgetattr\s*\(/, 'getattr() is not allowed'],
+  [/\bsetattr\s*\(/, 'setattr() is not allowed'],
+  [/\bdelattr\s*\(/, 'delattr() is not allowed'],
+  [/\bvars\s*\(/, 'vars() is not allowed'],
+  [/\bdir\s*\(/, 'dir() is not allowed'],
+  [/\bglobals\s*\(/, 'globals() is not allowed'],
+  [/\blocals\s*\(/, 'locals() is not allowed'],
 
   // Blocked modules — the second defence (import hook in preamble is first)
-  [/\bimport\s+os\b/,                 'os module is not allowed'],
-  [/\bimport\s+sys\b/,               'sys module is not allowed'],
-  [/\bimport\s+subprocess\b/,        'subprocess module is not allowed'],
-  [/\bimport\s+socket\b/,            'socket module is not allowed'],
-  [/\bimport\s+shutil\b/,            'shutil module is not allowed'],
-  [/\bimport\s+pathlib\b/,           'pathlib module is not allowed'],
-  [/\bimport\s+ctypes\b/,            'ctypes module is not allowed'],
-  [/\bimport\s+mmap\b/,              'mmap module is not allowed'],
-  [/\bimport\s+signal\b/,            'signal module is not allowed'],
-  [/\bimport\s+threading\b/,         'threading module is not allowed'],
-  [/\bimport\s+multiprocessing\b/,   'multiprocessing module is not allowed'],
-  [/\bimport\s+concurrent\b/,        'concurrent module is not allowed'],
-  [/\bimport\s+asyncio\b/,           'asyncio module is not allowed'],
-  [/\bimport\s+pickle\b/,            'pickle module is not allowed'],
-  [/\bimport\s+marshal\b/,           'marshal module is not allowed'],
-  [/\bimport\s+shelve\b/,            'shelve module is not allowed'],
-  [/\bimport\s+importlib\b/,         'importlib module is not allowed'],
-  [/\bimport\s+pkgutil\b/,           'pkgutil module is not allowed'],
-  [/\bimport\s+builtins\b/,          'builtins module is not allowed'],
-  [/\bimport\s+pty\b/,               'pty module is not allowed'],
-  [/\bimport\s+resource\b/,          'resource module is not allowed'],
-  [/\bfrom\s+os\b/,                  'os module is not allowed'],
-  [/\bfrom\s+sys\b/,                 'sys module is not allowed'],
-  [/\bfrom\s+subprocess\b/,          'subprocess module is not allowed'],
-  [/\bfrom\s+pathlib\b/,             'pathlib module is not allowed'],
-  [/\bfrom\s+ctypes\b/,              'ctypes module is not allowed'],
-  [/\bfrom\s+importlib\b/,           'importlib module is not allowed'],
-  [/\bfrom\s+builtins\b/,            'builtins module is not allowed'],
-  [/\bfrom\s+pickle\b/,              'pickle module is not allowed'],
-  [/\bfrom\s+multiprocessing\b/,     'multiprocessing module is not allowed'],
+  [/\bimport\s+os\b/, 'os module is not allowed'],
+  [/\bimport\s+sys\b/, 'sys module is not allowed'],
+  [/\bimport\s+subprocess\b/, 'subprocess module is not allowed'],
+  [/\bimport\s+socket\b/, 'socket module is not allowed'],
+  [/\bimport\s+shutil\b/, 'shutil module is not allowed'],
+  [/\bimport\s+pathlib\b/, 'pathlib module is not allowed'],
+  [/\bimport\s+ctypes\b/, 'ctypes module is not allowed'],
+  [/\bimport\s+mmap\b/, 'mmap module is not allowed'],
+  [/\bimport\s+signal\b/, 'signal module is not allowed'],
+  [/\bimport\s+threading\b/, 'threading module is not allowed'],
+  [/\bimport\s+multiprocessing\b/, 'multiprocessing module is not allowed'],
+  [/\bimport\s+concurrent\b/, 'concurrent module is not allowed'],
+  [/\bimport\s+asyncio\b/, 'asyncio module is not allowed'],
+  [/\bimport\s+pickle\b/, 'pickle module is not allowed'],
+  [/\bimport\s+marshal\b/, 'marshal module is not allowed'],
+  [/\bimport\s+shelve\b/, 'shelve module is not allowed'],
+  [/\bimport\s+importlib\b/, 'importlib module is not allowed'],
+  [/\bimport\s+pkgutil\b/, 'pkgutil module is not allowed'],
+  [/\bimport\s+builtins\b/, 'builtins module is not allowed'],
+  [/\bimport\s+pty\b/, 'pty module is not allowed'],
+  [/\bimport\s+resource\b/, 'resource module is not allowed'],
+  [/\bfrom\s+os\b/, 'os module is not allowed'],
+  [/\bfrom\s+sys\b/, 'sys module is not allowed'],
+  [/\bfrom\s+subprocess\b/, 'subprocess module is not allowed'],
+  [/\bfrom\s+pathlib\b/, 'pathlib module is not allowed'],
+  [/\bfrom\s+ctypes\b/, 'ctypes module is not allowed'],
+  [/\bfrom\s+importlib\b/, 'importlib module is not allowed'],
+  [/\bfrom\s+builtins\b/, 'builtins module is not allowed'],
+  [/\bfrom\s+pickle\b/, 'pickle module is not allowed'],
+  [/\bfrom\s+multiprocessing\b/, 'multiprocessing module is not allowed'],
 ];
 
 function validatePythonCode(code: string): void {
@@ -148,7 +202,7 @@ function validatePythonCode(code: string): void {
   }
   if (code.length > SANDBOX_CONFIG.maxCodeLength) {
     throw new Error(
-      `Code exceeds the maximum allowed length of ${SANDBOX_CONFIG.maxCodeLength} characters.`
+      `Code exceeds the maximum allowed length of ${SANDBOX_CONFIG.maxCodeLength} characters.`,
     );
   }
   for (const [pattern, reason] of BLOCKED_PATTERNS) {
@@ -179,7 +233,7 @@ async function resolvePythonBinary(): Promise<string> {
   }
   throw new Error(
     'No Python binary found on this system. ' +
-    'Please install Python 3 and ensure it is in your PATH.'
+      'Please install Python 3 and ensure it is in your PATH.',
   );
 }
 
@@ -270,13 +324,13 @@ async function cleanupTempDir(runId: string): Promise<void> {
 
 function truncate(str: string, maxBytes: number): string {
   if (str.length <= maxBytes) return str;
-  return str.slice(0, maxBytes) + '\n... [OUTPUT TRUNCATED]';
+  return `${str.slice(0, maxBytes)}\n... [OUTPUT TRUNCATED]`;
 }
 
 function spawnWithTimeout(
   binary: string,
   codePath: string,
-  timeoutMs: number
+  timeoutMs: number,
 ): Promise<SpawnResult> {
   return new Promise((resolve) => {
     let stdout = '';
@@ -359,7 +413,11 @@ export async function runPython(code: string): Promise<PythonRunResult> {
     codePath = await writeTempCodeFile(code, runId);
 
     // ── Step 4: Spawn with timeout ─────────────────────────────
-    const raw = await spawnWithTimeout(binary, codePath, SANDBOX_CONFIG.timeoutMs);
+    const raw = await spawnWithTimeout(
+      binary,
+      codePath,
+      SANDBOX_CONFIG.timeoutMs,
+    );
     const executionTimeMs = Date.now() - startTime;
 
     if (raw.timedOut) {
@@ -382,9 +440,10 @@ export async function runPython(code: string): Promise<PythonRunResult> {
       runId,
       executionTimeMs,
       timedOut: false,
-      ...(success ? {} : { error: `Process exited with code ${raw.exitCode}.` }),
+      ...(success
+        ? {}
+        : { error: `Process exited with code ${raw.exitCode}.` }),
     };
-
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
     return {

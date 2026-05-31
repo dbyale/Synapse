@@ -165,7 +165,9 @@ export function gitLog({
   max_count?: number;
   start_timestamp?: string;
   end_timestamp?: string;
-}): Array<{ hash: string; author: string; date: string; message: string }> | string {
+}):
+  | Array<{ hash: string; author: string; date: string; message: string }>
+  | string {
   try {
     let command = 'git log --format=%H%n%an%n%aI%n%s%n---END---';
 

@@ -68,7 +68,7 @@ export class MemoryManager {
    * Create multiple entities (ignore duplicates by name)
    */
   async createEntities(
-    entities: Array<{ name: string; entityType: string }>
+    entities: Array<{ name: string; entityType: string }>,
   ): Promise<{ created: number; skipped: number }> {
     const graph = await this.loadGraph();
     const existingNames = new Set(graph.entities.map((e) => e.name));
@@ -94,14 +94,14 @@ export class MemoryManager {
    * Create multiple relations (skip duplicates)
    */
   async createRelations(
-    relations: Array<{ from: string; to: string; relationType: string }>
+    relations: Array<{ from: string; to: string; relationType: string }>,
   ): Promise<{ created: number; skipped: number }> {
     const graph = await this.loadGraph();
 
     // Check that both entities exist
     const entityNames = new Set(graph.entities.map((e) => e.name));
     const validRelations = relations.filter(
-      (r) => entityNames.has(r.from) && entityNames.has(r.to)
+      (r) => entityNames.has(r.from) && entityNames.has(r.to),
     );
 
     // Remove duplicates
@@ -127,7 +127,7 @@ export class MemoryManager {
    * Fails if entity doesn't exist
    */
   async addObservations(
-    updates: Array<{ entityName: string; observations: string[] }>
+    updates: Array<{ entityName: string; observations: string[] }>,
   ): Promise<{ success: boolean; message: string; updated: number }> {
     const graph = await this.loadGraph();
     const entityMap = new Map(graph.entities.map((e) => [e.name, e]));
@@ -178,7 +178,7 @@ export class MemoryManager {
 
     // Cascade-delete relations involving deleted entities
     graph.relations = graph.relations.filter(
-      (r) => !namesToDelete.has(r.from) && !namesToDelete.has(r.to)
+      (r) => !namesToDelete.has(r.from) && !namesToDelete.has(r.to),
     );
 
     await this.saveGraph(graph);
@@ -189,7 +189,7 @@ export class MemoryManager {
    * Remove specific observations from entities (silent if not found)
    */
   async deleteObservations(
-    updates: Array<{ entityName: string; observations: string[] }>
+    updates: Array<{ entityName: string; observations: string[] }>,
   ): Promise<{ success: boolean }> {
     const graph = await this.loadGraph();
     const entityMap = new Map(graph.entities.map((e) => [e.name, e]));
@@ -199,7 +199,7 @@ export class MemoryManager {
       if (entity) {
         const obsSet = new Set(update.observations);
         entity.observations = entity.observations.filter(
-          (obs) => !obsSet.has(obs)
+          (obs) => !obsSet.has(obs),
         );
       }
     }
@@ -212,16 +212,15 @@ export class MemoryManager {
    * Remove specific relations (silent if not found)
    */
   async deleteRelations(
-    relations: Array<{ from: string; to: string; relationType: string }>
+    relations: Array<{ from: string; to: string; relationType: string }>,
   ): Promise<{ deleted: number }> {
     const graph = await this.loadGraph();
-    const relationKey = (r: Relation) =>
-      `${r.from}|${r.to}|${r.relationType}`;
+    const relationKey = (r: Relation) => `${r.from}|${r.to}|${r.relationType}`;
     const keysToDelete = new Set(relations.map(relationKey));
 
     const initialLength = graph.relations.length;
     graph.relations = graph.relations.filter(
-      (r) => !keysToDelete.has(relationKey(r))
+      (r) => !keysToDelete.has(relationKey(r)),
     );
 
     await this.saveGraph(graph);
@@ -273,11 +272,7 @@ export class MemoryManager {
     if (query.observationKeyword) {
       const keyword = query.observationKeyword.toLowerCase();
       graph.entities.forEach((e) => {
-        if (
-          e.observations.some((obs) =>
-            obs.toLowerCase().includes(keyword)
-          )
-        ) {
+        if (e.observations.some((obs) => obs.toLowerCase().includes(keyword))) {
           matchedEntityNames.add(e.name);
         }
       });
@@ -285,14 +280,12 @@ export class MemoryManager {
 
     // Get matched entities
     const entities = graph.entities.filter((e) =>
-      matchedEntityNames.has(e.name)
+      matchedEntityNames.has(e.name),
     );
 
     // Get relations involving matched entities
     const relations = graph.relations.filter(
-      (r) =>
-        matchedEntityNames.has(r.from) ||
-        matchedEntityNames.has(r.to)
+      (r) => matchedEntityNames.has(r.from) || matchedEntityNames.has(r.to),
     );
 
     return { entities, relations };
@@ -313,7 +306,7 @@ export class MemoryManager {
 
     // Get relations BETWEEN the requested nodes only
     const relations = graph.relations.filter(
-      (r) => namesSet.has(r.from) && namesSet.has(r.to)
+      (r) => namesSet.has(r.from) && namesSet.has(r.to),
     );
 
     return { entities, relations };
@@ -324,7 +317,7 @@ export class MemoryManager {
  * Factory function for creating a MemoryManager instance
  */
 export function createMemoryManager(
-  filePath: string = './memory.json'
+  filePath: string = './memory.json',
 ): MemoryManager {
   return new MemoryManager(filePath);
 }

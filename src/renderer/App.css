@@ -29,29 +29,66 @@
   --radius-lg: 20px;
 }
 
-html, body, #root {
+html,
+body,
+#root {
   height: 100%;
   width: 100%;
   overflow: hidden;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family:
+    'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif;
   background: var(--bg-primary);
   color: var(--text-primary);
 }
 
 /* ── Reusable Classes ── */
-.flex-row    { display: flex; flex-direction: row; }
-.flex-col    { display: flex; flex-direction: column; }
-.flex-center { display: flex; align-items: center; justify-content: center; }
-.flex-1      { flex: 1; }
-.gap-sm      { gap: 4px; }
-.gap-md      { gap: 8px; }
-.gap-lg      { gap: 16px; }
-.text-muted  { color: var(--text-secondary); }
-.text-center { text-align: center; }
-.no-drag     { -webkit-app-region: no-drag; }
-.draggable   { -webkit-app-region: drag; }
-.full-height { height: 100%; }
-.overflow-y  { overflow-y: auto; }
+.flex-row {
+  display: flex;
+  flex-direction: row;
+}
+.flex-col {
+  display: flex;
+  flex-direction: column;
+}
+.flex-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.flex-1 {
+  flex: 1;
+}
+.gap-sm {
+  gap: 4px;
+}
+.gap-md {
+  gap: 8px;
+}
+.gap-lg {
+  gap: 16px;
+}
+.text-muted {
+  color: var(--text-secondary);
+}
+.text-center {
+  text-align: center;
+}
+.no-drag {
+  -webkit-app-region: no-drag;
+}
+.draggable {
+  -webkit-app-region: drag;
+}
+.full-height {
+  height: 100%;
+}
+.overflow-y {
+  overflow-y: auto;
+}
 
 /* ── Shared Button Base ── */
 .btn {
@@ -70,14 +107,20 @@ html, body, #root {
   align-items: center;
   justify-content: center;
 }
-.btn-icon:hover { background: var(--bg-hover); }
-.btn-icon.active { background: var(--accent); }
+.btn-icon:hover {
+  background: var(--bg-hover);
+}
+.btn-icon.active {
+  background: var(--accent);
+}
 
 .btn-accent {
   background: var(--accent);
   color: white;
 }
-.btn-accent:hover { background: var(--accent-hover); }
+.btn-accent:hover {
+  background: var(--accent-hover);
+}
 
 .btn-accent:disabled {
   background: var(--bg-hover);
@@ -96,7 +139,9 @@ html, body, #root {
   font-size: 13px;
   outline: none;
 }
-.input-base:focus { border-color: var(--accent); }
+.input-base:focus {
+  border-color: var(--accent);
+}
 
 /* ============================================================================
    GLOBAL SCROLLBAR (Expands on hover)
@@ -134,8 +179,12 @@ html, body, #root {
 }
 
 @keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .btn-accent {

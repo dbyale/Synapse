@@ -1,3 +1,5 @@
+import { Profile } from './types/profile';
+
 export interface DownloadProgress {
   modelId: string;
   filename: string;
@@ -94,8 +96,6 @@ export interface HardwareStats {
   selectedGpu: HardwareGpuInfo | null;
 }
 
-import { Profile } from "./types/profile";
-
 declare global {
   interface Window {
     electronAPI: {
@@ -105,14 +105,16 @@ declare global {
         filters?: SearchFilter[],
         sort?: string,
         direction?: number,
-        limit?: number
+        limit?: number,
       ) => Promise<ModelSearchResult[]>;
       listModelFiles: (repoId: string) => Promise<RemoteModelFile[]>;
       downloadModel: (repoId: string, filename: string) => Promise<string>;
       cancelDownload: (filename: string) => Promise<boolean>;
       listLocalModels: () => Promise<LocalModel[]>;
       deleteModel: (filename: string) => Promise<boolean>;
-      onDownloadProgress: (callback: (progress: DownloadProgress) => void) => () => void;
+      onDownloadProgress: (
+        callback: (progress: DownloadProgress) => void,
+      ) => () => void;
       removeDownloadProgressListener: () => void;
 
       // Settings & Hardware
@@ -129,14 +131,43 @@ declare global {
       pickDirectory: () => Promise<string | null>;
 
       // Chat
-      chatLoadProfile: (profile: Profile) => Promise<{ success: boolean; error?: string }>;
+      chatLoadProfile: (
+        profile: Profile,
+      ) => Promise<{ success: boolean; error?: string }>;
       chatGetCurrentProfile: () => Promise<Profile | null>;
       chatHasProjector: () => Promise<boolean>;
-      chatSend: (text: string, imageDataUrl?: string) => Promise<{ success: boolean; error?: string; aborted?: boolean }>;
-      onChatToken: (callback: (data: { token: string; segmentType?: 'thought' | 'comment' }) => void) => () => void;
-      onChatDone: (callback: (stats?: { tokens: number; timeMs: number; tokensPerSecond: number }) => void) => () => void;
-      onChatProgress: (callback: (data: { progress: number; promptN: number; promptMs: number; total: number }) => void) => () => void;
-      onChatPromptDone: (callback: (stats: { tokens: number; timeMs: number; tokensPerSecond: number }) => void) => () => void;
+      chatSend: (
+        text: string,
+        imageDataUrl?: string,
+      ) => Promise<{ success: boolean; error?: string; aborted?: boolean }>;
+      onChatToken: (
+        callback: (data: {
+          token: string;
+          segmentType?: 'thought' | 'comment';
+        }) => void,
+      ) => () => void;
+      onChatDone: (
+        callback: (stats?: {
+          tokens: number;
+          timeMs: number;
+          tokensPerSecond: number;
+        }) => void,
+      ) => () => void;
+      onChatProgress: (
+        callback: (data: {
+          progress: number;
+          promptN: number;
+          promptMs: number;
+          total: number;
+        }) => void,
+      ) => () => void;
+      onChatPromptDone: (
+        callback: (stats: {
+          tokens: number;
+          timeMs: number;
+          tokensPerSecond: number;
+        }) => void,
+      ) => () => void;
       onChatError: (callback: (error: string) => void) => () => void;
       chatAbort: () => Promise<void>;
       chatUnload: () => Promise<void>;
@@ -145,7 +176,10 @@ declare global {
       chatContextUsage: () => Promise<{ used: number; total: number }>;
       chatContextSize: () => Promise<{ contextSize: number | null }>;
 
-      chatCumulativeTokenUsage: () => Promise<{ totalInputTokens: number; totalOutputTokens: number }>;
+      chatCumulativeTokenUsage: () => Promise<{
+        totalInputTokens: number;
+        totalOutputTokens: number;
+      }>;
 
       browseForFiles: (options: {
         title: string;
@@ -162,9 +196,15 @@ declare global {
 
       openModelsFolder: () => Promise<void>;
 
-      onChatFunctionCall: (callback: (data: { name: string; params: string }) => void) => () => void;
-      onChatFunctionCalling: (callback: (data: { name: string; params: string }) => void) => () => void;
-      onChatFunctionResult: (callback: (data: { name: string; result: string }) => void) => () => void;
+      onChatFunctionCall: (
+        callback: (data: { name: string; params: string }) => void,
+      ) => () => void;
+      onChatFunctionCalling: (
+        callback: (data: { name: string; params: string }) => void,
+      ) => () => void;
+      onChatFunctionResult: (
+        callback: (data: { name: string; result: string }) => void,
+      ) => () => void;
 
       readImageAsDataUrl: (filePath: string) => Promise<string>;
     };

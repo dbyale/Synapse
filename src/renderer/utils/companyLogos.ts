@@ -32,7 +32,7 @@ const COMPANY_LOGOS: Record<
 
   phi: MicrosoftLogo,
   glm: ZLogo,
-  granite: IBMLogo
+  granite: IBMLogo,
 };
 
 /**
@@ -40,7 +40,7 @@ const COMPANY_LOGOS: Record<
  * If multiple keywords exist, it returns the logo for the one that appears EARLIEST in the string.
  */
 export function getCompanyLogoComponent(
-  repoName: string
+  repoName: string,
 ): React.FunctionComponent<React.SVGProps<SVGSVGElement>> | null {
   const lowerName = repoName.toLowerCase();
 
@@ -55,9 +55,11 @@ export function getCompanyLogoComponent(
       return acc;
     },
     {
-      match: null as React.FunctionComponent<React.SVGProps<SVGSVGElement>> | null,
-      index: Infinity
-    }
+      match: null as React.FunctionComponent<
+        React.SVGProps<SVGSVGElement>
+      > | null,
+      index: Infinity,
+    },
   );
 
   return bestMatch.match;

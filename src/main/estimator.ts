@@ -18,7 +18,8 @@ export interface MemoryEstimation {
 
 function getParserPath(): string {
   const isProd = app.isPackaged;
-  const binName = process.platform === 'win32' ? 'gguf-parser.exe' : 'gguf-parser';
+  const binName =
+    process.platform === 'win32' ? 'gguf-parser.exe' : 'gguf-parser';
   const base = isProd
     ? path.join(process.resourcesPath, 'assets', 'bin', 'utils')
     : path.join(__dirname, '../../assets/bin', 'utils');
@@ -29,7 +30,10 @@ function extractTotals(data: any) {
   if (!data?.estimate?.items?.[0]) return { vram: 0, ram: 0 };
   const item = data.estimate.items[0];
   const ram = item.ram?.nonuma ?? 0;
-  const vram = (item.vrams || []).reduce((acc: number, v: any) => acc + (v.nonuma || 0), 0);
+  const vram = (item.vrams || []).reduce(
+    (acc: number, v: any) => acc + (v.nonuma || 0),
+    0,
+  );
   return { vram, ram };
 }
 
@@ -43,23 +47,29 @@ export async function solveMaxConfig(
   noKvOffload: boolean = true,
   mmap: boolean = false,
   maximizeNGL: boolean = false,
-  projectorPath?: string
+  projectorPath?: string,
 ): Promise<MemoryEstimation> {
   const vramHardwareMax = vramMB * 1024 * 1024;
   const ramLimitBytes = ramMB * 1024 * 1024;
 
   async function getParserDataLocal(ngl: number, ctx: number) {
     const args = [
-      '--path', modelPath,
-      '--ngl', ngl.toString(),
-      '--ctx-size', ctx.toString(),
-      '--cache-type-k', ctk,
-      '--cache-type-v', ctv,
-      '--json'
+      '--path',
+      modelPath,
+      '--ngl',
+      ngl.toString(),
+      '--ctx-size',
+      ctx.toString(),
+      '--cache-type-k',
+      ctk,
+      '--cache-type-v',
+      ctv,
+      '--json',
     ];
     if (flashAttention) args.push('--flash-attention');
     if (noKvOffload) args.push('--no-kv-offload');
-    if (mmap) args.push('--mmap'); else args.push('--no-mmap');
+    if (mmap) args.push('--mmap');
+    else args.push('--no-mmap');
     if (projectorPath) args.push('--mmproj', projectorPath);
 
     try {
@@ -89,7 +99,7 @@ export async function solveMaxConfig(
   let highNgl = totalLayers;
   let lowNgl = 0;
   while (lowNgl <= highNgl) {
-    let midNgl = Math.floor((lowNgl + highNgl) / 2);
+    const midNgl = Math.floor((lowNgl + highNgl) / 2);
     const totals = extractTotals(await getParserDataLocal(midNgl, 512));
     if (totals.vram <= vramHardwareMax && totals.ram <= ramLimitBytes) {
       bestNgl = midNgl;
@@ -99,7 +109,9 @@ export async function solveMaxConfig(
     }
   }
 
-  console.log(`Starting search from NGL: ${bestNgl} (MaximizeNGL: ${maximizeNGL})`);
+  console.log(
+    `Starting search from NGL: ${bestNgl} (MaximizeNGL: ${maximizeNGL})`,
+  );
 
   // 2. Main Optimization Loop
   for (let currentNgl = bestNgl; currentNgl >= 0; currentNgl--) {
@@ -113,7 +125,9 @@ export async function solveMaxConfig(
       let midCtx = Math.floor((lowCtx + highCtx) / 2);
       midCtx = Math.max(512, Math.floor(midCtx / 512) * 512);
 
-      const totals = extractTotals(await getParserDataLocal(currentNgl, midCtx));
+      const totals = extractTotals(
+        await getParserDataLocal(currentNgl, midCtx),
+      );
 
       if (totals.vram <= vramHardwareMax && totals.ram <= ramLimitBytes) {
         tempBestCtx = midCtx;
@@ -136,19 +150,23 @@ export async function solveMaxConfig(
     }
 
     const ramUtilization = finalEstimateTotals.ram / ramLimitBytes;
-    if (ramUtilization > 0.90 || bestCtx >= maxModelCtx) {
-      console.log(`Target reached at NGL ${currentNgl} (${(ramUtilization * 100).toFixed(1)}% RAM used).`);
+    if (ramUtilization > 0.9 || bestCtx >= maxModelCtx) {
+      console.log(
+        `Target reached at NGL ${currentNgl} (${(ramUtilization * 100).toFixed(1)}% RAM used).`,
+      );
       break;
     }
 
     if (currentNgl === 0) break; // Cannot drop lower
-    console.log(`NGL ${currentNgl} only filled RAM to ${(ramUtilization * 100).toFixed(1)}%. Dropping NGL...`);
+    console.log(
+      `NGL ${currentNgl} only filled RAM to ${(ramUtilization * 100).toFixed(1)}%. Dropping NGL...`,
+    );
   }
 
   // 3. Final Breakdown Calculation
   const modelEst = await getParserDataLocal(bestNgl, 1);
   const modelOnly = extractTotals(modelEst);
-  const toGB = (bytes: number) => (bytes / (1024 ** 3)).toFixed(2) + " GB";
+  const toGB = (bytes: number) => `${(bytes / 1024 ** 3).toFixed(2)} GB`;
 
   console.log(`
 --- Optimization Results ---
@@ -174,7 +192,7 @@ Hardware Utilization:
       modelVramUsage: modelOnly.vram,
       modelRamUsage: modelOnly.ram,
       contextVramUsage: Math.max(0, finalEstimateTotals.vram - modelOnly.vram),
-      contextRamUsage: Math.max(0, finalEstimateTotals.ram - modelOnly.ram)
-    }
+      contextRamUsage: Math.max(0, finalEstimateTotals.ram - modelOnly.ram),
+    },
   };
 }

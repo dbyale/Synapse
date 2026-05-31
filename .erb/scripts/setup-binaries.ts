@@ -35,14 +35,18 @@ async function downloadAndExtract(url: string, targetFolder: string) {
 
   console.log(`Downloading: ${path.basename(url)}...`);
   const response = await fetch(url);
-  if (!response.ok) throw new Error(`Failed to download ${url}: ${response.statusText}`);
+  if (!response.ok)
+    throw new Error(`Failed to download ${url}: ${response.statusText}`);
 
   const buffer = await response.buffer();
 
   if (url.endsWith('.zip')) {
     const zip = new AdmZip(buffer);
     zip.getEntries().forEach((entry: AdmZip.IZipEntry) => {
-      if (entry.entryName.includes('llama-server') || entry.entryName.endsWith('.dll')) {
+      if (
+        entry.entryName.includes('llama-server') ||
+        entry.entryName.endsWith('.dll')
+      ) {
         zip.extractEntryTo(entry, targetDir, false, true);
       }
     });
@@ -97,7 +101,10 @@ async function run() {
   if (process.platform === 'win32') {
     parserFile = 'gguf-parser-windows-amd64.exe';
   } else if (process.platform === 'darwin') {
-    parserFile = process.arch === 'arm64' ? 'gguf-parser-darwin-arm64' : 'gguf-parser-darwin-amd64';
+    parserFile =
+      process.arch === 'arm64'
+        ? 'gguf-parser-darwin-arm64'
+        : 'gguf-parser-darwin-amd64';
   } else {
     parserFile = 'gguf-parser-linux-amd64';
   }

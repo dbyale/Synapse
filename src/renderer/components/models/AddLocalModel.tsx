@@ -124,9 +124,7 @@ export default function AddLocalModelModal({
   };
 
   const isValid =
-    name.trim().length > 0 &&
-    author.trim().length > 0 &&
-    modelPaths.length > 0;
+    name.trim().length > 0 && author.trim().length > 0 && modelPaths.length > 0;
 
   return (
     <div className="alm-overlay" onClick={onClose}>

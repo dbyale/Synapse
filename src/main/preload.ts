@@ -15,7 +15,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   } | null> => ipcRenderer.invoke('chat:memoryUsage'),
 
   // Models
-  searchModels: (query: string, filters?: any[], sort?: string, direction?: number, page?: number) =>
+  searchModels: (
+    query: string,
+    filters?: any[],
+    sort?: string,
+    direction?: number,
+    page?: number,
+  ) =>
     ipcRenderer.invoke('models:search', query, filters, sort, direction, page),
   listModelFiles: (repoId: string) =>
     ipcRenderer.invoke('models:list-files', repoId),
@@ -34,7 +40,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   downloadModel: (repoId: string, filename: string) =>
     ipcRenderer.invoke('models:download', repoId, filename),
-  cancelDownload: (filename: string) => ipcRenderer.invoke('models:cancel-download', filename),
+  cancelDownload: (filename: string) =>
+    ipcRenderer.invoke('models:cancel-download', filename),
   listLocalModels: () => ipcRenderer.invoke('models:list-local'),
   deleteModel: (filename: string) =>
     ipcRenderer.invoke('models:delete', filename),
@@ -57,30 +64,70 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getMemoryStats: () => ipcRenderer.invoke('get-memory-stats'),
 
   // ── Chat API ──
-  chatLoadProfile: (profile: any) => ipcRenderer.invoke('chat:loadProfile', profile),
+  chatLoadProfile: (profile: any) =>
+    ipcRenderer.invoke('chat:loadProfile', profile),
   chatGetCurrentProfile: () => ipcRenderer.invoke('chat:getCurrentProfile'),
-  chatSend: (text: string, imageDataUrl?: string) => ipcRenderer.invoke('chat:send', text, imageDataUrl),
+  chatSend: (text: string, imageDataUrl?: string) =>
+    ipcRenderer.invoke('chat:send', text, imageDataUrl),
 
-  onChatToken: (callback: (data: { token: string; segmentType?: 'thought' | 'comment' }) => void) => {
-    const listener = (_: any, data: { token: string; segmentType?: 'thought' | 'comment' }) => callback(data);
+  onChatToken: (
+    callback: (data: {
+      token: string;
+      segmentType?: 'thought' | 'comment';
+    }) => void,
+  ) => {
+    const listener = (
+      _: any,
+      data: { token: string; segmentType?: 'thought' | 'comment' },
+    ) => callback(data);
     ipcRenderer.on('chat:token', listener);
     return () => ipcRenderer.removeListener('chat:token', listener);
   },
 
-    onChatDone: (callback: (stats?: { tokens: number; timeMs: number; tokensPerSecond: number }) => void) => {
+  onChatDone: (
+    callback: (stats?: {
+      tokens: number;
+      timeMs: number;
+      tokensPerSecond: number;
+    }) => void,
+  ) => {
     const listener = (_event: any, stats?: any) => callback(stats);
     ipcRenderer.on('chat:done', listener);
     return () => ipcRenderer.removeListener('chat:done', listener);
   },
 
-  onChatProgress: (callback: (data: { progress: number; promptN: number; promptMs: number; total: number }) => void) => {
-    const listener = (_event: any, data: { progress: number; promptN: number; promptMs: number; total: number }) => callback(data);
+  onChatProgress: (
+    callback: (data: {
+      progress: number;
+      promptN: number;
+      promptMs: number;
+      total: number;
+    }) => void,
+  ) => {
+    const listener = (
+      _event: any,
+      data: {
+        progress: number;
+        promptN: number;
+        promptMs: number;
+        total: number;
+      },
+    ) => callback(data);
     ipcRenderer.on('chat:progress', listener);
     return () => ipcRenderer.removeListener('chat:progress', listener);
   },
 
-  onChatPromptDone: (callback: (stats: { tokens: number; timeMs: number; tokensPerSecond: number }) => void) => {
-    const listener = (_event: any, stats: { tokens: number; timeMs: number; tokensPerSecond: number }) => callback(stats);
+  onChatPromptDone: (
+    callback: (stats: {
+      tokens: number;
+      timeMs: number;
+      tokensPerSecond: number;
+    }) => void,
+  ) => {
+    const listener = (
+      _event: any,
+      stats: { tokens: number; timeMs: number; tokensPerSecond: number },
+    ) => callback(stats);
     ipcRenderer.on('chat:prompt-done', listener);
     return () => ipcRenderer.removeListener('chat:prompt-done', listener);
   },
@@ -111,8 +158,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   openModelsFolder: () => ipcRenderer.invoke('open-models-folder'),
 
-  onChatFunctionCall: (callback: (data: { name: string; params: string }) => void) => {
-    const listener = (_: any, data: { name: string; params: string }) => callback(data);
+  onChatFunctionCall: (
+    callback: (data: { name: string; params: string }) => void,
+  ) => {
+    const listener = (_: any, data: { name: string; params: string }) =>
+      callback(data);
     ipcRenderer.on('chat-function-call', listener);
     return () => ipcRenderer.removeListener('chat-function-call', listener);
   },
@@ -123,8 +173,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('chat-function-calling', listener);
   },
 
-  onChatFunctionResult: (callback: (data: { name: string; result: string }) => void) => {
-    const listener = (_: any, data: { name: string; result: string }) => callback(data);
+  onChatFunctionResult: (
+    callback: (data: { name: string; result: string }) => void,
+  ) => {
+    const listener = (_: any, data: { name: string; result: string }) =>
+      callback(data);
     ipcRenderer.on('chat-function-result', listener);
     return () => ipcRenderer.removeListener('chat-function-result', listener);
   },
@@ -134,8 +187,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     totalOutputTokens: number;
   }> => ipcRenderer.invoke('chat:cumulativeTokenUsage'),
 
-  chatHasProjector: (): Promise<boolean> => ipcRenderer.invoke('chat:hasProjector'),
+  chatHasProjector: (): Promise<boolean> =>
+    ipcRenderer.invoke('chat:hasProjector'),
 
   readImageAsDataUrl: (filePath: string): Promise<string> =>
-  ipcRenderer.invoke('files:readImageAsDataUrl', filePath),
+    ipcRenderer.invoke('files:readImageAsDataUrl', filePath),
 });

@@ -118,16 +118,30 @@ const createWindow = async () => {
  * These are non-fatal and should not crash the app.
  */
 process.on('uncaughtException', (err) => {
-  if (err.message?.includes?.('assertion') || err.message?.includes?.('AssertionError') || err.name === 'AssertionError') {
-    console.warn('[uncaughtException] Non-fatal assertion error caught:', err.message);
+  if (
+    err.message?.includes?.('assertion') ||
+    err.message?.includes?.('AssertionError') ||
+    err.name === 'AssertionError'
+  ) {
+    console.warn(
+      '[uncaughtException] Non-fatal assertion error caught:',
+      err.message,
+    );
     return;
   }
   console.error('[uncaughtException]', err);
 });
 
 process.on('unhandledRejection', (reason) => {
-  if (reason instanceof Error && (reason.name === 'AssertionError' || reason.message?.includes?.('assertion'))) {
-    console.warn('[unhandledRejection] Non-fatal assertion error caught:', reason.message);
+  if (
+    reason instanceof Error &&
+    (reason.name === 'AssertionError' ||
+      reason.message?.includes?.('assertion'))
+  ) {
+    console.warn(
+      '[unhandledRejection] Non-fatal assertion error caught:',
+      reason.message,
+    );
     return;
   }
   console.error('[unhandledRejection]', reason);
@@ -148,7 +162,6 @@ app.on('window-all-closed', () => {
 app
   .whenReady()
   .then(() => {
-
     registerIpcHandlers();
 
     createWindow();

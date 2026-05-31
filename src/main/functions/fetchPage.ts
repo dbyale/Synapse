@@ -3,13 +3,17 @@ import TurndownService from 'turndown';
 
 const turndown = new TurndownService();
 
-export async function fetchPage(url: string, raw: boolean = false): Promise<string> {
+export async function fetchPage(
+  url: string,
+  raw: boolean = false,
+): Promise<string> {
   try {
     new URL(url);
 
     const response = await fetch(url, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
       },
     });
 
@@ -24,7 +28,7 @@ export async function fetchPage(url: string, raw: boolean = false): Promise<stri
       const json = await response.json();
       content = JSON.stringify(json, null, 2);
     } else if (contentType.includes('text/html')) {
-      let html = await response.text();
+      const html = await response.text();
 
       if (raw) {
         content = html;

@@ -5,18 +5,21 @@
 ## Features
 
 ### Core Functionality
+
 - **Local AI Model Execution**: Run AI models directly on your machine for privacy and low-latency responses
 - **Chat Interface**: Intuitive chat UI with support for tool calls and extended conversation contexts
 - **Model Management**: Browse, download, and manage AI models with automatic profile creation
 - **Profile System**: Create and customize chat profiles with different model configurations, system prompts, and temperature settings
 
 ### Advanced Features
+
 - **Hardware Detection**: Automatic detection of CPU, RAM, and GPU/VRAM to recommend optimal model configurations
 - **Tool Calling**: Built-in filesystem and Git tools for AI agents to interact with your local environment
 - **Multi-Model Support**: Support for various model formats including GGUF
 - **Settings Management**: Comprehensive settings for model parameters (temperature, top-k, top-p, min-p, seed, etc.)
 
 ### Technical Highlights
+
 - **Electron + React + TypeScript**: Modern tech stack for cross-platform desktop development
 - **WebGPU Support**: Leverages modern GPU acceleration for AI inference
 - **IPC Communication**: Efficient main/renderer process communication via Electron IPC
@@ -25,6 +28,7 @@
 ## Getting Started
 
 ### Prerequisites
+
 - Node.js 18+ and npm or yarn
 - A modern system with at least 8GB RAM recommended
 - GPU with WebGPU support (optional, for accelerated inference)
@@ -32,17 +36,20 @@
 ### Installation
 
 1. Clone the repository:
+
 ```bash
 git clone https://github.com/your-repo/synapse.git
 cd synapse
 ```
 
 2. Install dependencies:
+
 ```bash
 npm install
 ```
 
 3. Start the development server:
+
 ```bash
 npm start
 ```
@@ -58,22 +65,26 @@ npm run package
 ## Usage
 
 ### Chat
+
 - Start a conversation with your selected AI model
 - View tool calls with expandable details
 - Copy responses and manage chat history
 
 ### Models
+
 - Browse available AI models
 - Download and install models automatically
 - Create default profiles for new models
 
 ### Profiles
+
 - Create custom chat profiles with specific model configurations
 - Set system prompts for each profile
 - Adjust model parameters (temperature, top-k, top-p, etc.)
 - Import/export profiles
 
 ### Settings
+
 - Configure model preferences
 - Set hardware limits (RAM/VRAM allocation)
 - Manage API keys (e.g., Hugging Face token)
@@ -105,6 +116,7 @@ src/
 Synapse includes built-in tools that AI models can use to interact with your system:
 
 ### Filesystem Tools
+
 - `read_text_file`: Read text files with optional line ranges
 - `read_media_file`: Read media files (images, videos, PDFs) as base64
 - `read_multiple_files`: Read multiple text files simultaneously
@@ -120,6 +132,7 @@ Synapse includes built-in tools that AI models can use to interact with your sys
 - `list_allowed_directories`: List configured allowed directories
 
 ### Git Tools
+
 - `git_status`: Get repository working tree status
 - `git_diff_unstaged`: Show unstaged changes
 - `git_diff_staged`: Show staged changes
@@ -136,6 +149,7 @@ Synapse includes built-in tools that AI models can use to interact with your sys
 ## Configuration
 
 ### Model Parameters
+
 - **Temperature**: Controls randomness in responses (0.0-2.0)
 - **Top-K**: Limits sampling to top K tokens (1-100)
 - **Top-P**: Nucleus sampling threshold (0.0-1.0)
@@ -143,6 +157,7 @@ Synapse includes built-in tools that AI models can use to interact with your sys
 - **Seed**: Random seed for reproducibility
 
 ### Hardware Settings
+
 - **RAM Allocation**: Recommended based on model size
 - **VRAM Allocation**: For GPU-accelerated inference
 - **GPU Selection**: Choose specific GPU for multi-GPU systems
@@ -167,6 +182,7 @@ npm run package        # Package application
 ```
 
 ### Project Structure
+
 - `.erb/`: Electron React Boilerplate configuration
 - `node_modules/`: Dependencies
 - `public/`: Public assets

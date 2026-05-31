@@ -696,7 +696,8 @@ const GRID_SIZE = 20;
 const DRAG_THRESHOLD = 5;
 const DOT_SPACING = 24;
 const MAX_HISTORY = 60;
-const scrollThreshold = () => Math.max(24, Math.min(window.innerWidth, window.innerHeight) * 0.1);
+const scrollThreshold = () =>
+  Math.max(24, Math.min(window.innerWidth, window.innerHeight) * 0.1);
 const SCROLL_SPEED = 12;
 const TAIL_HIT_PCT = 0.18;
 const WORKFLOWS_KEY = 'workflows';
@@ -1665,7 +1666,8 @@ function CanvasNode({
 
       // Context and prompt inputs — show source label
       for (const p of inputs) {
-        if (['in-continue', 'in-server', 'in-profile-0'].includes(p.id)) continue;
+        if (['in-continue', 'in-server', 'in-profile-0'].includes(p.id))
+          continue;
         const edge = edges.find(
           (e) => e.target === node.id && e.targetPort === p.id,
         );
@@ -1699,7 +1701,12 @@ function CanvasNode({
         if (serverEdge) {
           const serverNode = nodes.find((n) => n.id === serverEdge.source);
           if (serverNode?.type === 'server') {
-            const serverPorts = getNodePorts(serverNode, edges, nodes, profiles);
+            const serverPorts = getNodePorts(
+              serverNode,
+              edges,
+              nodes,
+              profiles,
+            );
             const profileOutputs = serverPorts.filter(
               (p) => p.side === 'output' && p.type === 'server-profile',
             );
@@ -1710,11 +1717,12 @@ function CanvasNode({
         }
       }
 
-      preview = labels.length > 0
-        ? labels.join('\n')
-        : d.prompt
-          ? d.prompt.slice(0, 44) + (d.prompt.length > 44 ? '…' : '')
-          : 'No prompt hint';
+      preview =
+        labels.length > 0
+          ? labels.join('\n')
+          : d.prompt
+            ? d.prompt.slice(0, 44) + (d.prompt.length > 44 ? '…' : '')
+            : 'No prompt hint';
       break;
     }
     case 'write-text': {
@@ -2149,7 +2157,7 @@ function WorkflowEditor({
     const id = window.setInterval(() => {
       const { x: sx, y: sy } = scrollVelRef.current;
       if (sx === 0 && sy === 0) return;
-      setTransform(prev => ({ ...prev, x: prev.x + sx, y: prev.y + sy }));
+      setTransform((prev) => ({ ...prev, x: prev.x + sx, y: prev.y + sy }));
       scrollAccumRef.current.x += sx;
       scrollAccumRef.current.y += sy;
     }, 16);
@@ -2178,15 +2186,30 @@ function WorkflowEditor({
       let dx = e.clientX - dragging.startMouse.x;
       let dy = e.clientY - dragging.startMouse.y;
       const rect = canvasRef.current!.getBoundingClientRect();
-      let scrollX = 0, scrollY = 0;
+      let scrollX = 0;
+      let scrollY = 0;
       if (e.clientX - rect.left < scrollThreshold()) scrollX = SCROLL_SPEED;
       if (rect.right - e.clientX < scrollThreshold()) scrollX = -SCROLL_SPEED;
       if (e.clientY - rect.top < scrollThreshold()) scrollY = SCROLL_SPEED;
       if (rect.bottom - e.clientY < scrollThreshold()) scrollY = -SCROLL_SPEED;
       if (scrollX !== 0 || scrollY !== 0) {
         scrollVelRef.current = { x: scrollX, y: scrollY };
-        setTransform(prev => ({ ...prev, x: prev.x + scrollX, y: prev.y + scrollY }));
-        setDragging(p => p ? { ...p, startMouse: { x: p.startMouse.x + scrollX, y: p.startMouse.y + scrollY } } : null);
+        setTransform((prev) => ({
+          ...prev,
+          x: prev.x + scrollX,
+          y: prev.y + scrollY,
+        }));
+        setDragging((p) =>
+          p
+            ? {
+                ...p,
+                startMouse: {
+                  x: p.startMouse.x + scrollX,
+                  y: p.startMouse.y + scrollY,
+                },
+              }
+            : null,
+        );
         dx -= scrollX;
         dy -= scrollY;
       } else {
@@ -2200,8 +2223,14 @@ function WorkflowEditor({
               ? {
                   ...n,
                   position: {
-                    x: snapG(dragging.startPos.x + (dx - scrollAccumRef.current.x) / transform.scale),
-                    y: snapG(dragging.startPos.y + (dy - scrollAccumRef.current.y) / transform.scale),
+                    x: snapG(
+                      dragging.startPos.x +
+                        (dx - scrollAccumRef.current.x) / transform.scale,
+                    ),
+                    y: snapG(
+                      dragging.startPos.y +
+                        (dy - scrollAccumRef.current.y) / transform.scale,
+                    ),
                   },
                 }
               : n,
@@ -2210,12 +2239,13 @@ function WorkflowEditor({
       }
     };
     const onUp = (e: MouseEvent) => {
-      const paletteEl = canvasRef.current?.parentElement?.querySelector('.wf-palette');
+      const paletteEl =
+        canvasRef.current?.parentElement?.querySelector('.wf-palette');
       const overPalette = paletteEl
-        ? (e.clientX >= paletteEl.getBoundingClientRect().left &&
-           e.clientX <= paletteEl.getBoundingClientRect().right &&
-           e.clientY >= paletteEl.getBoundingClientRect().top &&
-           e.clientY <= paletteEl.getBoundingClientRect().bottom)
+        ? e.clientX >= paletteEl.getBoundingClientRect().left &&
+          e.clientX <= paletteEl.getBoundingClientRect().right &&
+          e.clientY >= paletteEl.getBoundingClientRect().top &&
+          e.clientY <= paletteEl.getBoundingClientRect().bottom
         : false;
       setDragging((p) => {
         if (!p) return null;
@@ -2231,7 +2261,9 @@ function WorkflowEditor({
           }
         } else if (overPalette) {
           const filteredNodes = nodes.filter((n) => n.id !== p.nodeId);
-          const filteredEdges = edges.filter((ed) => ed.source !== p.nodeId && ed.target !== p.nodeId);
+          const filteredEdges = edges.filter(
+            (ed) => ed.source !== p.nodeId && ed.target !== p.nodeId,
+          );
           commit(filteredNodes, filteredEdges);
           setSelectedNodeIds((prev) => {
             const next = new Set(prev);
@@ -2431,14 +2463,19 @@ function WorkflowEditor({
     const onMove = (e: MouseEvent) => {
       const pos = screenToCanvas(e.clientX, e.clientY);
       const rect = canvasRef.current!.getBoundingClientRect();
-      let scrollX = 0, scrollY = 0;
+      let scrollX = 0;
+      let scrollY = 0;
       if (e.clientX - rect.left < scrollThreshold()) scrollX = SCROLL_SPEED;
       if (rect.right - e.clientX < scrollThreshold()) scrollX = -SCROLL_SPEED;
       if (e.clientY - rect.top < scrollThreshold()) scrollY = SCROLL_SPEED;
       if (rect.bottom - e.clientY < scrollThreshold()) scrollY = -SCROLL_SPEED;
       if (scrollX !== 0 || scrollY !== 0) {
         scrollVelRef.current = { x: scrollX, y: scrollY };
-        setTransform(prev => ({ ...prev, x: prev.x + scrollX, y: prev.y + scrollY }));
+        setTransform((prev) => ({
+          ...prev,
+          x: prev.x + scrollX,
+          y: prev.y + scrollY,
+        }));
         pos.x -= scrollX / transform.scale;
         pos.y -= scrollY / transform.scale;
       } else {

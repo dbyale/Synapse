@@ -919,7 +919,7 @@
 }
 
 .model-card__link-base:hover {
-  text-shadow: 0 0 .6px var(--text-primary);
+  text-shadow: 0 0 0.6px var(--text-primary);
 }
 
 /* ── Infinite Scroll Loader ── */

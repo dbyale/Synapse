@@ -94,12 +94,17 @@ function ToolCallSegment({ segment }: { segment: MessageSegment }) {
         onClick={() => setExpanded(!expanded)}
       >
         {(() => {
-          const meta = segment.toolName ? TOOL_METADATA[segment.toolName as keyof typeof TOOL_METADATA] : undefined;
+          const meta = segment.toolName
+            ? TOOL_METADATA[segment.toolName as keyof typeof TOOL_METADATA]
+            : undefined;
           const IconComp = meta?.icon ? resolveIcon(meta.icon) : Wrench;
           return <IconComp className="tool-call-segment__icon" size={16} />;
         })()}
         <span className="tool-call-segment__name">
-          {(segment.toolName && TOOL_METADATA[segment.toolName as keyof typeof TOOL_METADATA]?.label) ?? segment.toolName}
+          {(segment.toolName &&
+            TOOL_METADATA[segment.toolName as keyof typeof TOOL_METADATA]
+              ?.label) ??
+            segment.toolName}
         </span>
         {segment.toolStatus === 'calling' ? (
           <div className="tool-call-segment__spinner" />
@@ -683,18 +688,20 @@ export default function ChatPage() {
       setProgressPercent(data.progress);
     });
 
-    const removePromptDoneListener = window.electronAPI.onChatPromptDone((promptStats) => {
-      setMessages((prev) => {
-        const updated = [...prev];
-        for (let i = updated.length - 1; i >= 0; i--) {
-          if (updated[i].role === 'user' && !updated[i].promptStats) {
-            updated[i] = { ...updated[i], promptStats };
-            break;
+    const removePromptDoneListener = window.electronAPI.onChatPromptDone(
+      (promptStats) => {
+        setMessages((prev) => {
+          const updated = [...prev];
+          for (let i = updated.length - 1; i >= 0; i--) {
+            if (updated[i].role === 'user' && !updated[i].promptStats) {
+              updated[i] = { ...updated[i], promptStats };
+              break;
+            }
           }
-        }
-        return updated;
-      });
-    });
+          return updated;
+        });
+      },
+    );
 
     const unsubscribeFunctionCalling = window.electronAPI.onChatFunctionCalling(
       (data) => {
@@ -1081,38 +1088,60 @@ export default function ChatPage() {
               >
                 {(msg.content[0]?.text || '').slice(0, 20)}…
               </div>
-            ) : !msg.collapsed && (<>
-              {loading &&
-                msg === messages[messages.length - 1] &&
-                msg.role === 'assistant' && (
-                  <div className="chat-message__indicator-box">
-                    <div className="chat-indicator">
-                      <div className="chat-indicator__spinner" />
-                      <span className="chat-indicator__label">
-                        {processing
-                          ? `Processing prompt… (${progressPercent}%)`
-                          : 'Generating…'}
-                      </span>
-                    </div>
-                    {processing && (
-                      <div className="chat-progress-bar">
-                        <div
-                          className="chat-progress-bar__fill"
-                          style={{ width: `${progressPercent}%` }}
-                        />
+            ) : (
+              !msg.collapsed && (
+                <>
+                  {loading &&
+                    msg === messages[messages.length - 1] &&
+                    msg.role === 'assistant' && (
+                      <div className="chat-message__indicator-box">
+                        <div className="chat-indicator">
+                          <div className="chat-indicator__spinner" />
+                          <span className="chat-indicator__label">
+                            {processing
+                              ? `Processing prompt… (${progressPercent}%)`
+                              : 'Generating…'}
+                          </span>
+                        </div>
+                        {processing && (
+                          <div className="chat-progress-bar">
+                            <div
+                              className="chat-progress-bar__fill"
+                              style={{ width: `${progressPercent}%` }}
+                            />
+                          </div>
+                        )}
                       </div>
                     )}
-                  </div>
-                )}
-              <div className="chat-message__bubble">
-                {msg.role === 'assistant' ? (
-                  <div className="chat-message__assistant-content">
-                    {(() => {
-                      const elements: ReactNode[] = [];
-                      let currentTextSegments: MessageSegment[] = [];
+                  <div className="chat-message__bubble">
+                    {msg.role === 'assistant' ? (
+                      <div className="chat-message__assistant-content">
+                        {(() => {
+                          const elements: ReactNode[] = [];
+                          let currentTextSegments: MessageSegment[] = [];
 
-                      msg.content.forEach((segment) => {
-                        if (segment.type === 'tool') {
+                          msg.content.forEach((segment) => {
+                            if (segment.type === 'tool') {
+                              if (currentTextSegments.length > 0) {
+                                elements.push(
+                                  <MessageContent
+                                    key={`text-batch-${elements.length}`}
+                                    segments={currentTextSegments}
+                                  />,
+                                );
+                                currentTextSegments = [];
+                              }
+                              elements.push(
+                                <ToolCallSegment
+                                  key={segment.id}
+                                  segment={segment}
+                                />,
+                              );
+                            } else {
+                              currentTextSegments.push(segment);
+                            }
+                          });
+
                           if (currentTextSegments.length > 0) {
                             elements.push(
                               <MessageContent
@@ -1120,36 +1149,18 @@ export default function ChatPage() {
                                 segments={currentTextSegments}
                               />,
                             );
-                            currentTextSegments = [];
                           }
-                          elements.push(
-                            <ToolCallSegment
-                              key={segment.id}
-                              segment={segment}
-                            />,
-                          );
-                        } else {
-                          currentTextSegments.push(segment);
-                        }
-                      });
 
-                      if (currentTextSegments.length > 0) {
-                        elements.push(
-                          <MessageContent
-                            key={`text-batch-${elements.length}`}
-                            segments={currentTextSegments}
-                          />,
-                        );
-                      }
-
-                      return elements;
-                    })()}
+                          return elements;
+                        })()}
+                      </div>
+                    ) : (
+                      msg.content[0]?.text || ''
+                    )}
                   </div>
-                ) : (
-                  msg.content[0]?.text || ''
-                )}
-              </div>
-            </>)}
+                </>
+              )
+            )}
 
             {/* Display prompt processing statistics below user messages */}
             {msg.role === 'user' && msg.promptStats && (

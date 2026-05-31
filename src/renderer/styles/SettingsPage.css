@@ -95,7 +95,9 @@
 }
 
 .settings-icon-btn:hover {
-  background: var(--bg-secondary); /* Assuming this is a slightly lighter color */
+  background: var(
+    --bg-secondary
+  ); /* Assuming this is a slightly lighter color */
   color: var(--text-primary);
   border-color: var(--text-secondary);
 }
@@ -141,10 +143,22 @@
 }
 
 @keyframes fadeInOut {
-  0% { opacity: 0; transform: translateY(-4px); }
-  10% { opacity: 1; transform: translateY(0); }
-  80% { opacity: 1; transform: translateY(0); }
-  100% { opacity: 0; transform: translateY(0); }
+  0% {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  10% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  80% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(0);
+  }
 }
 
 .mem-container {
@@ -444,5 +458,7 @@
 }
 
 @keyframes mem-spin {
-  100% { transform: rotate(360deg); }
+  100% {
+    transform: rotate(360deg);
+  }
 }

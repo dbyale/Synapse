@@ -34,7 +34,7 @@ export function onMemorySettingsChanged(
 function notifyMemoryListeners(settings: AppSettings) {
   const payload = {
     allocatedVRAM: settings.allocatedVRAM,
-    allocatedRAM:  settings.allocatedRAM,
+    allocatedRAM: settings.allocatedRAM,
   };
   for (const listener of memoryListeners) {
     listener(payload);
@@ -65,7 +65,10 @@ export function loadSettings(): AppSettings {
       loadedSettings = { ...DEFAULT_SETTINGS, ...parsed };
     }
   } catch (err) {
-    console.error('[Settings] Failed to parse settings.json, using defaults.', err);
+    console.error(
+      '[Settings] Failed to parse settings.json, using defaults.',
+      err,
+    );
     loadedSettings = { ...DEFAULT_SETTINGS };
   }
 
@@ -87,7 +90,11 @@ export function saveSettings(settings: AppSettings): void {
   const dir = path.dirname(SETTINGS_FILE);
   if (ensureDirectory(dir)) {
     try {
-      fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2), 'utf-8');
+      fs.writeFileSync(
+        SETTINGS_FILE,
+        JSON.stringify(settings, null, 2),
+        'utf-8',
+      );
     } catch (err) {
       console.error('[Settings] Failed to write settings to disk:', err);
     }
@@ -95,12 +102,12 @@ export function saveSettings(settings: AppSettings): void {
 
   // Notify listeners only when memory settings actually changed
   const vramChanged = previous?.allocatedVRAM !== settings.allocatedVRAM;
-  const ramChanged  = previous?.allocatedRAM  !== settings.allocatedRAM;
+  const ramChanged = previous?.allocatedRAM !== settings.allocatedRAM;
   if (vramChanged || ramChanged) {
     console.log(
       `[Settings] Memory settings changed — ` +
-      `VRAM: ${previous?.allocatedVRAM ?? '?'} → ${settings.allocatedVRAM ?? '?'} MB, ` +
-      `RAM: ${previous?.allocatedRAM  ?? '?'} → ${settings.allocatedRAM  ?? '?'} MB`,
+        `VRAM: ${previous?.allocatedVRAM ?? '?'} → ${settings.allocatedVRAM ?? '?'} MB, ` +
+        `RAM: ${previous?.allocatedRAM ?? '?'} → ${settings.allocatedRAM ?? '?'} MB`,
     );
     notifyMemoryListeners(settings);
   }

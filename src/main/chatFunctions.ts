@@ -61,12 +61,30 @@ function isDSTActive(timezone: string, date: Date): boolean {
         hour12: false,
       });
       const parts = fmt.formatToParts(d);
-      const year = parseInt(parts.find(p => p.type === 'year')?.value || '0', 10);
-      const month = parseInt(parts.find(p => p.type === 'month')?.value || '0', 10);
-      const day = parseInt(parts.find(p => p.type === 'day')?.value || '0', 10);
-      const hour = parseInt(parts.find(p => p.type === 'hour')?.value || '0', 10);
-      const minute = parseInt(parts.find(p => p.type === 'minute')?.value || '0', 10);
-      const second = parseInt(parts.find(p => p.type === 'second')?.value || '0', 10);
+      const year = parseInt(
+        parts.find((p) => p.type === 'year')?.value || '0',
+        10,
+      );
+      const month = parseInt(
+        parts.find((p) => p.type === 'month')?.value || '0',
+        10,
+      );
+      const day = parseInt(
+        parts.find((p) => p.type === 'day')?.value || '0',
+        10,
+      );
+      const hour = parseInt(
+        parts.find((p) => p.type === 'hour')?.value || '0',
+        10,
+      );
+      const minute = parseInt(
+        parts.find((p) => p.type === 'minute')?.value || '0',
+        10,
+      );
+      const second = parseInt(
+        parts.find((p) => p.type === 'second')?.value || '0',
+        10,
+      );
 
       const localDate = new Date(year, month - 1, day, hour, minute, second);
       return (d.getTime() - localDate.getTime()) / (1000 * 60);
@@ -88,7 +106,9 @@ function isDSTActive(timezone: string, date: Date): boolean {
 function formatDateTimeWithOffset(date: Date, timezone: string): string {
   try {
     const fmt = (opts: Intl.DateTimeFormatOptions) =>
-      new Intl.DateTimeFormat('en-US', { ...opts, timeZone: timezone }).format(date);
+      new Intl.DateTimeFormat('en-US', { ...opts, timeZone: timezone }).format(
+        date,
+      );
 
     const year = fmt({ year: 'numeric' });
     const month = fmt({ month: '2-digit' });
@@ -115,16 +135,22 @@ function formatDateTimeWithOffset(date: Date, timezone: string): string {
 export function createChatFunctions(defineFn: DefineFn) {
   return {
     get_current_time: defineFn({
-      description: 'Get the current time in a specified timezone. Returns the current datetime in ISO 8601 format with UTC offset, the timezone name, and whether daylight saving time is active.',
+      description:
+        'Get the current time in a specified timezone. Returns the current datetime in ISO 8601 format with UTC offset, the timezone name, and whether daylight saving time is active.',
       params: {
         type: 'object',
         properties: {
           timezone: {
             oneOf: [
               { type: 'null' },
-              { type: 'string', description: 'IANA timezone name (e.g., "America/New_York", "Europe/London", "Asia/Tokyo")' },
+              {
+                type: 'string',
+                description:
+                  'IANA timezone name (e.g., "America/New_York", "Europe/London", "Asia/Tokyo")',
+              },
             ],
-            description: 'IANA timezone name. If not provided, uses system timezone.',
+            description:
+              'IANA timezone name. If not provided, uses system timezone.',
           },
         },
       },
@@ -149,13 +175,25 @@ export function createChatFunctions(defineFn: DefineFn) {
     }),
 
     convert_time: defineFn({
-      description: 'Convert a time from one timezone to another. Takes a time in HH:MM 24-hour format and converts it between timezones. Returns the source and target datetimes with timezone info and DST status, plus the time difference between the two zones.',
+      description:
+        'Convert a time from one timezone to another. Takes a time in HH:MM 24-hour format and converts it between timezones. Returns the source and target datetimes with timezone info and DST status, plus the time difference between the two zones.',
       params: {
         type: 'object',
         properties: {
-          source_timezone: { type: 'string', description: 'IANA timezone name of the source time (e.g., "America/New_York")' },
-          time: { type: 'string', description: 'Time in 24-hour HH:MM format (e.g., "14:30")' },
-          target_timezone: { type: 'string', description: 'IANA timezone name of the target timezone (e.g., "Europe/London")' },
+          source_timezone: {
+            type: 'string',
+            description:
+              'IANA timezone name of the source time (e.g., "America/New_York")',
+          },
+          time: {
+            type: 'string',
+            description: 'Time in 24-hour HH:MM format (e.g., "14:30")',
+          },
+          target_timezone: {
+            type: 'string',
+            description:
+              'IANA timezone name of the target timezone (e.g., "Europe/London")',
+          },
         },
         required: ['source_timezone', 'time', 'target_timezone'],
       },
@@ -163,66 +201,122 @@ export function createChatFunctions(defineFn: DefineFn) {
         const { source_timezone, time, target_timezone } = params;
         try {
           const timeParts = time.split(':');
-          if (timeParts.length !== 2) return { error: 'Invalid time format. Use HH:MM (24-hour format).' };
+          if (timeParts.length !== 2)
+            return {
+              error: 'Invalid time format. Use HH:MM (24-hour format).',
+            };
           const hours = parseInt(timeParts[0], 10);
           const minutes = parseInt(timeParts[1], 10);
-          if (isNaN(hours) || isNaN(minutes) || hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+          if (
+            isNaN(hours) ||
+            isNaN(minutes) ||
+            hours < 0 ||
+            hours > 23 ||
+            minutes < 0 ||
+            minutes > 59
+          ) {
             return { error: 'Invalid time. Hours must be 0-23, minutes 0-59.' };
           }
           const today = new Date();
-          const sourceDate = new Date(today.getFullYear(), today.getMonth(), today.getDate(), hours, minutes, 0);
+          const sourceDate = new Date(
+            today.getFullYear(),
+            today.getMonth(),
+            today.getDate(),
+            hours,
+            minutes,
+            0,
+          );
           const fmt = (opts: Intl.DateTimeFormatOptions, tz: string) =>
-            new Intl.DateTimeFormat('en-US', { ...opts, timeZone: tz }).format(sourceDate);
+            new Intl.DateTimeFormat('en-US', { ...opts, timeZone: tz }).format(
+              sourceDate,
+            );
           const sourceYear = fmt({ year: 'numeric' }, source_timezone);
           const sourceMonth = fmt({ month: '2-digit' }, source_timezone);
           const sourceDay = fmt({ day: '2-digit' }, source_timezone);
-          const sourceHour = fmt({ hour: '2-digit', hour12: false }, source_timezone);
+          const sourceHour = fmt(
+            { hour: '2-digit', hour12: false },
+            source_timezone,
+          );
           const sourceMinute = fmt({ minute: '2-digit' }, source_timezone);
           const sourceSecond = fmt({ second: '2-digit' }, source_timezone);
           const sourceLocalString = `${sourceYear}-${sourceMonth}-${sourceDay}T${sourceHour}:${sourceMinute}:${sourceSecond}`;
           const sourceLocalDate = new Date(sourceLocalString);
-          const sourceUTCOffsetMs = sourceDate.getTime() - sourceLocalDate.getTime();
+          const sourceUTCOffsetMs =
+            sourceDate.getTime() - sourceLocalDate.getTime();
           const sourceUTCOffsetMinutes = sourceUTCOffsetMs / (1000 * 60);
           const utcDate = new Date(sourceDate.getTime() - sourceUTCOffsetMs);
           const targetYear = fmt({ year: 'numeric' }, target_timezone);
           const targetMonth = fmt({ month: '2-digit' }, target_timezone);
           const targetDay = fmt({ day: '2-digit' }, target_timezone);
-          const targetHour = fmt({ hour: '2-digit', hour12: false }, target_timezone);
+          const targetHour = fmt(
+            { hour: '2-digit', hour12: false },
+            target_timezone,
+          );
           const targetMinute = fmt({ minute: '2-digit' }, target_timezone);
           const targetSecond = fmt({ second: '2-digit' }, target_timezone);
           const targetLocalString = `${targetYear}-${targetMonth}-${targetDay}T${targetHour}:${targetMinute}:${targetSecond}`;
           const targetLocalDate = new Date(targetLocalString);
-          const targetUTCOffsetMs = utcDate.getTime() - targetLocalDate.getTime();
+          const targetUTCOffsetMs =
+            utcDate.getTime() - targetLocalDate.getTime();
           const targetUTCOffsetMinutes = targetUTCOffsetMs / (1000 * 60);
-          const sourceDateTime = formatDateTimeWithOffset(sourceDate, source_timezone);
-          const targetDateTime = formatDateTimeWithOffset(utcDate, target_timezone);
-          const timeDiffMinutes = (targetUTCOffsetMinutes - sourceUTCOffsetMinutes);
+          const sourceDateTime = formatDateTimeWithOffset(
+            sourceDate,
+            source_timezone,
+          );
+          const targetDateTime = formatDateTimeWithOffset(
+            utcDate,
+            target_timezone,
+          );
+          const timeDiffMinutes =
+            targetUTCOffsetMinutes - sourceUTCOffsetMinutes;
           const timeDiffHours = timeDiffMinutes / 60;
           const sign = timeDiffHours >= 0 ? '+' : '';
-          const timeDiffStr = timeDiffHours % 1 === 0
-            ? `${sign}${timeDiffHours.toFixed(0)}h`
-            : `${sign}${timeDiffHours.toFixed(1)}h`;
+          const timeDiffStr =
+            timeDiffHours % 1 === 0
+              ? `${sign}${timeDiffHours.toFixed(0)}h`
+              : `${sign}${timeDiffHours.toFixed(1)}h`;
           return {
-            source: { timezone: source_timezone, datetime: sourceDateTime, is_dst: isDSTActive(source_timezone, sourceDate) },
-            target: { timezone: target_timezone, datetime: targetDateTime, is_dst: isDSTActive(target_timezone, utcDate) },
+            source: {
+              timezone: source_timezone,
+              datetime: sourceDateTime,
+              is_dst: isDSTActive(source_timezone, sourceDate),
+            },
+            target: {
+              timezone: target_timezone,
+              datetime: targetDateTime,
+              is_dst: isDSTActive(target_timezone, utcDate),
+            },
             time_difference: timeDiffStr,
           };
         } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : String(error);
+          const errorMessage =
+            error instanceof Error ? error.message : String(error);
           return { error: `Failed to convert time: ${errorMessage}` };
         }
       },
     }),
 
     fetchPage: defineFn({
-      description: 'Fetches information from a URL. Use start_index to read large pages in chunks and find the information you need. When the exact URL is unknown use a search engine to find the correct URL, or, visit the site homepage and use fetchPage to explore the site and find the correct URL.',
+      description:
+        'Fetches information from a URL. Use start_index to read large pages in chunks and find the information you need. When the exact URL is unknown use a search engine to find the correct URL, or, visit the site homepage and use fetchPage to explore the site and find the correct URL.',
       params: {
         type: 'object',
         properties: {
           url: { type: 'string', description: 'The URL to fetch' },
-          max_length: { type: 'integer', description: 'Maximum number of characters to return (default: 5000)' },
-          start_index: { type: 'integer', description: 'Start content from this character index (default: 0)' },
-          raw: { type: 'boolean', description: 'Get raw content without markdown conversion (default: false)' },
+          max_length: {
+            type: 'integer',
+            description:
+              'Maximum number of characters to return (default: 5000)',
+          },
+          start_index: {
+            type: 'integer',
+            description: 'Start content from this character index (default: 0)',
+          },
+          raw: {
+            type: 'boolean',
+            description:
+              'Get raw content without markdown conversion (default: false)',
+          },
         },
         required: ['url'],
       },
@@ -234,9 +328,12 @@ export function createChatFunctions(defineFn: DefineFn) {
           const sliced = content.slice(start_index, start_index + max_length);
           return sliced || 'No content found at the specified index.';
         } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : String(error);
-          if (errorMessage.includes('timeout')) return `Error: Request timeout while fetching ${url}`;
-          if (errorMessage.includes('Invalid URL')) return `Error: Invalid URL provided: ${url}`;
+          const errorMessage =
+            error instanceof Error ? error.message : String(error);
+          if (errorMessage.includes('timeout'))
+            return `Error: Request timeout while fetching ${url}`;
+          if (errorMessage.includes('Invalid URL'))
+            return `Error: Invalid URL provided: ${url}`;
           return `Error: Failed to fetch ${url}. ${errorMessage}`;
         }
       },
@@ -244,12 +341,16 @@ export function createChatFunctions(defineFn: DefineFn) {
 
     // Filesystem tools
     read_text_file: defineFn({
-      description: 'Read a text file. Optionally retrieve only the first N or last N lines.',
+      description:
+        'Read a text file. Optionally retrieve only the first N or last N lines.',
       params: {
         type: 'object',
         properties: {
           path: { type: 'string', description: 'Path to the text file' },
-          head: { type: 'number', description: 'Return only the first N lines' },
+          head: {
+            type: 'number',
+            description: 'Return only the first N lines',
+          },
           tail: { type: 'number', description: 'Return only the last N lines' },
         },
       },
@@ -259,7 +360,8 @@ export function createChatFunctions(defineFn: DefineFn) {
     }),
 
     read_media_file: defineFn({
-      description: 'Read a media file (image, video, audio, PDF) and return it as base64-encoded data with MIME type.',
+      description:
+        'Read a media file (image, video, audio, PDF) and return it as base64-encoded data with MIME type.',
       params: {
         type: 'object',
         properties: {
@@ -276,7 +378,11 @@ export function createChatFunctions(defineFn: DefineFn) {
       params: {
         type: 'object',
         properties: {
-          paths: { type: 'array', items: { type: 'string' }, description: 'Array of file paths to read' },
+          paths: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Array of file paths to read',
+          },
         },
       },
       async handler(params: { paths: string[] }) {
@@ -285,12 +391,19 @@ export function createChatFunctions(defineFn: DefineFn) {
     }),
 
     write_file: defineFn({
-      description: 'Write content to a file. Creates the file and parent directories if needed.',
+      description:
+        'Write content to a file. Creates the file and parent directories if needed.',
       params: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: 'Path where the file will be written' },
-          content: { type: 'string', description: 'Content to write to the file' },
+          path: {
+            type: 'string',
+            description: 'Path where the file will be written',
+          },
+          content: {
+            type: 'string',
+            description: 'Content to write to the file',
+          },
         },
       },
       async handler(params: { path: string; content: string }) {
@@ -299,20 +412,35 @@ export function createChatFunctions(defineFn: DefineFn) {
     }),
 
     edit_file: defineFn({
-      description: 'Edit a file by replacing text. Supports dryRun mode to preview changes without writing.',
+      description:
+        'Edit a file by replacing text. Supports dryRun mode to preview changes without writing.',
       params: {
         type: 'object',
         properties: {
           path: { type: 'string', description: 'Path to the file to edit' },
           edits: {
             type: 'array',
-            items: { type: 'object', properties: { oldText: { type: 'string' }, newText: { type: 'string' } } },
+            items: {
+              type: 'object',
+              properties: {
+                oldText: { type: 'string' },
+                newText: { type: 'string' },
+              },
+            },
             description: 'Array of text replacements to apply',
           },
-          dryRun: { type: 'boolean', description: 'If true, preview changes without writing (default: false)' },
+          dryRun: {
+            type: 'boolean',
+            description:
+              'If true, preview changes without writing (default: false)',
+          },
         },
       },
-      async handler(params: { path: string; edits: Array<{ oldText: string; newText: string }>; dryRun?: boolean }) {
+      async handler(params: {
+        path: string;
+        edits: Array<{ oldText: string; newText: string }>;
+        dryRun?: boolean;
+      }) {
         return await editFile(params);
       },
     }),
@@ -322,7 +450,10 @@ export function createChatFunctions(defineFn: DefineFn) {
       params: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: 'Path of the directory to create' },
+          path: {
+            type: 'string',
+            description: 'Path of the directory to create',
+          },
         },
       },
       async handler(params: { path: string }) {
@@ -335,7 +466,10 @@ export function createChatFunctions(defineFn: DefineFn) {
       params: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: 'Path of the directory to list' },
+          path: {
+            type: 'string',
+            description: 'Path of the directory to list',
+          },
         },
       },
       async handler(params: { path: string }) {
@@ -344,12 +478,19 @@ export function createChatFunctions(defineFn: DefineFn) {
     }),
 
     list_directory_with_sizes: defineFn({
-      description: 'List directory contents with file sizes. This operation is much slower than list_directory and should only be used when sizes are important. Optionally sort by name or size.',
+      description:
+        'List directory contents with file sizes. This operation is much slower than list_directory and should only be used when sizes are important. Optionally sort by name or size.',
       params: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: 'Path of the directory to list' },
-          sortBy: { type: 'string', description: 'Sort by "name" or "size" (optional)' },
+          path: {
+            type: 'string',
+            description: 'Path of the directory to list',
+          },
+          sortBy: {
+            type: 'string',
+            description: 'Sort by "name" or "size" (optional)',
+          },
         },
       },
       async handler(params: { path: string; sortBy?: string }) {
@@ -372,16 +513,28 @@ export function createChatFunctions(defineFn: DefineFn) {
     }),
 
     search_files: defineFn({
-      description: 'Search for files matching a glob pattern in a directory (recursively).',
+      description:
+        'Search for files matching a glob pattern in a directory (recursively).',
       params: {
         type: 'object',
         properties: {
           path: { type: 'string', description: 'Root directory to search in' },
-          pattern: { type: 'string', description: 'Glob pattern to match (e.g., "*.json", "test-*.ts")' },
-          excludePatterns: { type: 'array', items: { type: 'string' }, description: 'Patterns to exclude from search (optional)' },
+          pattern: {
+            type: 'string',
+            description: 'Glob pattern to match (e.g., "*.json", "test-*.ts")',
+          },
+          excludePatterns: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Patterns to exclude from search (optional)',
+          },
         },
       },
-      async handler(params: { path: string; pattern: string; excludePatterns?: string[] }) {
+      async handler(params: {
+        path: string;
+        pattern: string;
+        excludePatterns?: string[];
+      }) {
         return await searchFiles(params);
       },
     }),
@@ -392,7 +545,11 @@ export function createChatFunctions(defineFn: DefineFn) {
         type: 'object',
         properties: {
           path: { type: 'string', description: 'Root directory for the tree' },
-          excludePatterns: { type: 'array', items: { type: 'string' }, description: 'Patterns to exclude from the tree (optional)' },
+          excludePatterns: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Patterns to exclude from the tree (optional)',
+          },
         },
       },
       async handler(params: { path: string; excludePatterns?: string[] }) {
@@ -401,11 +558,15 @@ export function createChatFunctions(defineFn: DefineFn) {
     }),
 
     get_file_info: defineFn({
-      description: 'Get detailed information about a file or directory (size, permissions, timestamps, etc.).',
+      description:
+        'Get detailed information about a file or directory (size, permissions, timestamps, etc.).',
       params: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: 'Path to the file or directory' },
+          path: {
+            type: 'string',
+            description: 'Path to the file or directory',
+          },
         },
       },
       async handler(params: { path: string }) {
@@ -414,7 +575,8 @@ export function createChatFunctions(defineFn: DefineFn) {
     }),
 
     list_allowed_directories: defineFn({
-      description: 'List all configured allowed directories for filesystem operations.',
+      description:
+        'List all configured allowed directories for filesystem operations.',
       params: { type: 'object', properties: {} },
       async handler() {
         return await listAllowedDirectories();
@@ -423,11 +585,15 @@ export function createChatFunctions(defineFn: DefineFn) {
 
     // === Git Functions ===
     git_status: defineFn({
-      description: 'Get the working tree status of a Git repository. Shows untracked, modified, and staged files.',
+      description:
+        'Get the working tree status of a Git repository. Shows untracked, modified, and staged files.',
       params: {
         type: 'object',
         properties: {
-          repo_path: { type: 'string', description: 'Path to the Git repository' },
+          repo_path: {
+            type: 'string',
+            description: 'Path to the Git repository',
+          },
         },
         required: ['repo_path'],
       },
@@ -441,8 +607,14 @@ export function createChatFunctions(defineFn: DefineFn) {
       params: {
         type: 'object',
         properties: {
-          repo_path: { type: 'string', description: 'Path to the Git repository' },
-          context_lines: { type: 'number', description: 'Number of context lines to show (default: 3)' },
+          repo_path: {
+            type: 'string',
+            description: 'Path to the Git repository',
+          },
+          context_lines: {
+            type: 'number',
+            description: 'Number of context lines to show (default: 3)',
+          },
         },
         required: ['repo_path'],
       },
@@ -456,8 +628,14 @@ export function createChatFunctions(defineFn: DefineFn) {
       params: {
         type: 'object',
         properties: {
-          repo_path: { type: 'string', description: 'Path to the Git repository' },
-          context_lines: { type: 'number', description: 'Number of context lines to show (default: 3)' },
+          repo_path: {
+            type: 'string',
+            description: 'Path to the Git repository',
+          },
+          context_lines: {
+            type: 'number',
+            description: 'Number of context lines to show (default: 3)',
+          },
         },
         required: ['repo_path'],
       },
@@ -467,27 +645,46 @@ export function createChatFunctions(defineFn: DefineFn) {
     }),
 
     git_diff: defineFn({
-      description: 'Show the diff between the working tree and a specific branch or commit. Useful for comparing against main, develop, or any commit hash.',
+      description:
+        'Show the diff between the working tree and a specific branch or commit. Useful for comparing against main, develop, or any commit hash.',
       params: {
         type: 'object',
         properties: {
-          repo_path: { type: 'string', description: 'Path to the Git repository' },
-          target: { type: 'string', description: 'Branch name or commit hash to compare against (e.g., "main", "develop", or a commit hash)' },
-          context_lines: { type: 'number', description: 'Number of context lines to show (default: 3)' },
+          repo_path: {
+            type: 'string',
+            description: 'Path to the Git repository',
+          },
+          target: {
+            type: 'string',
+            description:
+              'Branch name or commit hash to compare against (e.g., "main", "develop", or a commit hash)',
+          },
+          context_lines: {
+            type: 'number',
+            description: 'Number of context lines to show (default: 3)',
+          },
         },
         required: ['repo_path', 'target'],
       },
-      async handler(params: { repo_path: string; target: string; context_lines?: number }) {
+      async handler(params: {
+        repo_path: string;
+        target: string;
+        context_lines?: number;
+      }) {
         return await gitDiff(params);
       },
     }),
 
     git_commit: defineFn({
-      description: 'Commit staged changes with a commit message. All staged changes will be included in the commit.',
+      description:
+        'Commit staged changes with a commit message. All staged changes will be included in the commit.',
       params: {
         type: 'object',
         properties: {
-          repo_path: { type: 'string', description: 'Path to the Git repository' },
+          repo_path: {
+            type: 'string',
+            description: 'Path to the Git repository',
+          },
           message: { type: 'string', description: 'Commit message' },
         },
         required: ['repo_path', 'message'],
@@ -498,12 +695,21 @@ export function createChatFunctions(defineFn: DefineFn) {
     }),
 
     git_add: defineFn({
-      description: 'Stage files for commit in a Git repository. Supports glob patterns.',
+      description:
+        'Stage files for commit in a Git repository. Supports glob patterns.',
       params: {
         type: 'object',
         properties: {
-          repo_path: { type: 'string', description: 'Path to the Git repository' },
-          files: { type: 'array', items: { type: 'string' }, description: 'Files or glob patterns to stage (e.g., ["*.js", "src/main.ts"])' },
+          repo_path: {
+            type: 'string',
+            description: 'Path to the Git repository',
+          },
+          files: {
+            type: 'array',
+            items: { type: 'string' },
+            description:
+              'Files or glob patterns to stage (e.g., ["*.js", "src/main.ts"])',
+          },
         },
         required: ['repo_path', 'files'],
       },
@@ -513,11 +719,15 @@ export function createChatFunctions(defineFn: DefineFn) {
     }),
 
     git_reset: defineFn({
-      description: 'Unstage all staged changes in a Git repository. Does not modify working tree files.',
+      description:
+        'Unstage all staged changes in a Git repository. Does not modify working tree files.',
       params: {
         type: 'object',
         properties: {
-          repo_path: { type: 'string', description: 'Path to the Git repository' },
+          repo_path: {
+            type: 'string',
+            description: 'Path to the Git repository',
+          },
         },
         required: ['repo_path'],
       },
@@ -527,34 +737,68 @@ export function createChatFunctions(defineFn: DefineFn) {
     }),
 
     git_log: defineFn({
-      description: 'Show commit history for a Git repository. Optionally filter by date range using ISO 8601 dates, relative dates like "2 weeks ago", or absolute dates.',
+      description:
+        'Show commit history for a Git repository. Optionally filter by date range using ISO 8601 dates, relative dates like "2 weeks ago", or absolute dates.',
       params: {
         type: 'object',
         properties: {
-          repo_path: { type: 'string', description: 'Path to the Git repository' },
-          max_count: { type: 'number', description: 'Maximum number of commits to show (default: 10)' },
-          start_timestamp: { type: 'string', description: 'Start date in ISO 8601 format, relative date (e.g., "2 weeks ago"), or absolute date' },
-          end_timestamp: { type: 'string', description: 'End date in ISO 8601 format, relative date (e.g., "2 weeks ago"), or absolute date' },
+          repo_path: {
+            type: 'string',
+            description: 'Path to the Git repository',
+          },
+          max_count: {
+            type: 'number',
+            description: 'Maximum number of commits to show (default: 10)',
+          },
+          start_timestamp: {
+            type: 'string',
+            description:
+              'Start date in ISO 8601 format, relative date (e.g., "2 weeks ago"), or absolute date',
+          },
+          end_timestamp: {
+            type: 'string',
+            description:
+              'End date in ISO 8601 format, relative date (e.g., "2 weeks ago"), or absolute date',
+          },
         },
         required: ['repo_path'],
       },
-      async handler(params: { repo_path: string; max_count?: number; start_timestamp?: string; end_timestamp?: string }) {
+      async handler(params: {
+        repo_path: string;
+        max_count?: number;
+        start_timestamp?: string;
+        end_timestamp?: string;
+      }) {
         return await gitLog(params);
       },
     }),
 
     git_create_branch: defineFn({
-      description: 'Create a new branch in a Git repository. Optionally base it on another branch.',
+      description:
+        'Create a new branch in a Git repository. Optionally base it on another branch.',
       params: {
         type: 'object',
         properties: {
-          repo_path: { type: 'string', description: 'Path to the Git repository' },
-          branch_name: { type: 'string', description: 'Name of the new branch' },
-          base_branch: { type: 'string', description: 'Base branch to create from (default: current branch)' },
+          repo_path: {
+            type: 'string',
+            description: 'Path to the Git repository',
+          },
+          branch_name: {
+            type: 'string',
+            description: 'Name of the new branch',
+          },
+          base_branch: {
+            type: 'string',
+            description: 'Base branch to create from (default: current branch)',
+          },
         },
         required: ['repo_path', 'branch_name'],
       },
-      async handler(params: { repo_path: string; branch_name: string; base_branch?: string }) {
+      async handler(params: {
+        repo_path: string;
+        branch_name: string;
+        base_branch?: string;
+      }) {
         return await gitCreateBranch(params);
       },
     }),
@@ -564,8 +808,14 @@ export function createChatFunctions(defineFn: DefineFn) {
       params: {
         type: 'object',
         properties: {
-          repo_path: { type: 'string', description: 'Path to the Git repository' },
-          branch_name: { type: 'string', description: 'Name of the branch to switch to' },
+          repo_path: {
+            type: 'string',
+            description: 'Path to the Git repository',
+          },
+          branch_name: {
+            type: 'string',
+            description: 'Name of the branch to switch to',
+          },
         },
         required: ['repo_path', 'branch_name'],
       },
@@ -575,12 +825,20 @@ export function createChatFunctions(defineFn: DefineFn) {
     }),
 
     git_show: defineFn({
-      description: 'Show the contents of a commit, including the commit message, author, date, and changes made.',
+      description:
+        'Show the contents of a commit, including the commit message, author, date, and changes made.',
       params: {
         type: 'object',
         properties: {
-          repo_path: { type: 'string', description: 'Path to the Git repository' },
-          revision: { type: 'string', description: 'Commit hash or reference (e.g., "HEAD", "HEAD~1", or a full commit hash)' },
+          repo_path: {
+            type: 'string',
+            description: 'Path to the Git repository',
+          },
+          revision: {
+            type: 'string',
+            description:
+              'Commit hash or reference (e.g., "HEAD", "HEAD~1", or a full commit hash)',
+          },
         },
         required: ['repo_path', 'revision'],
       },
@@ -590,18 +848,38 @@ export function createChatFunctions(defineFn: DefineFn) {
     }),
 
     git_branch: defineFn({
-      description: 'List branches in a Git repository. Filter by type (local, remote, or all) and optionally filter by branch name patterns.',
+      description:
+        'List branches in a Git repository. Filter by type (local, remote, or all) and optionally filter by branch name patterns.',
       params: {
         type: 'object',
         properties: {
-          repo_path: { type: 'string', description: 'Path to the Git repository' },
-          branch_type: { type: 'string', description: 'Branch type to list: "local", "remote", or "all" (default: "local")' },
-          contains: { type: 'string', description: 'Show only branches that contain this commit or tag' },
-          not_contains: { type: 'string', description: 'Show only branches that do not contain this commit or tag' },
+          repo_path: {
+            type: 'string',
+            description: 'Path to the Git repository',
+          },
+          branch_type: {
+            type: 'string',
+            description:
+              'Branch type to list: "local", "remote", or "all" (default: "local")',
+          },
+          contains: {
+            type: 'string',
+            description: 'Show only branches that contain this commit or tag',
+          },
+          not_contains: {
+            type: 'string',
+            description:
+              'Show only branches that do not contain this commit or tag',
+          },
         },
         required: ['repo_path'],
       },
-      async handler(params: { repo_path: string; branch_type?: string; contains?: string; not_contains?: string }) {
+      async handler(params: {
+        repo_path: string;
+        branch_type?: string;
+        contains?: string;
+        not_contains?: string;
+      }) {
         return await gitBranch(params);
       },
     }),
@@ -618,8 +896,16 @@ export function createChatFunctions(defineFn: DefineFn) {
               type: 'object',
               properties: {
                 name: { type: 'string', description: 'Name of the entity' },
-                entityType: { type: 'string', description: 'Type of the entity' },
-                observations: { type: 'array', items: { type: 'string' }, description: 'Initial observations about the entity (optional)' },
+                entityType: {
+                  type: 'string',
+                  description: 'Type of the entity',
+                },
+                observations: {
+                  type: 'array',
+                  items: { type: 'string' },
+                  description:
+                    'Initial observations about the entity (optional)',
+                },
               },
             },
             description: 'Array of entities to create',
@@ -627,12 +913,19 @@ export function createChatFunctions(defineFn: DefineFn) {
         },
         required: ['entities'],
       },
-      async handler(params: { entities: Array<{ name: string; entityType: string; observations?: string[] }> }) {
+      async handler(params: {
+        entities: Array<{
+          name: string;
+          entityType: string;
+          observations?: string[];
+        }>;
+      }) {
         try {
           const result = await memory.createEntities(params.entities);
           return result;
         } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : String(error);
+          const errorMessage =
+            error instanceof Error ? error.message : String(error);
           return { error: `Failed to create entities: ${errorMessage}` };
         }
       },
@@ -650,7 +943,10 @@ export function createChatFunctions(defineFn: DefineFn) {
               properties: {
                 from: { type: 'string', description: 'Source entity name' },
                 to: { type: 'string', description: 'Target entity name' },
-                relationType: { type: 'string', description: 'Type of the relation' },
+                relationType: {
+                  type: 'string',
+                  description: 'Type of the relation',
+                },
               },
             },
             description: 'Array of relations to create',
@@ -658,12 +954,15 @@ export function createChatFunctions(defineFn: DefineFn) {
         },
         required: ['relations'],
       },
-      async handler(params: { relations: Array<{ from: string; to: string; relationType: string }> }) {
+      async handler(params: {
+        relations: Array<{ from: string; to: string; relationType: string }>;
+      }) {
         try {
           const result = await memory.createRelations(params.relations);
           return result;
         } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : String(error);
+          const errorMessage =
+            error instanceof Error ? error.message : String(error);
           return { error: `Failed to create relations: ${errorMessage}` };
         }
       },
@@ -679,8 +978,15 @@ export function createChatFunctions(defineFn: DefineFn) {
             items: {
               type: 'object',
               properties: {
-                entityName: { type: 'string', description: 'Name of the entity' },
-                observations: { type: 'array', items: { type: 'string' }, description: 'Observations to add' },
+                entityName: {
+                  type: 'string',
+                  description: 'Name of the entity',
+                },
+                observations: {
+                  type: 'array',
+                  items: { type: 'string' },
+                  description: 'Observations to add',
+                },
               },
             },
             description: 'Array of entity updates with observations',
@@ -688,12 +994,15 @@ export function createChatFunctions(defineFn: DefineFn) {
         },
         required: ['updates'],
       },
-      async handler(params: { updates: Array<{ entityName: string; observations: string[] }> }) {
+      async handler(params: {
+        updates: Array<{ entityName: string; observations: string[] }>;
+      }) {
         try {
           const result = await memory.addObservations(params.updates);
           return result;
         } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : String(error);
+          const errorMessage =
+            error instanceof Error ? error.message : String(error);
           return { error: `Failed to add observations: ${errorMessage}` };
         }
       },
@@ -717,7 +1026,8 @@ export function createChatFunctions(defineFn: DefineFn) {
           const result = await memory.deleteEntities(params.entityNames);
           return result;
         } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : String(error);
+          const errorMessage =
+            error instanceof Error ? error.message : String(error);
           return { error: `Failed to delete entities: ${errorMessage}` };
         }
       },
@@ -733,8 +1043,15 @@ export function createChatFunctions(defineFn: DefineFn) {
             items: {
               type: 'object',
               properties: {
-                entityName: { type: 'string', description: 'Name of the entity' },
-                observations: { type: 'array', items: { type: 'string' }, description: 'Observations to delete' },
+                entityName: {
+                  type: 'string',
+                  description: 'Name of the entity',
+                },
+                observations: {
+                  type: 'array',
+                  items: { type: 'string' },
+                  description: 'Observations to delete',
+                },
               },
             },
             description: 'Array of entity updates with observations to delete',
@@ -742,12 +1059,15 @@ export function createChatFunctions(defineFn: DefineFn) {
         },
         required: ['updates'],
       },
-      async handler(params: { updates: Array<{ entityName: string; observations: string[] }> }) {
+      async handler(params: {
+        updates: Array<{ entityName: string; observations: string[] }>;
+      }) {
         try {
           const result = await memory.deleteObservations(params.updates);
           return result;
         } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : String(error);
+          const errorMessage =
+            error instanceof Error ? error.message : String(error);
           return { error: `Failed to delete observations: ${errorMessage}` };
         }
       },
@@ -765,7 +1085,10 @@ export function createChatFunctions(defineFn: DefineFn) {
               properties: {
                 from: { type: 'string', description: 'Source entity name' },
                 to: { type: 'string', description: 'Target entity name' },
-                relationType: { type: 'string', description: 'Type of the relation' },
+                relationType: {
+                  type: 'string',
+                  description: 'Type of the relation',
+                },
               },
             },
             description: 'Array of relations to delete',
@@ -773,12 +1096,15 @@ export function createChatFunctions(defineFn: DefineFn) {
         },
         required: ['relations'],
       },
-      async handler(params: { relations: Array<{ from: string; to: string; relationType: string }> }) {
+      async handler(params: {
+        relations: Array<{ from: string; to: string; relationType: string }>;
+      }) {
         try {
           const result = await memory.deleteRelations(params.relations);
           return result;
         } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : String(error);
+          const errorMessage =
+            error instanceof Error ? error.message : String(error);
           return { error: `Failed to delete relations: ${errorMessage}` };
         }
       },
@@ -795,14 +1121,16 @@ export function createChatFunctions(defineFn: DefineFn) {
           const result = await memory.readGraph();
           return result;
         } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : String(error);
+          const errorMessage =
+            error instanceof Error ? error.message : String(error);
           return { error: `Failed to read graph: ${errorMessage}` };
         }
       },
     }),
 
     search_nodes: defineFn({
-      description: 'Search for nodes in the memory graph by name or observation keyword.',
+      description:
+        'Search for nodes in the memory graph by name or observation keyword.',
       params: {
         type: 'object',
         properties: {
@@ -812,17 +1140,22 @@ export function createChatFunctions(defineFn: DefineFn) {
       },
       async handler(params: { query: string }) {
         try {
-          const result = await memory.searchNodes({ searchTerm: params.query, observationKeyword: params.query });
+          const result = await memory.searchNodes({
+            searchTerm: params.query,
+            observationKeyword: params.query,
+          });
           return result;
         } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : String(error);
+          const errorMessage =
+            error instanceof Error ? error.message : String(error);
           return { error: `Failed to search nodes: ${errorMessage}` };
         }
       },
     }),
 
     open_nodes: defineFn({
-      description: 'Open and retrieve specific nodes from the memory graph by name.',
+      description:
+        'Open and retrieve specific nodes from the memory graph by name.',
       params: {
         type: 'object',
         properties: {
@@ -839,13 +1172,14 @@ export function createChatFunctions(defineFn: DefineFn) {
           const result = await memory.openNodes(params.names);
           return result;
         } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : String(error);
+          const errorMessage =
+            error instanceof Error ? error.message : String(error);
           return { error: `Failed to open nodes: ${errorMessage}` };
         }
       },
     }),
 
-        // ═══════════════════════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════════════════
     // Python Execution Tools
     // ═══════════════════════════════════════════════════════════════════
 
@@ -887,7 +1221,7 @@ export function createChatFunctions(defineFn: DefineFn) {
         '  The user cannot see the code you write or the raw stdout it produces.\n' +
         '  You must ALWAYS:\n' +
         '  • Read the stdout result yourself\n' +
-        '  • Interpret what it means in the context of the user\'s question\n' +
+        "  • Interpret what it means in the context of the user's question\n" +
         '  • Re-present the answer to the user in plain language as part of your reply\n' +
         '  Never say "the output was X" as your final answer — explain what X means.\n' +
         '  Never show the code to the user unless they explicitly ask to see it.\n' +

@@ -5,7 +5,12 @@ import path from 'path';
 import util from 'util';
 import { exec } from 'child_process';
 import si from 'systeminformation';
-import { loadSettings, saveSettings, AppSettings, getModelsDirectory } from './settings';
+import {
+  loadSettings,
+  saveSettings,
+  AppSettings,
+  getModelsDirectory,
+} from './settings';
 import {
   searchModels,
   listModelFiles,
@@ -13,7 +18,7 @@ import {
   listLocalModels,
   deleteLocalModel,
   cancelDownload,
-  registerLocalModel
+  registerLocalModel,
 } from '../renderer/utils/models';
 import * as chatService from './chat';
 import type { SearchFilter } from '../renderer/preload.d';
@@ -49,10 +54,10 @@ export function registerIpcHandlers(win: BrowserWindow): void {
       filters: SearchFilter[],
       sort: string,
       direction: number,
-      limit: number
+      limit: number,
     ) => {
       return searchModels(query, filters, sort, direction, limit);
-    }
+    },
   );
 
   ipcMain.handle('models:list-files', (_event, repoId: string) => {
@@ -110,7 +115,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
       const downloadWin = BrowserWindow.fromWebContents(event.sender);
       if (!downloadWin) throw new Error('No window found');
       return downloadModel(repoId, filename, downloadWin);
-    }
+    },
   );
 
   ipcMain.handle('models:cancel-download', async (_event, filename: string) => {
@@ -141,48 +146,69 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     return chatService.getCurrentProfile();
   });
 
-  ipcMain.handle('chat:send', async (event, text: string, imageDataUrl?: string) => {
-    try {
-      const onTokenCallback = (token: string, segmentType?: 'thought' | 'comment') => {
+  ipcMain.handle(
+    'chat:send',
+    async (event, text: string, imageDataUrl?: string) => {
+      try {
+        const onTokenCallback = (
+          token: string,
+          segmentType?: 'thought' | 'comment',
+        ) => {
+          if (!event.sender.isDestroyed()) {
+            event.sender.send('chat:token', { token, segmentType });
+          }
+        };
+
+        const onProgressCallback = (data: {
+          progress: number;
+          promptN: number;
+          promptMs: number;
+          total: number;
+        }) => {
+          if (!event.sender.isDestroyed()) {
+            event.sender.send('chat:progress', data);
+          }
+        };
+
+        const onPromptDoneCallback = (stats: {
+          tokens: number;
+          timeMs: number;
+          tokensPerSecond: number;
+        }) => {
+          if (!event.sender.isDestroyed()) {
+            event.sender.send('chat:prompt-done', stats);
+          }
+        };
+
+        const result = await chatService.sendMessage(
+          text,
+          onTokenCallback,
+          imageDataUrl,
+          onProgressCallback,
+          onPromptDoneCallback,
+        );
+
         if (!event.sender.isDestroyed()) {
-          event.sender.send('chat:token', { token, segmentType });
+          event.sender.send('chat:done', result.stats);
         }
-      };
 
-      const onProgressCallback = (data: { progress: number; promptN: number; promptMs: number; total: number }) => {
-        if (!event.sender.isDestroyed()) {
-          event.sender.send('chat:progress', data);
+        return { success: true };
+      } catch (err: any) {
+        if (err.name === 'AbortError') {
+          if (!event.sender.isDestroyed()) {
+            event.sender.send('chat:done');
+          }
+          return { success: true, aborted: true };
         }
-      };
-
-      const onPromptDoneCallback = (stats: { tokens: number; timeMs: number; tokensPerSecond: number }) => {
-        if (!event.sender.isDestroyed()) {
-          event.sender.send('chat:prompt-done', stats);
-        }
-      };
-
-      const result = await chatService.sendMessage(text, onTokenCallback, imageDataUrl, onProgressCallback, onPromptDoneCallback);
-
-      if (!event.sender.isDestroyed()) {
-        event.sender.send('chat:done', result.stats);
-      }
-
-      return { success: true };
-    } catch (err: any) {
-      if (err.name === 'AbortError') {
+        console.error('[chat:send]', err);
         if (!event.sender.isDestroyed()) {
           event.sender.send('chat:done');
+          event.sender.send('chat:error', err.message);
         }
-        return { success: true, aborted: true };
+        return { success: false, error: err.message };
       }
-      console.error('[chat:send]', err);
-      if (!event.sender.isDestroyed()) {
-        event.sender.send('chat:done');
-        event.sender.send('chat:error', err.message);
-      }
-      return { success: false, error: err.message };
-    }
-  });
+    },
+  );
 
   ipcMain.handle('chat:abort', async () => {
     await chatService.abort();
@@ -228,7 +254,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
       const metrics = app.getAppMetrics();
       const appUsedKB = metrics.reduce(
         (acc, metric) => acc + metric.memory.workingSetSize,
-        0
+        0,
       );
       const appUsedBytes = appUsedKB * 1024;
       const otherRamUsedBytes = totalRamBytes - freeRamBytes - appUsedBytes;
@@ -324,7 +350,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
           console.log(
             `[HW] NVIDIA-SMI failed for cmd: ${cmd}. Reason: ${
               e?.message?.split('\n')[0] || 'Unknown error'
-            }`
+            }`,
           );
         }
       }
@@ -374,19 +400,21 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     await shell.openPath(modelsDir);
   });
 
-  chatService.setEmitFunctionCallback((event: 'calling' | 'call' | 'result', name: string, data: string) => {
-    const win = BrowserWindow.getAllWindows()[0];
-    if (!win || win.isDestroyed()) return;
+  chatService.setEmitFunctionCallback(
+    (event: 'calling' | 'call' | 'result', name: string, data: string) => {
+      const win = BrowserWindow.getAllWindows()[0];
+      if (!win || win.isDestroyed()) return;
 
-    if (event === 'calling') {
-      // Notify renderer that a function call is initiating, before params are available
-      win.webContents.send('chat-function-calling', { name });
-    } else if (event === 'call') {
-      win.webContents.send('chat-function-call', { name, params: data });
-    } else if (event === 'result') {
-      win.webContents.send('chat-function-result', { name, result: data });
-    }
-  });
+      if (event === 'calling') {
+        // Notify renderer that a function call is initiating, before params are available
+        win.webContents.send('chat-function-calling', { name });
+      } else if (event === 'call') {
+        win.webContents.send('chat-function-call', { name, params: data });
+      } else if (event === 'result') {
+        win.webContents.send('chat-function-result', { name, result: data });
+      }
+    },
+  );
 
   ipcMain.handle('chat:cumulativeTokenUsage', () => {
     return chatService.getCumulativeTokenUsage();
@@ -396,19 +424,27 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     return chatService.hasProjector();
   });
 
-  ipcMain.handle('files:readImageAsDataUrl', async (_event, filePath: string) => {
-  const ext = path.extname(filePath).toLowerCase();
-  const mime =
-    ext === '.png'  ? 'image/png'  :
-    ext === '.jpg'  ? 'image/jpeg' :
-    ext === '.jpeg' ? 'image/jpeg' :
-    ext === '.gif'  ? 'image/gif'  :
-    ext === '.webp' ? 'image/webp' :
-    null;
+  ipcMain.handle(
+    'files:readImageAsDataUrl',
+    async (_event, filePath: string) => {
+      const ext = path.extname(filePath).toLowerCase();
+      const mime =
+        ext === '.png'
+          ? 'image/png'
+          : ext === '.jpg'
+            ? 'image/jpeg'
+            : ext === '.jpeg'
+              ? 'image/jpeg'
+              : ext === '.gif'
+                ? 'image/gif'
+                : ext === '.webp'
+                  ? 'image/webp'
+                  : null;
 
-  if (!mime) throw new Error(`Unsupported image type: ${ext}`);
+      if (!mime) throw new Error(`Unsupported image type: ${ext}`);
 
-  const buf = await fs.promises.readFile(filePath);
-  return `data:${mime};base64,${buf.toString('base64')}`;
-});
+      const buf = await fs.promises.readFile(filePath);
+      return `data:${mime};base64,${buf.toString('base64')}`;
+    },
+  );
 }
