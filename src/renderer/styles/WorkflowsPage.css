@@ -3,18 +3,25 @@
    ============================================================================ */
 
 :root {
-  /* Node accent colours */
-  --wf-start:    #a6e3a1;   /* green  — continue / sequencing */
-  --wf-profile:  #89dceb;   /* teal   — profile data */
-  --wf-server:   #89b4fa;   /* blue   — server object */
-  --wf-agent:    #cba6f7;   /* mauve  — agent */
-  --wf-text:     #f9e2af;   /* yellow — text data */
+  /* Node accent colours + port colours (shared names) */
+  --wf-start:         #a6e3a1;   /* green  — continue / sequencing */
+  --wf-profile:       #89dceb;   /* teal   — profile data / profile ports */
+  --wf-server:        #89b4fa;   /* blue   — server object / server ports */
+  --wf-agent:         #cba6f7;   /* mauve  — agent */
+  --wf-text:          #f9e2af;   /* yellow — text data / text ports */
 
-  /* Port type colours (match above) */
-  --wf-continue: var(--wf-start);
-  --wf-profile-c: var(--wf-profile);
-  --wf-server-c:  var(--wf-server);
-  --wf-text-c:    var(--wf-text);
+  /* Port-only / semantic colours */
+  --wf-continue:      var(--wf-start);
+  --wf-profile-cache: #74c7ec;
+  --wf-tool-trigger:  var(--wf-agent);
+  --wf-edits:         #f38ba8;
+  --wf-server-profile: var(--wf-profile);
+  --wf-end:           #DC143C;   /* gray    — workflow termination */
+
+  /* Extra node colours */
+  --wf-profile-op:    #b4befe; /* lavender — profile load / unload */
+  --wf-tool:          #f5c2e7; /* pink     — agent tools */
+  --wf-file:          #fab387; /* peach    — file system */
 }
 
 /* ============================================================================
@@ -726,6 +733,12 @@
   pointer-events: none;
 }
 
+/* Inline arrowhead rendered as polygon — original 8×6 marker size */
+.wf-edge__arrowhead {
+  pointer-events: none;
+}
+
+/* Legacy marker classes (kept for compatibility) */
 .wf-edge__arrow     { fill: color-mix(in srgb, var(--border) 70%, var(--text-secondary) 30%); }
 .wf-edge__arrow--hov { fill: var(--accent); }
 .wf-edge__arrow--sel { fill: #f38ba8; }
@@ -818,6 +831,7 @@
   color: var(--text-secondary);
   line-height: 1.4;
   word-break: break-word;
+  white-space: pre-line;
 }
 
 .wf-node__preview--empty {
@@ -826,12 +840,23 @@
 }
 
 /* Node type colour vars */
-.wf-node--start      { --node-color: var(--wf-start);   }
-.wf-node--profile    { --node-color: var(--wf-profile);  }
-.wf-node--text-data  { --node-color: var(--wf-text);     }
-.wf-node--server     { --node-color: var(--wf-server);   }
-.wf-node--input-text { --node-color: var(--wf-text);     }
-.wf-node--agent      { --node-color: var(--wf-agent);    }
+.wf-node--start         { --node-color: var(--wf-start);        }
+.wf-node--profile       { --node-color: var(--wf-profile);      }
+.wf-node--text-data     { --node-color: var(--wf-text);          }
+.wf-node--server        { --node-color: var(--wf-server);        }
+.wf-node--input-text    { --node-color: var(--wf-text);          }
+.wf-node--agent         { --node-color: var(--wf-agent);         }
+.wf-node--profile-cache { --node-color: var(--wf-profile-cache);}
+.wf-node--write-text    { --node-color: var(--wf-tool);          }
+.wf-node--edit-text     { --node-color: var(--wf-tool);          }
+.wf-node--decide-if     { --node-color: var(--wf-tool);          }
+.wf-node--write-file    { --node-color: var(--wf-file);          }
+.wf-node--read-file     { --node-color: var(--wf-file);          }
+.wf-node--edit-file     { --node-color: var(--wf-file);          }
+.wf-node--delete-file   { --node-color: var(--wf-file);          }
+.wf-node--profile-load  { --node-color: var(--wf-profile-op);    }
+.wf-node--profile-unload{ --node-color: var(--wf-profile-op);    }
+.wf-node--end          { --node-color: var(--wf-end);            }
 
 /* ============================================================================
    PORTS
@@ -850,6 +875,7 @@
   box-sizing: border-box;
   display: flex;
   align-items: center;
+  justify-content: center;
 }
 
 .wf-port--input  { left:  -6px; cursor: cell; }
@@ -860,6 +886,12 @@
   border-color: var(--port-color, var(--accent));
   transform: translateY(-50%) scale(1.35);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--port-color, var(--accent)) 30%, transparent);
+}
+
+/* Filled when connected */
+.wf-port--connected {
+  background: var(--port-color, var(--accent));
+  border-color: var(--port-color, var(--accent));
 }
 
 /* Highlighted when a compatible connection is being dragged */
@@ -884,6 +916,32 @@
   50%       { box-shadow: 0 0 0 5px color-mix(in srgb, var(--port-color, var(--wf-start)) 12%, transparent); }
 }
 
+/* Disabled input ports */
+.wf-port--disabled {
+  border-color: var(--border) !important;
+  background: var(--bg-secondary) !important;
+  cursor: not-allowed !important;
+  opacity: 0.45;
+  animation: none !important;
+  box-shadow: none !important;
+}
+
+.wf-port--disabled::after {
+  content: '×';
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  line-height: 1;
+  pointer-events: none;
+}
+
+.wf-port--disabled.wf-port--compatible {
+  background: var(--bg-secondary) !important;
+  border-color: var(--border) !important;
+  animation: none !important;
+  box-shadow: none !important;
+}
+
 /* Port labels */
 .wf-port__label {
   position: absolute;
@@ -903,6 +961,10 @@
 
 .wf-port:hover .wf-port__label,
 .wf-port--compatible .wf-port__label { opacity: 1; }
+
+.wf-port--disabled .wf-port__label {
+  opacity: 0;
+}
 
 /* ============================================================================
    NODE PALETTE (left sidebar)
@@ -1241,4 +1303,132 @@
   }
 
   .wf-editor__body { flex-direction: column; }
+}
+
+/* ============================================================================
+   CATEGORY BADGE (Tools / Files)
+   ============================================================================ */
+
+.wf-node__category-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  font-size: 8px;
+  background: color-mix(in srgb, var(--node-color) 25%, transparent);
+  color: var(--node-color);
+  border: 1px solid color-mix(in srgb, var(--node-color) 45%, transparent);
+  flex-shrink: 0;
+}
+
+/* ============================================================================
+   PORT TYPE COLOR SUPPORT
+   ============================================================================ */
+
+.wf-port[style*="--port-color: var(--wf-profile-cache)"] {
+  border-color: var(--wf-profile-cache);
+}
+
+.wf-port[style*="--port-color: var(--wf-tool-trigger)"] {
+  border-color: var(--wf-tool-trigger);
+}
+
+.wf-port[style*="--port-color: var(--wf-edits)"] {
+  border-color: var(--wf-edits);
+}
+
+.wf-port[style*="--port-color: var(--wf-server-profile)"] {
+  border-color: var(--wf-server-profile);
+}
+
+/* ============================================================================
+   CONFIG HINT + WARNING
+   ============================================================================ */
+
+.wf-config-field__hint {
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  opacity: 0.75;
+  margin: 2px 0 0;
+}
+
+.wf-config-field__hint--warn {
+  color: #f38ba8;
+  opacity: 1;
+  font-weight: 500;
+}
+
+/* ============================================================================
+   TOOL NODE VISUAL DISTINCTION
+   ============================================================================ */
+
+.wf-node--write-text .wf-node__header,
+.wf-node--edit-text .wf-node__header,
+.wf-node--decide-if .wf-node__header {
+  border-bottom-style: dashed;
+}
+
+.wf-node--edit-text {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--wf-edits) 35%, transparent);
+}
+
+/* ============================================================================
+   FILE NODE VISUAL DISTINCTION
+   ============================================================================ */
+
+.wf-node--write-file,
+.wf-node--read-file,
+.wf-node--edit-file,
+.wf-node--delete-file {
+  border-style: solid;
+}
+
+.wf-node--delete-file {
+  border-color: rgba(243, 139, 168, 0.5);
+}
+
+/* ============================================================================
+   PROFILE CACHE VISUAL MERGE STYLE
+   ============================================================================ */
+
+.wf-node--profile-cache .wf-node__header {
+  border-bottom-style: dotted;
+}
+
+.wf-node--profile-cache .wf-node__preview {
+  font-style: italic;
+}
+
+/* ============================================================================
+   PROFILE LOAD / UNLOAD VISUAL
+   ============================================================================ */
+
+.wf-node--profile-load .wf-node__header,
+.wf-node--profile-unload .wf-node__header {
+  border-bottom-style: double;
+}
+
+/* ============================================================================
+   SMOOTH TOOL/FUNCTION GLOW (Subtle)
+   ============================================================================ */
+
+.wf-node--write-text:hover,
+.wf-node--edit-text:hover,
+.wf-node--decide-if:hover {
+  box-shadow: 0 4px 18px rgba(245, 194, 231, 0.25);
+}
+
+.wf-node--write-file:hover,
+.wf-node--read-file:hover,
+.wf-node--edit-file:hover,
+.wf-node--delete-file:hover {
+  box-shadow: 0 4px 18px rgba(250, 179, 135, 0.25);
+}
+
+.wf-node--profile-load:hover,
+.wf-node--profile-unload:hover {
+  box-shadow: 0 4px 18px rgba(180, 190, 254, 0.25);
 }
