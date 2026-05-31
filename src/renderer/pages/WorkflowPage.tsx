@@ -1,3 +1,29 @@
+/**
+ * src/renderer/pages/WorkflowsPage.tsx
+ *
+ * Full-featured workflow editor with:
+ * - Typed ports (continue | profile | server | text)
+ * - Strict connection enforcement (incompatible drop → delete)
+ * - Compatible-node highlight while dragging
+ * - Edge tail drag/reconnect (delete original, re-attach or drop)
+ * - Selected edge rendered on top (second SVG pass)
+ * - Snap highlight (green) when hovering valid drop target during reconnect
+ * - Palette categories: Start / Models
+ * - Profile block (pure data provider, no sequencing)
+ * - Text block (pure data provider, optional config value)
+ * - Input Text block (continue+text in, continue+text out)
+ * - Server block (continue+profile in, continue+server out)
+ * - Agent block (continue+server+text in, text out)
+ * - Start block (continue out, no config)
+ * - Inline workflow name editing
+ * - Ctrl+A select all nodes
+ * - Delete confirmation dialog
+ * - Ctrl+Z undo
+ * - panOffset separate from zoom (dots fixed on zoom)
+ * - Portal (position:fixed) for editor
+ * - IconPicker as separate component
+ */
+
 import {
   useState,
   useEffect,
@@ -6,6 +32,7 @@ import {
   useMemo,
   type MouseEvent as ReactMouseEvent,
   type WheelEvent as ReactWheelEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
 } from 'react';
 import { createPortal } from 'react-dom';
 import {
@@ -25,194 +52,125 @@ import {
   Maximize,
   Unlink,
   Play,
-  Search,
   Link,
-  Cpu,
-  Database,
-  Globe,
-  Mail,
-  FileText,
-  Terminal,
-  Code,
-  Layers,
-  Zap,
-  Star,
-  Heart,
-  Shield,
-  Lock,
-  Key,
-  Cloud,
-  Camera,
-  Mic,
-  Music,
-  Video,
-  Image,
-  Download,
-  Upload,
-  RefreshCw,
-  Settings,
-  Sliders,
-  Filter,
-  BarChart2,
-  PieChart,
-  TrendingUp,
-  Activity,
-  Wifi,
-  Package,
-  Box,
-  Inbox,
-  Send,
-  MessageSquare,
-  Bell,
-  Flag,
-  Bookmark,
-  Tag,
-  Hash,
-  Scissors,
-  Wrench,
-  Hammer,
-  Lightbulb,
-  Target,
-  Map,
-  Compass,
-  Clock,
-  Calendar,
-  Archive,
-  Folder,
-  Paperclip,
-  Clipboard,
-  Edit,
-  Eye,
-  EyeOff,
-  User,
-  Users,
-  Home,
-  Truck,
-  Anchor,
-  Hexagon,
-  Circle,
-  Square,
-  type LucideIcon,
+  Type,
+  SlidersHorizontal,
+  AlertTriangle,
+  TextCursor,
 } from 'lucide-react';
+import IconPicker, { resolveIcon } from '../components/workflows/IconPicker';
 import { Profile } from '../types/profile';
 import '../styles/WorkflowsPage.css';
 
 // ============================================================================
-// ICON REGISTRY
-// All values are validated at build-time — undefined entries are filtered out
-// so the picker never receives an invalid component.
+// PORT TYPES
 // ============================================================================
 
-const ICON_REGISTRY_RAW: Record<string, LucideIcon | undefined> = {
-  GitBranch,
-  Server,
-  Bot,
-  Play,
-  Cpu,
-  Database,
-  Globe,
-  Mail,
-  FileText,
-  Terminal,
-  Code,
-  Layers,
-  Zap,
-  Star,
-  Heart,
-  Shield,
-  Lock,
-  Key,
-  Cloud,
-  Camera,
-  Mic,
-  Music,
-  Video,
-  Image,
-  Download,
-  Upload,
-  RefreshCw,
-  Settings,
-  Sliders,
-  Filter,
-  BarChart2,
-  PieChart,
-  TrendingUp,
-  Activity,
-  Wifi,
-  Package,
-  Box,
-  Inbox,
-  Send,
-  MessageSquare,
-  Bell,
-  Flag,
-  Bookmark,
-  Tag,
-  Hash,
-  Link,
-  Scissors,
-  Wrench,
-  Hammer,
-  Lightbulb,
-  Target,
-  Map,
-  Compass,
-  Clock,
-  Calendar,
-  Archive,
-  Folder,
-  Paperclip,
-  Clipboard,
-  Edit,
-  Eye,
-  EyeOff,
-  User,
-  Users,
-  Home,
-  Truck,
-  Anchor,
-  Hexagon,
-  Circle,
-  Square,
-  Search,
-  Plus,
-  Trash2,
-  Check,
-  Pencil,
+export type PortType = 'continue' | 'profile' | 'server' | 'text';
+
+function portsCompatible(output: PortType, input: PortType): boolean {
+  return output === input;
+}
+
+// ============================================================================
+// NODE TYPES
+// ============================================================================
+
+export type NodeType =
+  | 'start'
+  | 'profile'
+  | 'text-data'
+  | 'server'
+  | 'input-text'
+  | 'agent';
+
+// Each port definition on a node
+export interface PortDef {
+  id: string; // unique within the node, e.g. "out-continue"
+  label: string;
+  type: PortType;
+  side: 'input' | 'output';
+}
+
+// Port definitions per node type
+const NODE_PORTS: Record<NodeType, PortDef[]> = {
+  start: [
+    { id: 'out-continue', label: 'continue', type: 'continue', side: 'output' },
+  ],
+  profile: [
+    { id: 'out-profile', label: 'profile', type: 'profile', side: 'output' },
+  ],
+  'text-data': [
+    { id: 'out-text', label: 'text', type: 'text', side: 'output' },
+  ],
+  server: [
+    { id: 'in-continue', label: 'continue', type: 'continue', side: 'input' },
+    { id: 'in-profile', label: 'profile', type: 'profile', side: 'input' },
+    { id: 'out-continue', label: 'continue', type: 'continue', side: 'output' },
+    { id: 'out-server', label: 'server', type: 'server', side: 'output' },
+  ],
+  'input-text': [
+    { id: 'in-continue', label: 'continue', type: 'continue', side: 'input' },
+    { id: 'in-text', label: 'question', type: 'text', side: 'input' },
+    { id: 'out-continue', label: 'continue', type: 'continue', side: 'output' },
+    { id: 'out-text', label: 'text', type: 'text', side: 'output' },
+  ],
+  agent: [
+    { id: 'in-continue', label: 'continue', type: 'continue', side: 'input' },
+    { id: 'in-server', label: 'server', type: 'server', side: 'input' },
+    { id: 'in-text', label: 'prompt', type: 'text', side: 'input' },
+    { id: 'out-continue', label: 'continue', type: 'continue', side: 'output' },
+    { id: 'out-text', label: 'text', type: 'text', side: 'output' },
+  ],
 };
 
-// Strip any entry that didn't resolve to a real component
-const ICON_REGISTRY: Record<string, LucideIcon> = Object.fromEntries(
-  Object.entries(ICON_REGISTRY_RAW).filter(
-    (entry): entry is [string, LucideIcon] => typeof entry[1] === 'function',
-  ),
-);
-
-const ICON_NAMES = Object.keys(ICON_REGISTRY).sort();
-
-function resolveIcon(name: string | undefined): LucideIcon {
-  if (name && ICON_REGISTRY[name]) return ICON_REGISTRY[name];
-  return GitBranch;
-}
+// Colour per port type
+const PORT_TYPE_COLOR: Record<PortType, string> = {
+  continue: 'var(--wf-continue)',
+  profile: 'var(--wf-profile)',
+  server: 'var(--wf-server)',
+  text: 'var(--wf-text)',
+};
 
 // ============================================================================
-// TYPES
+// NODE DATA TYPES
 // ============================================================================
-
-export type NodeType = 'start' | 'server' | 'agent';
 
 export interface StartData {
-  input: string;
+  _type: 'start';
+}
+export interface ProfileData {
+  _type: 'profile';
+  profileId: string | null;
+}
+export interface TextDataData {
+  _type: 'text-data';
+  value: string;
 }
 export interface ServerData {
+  _type: 'server';
   profileId: string | null;
-  profile: Profile | null;
+}
+export interface InputTextData {
+  _type: 'input-text';
+  question: string;
 }
 export interface AgentData {
-  serverNodeId: string | null;
+  _type: 'agent';
   prompt: string;
 }
-export type NodeData = StartData | ServerData | AgentData;
+
+export type NodeData =
+  | StartData
+  | ProfileData
+  | TextDataData
+  | ServerData
+  | InputTextData
+  | AgentData;
+
+// ============================================================================
+// GRAPH TYPES
+// ============================================================================
 
 export interface WorkflowNode {
   id: string;
@@ -224,8 +182,10 @@ export interface WorkflowNode {
 
 export interface WorkflowEdge {
   id: string;
-  source: string;
-  target: string;
+  source: string; // node id
+  sourcePort: string; // port id
+  target: string; // node id
+  targetPort: string; // port id
 }
 
 export interface Workflow {
@@ -239,29 +199,81 @@ export interface Workflow {
 }
 
 // ============================================================================
-// CONSTANTS
+// NODE META (display info)
 // ============================================================================
 
-const WORKFLOWS_KEY = 'workflows';
+interface NodeMeta {
+  label: string;
+  icon: React.ElementType;
+  colorVar: string;
+  category: 'Input' | 'Models' | 'Data';
+  hasConfig: boolean;
+}
+
+const NODE_META: Record<NodeType, NodeMeta> = {
+  start: {
+    label: 'Start',
+    icon: Play,
+    colorVar: 'var(--wf-start)',
+    category: 'Input',
+    hasConfig: false,
+  },
+  profile: {
+    label: 'Profile',
+    icon: SlidersHorizontal,
+    colorVar: 'var(--wf-profile)',
+    category: 'Data',
+    hasConfig: true,
+  },
+  'text-data': {
+    label: 'Text',
+    icon: Type,
+    colorVar: 'var(--wf-text)',
+    category: 'Data',
+    hasConfig: true,
+  },
+  server: {
+    label: 'Server',
+    icon: Server,
+    colorVar: 'var(--wf-server)',
+    category: 'Models',
+    hasConfig: true,
+  },
+  'input-text': {
+    label: 'Input Text',
+    icon: TextCursor,
+    colorVar: 'var(--wf-text)',
+    category: 'Input',
+    hasConfig: true,
+  },
+  agent: {
+    label: 'Agent',
+    icon: Bot,
+    colorVar: 'var(--wf-agent)',
+    category: 'Models',
+    hasConfig: true,
+  },
+};
+
+// ============================================================================
+// LAYOUT CONSTANTS
+// ============================================================================
+
 const NODE_WIDTH = 220;
-const PORT_Y = 20; // from top of node — header centre
-const BEZIER_OFFSET = 80;
+const PORT_GAP = 28; // px between ports vertically
+const PORT_TOP = 44; // y of first port from node top
+const PORT_RADIUS = 6; // visual circle radius
+const PORT_HIT = 12; // clickable radius
+const BEZIER_OFFSET = 90;
 const MIN_ZOOM = 0.15;
 const MAX_ZOOM = 2.5;
 const ZOOM_STEP = 0.02;
 const GRID_SIZE = 20;
-const DRAG_THRESHOLD = 5; // px before a click becomes a drag
+const DRAG_THRESHOLD = 5;
 const DOT_SPACING = 24;
 const MAX_HISTORY = 60;
-
-const NODE_META: Record<
-  NodeType,
-  { label: string; icon: LucideIcon; colorVar: string }
-> = {
-  start: { label: 'Start', icon: Play, colorVar: 'var(--wf-start)' },
-  server: { label: 'Server Start', icon: Server, colorVar: 'var(--wf-server)' },
-  agent: { label: 'Agent', icon: Bot, colorVar: 'var(--wf-agent)' },
-};
+const TAIL_HIT_PCT = 0.18; // last 18% of edge = tail drag zone
+const WORKFLOWS_KEY = 'workflows';
 
 // ============================================================================
 // STORAGE
@@ -269,8 +281,9 @@ const NODE_META: Record<
 
 function loadWorkflows(): Workflow[] {
   try {
-    const raw = localStorage.getItem(WORKFLOWS_KEY);
-    return raw ? (JSON.parse(raw) as Workflow[]) : [];
+    return JSON.parse(
+      localStorage.getItem(WORKFLOWS_KEY) ?? '[]',
+    ) as Workflow[];
   } catch {
     return [];
   }
@@ -282,10 +295,9 @@ function persistWorkflows(wfs: Workflow[]): void {
 
 function loadProfiles(): Profile[] {
   try {
-    const raw = localStorage.getItem('profiles');
-    return raw
-      ? (JSON.parse(raw) as Profile[]).sort((a, b) => a.order - b.order)
-      : [];
+    return (
+      JSON.parse(localStorage.getItem('profiles') ?? '[]') as Profile[]
+    ).sort((a, b) => a.order - b.order);
   } catch {
     return [];
   }
@@ -299,7 +311,7 @@ function uid(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function snap(v: number): number {
+function snapG(v: number): number {
   return Math.round(v / GRID_SIZE) * GRID_SIZE;
 }
 
@@ -307,81 +319,166 @@ function makeNode(type: NodeType, x: number, y: number): WorkflowNode {
   const base = {
     id: uid(),
     type,
-    position: { x: snap(x), y: snap(y) },
+    position: { x: snapG(x), y: snapG(y) },
     label: NODE_META[type].label,
   };
-  if (type === 'start') return { ...base, data: { input: '' } as StartData };
-  if (type === 'server')
-    return { ...base, data: { profileId: null, profile: null } as ServerData };
-  return { ...base, data: { serverNodeId: null, prompt: '' } as AgentData };
+  switch (type) {
+    case 'start':
+      return { ...base, data: { _type: 'start' } };
+    case 'profile':
+      return { ...base, data: { _type: 'profile', profileId: null } };
+    case 'text-data':
+      return { ...base, data: { _type: 'text-data', value: '' } };
+    case 'server':
+      return { ...base, data: { _type: 'server', profileId: null } };
+    case 'input-text':
+      return { ...base, data: { _type: 'input-text', question: '' } };
+    case 'agent':
+      return { ...base, data: { _type: 'agent', prompt: '' } };
+  }
 }
 
 // ============================================================================
-// ICON PICKER
+// PORT POSITION CALCULATION
+// port positions are relative to the node's top-left corner
 // ============================================================================
 
-interface IconPickerProps {
-  current: string;
-  onSelect: (name: string) => void;
-  onClose: () => void;
+function portOffset(
+  node: WorkflowNode,
+  portId: string,
+): { x: number; y: number } | null {
+  const ports = NODE_PORTS[node.type];
+  const inputs = ports.filter((p) => p.side === 'input');
+  const outputs = ports.filter((p) => p.side === 'output');
+
+  const inputIdx = inputs.findIndex((p) => p.id === portId);
+  const outputIdx = outputs.findIndex((p) => p.id === portId);
+
+  if (inputIdx !== -1) return { x: 0, y: PORT_TOP + inputIdx * PORT_GAP };
+  if (outputIdx !== -1)
+    return { x: NODE_WIDTH, y: PORT_TOP + outputIdx * PORT_GAP };
+  return null;
 }
 
-function IconPicker({ current, onSelect, onClose }: IconPickerProps) {
-  const [query, setQuery] = useState('');
+function portCanvasPos(
+  node: WorkflowNode,
+  portId: string,
+): { x: number; y: number } | null {
+  const off = portOffset(node, portId);
+  if (!off) return null;
+  return { x: node.position.x + off.x, y: node.position.y + off.y };
+}
 
-  const filtered = useMemo(
-    () =>
-      query.trim()
-        ? ICON_NAMES.filter((n) =>
-            n.toLowerCase().includes(query.toLowerCase()),
-          )
-        : ICON_NAMES,
-    [query],
-  );
+// ============================================================================
+// BEZIER PATH
+// ============================================================================
 
+function bezierPath(sx: number, sy: number, tx: number, ty: number): string {
+  return `M ${sx} ${sy} C ${sx + BEZIER_OFFSET} ${sy}, ${tx - BEZIER_OFFSET} ${ty}, ${tx} ${ty}`;
+}
+
+// Point on cubic bezier at parameter t
+function bezierPoint(
+  sx: number,
+  sy: number,
+  tx: number,
+  ty: number,
+  t: number,
+): { x: number; y: number } {
+  const c1x = sx + BEZIER_OFFSET;
+  const c1y = sy;
+  const c2x = tx - BEZIER_OFFSET;
+  const c2y = ty;
+  const mt = 1 - t;
+  return {
+    x:
+      mt ** 3 * sx +
+      3 * mt ** 2 * t * c1x +
+      3 * mt * t ** 2 * c2x +
+      t ** 3 * tx,
+    y:
+      mt ** 3 * sy +
+      3 * mt ** 2 * t * c1y +
+      3 * mt * t ** 2 * c2y +
+      t ** 3 * ty,
+  };
+}
+
+// Approximate arc-length parameterization: given a fraction of the curve,
+// return a canvas point. Used to decide if a click is near the tail.
+function pointNearTail(
+  px: number,
+  py: number,
+  sx: number,
+  sy: number,
+  tx: number,
+  ty: number,
+  threshold: number,
+): boolean {
+  // sample last TAIL_HIT_PCT of the curve
+  for (let t = 1 - TAIL_HIT_PCT; t <= 1; t += 0.02) {
+    const pt = bezierPoint(sx, sy, tx, ty, t);
+    if (Math.hypot(px - pt.x, py - pt.y) < threshold) return true;
+  }
+  return false;
+}
+
+// ============================================================================
+// NODE HEIGHT (dynamic based on port count)
+// ============================================================================
+
+function nodeHeight(type: NodeType): number {
+  const ports = NODE_PORTS[type];
+  const inputs = ports.filter((p) => p.side === 'input').length;
+  const outputs = ports.filter((p) => p.side === 'output').length;
+  const maxPorts = Math.max(inputs, outputs, 1);
+  return PORT_TOP + (maxPorts - 1) * PORT_GAP + 28;
+}
+
+// ============================================================================
+// CONFIRM DIALOG
+// ============================================================================
+
+interface ConfirmDialogProps {
+  title: string;
+  message: string;
+  confirmText?: string;
+  cancelText?: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+}
+
+function ConfirmDialog({
+  title,
+  message,
+  confirmText = 'Confirm',
+  cancelText = 'Cancel',
+  onConfirm,
+  onCancel,
+}: ConfirmDialogProps) {
   return createPortal(
-    <div className="wf-icon-picker-overlay" onClick={onClose}>
-      <div className="wf-icon-picker" onClick={(e) => e.stopPropagation()}>
-        <div className="wf-icon-picker__header">
-          <span>Choose Icon</span>
+    <div className="wf-confirm-overlay" onClick={onCancel}>
+      <div className="wf-confirm" onClick={(e) => e.stopPropagation()}>
+        <div className="wf-confirm__icon">
+          <AlertTriangle size={22} />
+        </div>
+        <h3 className="wf-confirm__title">{title}</h3>
+        <p className="wf-confirm__message">{message}</p>
+        <div className="wf-confirm__actions">
           <button
             type="button"
-            className="wf-icon-picker__close"
-            onClick={onClose}
+            className="wf-confirm__cancel"
+            onClick={onCancel}
           >
-            <X size={15} />
+            {cancelText}
           </button>
-        </div>
-        <div className="wf-icon-picker__search-row">
-          <Search size={13} className="wf-icon-picker__search-icon" />
-          <input
-            autoFocus
-            className="wf-icon-picker__search"
-            placeholder="Search icons…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-        </div>
-        <div className="wf-icon-picker__grid">
-          {filtered.map((name) => {
-            const Ic = ICON_REGISTRY[name];
-            // Guard: should never be undefined due to registry filtering, but be safe
-            if (!Ic) return null;
-            return (
-              <button
-                key={name}
-                type="button"
-                title={name}
-                className={`wf-icon-picker__item ${current === name ? 'wf-icon-picker__item--active' : ''}`}
-                onClick={() => {
-                  onSelect(name);
-                  onClose();
-                }}
-              >
-                <Ic size={17} />
-              </button>
-            );
-          })}
+          <button
+            type="button"
+            className="wf-confirm__confirm"
+            onClick={onConfirm}
+          >
+            {confirmText}
+          </button>
         </div>
       </div>
     </div>,
@@ -390,7 +487,7 @@ function IconPicker({ current, onSelect, onClose }: IconPickerProps) {
 }
 
 // ============================================================================
-// WORKFLOW GRID PAGE
+// WORKFLOW GRID
 // ============================================================================
 
 interface WorkflowGridProps {
@@ -413,6 +510,7 @@ function WorkflowGrid({
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [iconPickerId, setIconPickerId] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
   const startRename = (wf: Workflow, e: ReactMouseEvent) => {
     e.stopPropagation();
@@ -499,7 +597,7 @@ function WorkflowGrid({
                       title="Delete"
                       onClick={(e) => {
                         e.stopPropagation();
-                        onDelete(wf.id);
+                        setConfirmDelete(wf.id);
                       }}
                     >
                       <GitBranchMinus size={13} />
@@ -569,8 +667,24 @@ function WorkflowGrid({
       {iconPickerId && pickerWorkflow && (
         <IconPicker
           current={pickerWorkflow.icon}
-          onSelect={(name) => onIconChange(iconPickerId, name)}
+          onSelect={(name) => {
+            onIconChange(iconPickerId, name);
+            setIconPickerId(null);
+          }}
           onClose={() => setIconPickerId(null)}
+        />
+      )}
+
+      {confirmDelete && (
+        <ConfirmDialog
+          title="Delete Workflow"
+          message={`Delete "${workflows.find((w) => w.id === confirmDelete)?.name ?? 'this workflow'}"? This cannot be undone.`}
+          confirmText="Delete"
+          onConfirm={() => {
+            onDelete(confirmDelete);
+            setConfirmDelete(null);
+          }}
+          onCancel={() => setConfirmDelete(null)}
         />
       )}
     </div>
@@ -583,31 +697,32 @@ function WorkflowGrid({
 
 interface NodeConfigPanelProps {
   node: WorkflowNode;
-  allNodes: WorkflowNode[];
   profiles: Profile[];
   onChange: (id: string, patch: Partial<WorkflowNode>) => void;
   onDelete: (id: string) => void;
   onClose: () => void;
+  // whether the profile input port already has an edge (disables dropdown)
+  profilePortWired: boolean;
+  // whether the text input port already has an edge (disables question field)
+  textPortWired: boolean;
 }
 
 function NodeConfigPanel({
   node,
-  allNodes,
   profiles,
   onChange,
   onDelete,
   onClose,
+  profilePortWired,
+  textPortWired,
 }: NodeConfigPanelProps) {
   const meta = NODE_META[node.type];
   const Icon = meta.icon;
 
-  const patchData = (dataPatch: Partial<NodeData>) =>
-    onChange(node.id, { data: { ...node.data, ...dataPatch } as NodeData });
+  const patchData = (patch: Partial<NodeData>) =>
+    onChange(node.id, { data: { ...node.data, ...patch } as NodeData });
 
-  const serverNodes = allNodes.filter((n) => n.type === 'server');
-
-  const profileName = (id: string | null) =>
-    id ? (profiles.find((p) => p.id === id)?.name ?? null) : null;
+  if (!meta.hasConfig) return null;
 
   return (
     <div className="wf-config-panel">
@@ -642,45 +757,21 @@ function NodeConfigPanel({
           />
         </div>
 
-        {/* START */}
-        {node.type === 'start' && (
-          <div className="wf-config-field">
-            <label className="wf-config-field__label">
-              Initial Input{' '}
-              <span className="wf-config-field__optional">(optional)</span>
-            </label>
-            <textarea
-              className="wf-config-field__textarea"
-              rows={4}
-              value={(node.data as StartData).input}
-              onChange={(e) => patchData({ input: e.target.value })}
-              placeholder="Optional string passed into the workflow…"
-            />
-            <small className="wf-config-field__hint">
-              Leave empty to receive input at runtime.
-            </small>
-          </div>
-        )}
-
-        {/* SERVER */}
-        {node.type === 'server' && (
+        {/* PROFILE node */}
+        {node.type === 'profile' && (
           <div className="wf-config-field">
             <label className="wf-config-field__label">Profile</label>
             {profiles.length === 0 ? (
-              <p className="wf-config-field__empty">
-                No profiles found. Create one in the Profiles page.
-              </p>
+              <p className="wf-config-field__empty">No profiles found.</p>
             ) : (
               <select
                 className="wf-config-field__select"
-                value={(node.data as ServerData).profileId ?? ''}
-                onChange={(e) => {
-                  const id = e.target.value || null;
+                value={(node.data as ProfileData).profileId ?? ''}
+                onChange={(e) =>
                   patchData({
-                    profileId: id,
-                    profile: profiles.find((p) => p.id === id) ?? null,
-                  } as Partial<ServerData>);
-                }}
+                    profileId: e.target.value || null,
+                  } as Partial<ProfileData>)
+                }
               >
                 <option value="">Select a profile…</option>
                 {profiles.map((p) => (
@@ -690,76 +781,112 @@ function NodeConfigPanel({
                 ))}
               </select>
             )}
-            {(node.data as ServerData).profileId && (
-              <div className="wf-config-field__badge">
-                <Server size={11} />
-                {profileName((node.data as ServerData).profileId)}
+          </div>
+        )}
+
+        {/* TEXT DATA node */}
+        {node.type === 'text-data' && (
+          <div className="wf-config-field">
+            <label className="wf-config-field__label">Text value</label>
+            <textarea
+              className="wf-config-field__textarea"
+              rows={4}
+              value={(node.data as TextDataData).value}
+              onChange={(e) =>
+                patchData({ value: e.target.value } as Partial<TextDataData>)
+              }
+              placeholder="Static text value…"
+            />
+          </div>
+        )}
+
+        {/* SERVER node — profile dropdown (disabled if port wired) */}
+        {node.type === 'server' && (
+          <div className="wf-config-field">
+            <label className="wf-config-field__label">
+              Profile
+              {profilePortWired && (
+                <span className="wf-config-field__wired-badge">wired</span>
+              )}
+            </label>
+            {profilePortWired ? (
+              <div className="wf-config-field__disabled-row">
+                <span className="wf-config-field__disabled-text">
+                  Set by connected Profile node
+                </span>
+                <X size={13} className="wf-config-field__disabled-icon" />
               </div>
+            ) : profiles.length === 0 ? (
+              <p className="wf-config-field__empty">No profiles found.</p>
+            ) : (
+              <select
+                className="wf-config-field__select"
+                value={(node.data as ServerData).profileId ?? ''}
+                onChange={(e) =>
+                  patchData({
+                    profileId: e.target.value || null,
+                  } as Partial<ServerData>)
+                }
+              >
+                <option value="">Select a profile…</option>
+                {profiles.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
             )}
           </div>
         )}
 
-        {/* AGENT */}
-        {node.type === 'agent' && (
-          <>
-            <div className="wf-config-field">
-              <label className="wf-config-field__label">Server Node</label>
-              {serverNodes.length === 0 ? (
-                <p className="wf-config-field__empty">
-                  Add a Server Start node first.
-                </p>
-              ) : (
-                <select
-                  className="wf-config-field__select"
-                  value={(node.data as AgentData).serverNodeId ?? ''}
-                  onChange={(e) =>
-                    patchData({
-                      serverNodeId: e.target.value || null,
-                    } as Partial<AgentData>)
-                  }
-                >
-                  <option value="">Select a server node…</option>
-                  {serverNodes.map((sn) => {
-                    const pn = profileName((sn.data as ServerData).profileId);
-                    return (
-                      <option key={sn.id} value={sn.id}>
-                        {sn.label}
-                        {pn ? ` — ${pn}` : ' (no profile)'}
-                      </option>
-                    );
-                  })}
-                </select>
+        {/* INPUT TEXT node — question field (disabled if port wired) */}
+        {node.type === 'input-text' && (
+          <div className="wf-config-field">
+            <label className="wf-config-field__label">
+              Text Question
+              {textPortWired && (
+                <span className="wf-config-field__wired-badge">wired</span>
               )}
-              {(node.data as AgentData).serverNodeId &&
-                (() => {
-                  const sn = serverNodes.find(
-                    (n) => n.id === (node.data as AgentData).serverNodeId,
-                  );
-                  const pn = sn
-                    ? profileName((sn.data as ServerData).profileId)
-                    : null;
-                  return (
-                    <div className="wf-config-field__badge">
-                      <Server size={11} />
-                      {sn?.label}
-                      {pn ? ` — ${pn}` : ''}
-                    </div>
-                  );
-                })()}
-            </div>
-            <div className="wf-config-field">
-              <label className="wf-config-field__label">Prompt</label>
-              <textarea
-                className="wf-config-field__textarea"
-                rows={5}
-                value={(node.data as AgentData).prompt}
+            </label>
+            {textPortWired ? (
+              <div className="wf-config-field__disabled-row">
+                <span className="wf-config-field__disabled-text">
+                  Set by connected Text node
+                </span>
+                <X size={13} className="wf-config-field__disabled-icon" />
+              </div>
+            ) : (
+              <input
+                className="wf-config-field__input"
+                value={(node.data as InputTextData).question}
                 onChange={(e) =>
-                  patchData({ prompt: e.target.value } as Partial<AgentData>)
+                  patchData({
+                    question: e.target.value,
+                  } as Partial<InputTextData>)
                 }
-                placeholder="The text prompt sent to this agent…"
+                placeholder="Enter a question for the user…"
               />
-            </div>
-          </>
+            )}
+          </div>
+        )}
+
+        {/* AGENT node */}
+        {node.type === 'agent' && (
+          <div className="wf-config-field">
+            <label className="wf-config-field__label">
+              Prompt hint{' '}
+              <span className="wf-config-field__optional">(optional)</span>
+            </label>
+            <textarea
+              className="wf-config-field__textarea"
+              rows={4}
+              value={(node.data as AgentData).prompt}
+              onChange={(e) =>
+                patchData({ prompt: e.target.value } as Partial<AgentData>)
+              }
+              placeholder="Notes about what this agent does…"
+            />
+          </div>
         )}
       </div>
 
@@ -785,41 +912,55 @@ interface NodePaletteProps {
   onDragStart: (e: React.DragEvent, type: NodeType) => void;
 }
 
-function NodePalette({ onDragStart }: NodePaletteProps) {
-  const NODE_HINTS: Record<NodeType, string> = {
-    start: 'Entry point for the workflow',
-    server: 'Binds a profile / model',
-    agent: 'Runs a prompt on a server',
-  };
+const PALETTE_CATEGORIES: { label: string; types: NodeType[] }[] = [
+  { label: 'Input', types: ['start', 'input-text'] },
+  { label: 'Models', types: ['server', 'agent'] },
+  { label: 'Data', types: ['profile', 'text-data'] },
+];
 
+const NODE_HINTS: Record<NodeType, string> = {
+  start: 'Entry point — outputs continue',
+  profile: 'Provides a profile object',
+  'text-data': 'Provides a static text value',
+  server: 'Starts a model server',
+  'input-text': 'Prompts user for text input',
+  agent: 'Runs a prompt on a server',
+};
+
+function NodePalette({ onDragStart }: NodePaletteProps) {
   return (
     <div className="wf-palette">
-      <div className="wf-palette__header">Nodes</div>
-      {(
-        Object.entries(NODE_META) as [NodeType, (typeof NODE_META)[NodeType]][]
-      ).map(([type, meta]) => {
-        const Icon = meta.icon;
-        return (
-          <div
-            key={type}
-            className="wf-palette__item"
-            style={{ '--node-color': meta.colorVar } as React.CSSProperties}
-            draggable
-            onDragStart={(e) => onDragStart(e, type)}
-          >
-            <div className="wf-palette__item-icon">
-              <Icon size={14} />
-            </div>
-            <div className="wf-palette__item-text">
-              <span className="wf-palette__item-label">{meta.label}</span>
-              <span className="wf-palette__item-hint">{NODE_HINTS[type]}</span>
-            </div>
-          </div>
-        );
-      })}
+      {PALETTE_CATEGORIES.map((cat) => (
+        <div key={cat.label} className="wf-palette__category">
+          <div className="wf-palette__category-label">{cat.label}</div>
+          {cat.types.map((type) => {
+            const meta = NODE_META[type];
+            const Icon = meta.icon;
+            return (
+              <div
+                key={type}
+                className="wf-palette__item"
+                style={{ '--node-color': meta.colorVar } as React.CSSProperties}
+                draggable
+                onDragStart={(e) => onDragStart(e, type)}
+              >
+                <div className="wf-palette__item-icon">
+                  <Icon size={14} />
+                </div>
+                <div className="wf-palette__item-text">
+                  <span className="wf-palette__item-label">{meta.label}</span>
+                  <span className="wf-palette__item-hint">
+                    {NODE_HINTS[type]}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ))}
       <div className="wf-palette__tip">
         <Unlink size={11} />
-        Drag onto the canvas
+        Drag onto canvas
       </div>
     </div>
   );
@@ -832,37 +973,86 @@ function NodePalette({ onDragStart }: NodePaletteProps) {
 interface CanvasNodeProps {
   node: WorkflowNode;
   isSelected: boolean;
-  isConnectingTarget: boolean;
+  // ports that are valid targets while connecting (used for highlight)
+  compatibleInputPorts: Set<string>; // "nodeId:portId"
+  // ports that are valid targets while reconnecting tail
+  compatibleInputPortsForReconnect: Set<string>;
+  // port currently being hovered during a connection/reconnect drag
+  snapTargetPort: string | null; // "nodeId:portId" | null
   profiles: Profile[];
-  onMouseDown: (e: ReactMouseEvent, id: string) => void;
-  onOutputPortMouseDown: (e: ReactMouseEvent, id: string) => void;
-  onInputPortMouseUp: (e: ReactMouseEvent, id: string) => void;
-  onInputPortClick: (e: ReactMouseEvent, id: string) => void;
+  onNodeMouseDown: (e: ReactMouseEvent, id: string) => void;
+  onPortMouseDown: (
+    e: ReactMouseEvent,
+    nodeId: string,
+    portId: string,
+    side: 'input' | 'output',
+  ) => void;
+  onPortMouseUp: (e: ReactMouseEvent, nodeId: string, portId: string) => void;
+  onPortClick: (e: ReactMouseEvent, nodeId: string, portId: string) => void;
 }
 
 function CanvasNode({
   node,
   isSelected,
-  isConnectingTarget,
+  compatibleInputPorts,
+  compatibleInputPortsForReconnect,
+  snapTargetPort,
   profiles,
-  onMouseDown,
-  onOutputPortMouseDown,
-  onInputPortMouseUp,
-  onInputPortClick,
+  onNodeMouseDown,
+  onPortMouseDown,
+  onPortMouseUp,
+  onPortClick,
 }: CanvasNodeProps) {
   const meta = NODE_META[node.type];
   const Icon = meta.icon;
+  const ports = NODE_PORTS[node.type];
+  const inputs = ports.filter((p) => p.side === 'input');
+  const outputs = ports.filter((p) => p.side === 'output');
+  const h = nodeHeight(node.type);
 
-  const profileName =
-    node.type === 'server'
-      ? profiles.find((p) => p.id === (node.data as ServerData).profileId)?.name
-      : null;
+  // preview text
+  let preview = '';
+  switch (node.type) {
+    case 'profile': {
+      const d = node.data as ProfileData;
+      preview = d.profileId
+        ? (profiles.find((p) => p.id === d.profileId)?.name ??
+          'Unknown profile')
+        : 'No profile selected';
+      break;
+    }
+    case 'text-data': {
+      const v = (node.data as TextDataData).value;
+      preview = v
+        ? `"${v.slice(0, 40)}${v.length > 40 ? '…' : ''}"`
+        : 'No value set';
+      break;
+    }
+    case 'server': {
+      const d = node.data as ServerData;
+      preview = d.profileId
+        ? (profiles.find((p) => p.id === d.profileId)?.name ?? 'Profile set')
+        : 'No profile';
+      break;
+    }
+    case 'input-text': {
+      const q = (node.data as InputTextData).question;
+      preview = q
+        ? `"${q.slice(0, 40)}${q.length > 40 ? '…' : ''}"`
+        : 'No question set';
+      break;
+    }
+    case 'agent': {
+      const pr = (node.data as AgentData).prompt;
+      preview = pr
+        ? pr.slice(0, 44) + (pr.length > 44 ? '…' : '')
+        : 'No prompt hint';
+      break;
+    }
+  }
 
-  const hasWarning =
-    (node.type === 'server' && !(node.data as ServerData).profileId) ||
-    (node.type === 'agent' && !(node.data as AgentData).serverNodeId);
-
-  const hasInput = node.type !== 'start';
+  const isConnectingTarget =
+    compatibleInputPorts.size > 0 || compatibleInputPortsForReconnect.size > 0;
 
   return (
     <div
@@ -870,28 +1060,20 @@ function CanvasNode({
         'wf-node',
         `wf-node--${node.type}`,
         isSelected ? 'wf-node--selected' : '',
-        isConnectingTarget ? 'wf-node--connecting-target' : '',
+        isConnectingTarget ? 'wf-node--connectable' : '',
       ].join(' ')}
-      style={{
-        transform: `translate(${node.position.x}px, ${node.position.y}px)`,
-        width: NODE_WIDTH,
-      }}
+      style={
+        {
+          transform: `translate(${node.position.x}px, ${node.position.y}px)`,
+          width: NODE_WIDTH,
+          height: h,
+        } as React.CSSProperties
+      }
       onMouseDown={(e) => {
-        if ((e.target as HTMLElement).closest('.wf-node__port')) return;
-        onMouseDown(e, node.id);
+        if ((e.target as HTMLElement).closest('.wf-port')) return;
+        onNodeMouseDown(e, node.id);
       }}
     >
-      {/* Input port */}
-      {hasInput && (
-        <div
-          className="wf-node__port wf-node__port--input"
-          style={{ top: PORT_Y }}
-          onMouseUp={(e) => onInputPortMouseUp(e, node.id)}
-          onClick={(e) => onInputPortClick(e, node.id)}
-          title="Input"
-        />
-      )}
-
       {/* Header */}
       <div
         className="wf-node__header"
@@ -901,62 +1083,94 @@ function CanvasNode({
           <Icon size={13} />
         </div>
         <span className="wf-node__header-label">{node.label}</span>
-        {hasWarning && (
-          <span className="wf-node__warning" title="Configuration incomplete" />
-        )}
       </div>
 
-      {/* Body */}
-      <div className="wf-node__body">
-        {node.type === 'start' && (
-          <span className="wf-node__preview">
-            {(node.data as StartData).input
-              ? `"${(node.data as StartData).input.slice(0, 44)}${(node.data as StartData).input.length > 44 ? '…' : ''}"`
-              : 'No initial input'}
-          </span>
-        )}
-        {node.type === 'server' && (
+      {/* Body preview */}
+      {preview && (
+        <div className="wf-node__body">
           <span
-            className={`wf-node__preview ${!profileName ? 'wf-node__preview--empty' : ''}`}
+            className={`wf-node__preview${!preview || preview.startsWith('No ') ? ' wf-node__preview--empty' : ''}`}
           >
-            {profileName ?? 'No profile selected'}
+            {preview}
           </span>
-        )}
-        {node.type === 'agent' && (
-          <>
-            <span
-              className={`wf-node__preview ${!(node.data as AgentData).serverNodeId ? 'wf-node__preview--empty' : ''}`}
-            >
-              {(node.data as AgentData).serverNodeId
-                ? 'Server assigned'
-                : 'No server assigned'}
-            </span>
-            {(node.data as AgentData).prompt && (
-              <span className="wf-node__preview wf-node__preview--prompt">
-                {(node.data as AgentData).prompt.slice(0, 52)}
-                {(node.data as AgentData).prompt.length > 52 ? '…' : ''}
-              </span>
-            )}
-          </>
-        )}
-      </div>
+        </div>
+      )}
 
-      {/* Output port */}
-      <div
-        className="wf-node__port wf-node__port--output"
-        style={{ top: PORT_Y }}
-        onMouseDown={(e) => {
-          e.stopPropagation();
-          onOutputPortMouseDown(e, node.id);
-        }}
-        title="Drag to connect"
-      />
+      {/* Input ports */}
+      {inputs.map((port, idx) => {
+        const key = `${node.id}:${port.id}`;
+        const isSnap = snapTargetPort === key;
+        const isCompat =
+          compatibleInputPorts.has(key) ||
+          compatibleInputPortsForReconnect.has(key);
+        return (
+          <div
+            key={port.id}
+            className={[
+              'wf-port',
+              'wf-port--input',
+              isCompat ? 'wf-port--compatible' : '',
+              isSnap ? 'wf-port--snap' : '',
+            ].join(' ')}
+            style={
+              {
+                top: PORT_TOP + idx * PORT_GAP,
+                '--port-color': PORT_TYPE_COLOR[port.type],
+              } as React.CSSProperties
+            }
+            title={`${port.label} (${port.type})`}
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              onPortMouseDown(e, node.id, port.id, 'input');
+            }}
+            onMouseUp={(e) => {
+              e.stopPropagation();
+              onPortMouseUp(e, node.id, port.id);
+            }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onPortClick(e, node.id, port.id);
+            }}
+          >
+            <span className="wf-port__label wf-port__label--left">
+              {port.label}
+            </span>
+          </div>
+        );
+      })}
+
+      {/* Output ports */}
+      {outputs.map((port, idx) => (
+        <div
+          key={port.id}
+          className="wf-port wf-port--output"
+          style={
+            {
+              top: PORT_TOP + idx * PORT_GAP,
+              '--port-color': PORT_TYPE_COLOR[port.type],
+            } as React.CSSProperties
+          }
+          title={`${port.label} (${port.type})`}
+          onMouseDown={(e) => {
+            e.stopPropagation();
+            onPortMouseDown(e, node.id, port.id, 'output');
+          }}
+          onMouseUp={(e) => {
+            e.stopPropagation();
+            onPortMouseUp(e, node.id, port.id);
+          }}
+        >
+          <span className="wf-port__label wf-port__label--right">
+            {port.label}
+          </span>
+        </div>
+      ))}
     </div>
   );
 }
 
 // ============================================================================
-// HISTORY HELPERS
+// HISTORY
 // ============================================================================
 
 interface HistoryEntry {
@@ -965,7 +1179,7 @@ interface HistoryEntry {
 }
 
 // ============================================================================
-// WORKFLOW EDITOR  (rendered via portal)
+// WORKFLOW EDITOR
 // ============================================================================
 
 interface WorkflowEditorProps {
@@ -973,6 +1187,7 @@ interface WorkflowEditorProps {
   profiles: Profile[];
   onChange: (updated: Workflow) => void;
   onBack: () => void;
+  onRename: (id: string, name: string) => void;
 }
 
 interface Transform {
@@ -988,10 +1203,23 @@ interface DragState {
 }
 interface PanState {
   startMouse: { x: number; y: number };
-  startTransform: { x: number; y: number };
+  startTx: { x: number; y: number };
 }
+
+// Active connection drag: drawing a new edge from an output port
 interface ConnectState {
-  sourceId: string;
+  sourceNodeId: string;
+  sourcePortId: string;
+  sourcePortType: PortType;
+  mouseCanvas: { x: number; y: number };
+}
+
+// Edge tail drag: reconnecting an existing edge's target
+interface ReconnectState {
+  edgeId: string;
+  sourceNodeId: string;
+  sourcePortId: string;
+  sourcePortType: PortType;
   mouseCanvas: { x: number; y: number };
 }
 
@@ -1000,6 +1228,7 @@ function WorkflowEditor({
   profiles,
   onChange,
   onBack,
+  onRename,
 }: WorkflowEditorProps) {
   const [nodes, setNodes] = useState<WorkflowNode[]>(workflow.nodes);
   const [edges, setEdges] = useState<WorkflowEdge[]>(workflow.edges);
@@ -1008,34 +1237,37 @@ function WorkflowEditor({
     y: 80,
     scale: 1,
   });
-  // panOffset drives the dot-grid background — only updated during panning, not zooming
-  const [panOffset, setPanOffset] = useState({ x: 80, y: 80 });
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [panOffset, setPanOffset] = useState({ x: 80, y: 80 }); // dots only move on pan
+  const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(
+    new Set(),
+  );
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [dragging, setDragging] = useState<DragState | null>(null);
   const [panning, setPanning] = useState<PanState | null>(null);
   const [connecting, setConnecting] = useState<ConnectState | null>(null);
+  const [reconnecting, setReconnecting] = useState<ReconnectState | null>(null);
   const [hoveredEdgeId, setHoveredEdgeId] = useState<string | null>(null);
+  const [snapTarget, setSnapTarget] = useState<string | null>(null); // "nodeId:portId"
+  const [editingName, setEditingName] = useState(false);
+  const [nameValue, setNameValue] = useState(workflow.name);
 
   const canvasRef = useRef<HTMLDivElement>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const nameInputRef = useRef<HTMLInputElement>(null);
 
-  // Undo history — stored in a ref so push/pop never cause renders
+  // History
   const history = useRef<HistoryEntry[]>([
     { nodes: workflow.nodes, edges: workflow.edges },
   ]);
   const historyIdx = useRef(0);
 
-  // ── History push (call after every committed change) ──────────────────────
   const pushHistory = useCallback((n: WorkflowNode[], e: WorkflowEdge[]) => {
-    // Truncate any future entries when a new action happens after undo
     history.current = history.current.slice(0, historyIdx.current + 1);
     history.current.push({ nodes: n, edges: e });
     if (history.current.length > MAX_HISTORY) history.current.shift();
     historyIdx.current = history.current.length - 1;
   }, []);
 
-  // ── Auto-save (debounced 400 ms) ──────────────────────────────────────────
   const triggerSave = useCallback(
     (n: WorkflowNode[], e: WorkflowEdge[]) => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -1048,26 +1280,17 @@ function WorkflowEditor({
     [onChange, workflow],
   );
 
-  // Every committed mutation goes through these two helpers
-  const commitNodes = useCallback(
-    (n: WorkflowNode[], pushHist = true) => {
+  const commit = useCallback(
+    (n: WorkflowNode[], e: WorkflowEdge[], hist = true) => {
       setNodes(n);
-      triggerSave(n, edges);
-      if (pushHist) pushHistory(n, edges);
-    },
-    [edges, triggerSave, pushHistory],
-  );
-
-  const commitEdges = useCallback(
-    (e: WorkflowEdge[], pushHist = true) => {
       setEdges(e);
-      triggerSave(nodes, e);
-      if (pushHist) pushHistory(nodes, e);
+      triggerSave(n, e);
+      if (hist) pushHistory(n, e);
     },
-    [nodes, triggerSave, pushHistory],
+    [triggerSave, pushHistory],
   );
 
-  // ── Coordinate helper ─────────────────────────────────────────────────────
+  // ── Coordinate helper ────────────────────────────────────────────────────
   const screenToCanvas = useCallback(
     (sx: number, sy: number) => {
       const rect = canvasRef.current!.getBoundingClientRect();
@@ -1079,13 +1302,13 @@ function WorkflowEditor({
     [transform],
   );
 
-  // ── Keyboard: Delete / Backspace / Ctrl+Z / Escape ────────────────────────
+  // ── Keyboard ─────────────────────────────────────────────────────────────
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement).tagName;
       const inField = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
 
-      // Ctrl+Z / Cmd+Z  — works even inside fields
+      // Ctrl+Z
       if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
         e.preventDefault();
         if (historyIdx.current > 0) {
@@ -1098,73 +1321,63 @@ function WorkflowEditor({
         return;
       }
 
+      // Ctrl+A — select all nodes
+      if ((e.ctrlKey || e.metaKey) && e.key === 'a' && !inField) {
+        e.preventDefault();
+        setSelectedNodeIds(new Set(nodes.map((n) => n.id)));
+        setSelectedEdgeId(null);
+        return;
+      }
+
       if (inField) return;
 
       if (e.key === 'Backspace' || e.key === 'Delete') {
-        if (selectedNodeId) {
-          setNodes((prev) => {
-            const next = prev
-              .filter((n) => n.id !== selectedNodeId)
-              .map((n) =>
-                n.type === 'agent' &&
-                (n.data as AgentData).serverNodeId === selectedNodeId
-                  ? {
-                      ...n,
-                      data: { ...(n.data as AgentData), serverNodeId: null },
-                    }
-                  : n,
-              );
-            const nextEdges = edges.filter(
-              (ed) =>
-                ed.source !== selectedNodeId && ed.target !== selectedNodeId,
-            );
-            setEdges(nextEdges);
-            pushHistory(next, nextEdges);
-            triggerSave(next, nextEdges);
-            return next;
-          });
-          setSelectedNodeId(null);
+        if (selectedNodeIds.size > 0) {
+          const ids = selectedNodeIds;
+          const nextNodes = nodes.filter((n) => !ids.has(n.id));
+          const nextEdges = edges.filter(
+            (ed) => !ids.has(ed.source) && !ids.has(ed.target),
+          );
+          commit(nextNodes, nextEdges);
+          setSelectedNodeIds(new Set());
         } else if (selectedEdgeId) {
-          setEdges((prev) => {
-            const next = prev.filter((ed) => ed.id !== selectedEdgeId);
-            pushHistory(nodes, next);
-            triggerSave(nodes, next);
-            return next;
-          });
+          commit(
+            nodes,
+            edges.filter((ed) => ed.id !== selectedEdgeId),
+          );
           setSelectedEdgeId(null);
         }
       }
 
       if (e.key === 'Escape') {
-        setSelectedNodeId(null);
+        setSelectedNodeIds(new Set());
         setSelectedEdgeId(null);
+        setConnecting(null);
+        setReconnecting(null);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [selectedNodeId, selectedEdgeId, edges, nodes, pushHistory, triggerSave]);
+  }, [selectedNodeIds, selectedEdgeId, nodes, edges, commit, triggerSave]);
 
-  // ── Pan ───────────────────────────────────────────────────────────────────
+  // ── Pan ──────────────────────────────────────────────────────────────────
   const onCanvasMouseDown = (e: ReactMouseEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
-    if ((e.target as HTMLElement).closest('.wf-node, .wf-node__port')) return;
-    setSelectedNodeId(null);
+    if ((e.target as HTMLElement).closest('.wf-node, .wf-port')) return;
+    setSelectedNodeIds(new Set());
     setSelectedEdgeId(null);
     setPanning({
       startMouse: { x: e.clientX, y: e.clientY },
-      startTransform: { x: transform.x, y: transform.y },
+      startTx: { x: transform.x, y: transform.y },
     });
   };
 
   useEffect(() => {
     if (!panning) return;
     const onMove = (e: MouseEvent) => {
-      const dx = e.clientX - panning.startMouse.x;
-      const dy = e.clientY - panning.startMouse.y;
-      const nx = panning.startTransform.x + dx;
-      const ny = panning.startTransform.y + dy;
+      const nx = panning.startTx.x + e.clientX - panning.startMouse.x;
+      const ny = panning.startTx.y + e.clientY - panning.startMouse.y;
       setTransform((p) => ({ ...p, x: nx, y: ny }));
-      // dot grid moves with pan only
       setPanOffset({ x: nx, y: ny });
     };
     const onUp = () => setPanning(null);
@@ -1176,7 +1389,7 @@ function WorkflowEditor({
     };
   }, [panning]);
 
-  // ── Zoom (panOffset unchanged — dots stay still) ──────────────────────────
+  // ── Zoom (panOffset unchanged — dots stay still) ──────────────────────
   const onWheel = (e: ReactWheelEvent<HTMLDivElement>) => {
     e.preventDefault();
     const rect = canvasRef.current!.getBoundingClientRect();
@@ -1186,13 +1399,13 @@ function WorkflowEditor({
     setTransform((prev) => {
       const ns = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, prev.scale + delta));
       const r = ns / prev.scale;
-      // Zoom toward cursor, but do NOT update panOffset — dots stay fixed
       return {
         scale: ns,
         x: mx - r * (mx - prev.x),
         y: my - r * (my - prev.y),
       };
     });
+    // panOffset intentionally NOT updated here — dots stay fixed during zoom
   };
 
   const zoomIn = () =>
@@ -1216,7 +1429,7 @@ function WorkflowEditor({
     const minX = Math.min(...xs);
     const maxX = Math.max(...xs) + NODE_WIDTH;
     const minY = Math.min(...ys);
-    const maxY = Math.max(...ys) + 100;
+    const maxY = Math.max(...ys) + 160;
     const rect = canvasRef.current!.getBoundingClientRect();
     const s = Math.min(
       MAX_ZOOM,
@@ -1234,7 +1447,7 @@ function WorkflowEditor({
     setPanOffset({ x: nx, y: ny });
   };
 
-  // ── Node drag ─────────────────────────────────────────────────────────────
+  // ── Node drag ────────────────────────────────────────────────────────────
   const onNodeMouseDown = (e: ReactMouseEvent, nodeId: string) => {
     e.stopPropagation();
     if (e.button !== 0) return;
@@ -1255,15 +1468,15 @@ function WorkflowEditor({
       const dy = e.clientY - dragging.startMouse.y;
       const didMove = Math.hypot(dx, dy) > DRAG_THRESHOLD;
       if (didMove) {
-        setDragging((prev) => (prev ? { ...prev, didMove: true } : null));
+        setDragging((p) => (p ? { ...p, didMove: true } : null));
         setNodes((prev) =>
           prev.map((n) =>
             n.id === dragging.nodeId
               ? {
                   ...n,
                   position: {
-                    x: snap(dragging.startPos.x + dx / transform.scale),
-                    y: snap(dragging.startPos.y + dy / transform.scale),
+                    x: snapG(dragging.startPos.x + dx / transform.scale),
+                    y: snapG(dragging.startPos.y + dy / transform.scale),
                   },
                 }
               : n,
@@ -1272,17 +1485,21 @@ function WorkflowEditor({
       }
     };
     const onUp = () => {
-      setDragging((prev) => {
-        if (!prev) return null;
-        if (!prev.didMove) {
-          // Pure click — open config panel
-          setSelectedNodeId(prev.nodeId);
+      setDragging((p) => {
+        if (!p) return null;
+        if (!p.didMove) {
+          // click — toggle selection
+          setSelectedNodeIds((prev) => {
+            const next = new Set(prev);
+            if (next.has(p.nodeId)) next.delete(p.nodeId);
+            else next.add(p.nodeId);
+            return next;
+          });
         } else {
-          // Drag ended — commit position to history
-          setNodes((current) => {
-            pushHistory(current, edges);
-            triggerSave(current, edges);
-            return current;
+          setNodes((cur) => {
+            pushHistory(cur, edges);
+            triggerSave(cur, edges);
+            return cur;
           });
         }
         return null;
@@ -1297,150 +1514,536 @@ function WorkflowEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dragging, transform.scale]);
 
-  // ── Connecting ────────────────────────────────────────────────────────────
-  const onOutputPortMouseDown = (e: ReactMouseEvent, sourceId: string) => {
+  // ── Port interaction ─────────────────────────────────────────────────────
+
+  // Returns all input ports on all nodes that are compatible with the given output type
+  const compatiblePorts = useCallback(
+    (outputType: PortType): Set<string> => {
+      const result = new Set<string>();
+      for (const n of nodes) {
+        for (const p of NODE_PORTS[n.type]) {
+          if (p.side === 'input' && portsCompatible(outputType, p.type)) {
+            result.add(`${n.id}:${p.id}`);
+          }
+        }
+      }
+      return result;
+    },
+    [nodes],
+  );
+
+  const onPortMouseDown = (
+    e: ReactMouseEvent,
+    nodeId: string,
+    portId: string,
+    side: 'input' | 'output',
+  ) => {
+    if (e.button !== 0) return;
     e.stopPropagation();
     e.preventDefault();
-    setConnecting({
-      sourceId,
-      mouseCanvas: screenToCanvas(e.clientX, e.clientY),
-    });
-    setSelectedEdgeId(null);
-    setSelectedNodeId(null);
+
+    if (side === 'output') {
+      // Start a new connection from this output port
+      const portDef = NODE_PORTS[nodes.find((n) => n.id === nodeId)!.type].find(
+        (p) => p.id === portId,
+      )!;
+      setConnecting({
+        sourceNodeId: nodeId,
+        sourcePortId: portId,
+        sourcePortType: portDef.type,
+        mouseCanvas: screenToCanvas(e.clientX, e.clientY),
+      });
+      setSelectedEdgeId(null);
+      setSelectedNodeIds(new Set());
+    }
+
+    // Input port clicked/dragged — check if we're near the tail of an existing edge
+    // (we handle this in onPortClick for pure clicks; here we check for drag intent)
+    // Nothing to do on mousedown for input port reconnect — handled in onPortMouseDown with side=output
+    // for reconnect we detect it in the edge SVG elements
   };
 
-  const onInputPortMouseUp = (e: ReactMouseEvent, targetId: string) => {
-    if (!connecting) return;
+  const onPortMouseUp = (
+    e: ReactMouseEvent,
+    nodeId: string,
+    portId: string,
+  ) => {
     e.stopPropagation();
-    const src = connecting.sourceId;
-    setConnecting(null);
-    if (src === targetId) return;
-    if (edges.some((ed) => ed.source === src && ed.target === targetId)) return;
-    commitEdges([...edges, { id: uid(), source: src, target: targetId }]);
+
+    if (connecting) {
+      const { sourceNodeId, sourcePortId, sourcePortType } = connecting;
+      setConnecting(null);
+      setSnapTarget(null);
+
+      if (nodeId === sourceNodeId) return; // self-loop
+
+      const portDef = NODE_PORTS[nodes.find((n) => n.id === nodeId)!.type].find(
+        (p) => p.id === portId,
+      );
+      if (!portDef || portDef.side !== 'input') return;
+
+      if (!portsCompatible(sourcePortType, portDef.type)) {
+        // Incompatible — drop, do nothing (the wire just disappears)
+        return;
+      }
+
+      // Avoid duplicate
+      if (
+        edges.some(
+          (ed) =>
+            ed.source === sourceNodeId &&
+            ed.sourcePort === sourcePortId &&
+            ed.target === nodeId &&
+            ed.targetPort === portId,
+        )
+      )
+        return;
+
+      commit(nodes, [
+        ...edges,
+        {
+          id: uid(),
+          source: sourceNodeId,
+          sourcePort: sourcePortId,
+          target: nodeId,
+          targetPort: portId,
+        },
+      ]);
+      return;
+    }
+
+    if (reconnecting) {
+      const { edgeId, sourceNodeId, sourcePortId, sourcePortType } =
+        reconnecting;
+      setReconnecting(null);
+      setSnapTarget(null);
+
+      // Remove original edge always
+      const withoutOriginal = edges.filter((ed) => ed.id !== edgeId);
+
+      if (nodeId === sourceNodeId) {
+        // Dropped back on source — just delete
+        commit(nodes, withoutOriginal);
+        return;
+      }
+
+      const portDef = NODE_PORTS[nodes.find((n) => n.id === nodeId)!.type].find(
+        (p) => p.id === portId,
+      );
+      if (
+        !portDef ||
+        portDef.side !== 'input' ||
+        !portsCompatible(sourcePortType, portDef.type)
+      ) {
+        // Incompatible drop — just delete original
+        commit(nodes, withoutOriginal);
+        return;
+      }
+
+      // Re-attach
+      commit(nodes, [
+        ...withoutOriginal,
+        {
+          id: uid(),
+          source: sourceNodeId,
+          sourcePort: sourcePortId,
+          target: nodeId,
+          targetPort: portId,
+        },
+      ]);
+    }
   };
 
-  // Clicking an input port selects the inbound edge (for easy deletion)
-  const onInputPortClick = (e: ReactMouseEvent, targetId: string) => {
+  const onPortClick = (e: ReactMouseEvent, nodeId: string, portId: string) => {
     e.stopPropagation();
-    if (connecting) return;
-    const inbound = edges.filter((ed) => ed.target === targetId);
+    if (connecting || reconnecting) return;
+
+    // Input port click → select the attached edge
+    const inbound = edges.filter(
+      (ed) => ed.target === nodeId && ed.targetPort === portId,
+    );
     if (inbound.length === 0) return;
     const currentIdx = inbound.findIndex((ed) => ed.id === selectedEdgeId);
     const next = inbound[(currentIdx + 1) % inbound.length];
     setSelectedEdgeId(next.id);
-    setSelectedNodeId(null);
+    setSelectedNodeIds(new Set());
   };
 
+  // ── Connection mousemove tracking ────────────────────────────────────────
   useEffect(() => {
-    if (!connecting) return;
-    const onMove = (e: MouseEvent) =>
-      setConnecting((prev) =>
-        prev
-          ? { ...prev, mouseCanvas: screenToCanvas(e.clientX, e.clientY) }
-          : null,
-      );
-    const onUp = () => setConnecting(null);
+    if (!connecting && !reconnecting) return;
+    const onMove = (e: MouseEvent) => {
+      const pos = screenToCanvas(e.clientX, e.clientY);
+      if (connecting)
+        setConnecting((p) => (p ? { ...p, mouseCanvas: pos } : null));
+      if (reconnecting)
+        setReconnecting((p) => (p ? { ...p, mouseCanvas: pos } : null));
+
+      // Find snap target
+      const portType =
+        connecting?.sourcePortType ?? reconnecting?.sourcePortType;
+      if (!portType) return;
+      let found: string | null = null;
+      outer: for (const n of nodes) {
+        for (const port of NODE_PORTS[n.type]) {
+          if (port.side !== 'input') continue;
+          if (!portsCompatible(portType, port.type)) continue;
+          const cp = portCanvasPos(n, port.id);
+          if (!cp) continue;
+          const dist = Math.hypot(pos.x - cp.x, pos.y - cp.y);
+          if (dist < 20 / transform.scale) {
+            found = `${n.id}:${port.id}`;
+            break outer;
+          }
+        }
+      }
+      setSnapTarget(found);
+    };
+    const onUp = () => {
+      if (connecting) {
+        // Released on canvas (not a port) — if over snap target reconnect, handled in onPortMouseUp
+        // Otherwise check if we're over a snap target at mouse-up time
+        setConnecting(null);
+        setSnapTarget(null);
+      }
+      if (reconnecting) {
+        // Released on canvas — delete original
+        setReconnecting((p) => {
+          if (!p) return null;
+          commit(
+            nodes,
+            edges.filter((ed) => ed.id !== p.edgeId),
+          );
+          return null;
+        });
+        setSnapTarget(null);
+      }
+    };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
     return () => {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
     };
-  }, [connecting, screenToCanvas]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connecting, reconnecting, nodes, screenToCanvas, transform.scale]);
 
-  // ── Palette drag-drop onto canvas ─────────────────────────────────────────
+  // ── Snap-target mouseup forwarding ───────────────────────────────────────
+  // When releasing over a snap target (not directly over the port DOM element),
+  // we synthesise the connection from snapTarget state
+  // This is handled in the mousemove onUp above via snapTarget
+
+  // ── Palette drag-drop ────────────────────────────────────────────────────
   const onPaletteDragStart = (e: React.DragEvent, type: NodeType) => {
     e.dataTransfer.setData('nodeType', type);
   };
-
   const onCanvasDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'copy';
   };
-
   const onCanvasDrop = (e: React.DragEvent) => {
     e.preventDefault();
     const type = e.dataTransfer.getData('nodeType') as NodeType;
     if (!type || !NODE_META[type]) return;
     const pos = screenToCanvas(e.clientX, e.clientY);
-    const node = makeNode(type, pos.x - NODE_WIDTH / 2, pos.y - 30);
-    commitNodes([...nodes, node]);
-    setSelectedNodeId(node.id);
+    const node = makeNode(
+      type,
+      pos.x - NODE_WIDTH / 2,
+      pos.y - nodeHeight(type) / 2,
+    );
+    commit([...nodes, node], edges);
+    setSelectedNodeIds(new Set([node.id]));
     setSelectedEdgeId(null);
   };
 
   // ── Delete helpers ────────────────────────────────────────────────────────
   const deleteNode = useCallback(
     (id: string) => {
-      const nextNodes = nodes
-        .filter((n) => n.id !== id)
-        .map((n) =>
-          n.type === 'agent' && (n.data as AgentData).serverNodeId === id
-            ? { ...n, data: { ...(n.data as AgentData), serverNodeId: null } }
-            : n,
-        );
+      const nextNodes = nodes.filter((n) => n.id !== id);
       const nextEdges = edges.filter(
         (ed) => ed.source !== id && ed.target !== id,
       );
-      setNodes(nextNodes);
-      setEdges(nextEdges);
-      pushHistory(nextNodes, nextEdges);
-      triggerSave(nextNodes, nextEdges);
-      if (selectedNodeId === id) setSelectedNodeId(null);
+      commit(nextNodes, nextEdges);
+      setSelectedNodeIds((p) => {
+        const n = new Set(p);
+        n.delete(id);
+        return n;
+      });
     },
-    [nodes, edges, selectedNodeId, pushHistory, triggerSave],
-  );
-
-  const deleteEdge = useCallback(
-    (id: string) => {
-      commitEdges(edges.filter((e) => e.id !== id));
-      if (selectedEdgeId === id) setSelectedEdgeId(null);
-    },
-    [edges, selectedEdgeId, commitEdges],
+    [nodes, edges, commit],
   );
 
   const patchNode = useCallback(
     (id: string, patch: Partial<WorkflowNode>) => {
-      commitNodes(nodes.map((n) => (n.id === id ? { ...n, ...patch } : n)));
+      commit(
+        nodes.map((n) => (n.id === id ? { ...n, ...patch } : n)),
+        edges,
+      );
     },
-    [nodes, commitNodes],
+    [nodes, edges, commit],
   );
 
-  // ── Port positions in canvas space ────────────────────────────────────────
-  const portPos = (nodeId: string, side: 'input' | 'output') => {
-    const node = nodes.find((n) => n.id === nodeId);
-    if (!node) return { x: 0, y: 0 };
-    return {
-      x: node.position.x + (side === 'output' ? NODE_WIDTH : 0),
-      y: node.position.y + PORT_Y,
-    };
+  // ── Edge SVG click/reconnect ──────────────────────────────────────────────
+  const onEdgeClick = (
+    e: ReactMouseEvent,
+    edgeId: string,
+    isTail: boolean,
+    mouseCanvasPos: { x: number; y: number },
+  ) => {
+    e.stopPropagation();
+    if (isTail) {
+      // Start reconnect
+      const edge = edges.find((ed) => ed.id === edgeId)!;
+      const srcNode = nodes.find((n) => n.id === edge.source)!;
+      const portDef = NODE_PORTS[srcNode.type].find(
+        (p) => p.id === edge.sourcePort,
+      )!;
+      setReconnecting({
+        edgeId,
+        sourceNodeId: edge.source,
+        sourcePortId: edge.sourcePort,
+        sourcePortType: portDef.type,
+        mouseCanvas: mouseCanvasPos,
+      });
+      setSelectedEdgeId(null);
+      setSelectedNodeIds(new Set());
+    } else {
+      setSelectedEdgeId((p) => (p === edgeId ? null : edgeId));
+      setSelectedNodeIds(new Set());
+    }
   };
 
-  const edgePath = (sx: number, sy: number, tx: number, ty: number) =>
-    `M ${sx} ${sy} C ${sx + BEZIER_OFFSET} ${sy}, ${tx - BEZIER_OFFSET} ${ty}, ${tx} ${ty}`;
+  // ── Port positions ────────────────────────────────────────────────────────
+  const edgeEndpoints = (edge: WorkflowEdge) => {
+    const src = nodes.find((n) => n.id === edge.source);
+    const tgt = nodes.find((n) => n.id === edge.target);
+    if (!src || !tgt) return null;
+    const s = portCanvasPos(src, edge.sourcePort);
+    const t = portCanvasPos(tgt, edge.targetPort);
+    if (!s || !t) return null;
+    return { s, t };
+  };
 
-  // ── Background dot offset — only pan, not zoom ────────────────────────────
+  // ── Drag in-progress wire source ─────────────────────────────────────────
+  const wireSource = connecting
+    ? portCanvasPos(
+        nodes.find((n) => n.id === connecting.sourceNodeId)!,
+        connecting.sourcePortId,
+      )
+    : reconnecting
+      ? portCanvasPos(
+          nodes.find((n) => n.id === reconnecting.sourceNodeId)!,
+          reconnecting.sourcePortId,
+        )
+      : null;
+
+  const wireMouse =
+    connecting?.mouseCanvas ?? reconnecting?.mouseCanvas ?? null;
+  const wirePortType =
+    connecting?.sourcePortType ?? reconnecting?.sourcePortType ?? null;
+
+  // ── Compatible ports for highlight ───────────────────────────────────────
+  const activeCompatPorts = useMemo((): Set<string> => {
+    if (!connecting && !reconnecting) return new Set();
+    const type = connecting?.sourcePortType ?? reconnecting?.sourcePortType;
+    if (!type) return new Set();
+    return compatiblePorts(type);
+  }, [connecting, reconnecting, compatiblePorts]);
+
+  // ── Dot grid background position ─────────────────────────────────────────
   const dotBgX = ((panOffset.x % DOT_SPACING) + DOT_SPACING) % DOT_SPACING;
   const dotBgY = ((panOffset.y % DOT_SPACING) + DOT_SPACING) % DOT_SPACING;
 
-  const selectedNode = nodes.find((n) => n.id === selectedNodeId) ?? null;
+  // ── Single selected node (for config panel) ───────────────────────────────
+  const singleSelected =
+    selectedNodeIds.size === 1
+      ? (nodes.find((n) => n.id === [...selectedNodeIds][0]) ?? null)
+      : null;
+
+  // Is the profile input port wired for the selected server node?
+  const profilePortWired = useMemo(() => {
+    if (!singleSelected || singleSelected.type !== 'server') return false;
+    return edges.some(
+      (ed) => ed.target === singleSelected.id && ed.targetPort === 'in-profile',
+    );
+  }, [singleSelected, edges]);
+
+  const textPortWired = useMemo(() => {
+    if (!singleSelected || singleSelected.type !== 'input-text') return false;
+    return edges.some(
+      (ed) => ed.target === singleSelected.id && ed.targetPort === 'in-text',
+    );
+  }, [singleSelected, edges]);
+
+  // ── Render ────────────────────────────────────────────────────────────────
+
+  // Separate edges into non-selected and selected for layering
+  const nonSelectedEdges = edges.filter((ed) => ed.id !== selectedEdgeId);
+  const selectedEdge = edges.find((ed) => ed.id === selectedEdgeId);
+
+  const renderEdge = (edge: WorkflowEdge, isSelected: boolean) => {
+    const ep = edgeEndpoints(edge);
+    if (!ep) return null;
+    const { s, t } = ep;
+    const isHov = hoveredEdgeId === edge.id;
+    const mid = { x: (s.x + t.x) / 2, y: (s.y + t.y) / 2 };
+
+    const onMouseDown = (e: ReactMouseEvent<SVGElement>, isTail: boolean) => {
+      const canvasPos = screenToCanvas(e.clientX, e.clientY);
+      onEdgeClick(e, edge.id, isTail, canvasPos);
+    };
+
+    return (
+      <g key={edge.id}>
+        {/* Wide hit area */}
+        <path
+          d={bezierPath(s.x, s.y, t.x, t.y)}
+          fill="none"
+          stroke="transparent"
+          strokeWidth={16}
+          style={{ cursor: 'pointer' }}
+          onMouseEnter={() => setHoveredEdgeId(edge.id)}
+          onMouseLeave={() => setHoveredEdgeId(null)}
+          onMouseDown={(e) => {
+            const canvasPos = screenToCanvas(e.clientX, e.clientY);
+            const isTail = pointNearTail(
+              canvasPos.x,
+              canvasPos.y,
+              s.x,
+              s.y,
+              t.x,
+              t.y,
+              14 / transform.scale,
+            );
+            onMouseDown(e, isTail);
+          }}
+        />
+        {/* Visible line */}
+        <path
+          d={bezierPath(s.x, s.y, t.x, t.y)}
+          fill="none"
+          className={`wf-edge${isSelected ? ' wf-edge--selected' : isHov ? ' wf-edge--hovered' : ''}`}
+          markerEnd={
+            isSelected
+              ? 'url(#wf-arrow-sel)'
+              : isHov
+                ? 'url(#wf-arrow-hov)'
+                : 'url(#wf-arrow)'
+          }
+          style={{ pointerEvents: 'none' }}
+        />
+        {/* Endpoint circles */}
+        <circle
+          cx={s.x}
+          cy={s.y}
+          r={5}
+          className={`wf-edge__endpoint${isHov || isSelected ? ' wf-edge__endpoint--visible' : ''}`}
+          onMouseEnter={() => setHoveredEdgeId(edge.id)}
+          onMouseLeave={() => setHoveredEdgeId(null)}
+          onMouseDown={(e) => onMouseDown(e, false)}
+          style={{ cursor: 'pointer' }}
+        />
+        <circle
+          cx={t.x}
+          cy={t.y}
+          r={5}
+          className={`wf-edge__endpoint${isHov || isSelected ? ' wf-edge__endpoint--visible' : ''}`}
+          style={{ cursor: 'crosshair' }}
+          onMouseEnter={() => setHoveredEdgeId(edge.id)}
+          onMouseLeave={() => setHoveredEdgeId(null)}
+          onMouseDown={(e) => onMouseDown(e, true)}
+        />
+        {/* Midpoint delete */}
+        {(isHov || isSelected) && (
+          <g
+            style={{ cursor: 'pointer' }}
+            onMouseEnter={() => setHoveredEdgeId(edge.id)}
+            onMouseLeave={() => setHoveredEdgeId(null)}
+            onClick={(e) => {
+              e.stopPropagation();
+              commit(
+                nodes,
+                edges.filter((ed) => ed.id !== edge.id),
+              );
+              if (selectedEdgeId === edge.id) setSelectedEdgeId(null);
+            }}
+          >
+            <circle
+              cx={mid.x}
+              cy={mid.y}
+              r={9}
+              className="wf-edge__mid-circle"
+            />
+            <line
+              x1={mid.x - 3.5}
+              y1={mid.y - 3.5}
+              x2={mid.x + 3.5}
+              y2={mid.y + 3.5}
+              className="wf-edge__mid-cross"
+            />
+            <line
+              x1={mid.x + 3.5}
+              y1={mid.y - 3.5}
+              x2={mid.x - 3.5}
+              y2={mid.y + 3.5}
+              className="wf-edge__mid-cross"
+            />
+          </g>
+        )}
+      </g>
+    );
+  };
 
   const editor = (
     <div className="wf-portal">
-      {/* ── Toolbar ── */}
+      {/* Toolbar */}
       <div className="wf-toolbar">
         <button type="button" className="wf-toolbar__back" onClick={onBack}>
           <ChevronLeft size={15} />
           Workflows
         </button>
-        <span className="wf-toolbar__name">{workflow.name}</span>
+
+        {/* Inline name edit */}
+        {editingName ? (
+          <input
+            ref={nameInputRef}
+            className="wf-toolbar__name-input"
+            value={nameValue}
+            onChange={(e) => setNameValue(e.target.value)}
+            onBlur={() => {
+              setEditingName(false);
+              if (nameValue.trim() && nameValue.trim() !== workflow.name) {
+                onRename(workflow.id, nameValue.trim());
+              }
+            }}
+            onKeyDown={(e: ReactKeyboardEvent<HTMLInputElement>) => {
+              if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+              if (e.key === 'Escape') {
+                setNameValue(workflow.name);
+                setEditingName(false);
+              }
+            }}
+          />
+        ) : (
+          <button
+            type="button"
+            className="wf-toolbar__name"
+            title="Click to rename"
+            onClick={() => {
+              setEditingName(true);
+              setTimeout(() => nameInputRef.current?.select(), 0);
+            }}
+          >
+            {workflow.name}
+            <Pencil size={11} className="wf-toolbar__name-pencil" />
+          </button>
+        )}
 
         <div className="wf-toolbar__zoom-group">
           <button
             type="button"
             className="wf-toolbar__zoom-btn"
             onClick={zoomOut}
-            title="Zoom out"
           >
             <ZoomOut size={13} />
           </button>
@@ -1451,7 +2054,6 @@ function WorkflowEditor({
             type="button"
             className="wf-toolbar__zoom-btn"
             onClick={zoomIn}
-            title="Zoom in"
           >
             <ZoomIn size={13} />
           </button>
@@ -1459,26 +2061,40 @@ function WorkflowEditor({
             type="button"
             className="wf-toolbar__zoom-btn"
             onClick={fitView}
-            title="Fit view"
           >
             <Maximize size={13} />
           </button>
         </div>
 
-        {/* Inline action bar when edge or node is selected */}
-        {(selectedEdgeId || selectedNode) && (
+        {/* Selection bar */}
+        {(selectedEdgeId || selectedNodeIds.size > 0) && (
           <div className="wf-toolbar__sel-bar">
             <span className="wf-toolbar__sel-label">
-              {selectedEdgeId ? 'Edge selected' : selectedNode?.label}
+              {selectedEdgeId
+                ? 'Edge selected'
+                : selectedNodeIds.size === 1
+                  ? nodes.find((n) => n.id === [...selectedNodeIds][0])?.label
+                  : `${selectedNodeIds.size} nodes`}
             </span>
             <button
               type="button"
               className="wf-toolbar__sel-delete"
               onClick={() => {
                 if (selectedEdgeId) {
-                  deleteEdge(selectedEdgeId);
-                } else if (selectedNode) {
-                  deleteNode(selectedNode.id);
+                  commit(
+                    nodes,
+                    edges.filter((ed) => ed.id !== selectedEdgeId),
+                  );
+                  setSelectedEdgeId(null);
+                } else {
+                  const ids = selectedNodeIds;
+                  commit(
+                    nodes.filter((n) => !ids.has(n.id)),
+                    edges.filter(
+                      (ed) => !ids.has(ed.source) && !ids.has(ed.target),
+                    ),
+                  );
+                  setSelectedNodeIds(new Set());
                 }
               }}
             >
@@ -1489,7 +2105,7 @@ function WorkflowEditor({
         )}
       </div>
 
-      {/* ── Body ── */}
+      {/* Body */}
       <div className="wf-editor__body">
         {/* Left palette */}
         <NodePalette onDragStart={onPaletteDragStart} />
@@ -1500,7 +2116,7 @@ function WorkflowEditor({
           className={[
             'wf-canvas',
             panning ? 'wf-canvas--panning' : '',
-            connecting ? 'wf-canvas--connecting' : '',
+            connecting || reconnecting ? 'wf-canvas--connecting' : '',
           ].join(' ')}
           style={{ backgroundPosition: `${dotBgX}px ${dotBgY}px` }}
           onMouseDown={onCanvasMouseDown}
@@ -1514,7 +2130,7 @@ function WorkflowEditor({
               transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`,
             }}
           >
-            {/* SVG edge layer */}
+            {/* SVG — non-selected edges first, then nodes, then selected edge on top */}
             <svg className="wf-canvas__svg" overflow="visible">
               <defs>
                 <marker
@@ -1525,10 +2141,10 @@ function WorkflowEditor({
                   refY="3"
                   orient="auto"
                 >
-                  <polygon points="0 0, 8 3, 0 6" className="wf-edge__arrow" />
+                  <polygon points="0 0,8 3,0 6" className="wf-edge__arrow" />
                 </marker>
                 <marker
-                  id="wf-arrow-hover"
+                  id="wf-arrow-hov"
                   markerWidth="8"
                   markerHeight="6"
                   refX="8"
@@ -1536,12 +2152,12 @@ function WorkflowEditor({
                   orient="auto"
                 >
                   <polygon
-                    points="0 0, 8 3, 0 6"
-                    className="wf-edge__arrow wf-edge__arrow--hover"
+                    points="0 0,8 3,0 6"
+                    className="wf-edge__arrow wf-edge__arrow--hov"
                   />
                 </marker>
                 <marker
-                  id="wf-arrow-selected"
+                  id="wf-arrow-sel"
                   markerWidth="8"
                   markerHeight="6"
                   refX="8"
@@ -1549,143 +2165,69 @@ function WorkflowEditor({
                   orient="auto"
                 >
                   <polygon
-                    points="0 0, 8 3, 0 6"
-                    className="wf-edge__arrow wf-edge__arrow--selected"
+                    points="0 0,8 3,0 6"
+                    className="wf-edge__arrow wf-edge__arrow--sel"
                   />
                 </marker>
               </defs>
 
-              {edges.map((edge) => {
-                const s = portPos(edge.source, 'output');
-                const t = portPos(edge.target, 'input');
-                const mid = { x: (s.x + t.x) / 2, y: (s.y + t.y) / 2 };
-                const isH = hoveredEdgeId === edge.id;
-                const isS = selectedEdgeId === edge.id;
-                const marker = isS
-                  ? 'url(#wf-arrow-selected)'
-                  : isH
-                    ? 'url(#wf-arrow-hover)'
-                    : 'url(#wf-arrow)';
-
-                const selectEdge = (ev: ReactMouseEvent) => {
-                  ev.stopPropagation();
-                  setSelectedEdgeId(isS ? null : edge.id);
-                  setSelectedNodeId(null);
-                };
-
-                return (
-                  <g key={edge.id}>
-                    {/* Wide invisible hit area along the curve */}
-                    <path
-                      d={edgePath(s.x, s.y, t.x, t.y)}
-                      fill="none"
-                      stroke="transparent"
-                      strokeWidth={16}
-                      style={{ cursor: 'pointer' }}
-                      onMouseEnter={() => setHoveredEdgeId(edge.id)}
-                      onMouseLeave={() => setHoveredEdgeId(null)}
-                      onClick={selectEdge}
-                    />
-                    {/* Visible edge */}
-                    <path
-                      d={edgePath(s.x, s.y, t.x, t.y)}
-                      fill="none"
-                      className={`wf-edge ${isS ? 'wf-edge--selected' : isH ? 'wf-edge--hovered' : ''}`}
-                      markerEnd={marker}
-                      style={{ pointerEvents: 'none' }}
-                    />
-
-                    {/* ── Endpoint hit circles ─────────────────────────── */}
-                    {/* Source end */}
-                    <circle
-                      cx={s.x}
-                      cy={s.y}
-                      r={7}
-                      className={`wf-edge__endpoint ${isS || isH ? 'wf-edge__endpoint--visible' : ''}`}
-                      style={{ cursor: 'pointer' }}
-                      onMouseEnter={() => setHoveredEdgeId(edge.id)}
-                      onMouseLeave={() => setHoveredEdgeId(null)}
-                      onClick={selectEdge}
-                    />
-                    {/* Target end */}
-                    <circle
-                      cx={t.x}
-                      cy={t.y}
-                      r={7}
-                      className={`wf-edge__endpoint ${isS || isH ? 'wf-edge__endpoint--visible' : ''}`}
-                      style={{ cursor: 'pointer' }}
-                      onMouseEnter={() => setHoveredEdgeId(edge.id)}
-                      onMouseLeave={() => setHoveredEdgeId(null)}
-                      onClick={selectEdge}
-                    />
-                    {/* Midpoint delete button (shown on hover/select) */}
-                    {(isH || isS) && (
-                      <g
-                        style={{ cursor: 'pointer' }}
-                        onClick={selectEdge}
-                        onMouseEnter={() => setHoveredEdgeId(edge.id)}
-                        onMouseLeave={() => setHoveredEdgeId(null)}
-                      >
-                        <circle
-                          cx={mid.x}
-                          cy={mid.y}
-                          r={9}
-                          className="wf-edge__mid-circle"
-                        />
-                        <line
-                          x1={mid.x - 3.5}
-                          y1={mid.y - 3.5}
-                          x2={mid.x + 3.5}
-                          y2={mid.y + 3.5}
-                          className="wf-edge__mid-cross"
-                        />
-                        <line
-                          x1={mid.x + 3.5}
-                          y1={mid.y - 3.5}
-                          x2={mid.x - 3.5}
-                          y2={mid.y + 3.5}
-                          className="wf-edge__mid-cross"
-                        />
-                      </g>
-                    )}
-                  </g>
-                );
-              })}
+              {/* Pass 1: non-selected edges */}
+              {nonSelectedEdges.map((ed) => renderEdge(ed, false))}
 
               {/* In-progress wire */}
-              {connecting &&
-                (() => {
-                  const s = portPos(connecting.sourceId, 'output');
-                  const t = connecting.mouseCanvas;
-                  return (
-                    <path
-                      d={edgePath(s.x, s.y, t.x, t.y)}
-                      fill="none"
-                      className="wf-edge wf-edge--connecting"
-                      strokeDasharray="6 4"
-                    />
-                  );
-                })()}
+              {wireSource && wireMouse && wirePortType && (
+                <path
+                  d={bezierPath(
+                    wireSource.x,
+                    wireSource.y,
+                    wireMouse.x,
+                    wireMouse.y,
+                  )}
+                  fill="none"
+                  className="wf-edge wf-edge--connecting"
+                  strokeDasharray="6 4"
+                  style={{ stroke: PORT_TYPE_COLOR[wirePortType] }}
+                />
+              )}
             </svg>
 
             {/* Nodes */}
-            {nodes.map((node) => (
-              <CanvasNode
-                key={node.id}
-                node={node}
-                isSelected={selectedNodeId === node.id}
-                isConnectingTarget={
-                  !!connecting &&
-                  connecting.sourceId !== node.id &&
-                  node.type !== 'start'
-                }
-                profiles={profiles}
-                onMouseDown={onNodeMouseDown}
-                onOutputPortMouseDown={onOutputPortMouseDown}
-                onInputPortMouseUp={onInputPortMouseUp}
-                onInputPortClick={onInputPortClick}
-              />
-            ))}
+            {nodes.map((node) => {
+              const nodeKey = `${node.id}:`;
+              // Filter compatible ports to this node
+              const nodeCompatPorts = new Set(
+                [...activeCompatPorts].filter((k) => k.startsWith(nodeKey)),
+              );
+              return (
+                <CanvasNode
+                  key={node.id}
+                  node={node}
+                  isSelected={selectedNodeIds.has(node.id)}
+                  compatibleInputPorts={
+                    connecting ? nodeCompatPorts : new Set()
+                  }
+                  compatibleInputPortsForReconnect={
+                    reconnecting ? nodeCompatPorts : new Set()
+                  }
+                  snapTargetPort={snapTarget}
+                  profiles={profiles}
+                  onNodeMouseDown={onNodeMouseDown}
+                  onPortMouseDown={onPortMouseDown}
+                  onPortMouseUp={onPortMouseUp}
+                  onPortClick={onPortClick}
+                />
+              );
+            })}
+
+            {/* SVG Pass 2: selected edge on top */}
+            {selectedEdge && (
+              <svg
+                className="wf-canvas__svg wf-canvas__svg--top"
+                overflow="visible"
+              >
+                {renderEdge(selectedEdge, true)}
+              </svg>
+            )}
           </div>
 
           {nodes.length === 0 && (
@@ -1696,26 +2238,29 @@ function WorkflowEditor({
           )}
         </div>
 
-        {/* Right: config panel when a node is selected */}
-        {selectedNode && (
+        {/* Right config panel */}
+        {singleSelected && NODE_META[singleSelected.type].hasConfig && (
           <NodeConfigPanel
-            node={selectedNode}
-            allNodes={nodes}
+            node={singleSelected}
             profiles={profiles}
             onChange={patchNode}
             onDelete={deleteNode}
-            onClose={() => setSelectedNodeId(null)}
+            onClose={() => setSelectedNodeIds(new Set())}
+            profilePortWired={profilePortWired}
+            textPortWired={textPortWired}
           />
         )}
       </div>
 
       {/* Hint bar */}
       <div className="wf-hint">
-        <kbd>Del</kbd> delete selected
+        <kbd>Del</kbd> delete
+        <span className="wf-hint__sep" />
+        <kbd>Ctrl A</kbd> select all
         <span className="wf-hint__sep" />
         <kbd>Ctrl Z</kbd> undo
         <span className="wf-hint__sep" />
-        Click edge or its endpoints to select
+        Drag tail of edge to reconnect
       </div>
     </div>
   );
@@ -1765,8 +2310,10 @@ export default function WorkflowsPage() {
     setOpenId(wf.id);
   };
 
-  const handleDelete = (id: string) =>
+  const handleDelete = (id: string) => {
     saveAll(workflows.filter((w) => w.id !== id));
+    if (openId === id) setOpenId(null);
+  };
   const handleRename = (id: string, name: string) =>
     saveAll(
       workflows.map((w) =>
@@ -1800,6 +2347,7 @@ export default function WorkflowsPage() {
           profiles={profiles}
           onChange={handleChange}
           onBack={() => setOpenId(null)}
+          onRename={handleRename}
         />
       )}
     </>
