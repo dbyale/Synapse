@@ -67,10 +67,21 @@ const OUTPUT_PRICE_PER_MILLION = 600.0;
 let persistentMessages: Message[] = [];
 let persistentLoadedProfileId: string = '';
 let persistentMessageCounter: number = 0;
+let isReprocessing = false;
 
-function ToolCallSegment({ segment }: { segment: MessageSegment }) {
+function ToolCallSegment({
+  segment,
+  reprocessStats,
+}: {
+  segment: MessageSegment;
+  reprocessStats?: Message['promptStats'];
+}) {
   const [expanded, setExpanded] = useState(false);
-  const hasContent = !!(segment.toolParams || segment.toolResult);
+  const hasContent = !!(
+    segment.toolParams ||
+    segment.toolResult ||
+    reprocessStats
+  );
 
   const prettyPrintJson = (jsonString: string): string => {
     try {
@@ -111,6 +122,16 @@ function ToolCallSegment({ segment }: { segment: MessageSegment }) {
         ) : segment.toolStatus === 'done' ? (
           <Check className="tool-call-segment__check" size={16} />
         ) : null}
+        {reprocessStats && (
+          <span className="tool-call-segment__header-stats">
+            <Hash size={10} />
+            <span>{reprocessStats.tokens}</span>
+            <Timer size={10} />
+            <span>{(reprocessStats.timeMs / 1000).toFixed(1)}s</span>
+            <Zap size={10} />
+            <span>{reprocessStats.tokensPerSecond.toFixed(1)}</span>
+          </span>
+        )}
         {segment.toolParams || segment.toolResult ? (
           <span className="tool-call-segment__chevron">
             {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
@@ -140,6 +161,8 @@ function ToolCallSegment({ segment }: { segment: MessageSegment }) {
     </div>
   );
 }
+
+ToolCallSegment.defaultProps = { reprocessStats: undefined };
 
 function ImageAttachModal({
   onAttach,
@@ -692,10 +715,20 @@ export default function ChatPage() {
       (promptStats) => {
         setMessages((prev) => {
           const updated = [...prev];
-          for (let i = updated.length - 1; i >= 0; i--) {
-            if (updated[i].role === 'user' && !updated[i].promptStats) {
-              updated[i] = { ...updated[i], promptStats };
-              break;
+          if (isReprocessing) {
+            isReprocessing = false;
+            for (let i = updated.length - 1; i >= 0; i--) {
+              if (updated[i].role === 'assistant') {
+                updated[i] = { ...updated[i], promptStats };
+                break;
+              }
+            }
+          } else {
+            for (let i = updated.length - 1; i >= 0; i--) {
+              if (updated[i].role === 'user' && !updated[i].promptStats) {
+                updated[i] = { ...updated[i], promptStats };
+                break;
+              }
             }
           }
           return updated;
@@ -761,6 +794,7 @@ export default function ChatPage() {
 
     const unsubscribeFunctionResult = window.electronAPI.onChatFunctionResult(
       (data) => {
+        isReprocessing = true;
         setMessages((prevMessages) => {
           const updatedMessages = [...prevMessages];
           const lastMessage = updatedMessages[updatedMessages.length - 1];
@@ -846,6 +880,7 @@ export default function ChatPage() {
 
     setMessages((prev) => [...prev, userMessage]);
     setInputText('');
+    isReprocessing = false;
     setLoading(true);
     setProcessing(true);
 
@@ -1135,6 +1170,7 @@ export default function ChatPage() {
                                 <ToolCallSegment
                                   key={segment.id}
                                   segment={segment}
+                                  reprocessStats={msg.promptStats}
                                 />,
                               );
                             } else {
