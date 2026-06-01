@@ -440,12 +440,20 @@ export async function sendMessage(
         if (emitFunctionEvent) emitFunctionEvent('calling', tc.name, '');
         if (emitFunctionEvent) emitFunctionEvent('call', tc.name, tc.args);
         const result = await handler(JSON.parse(tc.args));
+        const resultStr = JSON.stringify(result);
+        if (lastUsage) {
+          const resultTokens = (await tokenize(resultStr)) ?? 0;
+          lastUsage = {
+            used: lastUsage.used + resultTokens,
+            total: lastUsage.total,
+          };
+        }
         if (emitFunctionEvent)
-          emitFunctionEvent('result', tc.name, JSON.stringify(result));
+          emitFunctionEvent('result', tc.name, resultStr);
         messageHistory.push({
           role: 'tool',
           tool_call_id: tc.id,
-          content: JSON.stringify(result),
+          content: resultStr,
         });
       }
       return runCompletion();
