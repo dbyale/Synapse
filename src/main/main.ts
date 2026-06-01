@@ -16,6 +16,15 @@ import MenuBuilder from './menu';
 import { resolveHtmlPath } from './util';
 import { registerIpcHandlers } from './ipc';
 
+// Suppress llhttp parser assertion errors from HTTP connection teardown
+process.on('uncaughtException', (err) => {
+  if (err instanceof Error && err.message.includes('assert(!this.paused)')) {
+    console.warn('[llhttp] Ignored parser assertion (connection teardown)');
+    return;
+  }
+  console.error('[FATAL]', err);
+});
+
 class AppUpdater {
   constructor() {
     log.transports.file.level = 'info';

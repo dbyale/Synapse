@@ -1133,6 +1133,11 @@
   animation: stats-fade-in 0.4s ease forwards;
 }
 
+.chat-message__stats--tool-shared {
+  margin-left: 16px;
+  margin-bottom: 8px;
+}
+
 .chat-message__stats:hover {
   opacity: 1;
 }

@@ -34,6 +34,12 @@ import { TOOL_METADATA } from '../../data/defaultTools';
 import { resolveIcon } from '../components/workflows/IconPicker';
 import '../styles/ChatPage.css';
 
+interface GenerationStatsData {
+  tokens: number;
+  timeMs: number;
+  tokensPerSecond: number;
+}
+
 interface MessageSegment {
   id: string;
   text: string;
@@ -42,6 +48,7 @@ interface MessageSegment {
   toolStatus?: 'calling' | 'done';
   toolParams?: string;
   toolResult?: string;
+  reprocessStats?: GenerationStatsData;
 }
 
 interface Message {
@@ -49,16 +56,8 @@ interface Message {
   role: 'user' | 'assistant';
   content: MessageSegment[];
   collapsed?: boolean;
-  stats?: {
-    tokens: number;
-    timeMs: number;
-    tokensPerSecond: number;
-  };
-  promptStats?: {
-    tokens: number;
-    timeMs: number;
-    tokensPerSecond: number;
-  };
+  stats?: GenerationStatsData;
+  promptStats?: GenerationStatsData;
 }
 
 const INPUT_PRICE_PER_MILLION = 150.0;
@@ -68,20 +67,17 @@ let persistentMessages: Message[] = [];
 let persistentLoadedProfileId: string = '';
 let persistentMessageCounter: number = 0;
 let isReprocessing = false;
+let pendingSegmentIds: string[] = [];
 
 function ToolCallSegment({
   segment,
-  reprocessStats,
+  showInlineStats,
 }: {
   segment: MessageSegment;
-  reprocessStats?: Message['promptStats'];
+  showInlineStats?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const hasContent = !!(
-    segment.toolParams ||
-    segment.toolResult ||
-    reprocessStats
-  );
+  const hasContent = !!(segment.toolParams || segment.toolResult);
 
   const prettyPrintJson = (jsonString: string): string => {
     try {
@@ -122,14 +118,14 @@ function ToolCallSegment({
         ) : segment.toolStatus === 'done' ? (
           <Check className="tool-call-segment__check" size={16} />
         ) : null}
-        {reprocessStats && (
+        {showInlineStats && segment.reprocessStats && (
           <span className="tool-call-segment__header-stats">
             <Hash size={10} />
-            <span>{reprocessStats.tokens}</span>
+            <span>{segment.reprocessStats.tokens}</span>
             <Timer size={10} />
-            <span>{(reprocessStats.timeMs / 1000).toFixed(1)}s</span>
+            <span>{(segment.reprocessStats.timeMs / 1000).toFixed(1)}s</span>
             <Zap size={10} />
-            <span>{reprocessStats.tokensPerSecond.toFixed(1)}</span>
+            <span>{segment.reprocessStats.tokensPerSecond.toFixed(1)}</span>
           </span>
         )}
         {segment.toolParams || segment.toolResult ? (
@@ -161,8 +157,6 @@ function ToolCallSegment({
     </div>
   );
 }
-
-ToolCallSegment.defaultProps = { reprocessStats: undefined };
 
 function ImageAttachModal({
   onAttach,
@@ -688,6 +682,8 @@ export default function ChatPage() {
     );
 
     const removeDoneListener = window.electronAPI.onChatDone((stats) => {
+      pendingSegmentIds = [];
+
       setLoading(false);
       setProcessing(false);
       setTps(0);
@@ -713,26 +709,39 @@ export default function ChatPage() {
 
     const removePromptDoneListener = window.electronAPI.onChatPromptDone(
       (promptStats) => {
-        setMessages((prev) => {
-          const updated = [...prev];
-          if (isReprocessing) {
-            isReprocessing = false;
-            for (let i = updated.length - 1; i >= 0; i--) {
-              if (updated[i].role === 'assistant') {
-                updated[i] = { ...updated[i], promptStats };
-                break;
+        if (isReprocessing) {
+          isReprocessing = false;
+          // This reprompt's promptStats belong to tool segments from the PREVIOUS round
+          if (pendingSegmentIds.length > 0) {
+            const ids = pendingSegmentIds.splice(0);
+            setMessages((prev) => {
+              const updated = [...prev];
+              const last = updated[updated.length - 1];
+              if (last?.role === 'assistant') {
+                updated[updated.length - 1] = {
+                  ...last,
+                  content: last.content.map((seg) =>
+                    seg.type === 'tool' && ids.includes(seg.id)
+                      ? { ...seg, reprocessStats: promptStats }
+                      : seg,
+                  ),
+                };
               }
-            }
-          } else {
+              return updated;
+            });
+          }
+        } else {
+          setMessages((prev) => {
+            const updated = [...prev];
             for (let i = updated.length - 1; i >= 0; i--) {
               if (updated[i].role === 'user' && !updated[i].promptStats) {
                 updated[i] = { ...updated[i], promptStats };
                 break;
               }
             }
-          }
-          return updated;
-        });
+            return updated;
+          });
+        }
       },
     );
 
@@ -742,8 +751,11 @@ export default function ChatPage() {
           const updatedMessages = [...prevMessages];
           const lastMessage = updatedMessages[updatedMessages.length - 1];
 
+          const segId = crypto.randomUUID();
+          pendingSegmentIds.push(segId);
+
           const toolSegment: MessageSegment = {
-            id: crypto.randomUUID(),
+            id: segId,
             text: '',
             type: 'tool',
             toolName: data.name,
@@ -881,6 +893,7 @@ export default function ChatPage() {
     setMessages((prev) => [...prev, userMessage]);
     setInputText('');
     isReprocessing = false;
+    pendingSegmentIds = [];
     setLoading(true);
     setProcessing(true);
 
@@ -1128,24 +1141,15 @@ export default function ChatPage() {
                 <>
                   {loading &&
                     msg === messages[messages.length - 1] &&
-                    msg.role === 'assistant' && (
+                    msg.role === 'assistant' &&
+                    !processing && (
                       <div className="chat-message__indicator-box">
                         <div className="chat-indicator">
                           <div className="chat-indicator__spinner" />
                           <span className="chat-indicator__label">
-                            {processing
-                              ? `Processing prompt… (${progressPercent}%)`
-                              : 'Generating…'}
+                            Generating…
                           </span>
                         </div>
-                        {processing && (
-                          <div className="chat-progress-bar">
-                            <div
-                              className="chat-progress-bar__fill"
-                              style={{ width: `${progressPercent}%` }}
-                            />
-                          </div>
-                        )}
                       </div>
                     )}
                   <div className="chat-message__bubble">
@@ -1154,6 +1158,23 @@ export default function ChatPage() {
                         {(() => {
                           const elements: ReactNode[] = [];
                           let currentTextSegments: MessageSegment[] = [];
+
+                          // Group tool segments by reprocessStats reference
+                          const statsGroups = new Map<
+                            GenerationStatsData,
+                            MessageSegment[]
+                          >();
+                          msg.content.forEach((seg) => {
+                            if (
+                              seg.type === 'tool' &&
+                              seg.reprocessStats
+                            ) {
+                              const ref = seg.reprocessStats;
+                              if (!statsGroups.has(ref))
+                                statsGroups.set(ref, []);
+                              statsGroups.get(ref)!.push(seg);
+                            }
+                          });
 
                           msg.content.forEach((segment) => {
                             if (segment.type === 'tool') {
@@ -1166,17 +1187,66 @@ export default function ChatPage() {
                                 );
                                 currentTextSegments = [];
                               }
+                              const group = segment.reprocessStats
+                                ? statsGroups.get(segment.reprocessStats)
+                                : undefined;
+                              const showInline =
+                                !!segment.reprocessStats &&
+                                group !== undefined &&
+                                group.length === 1;
                               elements.push(
                                 <ToolCallSegment
                                   key={segment.id}
                                   segment={segment}
-                                  reprocessStats={msg.promptStats}
+                                  showInlineStats={showInline}
                                 />,
                               );
                             } else {
                               currentTextSegments.push(segment);
                             }
                           });
+
+                          // Add shared stats blocks for groups of 2+
+                          let sharedKey = 0;
+                          for (const [
+                            stats,
+                            segs,
+                          ] of statsGroups.entries()) {
+                            if (segs.length >= 2) {
+                              elements.push(
+                                <div
+                                  key={`shared-stats-${sharedKey++}`}
+                                  className="chat-message__stats chat-message__stats--tool-shared"
+                                >
+                                  <div
+                                    className="chat-stat-item"
+                                    title="Prompt tokens"
+                                  >
+                                    <Hash size={12} />
+                                    <span>{stats.tokens} tokens</span>
+                                  </div>
+                                  <div
+                                    className="chat-stat-item"
+                                    title="Prompt processing time"
+                                  >
+                                    <Timer size={12} />
+                                    <span>
+                                      {(stats.timeMs / 1000).toFixed(2)}s
+                                    </span>
+                                  </div>
+                                  <div
+                                    className="chat-stat-item"
+                                    title="Prompt processing speed"
+                                  >
+                                    <Zap size={12} />
+                                    <span>
+                                      {stats.tokensPerSecond.toFixed(1)} t/s
+                                    </span>
+                                  </div>
+                                </div>,
+                              );
+                            }
+                          }
 
                           if (currentTextSegments.length > 0) {
                             elements.push(
@@ -1189,6 +1259,25 @@ export default function ChatPage() {
 
                           return elements;
                         })()}
+                        {loading &&
+                          msg === messages[messages.length - 1] &&
+                          msg.role === 'assistant' &&
+                          processing && (
+                            <div className="chat-message__indicator-box">
+                              <div className="chat-indicator">
+                                <div className="chat-indicator__spinner" />
+                                <span className="chat-indicator__label">
+                                  Processing prompt… ({progressPercent}%)
+                                </span>
+                              </div>
+                              <div className="chat-progress-bar">
+                                <div
+                                  className="chat-progress-bar__fill"
+                                  style={{ width: `${progressPercent}%` }}
+                                />
+                              </div>
+                            </div>
+                          )}
                       </div>
                     ) : (
                       msg.content[0]?.text || ''

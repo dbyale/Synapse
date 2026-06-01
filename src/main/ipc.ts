@@ -411,7 +411,10 @@ export function registerIpcHandlers(win: BrowserWindow): void {
       } else if (event === 'call') {
         win.webContents.send('chat-function-call', { name, params: data });
       } else if (event === 'result') {
-        win.webContents.send('chat-function-result', { name, result: data });
+        win.webContents.send('chat-function-result', {
+          name,
+          result: data,
+        });
       }
     },
   );

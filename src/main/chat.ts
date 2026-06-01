@@ -305,8 +305,25 @@ export async function sendMessage(
 
     try {
       while (true) {
-        const { done, value } = await reader!.read();
-        if (done || aborted) break;
+        let readResult;
+        try {
+          readResult = await reader!.read();
+        } catch {
+          // Stream error — exit loop gracefully
+          break;
+        }
+        const { done, value } = readResult;
+        if (done) break;
+        if (aborted) {
+          // Drain remaining bytes so the HTTP parser finishes cleanly
+          try {
+            while (true) {
+              const { done: d } = await reader!.read();
+              if (d) break;
+            }
+          } catch {}
+          break;
+        }
 
         const chunk = decoder.decode(value);
         const lines = chunk.split('\n');
@@ -449,13 +466,12 @@ export async function sendMessage(
 
 export async function abort() {
   aborted = true;
-  const r = currentReader;
-  currentReader = null;
-  if (r) {
-    try {
-      await r.cancel();
-    } catch {}
+  if (abortController) {
+    abortController.abort();
+    abortController = null;
   }
+  // The main read loop's inner drain loop handles stream cleanup.
+  // Do NOT cancel the reader — that leaves the llhttp parser paused.
 }
 
 export async function unloadModel() {
