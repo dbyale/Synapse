@@ -90,7 +90,8 @@ export type NodeType =
   | 'delete-file'
   | 'profile-load'
   | 'profile-unload'
-  | 'end';
+  | 'end'
+  | 'comment';
 
 export interface PortDef {
   id: string;
@@ -248,6 +249,7 @@ const NODE_PORTS_STATIC: Record<NodeType, PortDef[]> = {
   end: [
     { id: 'in-continue', label: 'continue', type: 'continue', side: 'input' },
   ],
+  comment: [],
 };
 
 // ── Colour per port type ─────────────────────────────────────────────────────
@@ -325,6 +327,10 @@ export interface ProfileUnloadData {
 export interface EndData {
   type: 'end';
 }
+export interface CommentData {
+  type: 'comment';
+  text: string;
+}
 
 export type NodeData =
   | StartData
@@ -343,7 +349,8 @@ export type NodeData =
   | DeleteFileData
   | ProfileLoadData
   | ProfileUnloadData
-  | EndData;
+  | EndData
+  | CommentData;
 
 // ============================================================================
 // GRAPH TYPES
@@ -506,6 +513,13 @@ const NODE_META: Record<NodeType, NodeMeta> = {
     colorVar: 'var(--wf-end)',
     category: 'Input',
     hasConfig: false,
+  },
+  comment: {
+    label: 'Comment',
+    icon: FileText,
+    colorVar: 'var(--wf-text)',
+    category: 'Data',
+    hasConfig: true,
   },
 };
 
@@ -781,6 +795,8 @@ function makeNode(type: NodeType, x: number, y: number): WorkflowNode {
       return { ...base, data: { type: 'profile-unload' } };
     case 'end':
       return { ...base, data: { type: 'end' } };
+    case 'comment':
+      return { ...base, data: { type: 'comment', text: '' } };
   }
 }
 
@@ -871,6 +887,209 @@ function pointNearTail(
 // NODE HEIGHT
 // ============================================================================
 
+function getPreviewText(
+  node: WorkflowNode,
+  edges: WorkflowEdge[],
+  nodes: WorkflowNode[],
+  profiles: Profile[],
+): string {
+  const ports = getNodePorts(node, edges, nodes, profiles);
+  const inputs = ports.filter((p) => p.side === 'input');
+
+  switch (node.type) {
+    case 'profile': {
+      const d = node.data as ProfileData;
+      return d.profileId
+        ? (profiles.find((p) => p.id === d.profileId)?.name ?? 'Unknown profile')
+        : 'No profile selected';
+    }
+    case 'profile-cache': {
+      const wired = edges
+        .filter(
+          (e) => e.target === node.id && e.targetPort.startsWith('in-profile-'),
+        )
+        .sort((a, b) => {
+          const ai = parseInt(a.targetPort.replace('in-profile-', ''), 10);
+          const bi = parseInt(b.targetPort.replace('in-profile-', ''), 10);
+          return ai - bi;
+        });
+      if (wired.length === 0) return 'No profiles connected';
+      const names = wired.map((e) => {
+        const src = nodes.find((n) => n.id === e.source);
+        if (src?.type === 'profile') {
+          const d = src.data as ProfileData;
+          if (d.profileId) {
+            return (
+              profiles.find((p) => p.id === d.profileId)?.name ??
+              'Unknown profile'
+            );
+          }
+          return 'No profile selected';
+        }
+        return 'Invalid source';
+      });
+      return names.map((n) => `• ${n}`).join('\n');
+    }
+    case 'text-data': {
+      const v = (node.data as TextDataData).value;
+      return v
+        ? `"${v.slice(0, 40)}${v.length > 40 ? '…' : ''}"`
+        : 'No value set';
+    }
+    case 'server': {
+      const directEdge = edges.find(
+        (e) => e.target === node.id && e.targetPort === 'in-profile',
+      );
+      const cacheEdge = edges.find(
+        (e) => e.target === node.id && e.targetPort === 'in-profile-cache',
+      );
+      const names: string[] = [];
+      if (directEdge) {
+        const src = nodes.find((n) => n.id === directEdge.source);
+        if (src?.type === 'profile') {
+          const d = src.data as ProfileData;
+          names.push(
+            d.profileId
+              ? (profiles.find((p) => p.id === d.profileId)?.name ??
+                  'Unknown profile')
+              : 'No profile selected',
+          );
+        }
+      }
+      if (cacheEdge) {
+        const cacheNode = nodes.find((n) => n.id === cacheEdge.source);
+        if (cacheNode?.type === 'profile-cache') {
+          const cachePorts = getNodePorts(cacheNode, edges, nodes, profiles);
+          cachePorts
+            .filter((p) => p.side === 'input' && p.type === 'profile')
+            .forEach((p) => {
+              const we = edges.find(
+                (e) => e.target === cacheNode.id && e.targetPort === p.id,
+              );
+              if (we) {
+                const src = nodes.find((n) => n.id === we.source);
+                if (src?.type === 'profile') {
+                  const d = src.data as ProfileData;
+                  names.push(
+                    d.profileId
+                      ? (profiles.find((pr) => pr.id === d.profileId)?.name ??
+                          'Unknown profile')
+                      : 'No profile selected',
+                  );
+                }
+              }
+            });
+        }
+      }
+      return names.length > 0
+        ? names.map((n) => `• ${n}`).join('\n')
+        : 'No profile';
+    }
+    case 'input-text': {
+      const q = (node.data as InputTextData).question;
+      return q
+        ? `"${q.slice(0, 40)}${q.length > 40 ? '…' : ''}"`
+        : 'No question set';
+    }
+    case 'agent': {
+      const d = node.data as AgentData;
+      const labels: string[] = [];
+
+      for (const p of inputs) {
+        if (['in-continue', 'in-server', 'in-profile-0'].includes(p.id))
+          continue;
+        const edge = edges.find(
+          (e) => e.target === node.id && e.targetPort === p.id,
+        );
+        if (!edge) continue;
+        const src = nodes.find((n) => n.id === edge.source);
+        labels.push(`• ${src?.label || 'Unknown'}`);
+      }
+
+      const profileEdge = edges.find(
+        (e) => e.target === node.id && e.targetPort === 'in-profile-0',
+      );
+      if (profileEdge) {
+        const src = nodes.find((n) => n.id === profileEdge.source);
+        if (src?.type === 'server') {
+          const serverPorts = getNodePorts(src, edges, nodes, profiles);
+          const portDef = serverPorts.find(
+            (p) => p.id === profileEdge.sourcePort,
+          );
+          labels.push(`• ${portDef?.label || src.label}`);
+        } else {
+          labels.push(`• ${src?.label || 'Unknown'}`);
+        }
+      }
+
+      if (!profileEdge) {
+        const serverEdge = edges.find(
+          (e) => e.target === node.id && e.targetPort === 'in-server',
+        );
+        if (serverEdge) {
+          const serverNode = nodes.find((n) => n.id === serverEdge.source);
+          if (serverNode?.type === 'server') {
+            const serverPorts = getNodePorts(
+              serverNode,
+              edges,
+              nodes,
+              profiles,
+            );
+            const profileOutputs = serverPorts.filter(
+              (p) => p.side === 'output' && p.type === 'server-profile',
+            );
+            if (profileOutputs.length === 1) {
+              labels.push(`• ${profileOutputs[0].label}`);
+            }
+          }
+        }
+      }
+
+      return labels.length > 0
+        ? labels.join('\n')
+        : d.prompt
+          ? d.prompt.slice(0, 44) + (d.prompt.length > 44 ? '…' : '')
+          : 'No prompt hint';
+    }
+    case 'write-text': {
+      const d = node.data as WriteTextData;
+      return d.description || 'No description';
+    }
+    case 'edit-text': {
+      const d = node.data as EditTextData;
+      return d.instruction || 'No instruction';
+    }
+    case 'decide-if': {
+      const d = node.data as DecideIfData;
+      return d.condition || 'No condition set';
+    }
+    case 'profile-load':
+      return 'Load profile into server';
+    case 'profile-unload':
+      return 'Unload profile from server';
+    case 'end':
+      return 'Terminates workflow';
+    case 'comment':
+      return (node.data as CommentData).text || 'Empty comment';
+    default:
+      return '';
+  }
+}
+
+function estimatePreviewHeight(preview: string): number {
+  if (!preview) return 0;
+  const CHARS_PER_LINE = 32;
+  const LINE_HEIGHT = 15.4;
+  const PADDING = 14;
+  let lines = 0;
+  for (const segment of preview.split('\n')) {
+    lines += Math.max(1, Math.ceil(segment.length / CHARS_PER_LINE));
+  }
+  return Math.round(lines * LINE_HEIGHT + PADDING);
+}
+
+const HEADER_HEIGHT = 36;
+
 function nodeHeight(
   node: WorkflowNode,
   edges: WorkflowEdge[],
@@ -881,7 +1100,12 @@ function nodeHeight(
   const inputs = ports.filter((p) => p.side === 'input').length;
   const outputs = ports.filter((p) => p.side === 'output').length;
   const maxPorts = Math.max(inputs, outputs, 1);
-  return PORT_TOP + (maxPorts - 1) * PORT_GAP + 28;
+  const base = PORT_TOP + (maxPorts - 1) * PORT_GAP + 28;
+  const preview = getPreviewText(node, edges, nodes, profiles);
+  if (!preview) return base;
+  const naturalBody = base - HEADER_HEIGHT;
+  const needed = estimatePreviewHeight(preview);
+  return needed > naturalBody ? base + (needed - naturalBody) : base;
 }
 
 // ============================================================================
@@ -1411,6 +1635,22 @@ function NodeConfigPanel({
             </p>
           </div>
         )}
+
+        {/* ── COMMENT ── */}
+        {node.type === 'comment' && (
+          <div className="wf-config-field">
+            <label className="wf-config-field__label">Comment</label>
+            <textarea
+              className="wf-config-field__textarea"
+              rows={4}
+              value={(node.data as CommentData).text}
+              onChange={(e) =>
+                patchData({ text: e.target.value } as Partial<CommentData>)
+              }
+              placeholder="Write a comment…"
+            />
+          </div>
+        )}
       </div>
 
       <div className="wf-config-panel__footer">
@@ -1440,7 +1680,7 @@ const PALETTE_CATEGORIES: { label: string; types: NodeType[] }[] = [
     label: 'Models',
     types: ['server', 'agent', 'profile-load', 'profile-unload'],
   },
-  { label: 'Data', types: ['profile', 'profile-cache', 'text-data'] },
+  { label: 'Data', types: ['profile', 'profile-cache', 'text-data', 'comment'] },
   { label: 'Tools', types: ['write-text', 'edit-text', 'decide-if'] },
   {
     label: 'Files',
@@ -1466,6 +1706,7 @@ const NODE_HINTS: Record<NodeType, string> = {
   'profile-load': 'Loads a profile into a server',
   'profile-unload': 'Unloads a profile from a server',
   end: 'Terminates a workflow path',
+  comment: 'Annotation — no inputs or outputs',
 };
 
 function NodePalette({ onDragStart }: NodePaletteProps) {
@@ -1556,200 +1797,7 @@ function CanvasNode({
   const h = nodeHeight(node, edges, nodes, profiles);
 
   // Preview text
-  let preview = '';
-  switch (node.type) {
-    case 'profile': {
-      const d = node.data as ProfileData;
-      preview = d.profileId
-        ? (profiles.find((p) => p.id === d.profileId)?.name ??
-          'Unknown profile')
-        : 'No profile selected';
-      break;
-    }
-    case 'profile-cache': {
-      const wired = edges
-        .filter(
-          (e) => e.target === node.id && e.targetPort.startsWith('in-profile-'),
-        )
-        .sort((a, b) => {
-          const ai = parseInt(a.targetPort.replace('in-profile-', ''), 10);
-          const bi = parseInt(b.targetPort.replace('in-profile-', ''), 10);
-          return ai - bi;
-        });
-      if (wired.length === 0) {
-        preview = 'No profiles connected';
-      } else {
-        const names = wired.map((e) => {
-          const src = nodes.find((n) => n.id === e.source);
-          if (src?.type === 'profile') {
-            const d = src.data as ProfileData;
-            if (d.profileId) {
-              return (
-                profiles.find((p) => p.id === d.profileId)?.name ??
-                'Unknown profile'
-              );
-            }
-            return 'No profile selected';
-          }
-          return 'Invalid source';
-        });
-        preview = names.map((n) => `• ${n}`).join('\n');
-      }
-      break;
-    }
-    case 'text-data': {
-      const v = (node.data as TextDataData).value;
-      preview = v
-        ? `"${v.slice(0, 40)}${v.length > 40 ? '…' : ''}"`
-        : 'No value set';
-      break;
-    }
-    case 'server': {
-      const directEdge = edges.find(
-        (e) => e.target === node.id && e.targetPort === 'in-profile',
-      );
-      const cacheEdge = edges.find(
-        (e) => e.target === node.id && e.targetPort === 'in-profile-cache',
-      );
-      const names: string[] = [];
-      if (directEdge) {
-        const src = nodes.find((n) => n.id === directEdge.source);
-        if (src?.type === 'profile') {
-          const d = src.data as ProfileData;
-          names.push(
-            d.profileId
-              ? (profiles.find((p) => p.id === d.profileId)?.name ??
-                  'Unknown profile')
-              : 'No profile selected',
-          );
-        }
-      }
-      if (cacheEdge) {
-        const cacheNode = nodes.find((n) => n.id === cacheEdge.source);
-        if (cacheNode?.type === 'profile-cache') {
-          const cachePorts = getNodePorts(cacheNode, edges, nodes, profiles);
-          cachePorts
-            .filter((p) => p.side === 'input' && p.type === 'profile')
-            .forEach((p) => {
-              const we = edges.find(
-                (e) => e.target === cacheNode.id && e.targetPort === p.id,
-              );
-              if (we) {
-                const src = nodes.find((n) => n.id === we.source);
-                if (src?.type === 'profile') {
-                  const d = src.data as ProfileData;
-                  names.push(
-                    d.profileId
-                      ? (profiles.find((pr) => pr.id === d.profileId)?.name ??
-                          'Unknown profile')
-                      : 'No profile selected',
-                  );
-                }
-              }
-            });
-        }
-      }
-      preview =
-        names.length > 0 ? names.map((n) => `• ${n}`).join('\n') : 'No profile';
-      break;
-    }
-    case 'input-text': {
-      const q = (node.data as InputTextData).question;
-      preview = q
-        ? `"${q.slice(0, 40)}${q.length > 40 ? '…' : ''}"`
-        : 'No question set';
-      break;
-    }
-    case 'agent': {
-      const d = node.data as AgentData;
-      const labels: string[] = [];
-
-      // Context and prompt inputs — show source label
-      for (const p of inputs) {
-        if (['in-continue', 'in-server', 'in-profile-0'].includes(p.id))
-          continue;
-        const edge = edges.find(
-          (e) => e.target === node.id && e.targetPort === p.id,
-        );
-        if (!edge) continue;
-        const src = nodes.find((n) => n.id === edge.source);
-        labels.push(`• ${src?.label || 'Unknown'}`);
-      }
-
-      // Profile input — resolve actual profile name from server's port label
-      const profileEdge = edges.find(
-        (e) => e.target === node.id && e.targetPort === 'in-profile-0',
-      );
-      if (profileEdge) {
-        const src = nodes.find((n) => n.id === profileEdge.source);
-        if (src?.type === 'server') {
-          const serverPorts = getNodePorts(src, edges, nodes, profiles);
-          const portDef = serverPorts.find(
-            (p) => p.id === profileEdge.sourcePort,
-          );
-          labels.push(`• ${portDef?.label || src.label}`);
-        } else {
-          labels.push(`• ${src?.label || 'Unknown'}`);
-        }
-      }
-
-      // If no profile wire, auto-infer single-profile server
-      if (!profileEdge) {
-        const serverEdge = edges.find(
-          (e) => e.target === node.id && e.targetPort === 'in-server',
-        );
-        if (serverEdge) {
-          const serverNode = nodes.find((n) => n.id === serverEdge.source);
-          if (serverNode?.type === 'server') {
-            const serverPorts = getNodePorts(
-              serverNode,
-              edges,
-              nodes,
-              profiles,
-            );
-            const profileOutputs = serverPorts.filter(
-              (p) => p.side === 'output' && p.type === 'server-profile',
-            );
-            if (profileOutputs.length === 1) {
-              labels.push(`• ${profileOutputs[0].label}`);
-            }
-          }
-        }
-      }
-
-      preview =
-        labels.length > 0
-          ? labels.join('\n')
-          : d.prompt
-            ? d.prompt.slice(0, 44) + (d.prompt.length > 44 ? '…' : '')
-            : 'No prompt hint';
-      break;
-    }
-    case 'write-text': {
-      const d = node.data as WriteTextData;
-      preview = d.description || 'No description';
-      break;
-    }
-    case 'edit-text': {
-      const d = node.data as EditTextData;
-      preview = d.instruction || 'No instruction';
-      break;
-    }
-    case 'decide-if': {
-      const d = node.data as DecideIfData;
-      preview = d.condition || 'No condition set';
-      break;
-    }
-    case 'profile-load':
-      preview = 'Load profile into server';
-      break;
-    case 'profile-unload':
-      preview = 'Unload profile from server';
-      break;
-    case 'end':
-      preview = 'Terminates workflow';
-      break;
-  }
+  const preview = getPreviewText(node, edges, nodes, profiles);
 
   const isConnectingTarget =
     compatibleInputPorts.size > 0 || compatibleInputPortsForReconnect.size > 0;
