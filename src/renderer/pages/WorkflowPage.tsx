@@ -3035,10 +3035,10 @@ function WorkflowEditor({
       </div>
 
       <div className="wf-hint">
-        <kbd>Del</kbd> delete <span className="wf-hint__sep" />
-        <kbd>Ctrl A</kbd> select all <span className="wf-hint__sep" />
-        <kbd>Ctrl Z</kbd> undo <span className="wf-hint__sep" />
-        Drag tail of edge to reconnect
+        <kbd>Del</kbd> Delete <span className="wf-hint__sep" />
+        <kbd>Shift + Click</kbd> Multi-Select <span className="wf-hint__sep" />
+        <kbd>Ctrl A</kbd> Select All <span className="wf-hint__sep" />
+        <kbd>Ctrl Z</kbd> Undo <span className="wf-hint__sep" />
       </div>
     </div>
   );

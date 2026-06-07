@@ -170,7 +170,7 @@ function ToolCategoryCard({
           }}
           role="button"
           tabIndex={0}
-          title={allEnabled ? 'Deselect all' : 'Select all'}
+          title={allEnabled ? 'Deselect All' : 'Select All'}
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') {
               e.preventDefault();
