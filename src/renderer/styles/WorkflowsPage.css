@@ -141,6 +141,12 @@
   border-bottom: 1px solid var(--border);
 }
 
+.wf-card__top-left {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
 .wf-card__icon-wrap {
   width: 38px;
   height: 38px;
@@ -278,6 +284,21 @@
 }
 .wf-card__rename-cancel:hover {
   background: var(--bg-hover);
+}
+
+/* ── Dragging state ── */
+
+.wf-card--dragging {
+  opacity: 0.35;
+  transform: scale(0.95);
+}
+
+/* ── Drop target indicator ── */
+
+.wf-card--drag-over {
+  border-color: var(--accent);
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
 }
 
 /* ============================================================================

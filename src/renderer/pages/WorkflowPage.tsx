@@ -376,6 +376,7 @@ export interface Workflow {
   id: string;
   name: string;
   icon: string;
+  order: number;
   createdAt: number;
   updatedAt: number;
   nodes: WorkflowNode[];
@@ -722,9 +723,12 @@ const WORKFLOWS_KEY = 'workflows';
 
 function loadWorkflows(): Workflow[] {
   try {
-    return JSON.parse(
+    const raw = JSON.parse(
       localStorage.getItem(WORKFLOWS_KEY) ?? '[]',
     ) as Workflow[];
+    return raw
+      .map((wf, i) => ({ ...wf, order: wf.order ?? i }))
+      .sort((a, b) => a.order - b.order);
   } catch {
     return [];
   }
@@ -1169,6 +1173,7 @@ interface WorkflowGridProps {
   onDelete: (id: string) => void;
   onRename: (id: string, name: string) => void;
   onIconChange: (id: string, icon: string) => void;
+  onReorder: (ids: string[]) => void;
 }
 function WorkflowGrid({
   workflows,
@@ -1177,11 +1182,14 @@ function WorkflowGrid({
   onDelete,
   onRename,
   onIconChange,
+  onReorder,
 }: WorkflowGridProps) {
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [iconPickerId, setIconPickerId] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
   const startRename = (wf: Workflow, e: ReactMouseEvent) => {
     e.stopPropagation();
@@ -1193,6 +1201,36 @@ function WorkflowGrid({
     setRenamingId(null);
   };
   const pickerWorkflow = workflows.find((w) => w.id === iconPickerId);
+
+  const handleDragStart = (idx: number) => {
+    setDragIndex(idx);
+  };
+  const handleDragOver = (e: React.DragEvent, idx: number) => {
+    e.preventDefault();
+    if (dragIndex === null || dragIndex === idx) return;
+    setDragOverIndex(idx);
+  };
+  const handleDragLeave = () => {
+    setDragOverIndex(null);
+  };
+  const handleDrop = (e: React.DragEvent, dropIdx: number) => {
+    e.preventDefault();
+    if (dragIndex === null || dragIndex === dropIdx) {
+      setDragIndex(null);
+      setDragOverIndex(null);
+      return;
+    }
+    const ids = workflows.map((w) => w.id);
+    const [moved] = ids.splice(dragIndex, 1);
+    ids.splice(dropIdx, 0, moved);
+    onReorder(ids);
+    setDragIndex(null);
+    setDragOverIndex(null);
+  };
+  const handleDragEnd = () => {
+    setDragIndex(null);
+    setDragOverIndex(null);
+  };
 
   return (
     <div className="wf-grid-page">
@@ -1221,31 +1259,45 @@ function WorkflowGrid({
         </div>
       ) : (
         <div className="wf-grid">
-          {workflows.map((wf) => {
+          {workflows.map((wf, idx) => {
             const WfIcon = resolveIcon(wf.icon);
+            const isDragging = dragIndex === idx;
+            const isDragOver = dragOverIndex === idx && dragIndex !== idx;
             return (
               <div
                 key={wf.id}
-                className="wf-card"
+                className={[
+                  'wf-card',
+                  isDragging ? 'wf-card--dragging' : '',
+                  isDragOver ? 'wf-card--drag-over' : '',
+                ].join(' ')}
+                draggable={renamingId !== wf.id}
                 onClick={() => renamingId !== wf.id && onOpen(wf.id)}
                 role="button"
                 tabIndex={0}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && renamingId !== wf.id) onOpen(wf.id);
                 }}
+                onDragStart={() => handleDragStart(idx)}
+                onDragOver={(e) => handleDragOver(e, idx)}
+                onDragLeave={handleDragLeave}
+                onDrop={(e) => handleDrop(e, idx)}
+                onDragEnd={handleDragEnd}
               >
                 <div className="wf-card__top">
-                  <button
-                    type="button"
-                    className="wf-card__icon-wrap"
-                    title="Change icon"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setIconPickerId(wf.id);
-                    }}
-                  >
-                    <WfIcon size={20} />
-                  </button>
+                  <div className="wf-card__top-left">
+                    <button
+                      type="button"
+                      className="wf-card__icon-wrap"
+                      title="Change icon"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setIconPickerId(wf.id);
+                      }}
+                    >
+                      <WfIcon size={20} />
+                    </button>
+                  </div>
                   <div
                     className="wf-card__actions"
                     onClick={(e) => e.stopPropagation()}
@@ -3122,10 +3174,15 @@ export default function WorkflowsPage() {
   };
 
   const handleCreate = () => {
+    const maxOrder = workflows.reduce(
+      (max, w) => Math.max(max, w.order),
+      -1,
+    );
     const wf: Workflow = {
       id: uid(),
       name: 'Untitled Workflow',
       icon: 'GitBranch',
+      order: maxOrder + 1,
       createdAt: Date.now(),
       updatedAt: Date.now(),
       nodes: [],
@@ -3155,6 +3212,16 @@ export default function WorkflowsPage() {
   const handleChange = (updated: Workflow) =>
     saveAll(workflows.map((w) => (w.id === updated.id ? updated : w)));
 
+  const handleReorder = (ids: string[]) => {
+    const map = new Map(workflows.map((w) => [w.id, w]));
+    const updated = ids.map((id, i) => ({
+      ...map.get(id)!,
+      order: i,
+      updatedAt: Date.now(),
+    }));
+    saveAll(updated);
+  };
+
   const openWorkflow = workflows.find((w) => w.id === openId);
 
   return (
@@ -3166,6 +3233,7 @@ export default function WorkflowsPage() {
         onDelete={handleDelete}
         onRename={handleRename}
         onIconChange={handleIconChange}
+        onReorder={handleReorder}
       />
       {openId && openWorkflow && (
         <WorkflowEditor
