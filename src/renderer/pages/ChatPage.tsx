@@ -49,6 +49,7 @@ interface MessageSegment {
   toolParams?: string;
   toolResult?: string;
   reprocessStats?: GenerationStatsData;
+  imageDataUrl?: string;
 }
 
 interface Message {
@@ -874,6 +875,7 @@ export default function ChatPage() {
     if (!text || loading || modelLoading || !selectedProfileId || loadError)
       return;
 
+    const imageDataUrl = pendingImage;
     const userMessage: Message = {
       id: messageCounter.current,
       role: 'user',
@@ -882,6 +884,7 @@ export default function ChatPage() {
           id: `seg-${Date.now()}-${segmentCounter.current}`,
           text,
           type: 'normal',
+          imageDataUrl: imageDataUrl ?? undefined,
         },
       ],
       collapsed: text.length >= 20 && text.split('\n').length > 5,
@@ -890,6 +893,7 @@ export default function ChatPage() {
     messageCounter.current += 1;
     segmentCounter.current += 1;
 
+    setPendingImage(null);
     setMessages((prev) => [...prev, userMessage]);
     setInputText('');
     isReprocessing = false;
@@ -904,8 +908,7 @@ export default function ChatPage() {
     lastTokenSnapshot.current = null;
     setTps(0);
 
-    await window.electronAPI.chatSend(text, pendingImage ?? undefined);
-    setPendingImage(null);
+    await window.electronAPI.chatSend(text, imageDataUrl ?? undefined);
   };
 
   const handleAbort = () => window.electronAPI.chatAbort();
@@ -1280,7 +1283,16 @@ export default function ChatPage() {
                           )}
                       </div>
                     ) : (
-                      msg.content[0]?.text || ''
+                      <>
+                        {msg.content[0]?.imageDataUrl && (
+                          <img
+                            src={msg.content[0].imageDataUrl}
+                            alt="Attached image"
+                            className="chat-message__user-image"
+                          />
+                        )}
+                        {msg.content[0]?.text || ''}
+                      </>
                     )}
                   </div>
                 </>

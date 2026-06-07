@@ -1275,6 +1275,16 @@
   background: #ef4444;
 }
 
+.chat-message__user-image {
+  display: block;
+  height: 80px;
+  width: auto;
+  max-width: 160px;
+  object-fit: cover;
+  border-radius: 8px;
+  margin-bottom: 4px;
+}
+
 /* ============================================================================
    IMAGE ATTACH MODAL
    ============================================================================ */
