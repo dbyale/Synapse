@@ -2,8 +2,8 @@
   "name": "synapse",
   "version": "1.0.0",
   "binaryVersions": {
-    "llama": "b9434",
-    "parser": "v0.24.0"
+    "llama": "b9551",
+    "parser": "v0.24.1"
   },
   "description": "A foundation for scalable desktop apps",
   "keywords": [
