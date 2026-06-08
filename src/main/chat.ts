@@ -140,6 +140,35 @@ function buildChatBody(messages: any[], tools: any[]): Record<string, any> {
   return body;
 }
 
+/**
+ * Fire-and-forget: send a minimal request to warm the server's KV cache
+ * with the system prompt and tool definitions, so they are reused on
+ * the first real user message rather than processed from scratch.
+ */
+async function prefetchCache(
+  systemPrompt: string,
+  tools: any[],
+): Promise<void> {
+  try {
+    const body: Record<string, any> = {
+      messages: [{ role: 'system', content: systemPrompt }],
+      max_tokens: 1,
+      temperature: 0,
+      stream: false,
+    };
+    if (tools.length > 0) body.tools = tools;
+    const res = await fetch('http://127.0.0.1:8080/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(30_000),
+    });
+    await res.text(); // drain body to close the connection
+  } catch {
+    // best-effort — cache may still be warm from a coincidental request
+  }
+}
+
 export async function loadProfile(
   profile: Profile,
 ): Promise<{ success: boolean; error?: string }> {
@@ -251,6 +280,12 @@ export async function loadProfile(
 
     currentProfile = profile;
     messageHistory = [{ role: 'system', content: profile.systemPrompt }];
+
+    // Warm up the KV cache with the system prompt + tool definitions
+    if (profile.systemPrompt) {
+      prefetchCache(profile.systemPrompt, activeTools).catch(() => {});
+    }
+
     return { success: true };
   } catch (error: any) {
     return { success: false, error: error.message };
