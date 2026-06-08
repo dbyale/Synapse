@@ -1377,6 +1377,9 @@ function WorkflowGrid({
                       {wf.edges.length} edge{wf.edges.length !== 1 ? 's' : ''}
                     </span>
                   </div>
+                  <button type="button" className="wf-card__run-btn">
+                    <Play size={13} /> Start
+                  </button>
                   <span className="wf-card__date">
                     Updated{' '}
                     {new Date(wf.updatedAt).toLocaleDateString(undefined, {

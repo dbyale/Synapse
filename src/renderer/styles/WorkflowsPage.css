@@ -232,6 +232,29 @@
   font-weight: 500;
 }
 
+.wf-card__run-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--wf-start);
+  background: rgba(137, 180, 250, 0.1);
+  color: var(--wf-start);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s ease;
+  box-sizing: border-box;
+}
+
+.wf-card__run-btn:hover {
+  background: rgba(166, 227, 161, 0.22);
+}
+
 .wf-card__date {
   font-size: 11px;
   color: var(--text-secondary);
