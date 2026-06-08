@@ -132,6 +132,7 @@
 
 .chat-message--assistant {
   align-self: flex-start;
+  max-width: 100%;
 }
 
 .chat-message__bubble {
