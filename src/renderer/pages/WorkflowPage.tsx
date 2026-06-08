@@ -376,6 +376,7 @@ export interface Workflow {
   id: string;
   name: string;
   icon: string;
+  color: string;
   order: number;
   createdAt: number;
   updatedAt: number;
@@ -727,7 +728,11 @@ function loadWorkflows(): Workflow[] {
       localStorage.getItem(WORKFLOWS_KEY) ?? '[]',
     ) as Workflow[];
     return raw
-      .map((wf, i) => ({ ...wf, order: wf.order ?? i }))
+      .map((wf, i) => ({
+        ...wf,
+        color: (wf as any).color || '#89b4fa',
+        order: wf.order ?? i,
+      }))
       .sort((a, b) => a.order - b.order);
   } catch {
     return [];
@@ -1173,6 +1178,7 @@ interface WorkflowGridProps {
   onDelete: (id: string) => void;
   onRename: (id: string, name: string) => void;
   onIconChange: (id: string, icon: string) => void;
+  onColorChange: (id: string, color: string) => void;
   onReorder: (ids: string[]) => void;
 }
 function WorkflowGrid({
@@ -1182,6 +1188,7 @@ function WorkflowGrid({
   onDelete,
   onRename,
   onIconChange,
+  onColorChange,
   onReorder,
 }: WorkflowGridProps) {
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -1294,6 +1301,9 @@ function WorkflowGrid({
                         e.stopPropagation();
                         setIconPickerId(wf.id);
                       }}
+                      style={
+                        { '--wf-icon-color': wf.color } as React.CSSProperties
+                      }
                     >
                       <WfIcon size={20} />
                     </button>
@@ -1385,9 +1395,13 @@ function WorkflowGrid({
       {iconPickerId && pickerWorkflow && (
         <IconPicker
           current={pickerWorkflow.icon}
+          currentColor={pickerWorkflow.color}
           onSelect={(name) => {
             onIconChange(iconPickerId, name);
             setIconPickerId(null);
+          }}
+          onColorSelect={(color) => {
+            onColorChange(iconPickerId, color);
           }}
           onClose={() => setIconPickerId(null)}
         />
@@ -3182,6 +3196,7 @@ export default function WorkflowsPage() {
       id: uid(),
       name: 'Untitled Workflow',
       icon: 'GitBranch',
+      color: '#89b4fa',
       order: maxOrder + 1,
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -3209,6 +3224,12 @@ export default function WorkflowsPage() {
         w.id === id ? { ...w, icon, updatedAt: Date.now() } : w,
       ),
     );
+  const handleColorChange = (id: string, color: string) =>
+    saveAll(
+      workflows.map((w) =>
+        w.id === id ? { ...w, color, updatedAt: Date.now() } : w,
+      ),
+    );
   const handleChange = (updated: Workflow) =>
     saveAll(workflows.map((w) => (w.id === updated.id ? updated : w)));
 
@@ -3233,6 +3254,7 @@ export default function WorkflowsPage() {
         onDelete={handleDelete}
         onRename={handleRename}
         onIconChange={handleIconChange}
+        onColorChange={handleColorChange}
         onReorder={handleReorder}
       />
       {openId && openWorkflow && (
