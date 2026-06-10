@@ -1,10 +1,11 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Download, X } from 'lucide-react';
+import { Download, RefreshCw, X } from 'lucide-react';
 import type { DownloadProgress } from '../preload.d';
 import { formatGB, formatSpeed, formatETA } from '../utils/formatters';
 import '../styles/DownloadManager.css';
 
 interface ActiveDL {
+  modelId: string;
   filename: string;
   percent: number;
   downloadedBytes: number;
@@ -40,6 +41,7 @@ export default function DownloadManager() {
         setDownloads((prev) => ({
           ...prev,
           [customEvent.detail.filename]: {
+            modelId: customEvent.detail.modelId || '',
             filename: customEvent.detail.filename,
             percent: 0,
             downloadedBytes: 0,
@@ -74,6 +76,7 @@ export default function DownloadManager() {
               ...prev,
               [progress.filename]: {
                 ...(existing || {
+                  modelId: progress.modelId || '',
                   filename: progress.filename,
                   percent: 0,
                   downloadedBytes: 0,
@@ -121,6 +124,7 @@ export default function DownloadManager() {
           return {
             ...prev,
             [progress.filename]: {
+              modelId: existing ? existing.modelId : progress.modelId || '',
               filename: progress.filename,
               percent: progress.percent,
               downloadedBytes: progress.downloadedBytes,
@@ -160,6 +164,31 @@ export default function DownloadManager() {
     // Call backend to abort HTTP request. (This will trigger the broadcast above)
     if (window.electronAPI.cancelDownload) {
       await window.electronAPI.cancelDownload(filename);
+    }
+  };
+
+  // ── Handle Retry ──
+  const handleRetry = async (modelId: string, filename: string) => {
+    setDownloads((prev) => ({
+      ...prev,
+      [filename]: {
+        ...prev[filename],
+        percent: 0,
+        downloadedBytes: 0,
+        totalBytes: 0,
+        speed: 0,
+        lastTimestamp: Date.now(),
+        lastBytes: 0,
+        status: 'downloading',
+      },
+    }));
+
+    if (window.electronAPI.downloadModel) {
+      try {
+        await window.electronAPI.downloadModel(modelId, filename);
+      } catch {
+        // IPC events will update the status; no extra handling needed
+      }
     }
   };
 
@@ -223,12 +252,30 @@ export default function DownloadManager() {
                 return (
                   <div key={dl.filename} className="dl-manager__item">
                     <div className="dl-manager__item-header">
-                      <div
-                        className="dl-manager__item-title"
-                        title={dl.filename}
-                      >
-                        {dl.filename}
+                      <div className="dl-manager__item-title">
+                        <div
+                          className="dl-manager__item-title-text"
+                          title={`${dl.modelId}`}
+                        >
+                          {dl.modelId || dl.filename}
+                        </div>
+                        <div
+                          className="dl-manager__item-filename"
+                          title={dl.filename}
+                        >
+                          {dl.filename}
+                        </div>
                       </div>
+                      {(isFailed || isCancelled) && dl.modelId && (
+                        <button
+                          type="button"
+                          className="dl-manager__retry-btn"
+                          onClick={() => handleRetry(dl.modelId, dl.filename)}
+                          title="Retry Download"
+                        >
+                          <RefreshCw size={14} />
+                        </button>
+                      )}
                       <button
                         type="button"
                         className="dl-manager__cancel-btn"
