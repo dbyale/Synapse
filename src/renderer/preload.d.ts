@@ -169,6 +169,24 @@ declare global {
         }) => void,
       ) => () => void;
       onChatError: (callback: (error: string) => void) => () => void;
+      onChatSystemProgress: (
+        callback: (data: {
+          progress: number;
+          promptN: number;
+          promptMs: number;
+          total: number;
+        }) => void,
+      ) => () => void;
+      onChatSystemDone: (
+        callback: (data: {
+          stats: {
+            tokens: number;
+            timeMs: number;
+            tokensPerSecond: number;
+          };
+          toolCount: number;
+        }) => void,
+      ) => () => void;
       chatAbort: () => Promise<void>;
       chatUnload: () => Promise<void>;
       removeChatListeners: () => void;

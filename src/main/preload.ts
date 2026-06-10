@@ -125,11 +125,41 @@ contextBridge.exposeInMainWorld('electronAPI', {
     }) => void,
   ) => {
     const listener = (
-      _event: any,
+      _event: IpcRendererEvent,
       stats: { tokens: number; timeMs: number; tokensPerSecond: number },
     ) => callback(stats);
     ipcRenderer.on('chat:prompt-done', listener);
     return () => ipcRenderer.removeListener('chat:prompt-done', listener);
+  },
+
+  onChatSystemProgress: (
+    callback: (data: {
+      progress: number;
+      promptN: number;
+      promptMs: number;
+      total: number;
+    }) => void,
+  ) => {
+    const listener = (
+      _event: IpcRendererEvent,
+      data: { progress: number; promptN: number; promptMs: number; total: number },
+    ) => callback(data);
+    ipcRenderer.on('chat:system-progress', listener);
+    return () => ipcRenderer.removeListener('chat:system-progress', listener);
+  },
+
+  onChatSystemDone: (
+    callback: (data: {
+      stats: { tokens: number; timeMs: number; tokensPerSecond: number };
+      toolCount: number;
+    }) => void,
+  ) => {
+    const listener = (
+      _event: IpcRendererEvent,
+      data: { stats: { tokens: number; timeMs: number; tokensPerSecond: number }; toolCount: number },
+    ) => callback(data);
+    ipcRenderer.on('chat:system-done', listener);
+    return () => ipcRenderer.removeListener('chat:system-done', listener);
   },
 
   onChatError: (callback: (error: string) => void) => {

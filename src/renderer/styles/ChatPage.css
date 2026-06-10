@@ -166,6 +166,16 @@
   border-bottom-left-radius: 4px;
 }
 
+.chat-message--system {
+  align-self: flex-end;
+}
+
+.chat-message--system .chat-message__bubble {
+  background: #4a4a5a;
+  color: #e0e0e0;
+  border-bottom-right-radius: 4px;
+}
+
 /* ── Role label ── */
 
 .chat-message__label {
@@ -252,6 +262,16 @@
   background: var(--accent);
   border-radius: 2px;
   transition: width 0.3s ease;
+}
+
+/* ── System prompt preload bar (above input) ── */
+
+.chat-system-preload-bar {
+  padding: 10px 14px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  flex-shrink: 0;
 }
 
 /* ============================================================================

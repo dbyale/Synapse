@@ -54,7 +54,7 @@ interface MessageSegment {
 
 interface Message {
   id: number;
-  role: 'user' | 'assistant';
+  role: 'user' | 'assistant' | 'system';
   content: MessageSegment[];
   collapsed?: boolean;
   stats?: GenerationStatsData;
@@ -257,6 +257,16 @@ export default function ChatPage() {
   const [showImageModal, setShowImageModal] = useState(false);
   const [pendingImage, setPendingImage] = useState<string | null>(null); // base64 data URL
   const [progressPercent, setProgressPercent] = useState(0);
+  const [systemPreloading, setSystemPreloading] = useState(false);
+  const [systemProgress, setSystemProgress] = useState(0);
+  const [systemPromptDone, setSystemPromptDone] = useState<{
+    stats: GenerationStatsData;
+    toolCount: number;
+  } | null>(null);
+  const [pendingSendData, setPendingSendData] = useState<{
+    text: string;
+    imageDataUrl?: string;
+  } | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -270,6 +280,10 @@ export default function ChatPage() {
   const activeToolSegmentId = useRef<string | null>(null);
   const generationBaselineTokens = useRef<number | null>(null);
   const lastTokenSnapshot = useRef<{ tokens: number; time: number } | null>(
+    null,
+  );
+  const systemMessageInsertedRef = useRef(false);
+  const pendingSendRef = useRef<{ text: string; imageDataUrl?: string } | null>(
     null,
   );
 
@@ -424,6 +438,10 @@ export default function ChatPage() {
     messageCounter.current = 0;
     persistentMessageCounter = 0;
     setUsedTokens(0);
+    systemMessageInsertedRef.current = false;
+    setSystemPromptDone(null);
+    setSystemPreloading(false);
+    pendingSendRef.current = null;
 
     if (persistentLoadedProfileId) {
       await unloadModel();
@@ -831,6 +849,23 @@ export default function ChatPage() {
       },
     );
 
+    const removeSystemProgressListener = window.electronAPI.onChatSystemProgress(
+      (data) => {
+        setSystemPreloading(true);
+        setSystemProgress(data.progress);
+      },
+    );
+
+    const removeSystemDoneListener = window.electronAPI.onChatSystemDone(
+      (data) => {
+        setSystemPreloading(false);
+        setSystemPromptDone({
+          stats: data.stats,
+          toolCount: data.toolCount,
+        });
+      },
+    );
+
     return () => {
       removeTokenListener();
       removeDoneListener();
@@ -839,6 +874,8 @@ export default function ChatPage() {
       unsubscribeFunctionCalling();
       unsubscribeFunctionCall();
       unsubscribeFunctionResult();
+      removeSystemProgressListener();
+      removeSystemDoneListener();
     };
   }, [refreshCumulativeTokens]);
 
@@ -855,6 +892,58 @@ export default function ChatPage() {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
   }, [messages, loading, processing]);
+
+  // Flush queued message when system prompt preloading completes
+  useEffect(() => {
+    if (!systemPreloading && systemPromptDone && pendingSendRef.current) {
+      const { text, imageDataUrl } = pendingSendRef.current;
+      pendingSendRef.current = null;
+
+      const sysId = messageCounter.current++;
+      const userId = messageCounter.current++;
+      const segId = segmentCounter.current++;
+
+      const systemMsg: Message = {
+        id: sysId,
+        role: 'system',
+        content: [
+          {
+            id: `seg-sys-${Date.now()}`,
+            text:
+              systemPromptDone.toolCount > 0
+                ? `System Prompt with ${systemPromptDone.toolCount} tools`
+                : 'System Prompt',
+            type: 'normal',
+          },
+        ],
+        promptStats: systemPromptDone.stats,
+      };
+
+      const userMsg: Message = {
+        id: userId,
+        role: 'user',
+        content: [
+          {
+            id: `seg-${Date.now()}-${segId}`,
+            text,
+            type: 'normal',
+            imageDataUrl,
+          },
+        ],
+        collapsed: text.length >= 20 && text.split('\n').length > 5,
+      };
+
+      systemMessageInsertedRef.current = true;
+      setMessages((prev) => [...prev, systemMsg, userMsg]);
+      setLoading(true);
+      setProcessing(true);
+      setTps(0);
+      generationBaselineTokens.current = null;
+      lastTokenSnapshot.current = null;
+
+      window.electronAPI.chatSend(text, imageDataUrl);
+    }
+  }, [systemPreloading, systemPromptDone]);
 
   useEffect(() => {
     if (modelLoading) setPlaceholder('Loading profile...');
@@ -875,6 +964,16 @@ export default function ChatPage() {
     if (!text || loading || modelLoading || !selectedProfileId || loadError)
       return;
 
+    // If system prompt is still preloading, queue the message
+    if (systemPreloading) {
+      pendingSendRef.current = { text, imageDataUrl: pendingImage ?? undefined };
+      setPendingImage(null);
+      setInputText('');
+      const textarea = document.querySelector('textarea');
+      if (textarea) textarea.style.height = 'auto';
+      return;
+    }
+
     const imageDataUrl = pendingImage;
     const userMessage: Message = {
       id: messageCounter.current,
@@ -894,7 +993,31 @@ export default function ChatPage() {
     segmentCounter.current += 1;
 
     setPendingImage(null);
-    setMessages((prev) => [...prev, userMessage]);
+    setMessages((prev) => {
+      const updated = [...prev];
+      if (systemPromptDone && !systemMessageInsertedRef.current) {
+        const sysId = messageCounter.current;
+        messageCounter.current += 1;
+        systemMessageInsertedRef.current = true;
+        updated.push({
+          id: sysId,
+          role: 'system',
+          content: [
+            {
+              id: `seg-sys-${Date.now()}`,
+              text:
+                systemPromptDone.toolCount > 0
+                  ? `System Prompt with ${systemPromptDone.toolCount} tools`
+                  : 'System Prompt',
+              type: 'normal',
+            },
+          ],
+          promptStats: systemPromptDone.stats,
+        });
+      }
+      updated.push(userMessage);
+      return updated;
+    });
     setInputText('');
     isReprocessing = false;
     pendingSegmentIds = [];
@@ -1098,7 +1221,9 @@ export default function ChatPage() {
                 >
                   {msg.role === 'user'
                     ? 'You'
-                    : selectedProfile?.name || 'Assistant'}
+                    : msg.role === 'system'
+                      ? 'System'
+                      : selectedProfile?.name || 'Assistant'}
                   {collapsible && (
                     <ChevronDown
                       size={12}
@@ -1282,6 +1407,8 @@ export default function ChatPage() {
                             </div>
                           )}
                       </div>
+                    ) : msg.role === 'system' ? (
+                      <>{msg.content[0]?.text || ''}</>
                     ) : (
                       <>
                         {msg.content[0]?.imageDataUrl && (
@@ -1299,23 +1426,24 @@ export default function ChatPage() {
               )
             )}
 
-            {/* Display prompt processing statistics below user messages */}
-            {msg.role === 'user' && msg.promptStats && (
-              <div className="chat-message__stats">
-                <div className="chat-stat-item" title="Prompt tokens">
-                  <Hash size={12} />
-                  <span>{msg.promptStats.tokens} tokens</span>
+            {/* Display prompt processing statistics below user and system messages */}
+            {(msg.role === 'user' || msg.role === 'system') &&
+              msg.promptStats && (
+                <div className="chat-message__stats">
+                  <div className="chat-stat-item" title="Prompt tokens">
+                    <Hash size={12} />
+                    <span>{msg.promptStats.tokens} tokens</span>
+                  </div>
+                  <div className="chat-stat-item" title="Prompt processing time">
+                    <Timer size={12} />
+                    <span>{(msg.promptStats.timeMs / 1000).toFixed(2)}s</span>
+                  </div>
+                  <div className="chat-stat-item" title="Prompt processing speed">
+                    <Zap size={12} />
+                    <span>{msg.promptStats.tokensPerSecond.toFixed(1)} t/s</span>
+                  </div>
                 </div>
-                <div className="chat-stat-item" title="Prompt processing time">
-                  <Timer size={12} />
-                  <span>{(msg.promptStats.timeMs / 1000).toFixed(2)}s</span>
-                </div>
-                <div className="chat-stat-item" title="Prompt processing speed">
-                  <Zap size={12} />
-                  <span>{msg.promptStats.tokensPerSecond.toFixed(1)} t/s</span>
-                </div>
-              </div>
-            )}
+              )}
 
             {/* Display generation statistics below assistant responses */}
             {msg.role === 'assistant' && msg.stats && (
@@ -1365,6 +1493,23 @@ export default function ChatPage() {
 
         <div ref={messagesEndRef} />
       </div>
+
+      {systemPreloading && (
+        <div className="chat-system-preload-bar">
+          <div className="chat-indicator">
+            <div className="chat-indicator__spinner" />
+            <span className="chat-indicator__label">
+              Preloading system prompt… ({systemProgress}%)
+            </span>
+          </div>
+          <div className="chat-progress-bar">
+            <div
+              className="chat-progress-bar__fill"
+              style={{ width: `${systemProgress}%` }}
+            />
+          </div>
+        </div>
+      )}
 
       <div className="chat-input-wrapper">
         <div className="chat-input-row">

@@ -132,9 +132,28 @@ export function registerIpcHandlers(win: BrowserWindow): void {
   });
 
   // ── Chat ──
-  ipcMain.handle('chat:loadProfile', async (_event, profile: any) => {
+  ipcMain.handle('chat:loadProfile', async (event, profile: any) => {
     try {
       const result = await chatService.loadProfile(profile);
+      if (result.success) {
+        // Preload system prompt to warm KV cache, with progress tracking
+        chatService
+          .preloadSystemPrompt(
+            profile.systemPrompt,
+            chatService.getActiveTools(),
+            (data) => {
+              if (!event.sender.isDestroyed()) {
+                event.sender.send('chat:system-progress', data);
+              }
+            },
+            (stats, toolCount) => {
+              if (!event.sender.isDestroyed()) {
+                event.sender.send('chat:system-done', { stats, toolCount });
+              }
+            },
+          )
+          .catch(() => {});
+      }
       return result;
     } catch (err: any) {
       console.error('[chat:loadProfile]', err);

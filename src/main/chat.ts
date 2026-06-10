@@ -41,6 +41,7 @@ let chatFunctions: any = null;
 let activeTools: any[] = [];
 let emitFunctionEvent: any = null;
 
+let preloadAbortController: AbortController | null = null;
 let lastResolvedMemory: any = null;
 let currentContextSize: number | null = null;
 let lastUsage: { used: number; total: number } | null = null;
@@ -140,32 +141,181 @@ function buildChatBody(messages: any[], tools: any[]): Record<string, any> {
   return body;
 }
 
-/**
- * Fire-and-forget: send a minimal request to warm the server's KV cache
- * with the system prompt and tool definitions, so they are reused on
- * the first real user message rather than processed from scratch.
- */
-async function prefetchCache(
+export async function preloadSystemPrompt(
   systemPrompt: string,
   tools: any[],
+  onProgress?: (data: {
+    progress: number;
+    promptN: number;
+    promptMs: number;
+    total: number;
+  }) => void,
+  onDone?: (stats: GenerationStats, toolCount: number) => void,
 ): Promise<void> {
+  console.log(
+    `[chat] preloadSystemPrompt starting, tools: ${tools.length}, prompt length: ${systemPrompt.length}`,
+  );
+
+  if (preloadAbortController) preloadAbortController.abort();
+  preloadAbortController = new AbortController();
+  const signal = preloadAbortController.signal;
+
+  let promptStats: GenerationStats | undefined;
+  let lastProgress: {
+    total: number;
+    processed: number;
+    time_ms: number;
+    cache: number;
+  } | null = null;
+
+  const emitDone = () => {
+    if (promptStats || !onDone) return;
+    if (lastProgress) {
+      const newTokens = Math.max(
+        0,
+        lastProgress.total - (lastProgress.cache || 0),
+      );
+      const timeMs = lastProgress.time_ms || 0;
+      const timeS = timeMs / 1000;
+      promptStats = {
+        tokens: newTokens,
+        timeMs,
+        tokensPerSecond: timeS > 0 ? newTokens / timeS : 0,
+      };
+    } else {
+      promptStats = { tokens: 0, timeMs: 0, tokensPerSecond: 0 };
+    }
+    console.log(
+      '[chat] preload emitDone:',
+      promptStats.tokens,
+      'tokens,',
+      promptStats.timeMs,
+      'ms',
+    );
+    onDone(promptStats, tools.length);
+  };
+
   try {
     const body: Record<string, any> = {
       messages: [{ role: 'system', content: systemPrompt }],
       max_tokens: 1,
       temperature: 0,
-      stream: false,
+      stream: true,
+      stream_options: { include_usage: true },
+      return_progress: true,
     };
     if (tools.length > 0) body.tools = tools;
+
+    const timeout = AbortSignal.timeout(120_000);
+    const combinedSignal = new AbortController();
+    const abortCombined = () => combinedSignal.abort();
+    signal.addEventListener('abort', abortCombined);
+    timeout.addEventListener('abort', abortCombined);
+
     const res = await fetch('http://127.0.0.1:8080/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(30_000),
+      signal: combinedSignal.signal,
     });
-    await res.text(); // drain body to close the connection
-  } catch {
-    // best-effort — cache may still be warm from a coincidental request
+
+    signal.removeEventListener('abort', abortCombined);
+    timeout.removeEventListener('abort', abortCombined);
+
+    if (!res.body) {
+      console.log('[chat] preloadSystemPrompt: no response body');
+      return;
+    }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          console.log('[chat] preload stream: reader done');
+          break;
+        }
+
+        const chunk = decoder.decode(value);
+        const lines = chunk.split('\n');
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const dataStr = line.slice(6).trim();
+          if (dataStr === '[DONE]') {
+            console.log('[chat] preload stream: [DONE] received');
+            emitDone();
+            break;
+          }
+
+          try {
+            const data = JSON.parse(dataStr);
+
+            if (data.prompt_progress && !data.usage) {
+              const { total, processed, time_ms, cache } =
+                data.prompt_progress;
+              lastProgress = { total, processed, time_ms, cache };
+              const pct =
+                total > 0
+                  ? Math.min(100, Math.round((processed / total) * 100))
+                  : 0;
+              console.log(
+                `[chat] preload progress: ${pct}% (${processed}/${total})`,
+              );
+              if (onProgress) {
+                onProgress({
+                  progress: pct,
+                  promptN: processed,
+                  promptMs: time_ms || 0,
+                  total,
+                });
+              }
+              if (total > 0 && processed >= total && !promptStats) {
+                const newTokens = Math.max(0, total - (cache || 0));
+                const timeS = (time_ms || 0) / 1000;
+                promptStats = {
+                  tokens: newTokens,
+                  timeMs: time_ms || 0,
+                  tokensPerSecond: timeS > 0 ? newTokens / timeS : 0,
+                };
+                console.log(
+                  '[chat] preload done from progress:',
+                  promptStats,
+                );
+                if (onDone) onDone(promptStats, tools.length);
+              }
+              continue;
+            }
+
+            if (data.usage && !promptStats) {
+              const pFromUsage: GenerationStats = {
+                tokens:
+                  data.timings?.prompt_n ?? data.usage.prompt_tokens ?? 0,
+                timeMs: data.timings?.prompt_ms || 0,
+                tokensPerSecond: data.timings?.prompt_per_second || 0,
+              };
+              promptStats = pFromUsage;
+              console.log('[chat] preload done from usage:', promptStats);
+              if (onDone) onDone(pFromUsage, tools.length);
+            }
+          } catch (e) {
+            console.log('[chat] preload parse error:', e);
+          }
+        }
+      }
+      // Fallback: stream ended without [DONE] or explicit stats
+      emitDone();
+    } finally {
+      reader.releaseLock();
+    }
+  } catch (e: any) {
+    if (e?.name === 'AbortError') {
+      console.log('[chat] preload aborted');
+    } else {
+      console.error('[chat] preload error:', e?.message ?? e);
+    }
+    emitDone();
   }
 }
 
@@ -174,6 +324,12 @@ export async function loadProfile(
 ): Promise<{ success: boolean; error?: string }> {
   console.log('[chat] Loading Profile:', profile.name);
   await unloadModel();
+
+  // Cancel any in-flight system prompt preload
+  if (preloadAbortController) {
+    preloadAbortController.abort();
+    preloadAbortController = null;
+  }
 
   let serverErrorLog = '';
 
@@ -280,11 +436,6 @@ export async function loadProfile(
 
     currentProfile = profile;
     messageHistory = [{ role: 'system', content: profile.systemPrompt }];
-
-    // Warm up the KV cache with the system prompt + tool definitions
-    if (profile.systemPrompt) {
-      prefetchCache(profile.systemPrompt, activeTools).catch(() => {});
-    }
 
     return { success: true };
   } catch (error: any) {
@@ -539,6 +690,9 @@ export function getModelMemoryUsage() {
 }
 export function getCurrentProfile() {
   return currentProfile;
+}
+export function getActiveTools(): any[] {
+  return activeTools;
 }
 export function hasProjector() {
   return currentProjector !== null;
