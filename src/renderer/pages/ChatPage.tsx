@@ -441,7 +441,7 @@ export default function ChatPage() {
     setUsedTokens(0);
     systemMessageInsertedRef.current = false;
     setSystemPromptDone(null);
-    setSystemPreloading(false);
+    setSystemPhase('ready');
     pendingSendRef.current = null;
 
     if (persistentLoadedProfileId) {
