@@ -134,8 +134,18 @@ export function registerIpcHandlers(win: BrowserWindow): void {
   // ── Chat ──
   ipcMain.handle('chat:loadProfile', async (event, profile: any) => {
     try {
-      const result = await chatService.loadProfile(profile);
+      const result = await chatService.loadProfile(profile, (data) => {
+        if (!event.sender.isDestroyed()) {
+          event.sender.send('chat:system-status', data);
+        }
+      });
       if (result.success) {
+        if (!event.sender.isDestroyed()) {
+          event.sender.send('chat:system-status', {
+            phase: 'preloading',
+            message: 'Preloading system prompt…',
+          });
+        }
         // Preload system prompt to warm KV cache, with progress tracking
         chatService
           .preloadSystemPrompt(
@@ -149,6 +159,10 @@ export function registerIpcHandlers(win: BrowserWindow): void {
             (stats, toolCount) => {
               if (!event.sender.isDestroyed()) {
                 event.sender.send('chat:system-done', { stats, toolCount });
+                event.sender.send('chat:system-status', {
+                  phase: 'ready',
+                  message: '',
+                });
               }
             },
           )

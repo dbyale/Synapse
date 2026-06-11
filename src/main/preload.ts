@@ -162,6 +162,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('chat:system-done', listener);
   },
 
+  onChatSystemStatus: (
+    callback: (data: { phase: string; message: string }) => void,
+  ) => {
+    const listener = (
+      _event: IpcRendererEvent,
+      data: { phase: string; message: string },
+    ) => callback(data);
+    ipcRenderer.on('chat:system-status', listener);
+    return () => ipcRenderer.removeListener('chat:system-status', listener);
+  },
+
   onChatError: (callback: (error: string) => void) => {
     const listener = (_: any, error: string) => callback(error);
     ipcRenderer.on('chat:error', listener);

@@ -321,6 +321,7 @@ export async function preloadSystemPrompt(
 
 export async function loadProfile(
   profile: Profile,
+  onStatus?: (data: { phase: string; message: string }) => void,
 ): Promise<{ success: boolean; error?: string }> {
   console.log('[chat] Loading Profile:', profile.name);
   await unloadModel();
@@ -334,6 +335,8 @@ export async function loadProfile(
   let serverErrorLog = '';
 
   try {
+    onStatus?.({ phase: 'solving', message: 'Determining layer offload…' });
+
     const settings = loadSettings();
     const fullModelPath = path.join(getModelsDirectory(), profile.model);
     const backendFolder = await detectBackend();
@@ -404,6 +407,7 @@ export async function loadProfile(
       currentProjector = null;
     }
 
+    onStatus?.({ phase: 'starting', message: 'Starting llama server…' });
     serverProcess = spawn(serverPath, spawnArgs);
 
     serverProcess.stderr?.on('data', (d) => {
@@ -434,11 +438,13 @@ export async function loadProfile(
         : 0;
     lastUsage = { used: systemTokens + toolTokens, total: result.ctx };
 
+    onStatus?.({ phase: 'ready', message: '' });
     currentProfile = profile;
     messageHistory = [{ role: 'system', content: profile.systemPrompt }];
 
     return { success: true };
   } catch (error: any) {
+    onStatus?.({ phase: 'ready', message: '' });
     return { success: false, error: error.message };
   }
 }

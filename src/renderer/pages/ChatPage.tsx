@@ -257,7 +257,8 @@ export default function ChatPage() {
   const [showImageModal, setShowImageModal] = useState(false);
   const [pendingImage, setPendingImage] = useState<string | null>(null); // base64 data URL
   const [progressPercent, setProgressPercent] = useState(0);
-  const [systemPreloading, setSystemPreloading] = useState(false);
+  const [systemPhase, setSystemPhase] = useState<'solving' | 'starting' | 'preloading' | 'ready'>('ready');
+  const [systemStatusMessage, setSystemStatusMessage] = useState('');
   const [systemProgress, setSystemProgress] = useState(0);
   const [systemPromptDone, setSystemPromptDone] = useState<{
     stats: GenerationStatsData;
@@ -851,14 +852,23 @@ export default function ChatPage() {
 
     const removeSystemProgressListener = window.electronAPI.onChatSystemProgress(
       (data) => {
-        setSystemPreloading(true);
+        setSystemPhase('preloading');
+        setSystemStatusMessage('Preloading system prompt…');
         setSystemProgress(data.progress);
+      },
+    );
+
+    const removeSystemStatusListener = window.electronAPI.onChatSystemStatus(
+      (data) => {
+        setSystemPhase(data.phase);
+        setSystemStatusMessage(data.message);
       },
     );
 
     const removeSystemDoneListener = window.electronAPI.onChatSystemDone(
       (data) => {
-        setSystemPreloading(false);
+        setSystemPhase('ready');
+        setSystemProgress(0);
         setSystemPromptDone({
           stats: data.stats,
           toolCount: data.toolCount,
@@ -875,6 +885,7 @@ export default function ChatPage() {
       unsubscribeFunctionCall();
       unsubscribeFunctionResult();
       removeSystemProgressListener();
+      removeSystemStatusListener();
       removeSystemDoneListener();
     };
   }, [refreshCumulativeTokens]);
@@ -895,7 +906,7 @@ export default function ChatPage() {
 
   // Flush queued message when system prompt preloading completes
   useEffect(() => {
-    if (!systemPreloading && systemPromptDone && pendingSendRef.current) {
+    if (systemPhase === 'ready' && systemPromptDone && pendingSendRef.current) {
       const { text, imageDataUrl } = pendingSendRef.current;
       pendingSendRef.current = null;
 
@@ -943,7 +954,7 @@ export default function ChatPage() {
 
       window.electronAPI.chatSend(text, imageDataUrl);
     }
-  }, [systemPreloading, systemPromptDone]);
+  }, [systemPhase, systemPromptDone]);
 
   useEffect(() => {
     if (modelLoading) setPlaceholder('Loading profile...');
@@ -965,7 +976,7 @@ export default function ChatPage() {
       return;
 
     // If system prompt is still preloading, queue the message
-    if (systemPreloading) {
+    if (systemPhase !== 'ready') {
       pendingSendRef.current = { text, imageDataUrl: pendingImage ?? undefined };
       setPendingImage(null);
       setInputText('');
@@ -1494,20 +1505,24 @@ export default function ChatPage() {
         <div ref={messagesEndRef} />
       </div>
 
-      {systemPreloading && (
+      {systemPhase !== 'ready' && (
         <div className="chat-system-preload-bar">
           <div className="chat-indicator">
             <div className="chat-indicator__spinner" />
             <span className="chat-indicator__label">
-              Preloading system prompt… ({systemProgress}%)
+              {systemPhase === 'preloading'
+                ? `Preloading system prompt… (${systemProgress}%)`
+                : systemStatusMessage}
             </span>
           </div>
-          <div className="chat-progress-bar">
-            <div
-              className="chat-progress-bar__fill"
-              style={{ width: `${systemProgress}%` }}
-            />
-          </div>
+          {systemPhase === 'preloading' && (
+            <div className="chat-progress-bar">
+              <div
+                className="chat-progress-bar__fill"
+                style={{ width: `${systemProgress}%` }}
+              />
+            </div>
+          )}
         </div>
       )}
 
