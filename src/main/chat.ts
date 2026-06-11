@@ -335,7 +335,7 @@ export async function loadProfile(
   let serverErrorLog = '';
 
   try {
-    onStatus?.({ phase: 'solving', message: 'Determining layer offload…' });
+    onStatus?.({ phase: 'solving', message: 'Optimizing Your Profile Changes…' });
 
     const settings = loadSettings();
     const fullModelPath = path.join(getModelsDirectory(), profile.model);
@@ -407,7 +407,7 @@ export async function loadProfile(
       currentProjector = null;
     }
 
-    onStatus?.({ phase: 'starting', message: 'Starting llama server…' });
+    onStatus?.({ phase: 'starting', message: 'Loading AI Model…' });
     serverProcess = spawn(serverPath, spawnArgs);
 
     serverProcess.stderr?.on('data', (d) => {

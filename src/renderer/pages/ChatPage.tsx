@@ -922,7 +922,7 @@ export default function ChatPage() {
             id: `seg-sys-${Date.now()}`,
             text:
               systemPromptDone.toolCount > 0
-                ? `System Prompt with ${systemPromptDone.toolCount} tools`
+                ? `System Prompt with ${systemPromptDone.toolCount} Tools`
                 : 'System Prompt',
             type: 'normal',
           },
@@ -1511,7 +1511,7 @@ export default function ChatPage() {
             <div className="chat-indicator__spinner" />
             <span className="chat-indicator__label">
               {systemPhase === 'preloading'
-                ? `Preloading system prompt… (${systemProgress}%)`
+                ? `Loading Profile… (${systemProgress}%)`
                 : systemStatusMessage}
             </span>
           </div>
