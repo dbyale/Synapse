@@ -544,12 +544,11 @@ export async function sendMessage(
               }
               // Prompt processing complete — send stats immediately
               if (total > 0 && processed >= total && !promptStats) {
-                const newTokens = Math.max(0, total - (cache || 0));
                 const timeS = (time_ms || 0) / 1000;
                 const pStats: GenerationStats = {
-                  tokens: newTokens,
+                  tokens: userTokens,
                   timeMs: time_ms || 0,
-                  tokensPerSecond: timeS > 0 ? newTokens / timeS : 0,
+                  tokensPerSecond: timeS > 0 ? userTokens / timeS : 0,
                 };
                 promptStats = pStats;
                 if (onPromptDone) onPromptDone(pStats);
@@ -572,7 +571,7 @@ export async function sendMessage(
                 tokensPerSecond: data.timings?.predicted_per_second || 0,
               };
               const pFromUsage: GenerationStats = {
-                tokens: data.timings?.prompt_n ?? data.usage.prompt_tokens ?? 0,
+                tokens: userTokens,
                 timeMs: data.timings?.prompt_ms || 0,
                 tokensPerSecond: data.timings?.prompt_per_second || 0,
               };
