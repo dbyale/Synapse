@@ -397,7 +397,6 @@ export async function loadProfile(
       '--parallel',
       '1',
       '--metrics',
-      '--log-disable',
     ];
 
     if (fullProjectorPath) {
