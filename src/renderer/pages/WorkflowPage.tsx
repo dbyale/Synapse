@@ -883,6 +883,10 @@ function bezierPath(sx: number, sy: number, tx: number, ty: number): string {
   return `M ${sx} ${sy} C ${sx + BEZIER_OFFSET} ${sy}, ${tx - BEZIER_OFFSET} ${ty}, ${tx} ${ty}`;
 }
 
+function bottomBezierPath(sx: number, sy: number, tx: number, ty: number): string {
+  return `M ${sx} ${sy} C ${sx} ${sy + BEZIER_OFFSET}, ${tx - BEZIER_OFFSET} ${ty}, ${tx} ${ty}`;
+}
+
 function bezierPoint(
   sx: number,
   sy: number,
@@ -2885,6 +2889,10 @@ function WorkflowEditor({
     connecting?.mouseCanvas ?? reconnecting?.mouseCanvas ?? null;
   const wirePortType =
     connecting?.sourcePortType ?? reconnecting?.sourcePortType ?? null;
+  const isWireFromResource =
+    connecting?.sourcePortId?.startsWith('out-resource-') ??
+    reconnecting?.sourcePortId?.startsWith('out-resource-') ??
+    false;
 
   // ── Compatible port sets ──────────────────────────────────────────────────
   const activeCompatPorts = useMemo((): Set<string> => {
@@ -2959,6 +2967,8 @@ function WorkflowEditor({
         )
       : undefined;
     const edgeColor = portDef ? PORT_TYPE_COLOR[portDef.type] : undefined;
+    const isResEdge = edge.sourcePort.startsWith('out-resource-');
+    const epPath = isResEdge ? bottomBezierPath : bezierPath;
 
     const arrowFill = isSelected
       ? '#f38ba8'
@@ -2972,7 +2982,7 @@ function WorkflowEditor({
     return (
       <g key={edge.id}>
         <path
-          d={bezierPath(s.x, s.y, t.x, t.y)}
+          d={epPath(s.x, s.y, t.x, t.y)}
           fill="none"
           stroke="transparent"
           strokeWidth={16}
@@ -2996,7 +3006,7 @@ function WorkflowEditor({
           }}
         />
         <path
-          d={bezierPath(s.x, s.y, t.x, t.y)}
+          d={epPath(s.x, s.y, t.x, t.y)}
           fill="none"
           className={`wf-edge${isSelected ? ' wf-edge--selected' : isHov ? ' wf-edge--hovered' : ''}`}
           style={{
@@ -3204,12 +3214,19 @@ function WorkflowEditor({
               {nonSelectedEdges.map((ed) => renderEdge(ed, false))}
               {wireSource && wireMouse && wirePortType && (
                 <path
-                  d={bezierPath(
-                    wireSource.x,
-                    wireSource.y,
-                    wireMouse.x,
-                    wireMouse.y,
-                  )}
+                  d={isWireFromResource
+                    ? bottomBezierPath(
+                        wireSource.x,
+                        wireSource.y,
+                        wireMouse.x,
+                        wireMouse.y,
+                      )
+                    : bezierPath(
+                        wireSource.x,
+                        wireSource.y,
+                        wireMouse.x,
+                        wireMouse.y,
+                      )}
                   fill="none"
                   className="wf-edge wf-edge--connecting"
                   strokeDasharray="6 4"
