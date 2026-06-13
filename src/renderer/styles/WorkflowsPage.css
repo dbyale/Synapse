@@ -1425,6 +1425,47 @@
   opacity: 0;
 }
 
+/* Resource ports (bottom edge) */
+.wf-node__resources {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 22px;
+}
+
+.wf-port--resource {
+  position: absolute;
+  bottom: -6px;
+  transform: translateX(-50%);
+  cursor: crosshair;
+  z-index: 10;
+}
+
+.wf-port--resource:hover {
+  transform: translateX(-50%) scale(1.35) !important;
+}
+
+.wf-port--resource:hover .wf-port__label--bottom {
+  opacity: 1;
+}
+
+.wf-port__label--bottom {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.1s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
 /* ============================================================================
    NODE PALETTE (left sidebar)
    ============================================================================ */
@@ -1970,4 +2011,35 @@
 .wf-node--profile-load:hover,
 .wf-node--profile-unload:hover {
   box-shadow: 0 4px 18px rgba(180, 190, 254, 0.25);
+}
+
+/* Toast notification */
+.wf-toast {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 99999;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--wf-end);
+  border-radius: var(--radius-lg);
+  padding: 10px 16px;
+  font-size: 12px;
+  font-weight: 500;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+  animation: wf-toast-in 0.2s ease;
+  max-width: 280px;
+}
+
+@keyframes wf-toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(40px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }

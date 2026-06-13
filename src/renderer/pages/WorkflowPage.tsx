@@ -148,12 +148,6 @@ const NODE_PORTS_STATIC: Record<NodeType, PortDef[]> = {
     { id: 'in-text', label: 'prompt', type: 'text', side: 'input' },
     { id: 'out-continue', label: 'continue', type: 'continue', side: 'output' },
     { id: 'out-text', label: 'text', type: 'text', side: 'output' },
-    {
-      id: 'out-tool-trigger',
-      label: 'tool trigger',
-      type: 'tool-trigger',
-      side: 'output',
-    },
   ],
   // ── Tool nodes ──────────────────────────────────────────────────────────
   'write-text': [
@@ -618,11 +612,31 @@ function getNodePorts(
       }
     }
 
+    // Resource outputs (tool-trigger)
+    const resWired = edges
+      .filter(
+        (e) => e.source === node.id && e.sourcePort.startsWith('out-resource-'),
+      )
+      .map((e) => parseInt(e.sourcePort.replace('out-resource-', ''), 10))
+      .filter((n) => !isNaN(n));
+    const maxResIdx = resWired.length > 0 ? Math.max(...resWired) : -1;
+    const resCount = Math.max(1, maxResIdx + 2);
+    const resourcePorts: PortDef[] = Array.from(
+      { length: resCount },
+      (_, i) => ({
+        id: `out-resource-${i}`,
+        label: `resource ${i + 1}`,
+        type: 'tool-trigger' as PortType,
+        side: 'output' as const,
+      }),
+    );
+
     return [
       ...staticInputs,
       ...contextPorts,
       ...profilePorts,
       ...staticOutputs,
+      ...resourcePorts,
     ];
   }
 
@@ -823,10 +837,29 @@ function portOffset(
   const ports = getNodePorts(node, edges, nodes, profiles);
   const inputs = ports.filter((p) => p.side === 'input');
   const outputs = ports.filter((p) => p.side === 'output');
+  const nonResOutputs = outputs.filter(
+    (p) => !p.id.startsWith('out-resource-'),
+  );
+  const resOutputs = outputs.filter((p) =>
+    p.id.startsWith('out-resource-'),
+  );
+
   const inIdx = inputs.findIndex((p) => p.id === portId);
-  const outIdx = outputs.findIndex((p) => p.id === portId);
   if (inIdx !== -1) return { x: 0, y: PORT_TOP + inIdx * PORT_GAP };
-  if (outIdx !== -1) return { x: NODE_WIDTH, y: PORT_TOP + outIdx * PORT_GAP };
+
+  const outIdx = nonResOutputs.findIndex((p) => p.id === portId);
+  if (outIdx !== -1)
+    return { x: NODE_WIDTH, y: PORT_TOP + outIdx * PORT_GAP };
+
+  const resIdx = resOutputs.findIndex((p) => p.id === portId);
+  if (resIdx !== -1) {
+    const mainCount = Math.max(inputs.length, nonResOutputs.length, 1);
+    const mainBottom = PORT_TOP + (mainCount - 1) * PORT_GAP + 28;
+    const spacing = NODE_WIDTH / (resOutputs.length + 1);
+    // Y at the bottom edge of the node, matching the CSS port position
+    const bottomY = mainBottom + 34;
+    return { x: spacing * (resIdx + 1), y: bottomY };
+  }
   return null;
 }
 
@@ -1054,6 +1087,32 @@ function getPreviewText(
         }
       }
 
+      // Connected resource outputs
+      const resourceEdges = edges
+        .filter(
+          (e) =>
+            e.source === node.id &&
+            e.sourcePort.startsWith('out-resource-'),
+        )
+        .sort((a, b) => {
+          const ai = parseInt(
+            a.sourcePort.replace('out-resource-', ''),
+            10,
+          );
+          const bi = parseInt(
+            b.sourcePort.replace('out-resource-', ''),
+            10,
+          );
+          return ai - bi;
+        });
+      if (resourceEdges.length > 0) {
+        labels.push('• Resources:');
+        resourceEdges.forEach((e, i) => {
+          const tgt = nodes.find((n) => n.id === e.target);
+          labels.push(`\u00A0\u00A0\u00A0${i + 1}. ${tgt?.label || 'Unknown'}`); // HACK: non-breaking spaces for indent
+        });
+      }
+
       return labels.length > 0
         ? labels.join('\n')
         : d.prompt
@@ -1107,9 +1166,12 @@ function nodeHeight(
 ): number {
   const ports = getNodePorts(node, edges, nodes, profiles);
   const inputs = ports.filter((p) => p.side === 'input').length;
-  const outputs = ports.filter((p) => p.side === 'output').length;
-  const maxPorts = Math.max(inputs, outputs, 1);
-  const base = PORT_TOP + (maxPorts - 1) * PORT_GAP + 28;
+  const outputs = ports.filter((p) => p.side === 'output');
+  const resCount = outputs.filter((p) => p.id.startsWith('out-resource-')).length;
+  const regOutputs = outputs.length - resCount;
+  const maxPorts = Math.max(inputs, regOutputs, 1);
+  let base = PORT_TOP + (maxPorts - 1) * PORT_GAP + 28;
+  if (resCount > 0) base += 34;
   const preview = getPreviewText(node, edges, nodes, profiles);
   if (!preview) return base;
   const naturalBody = base - HEADER_HEIGHT;
@@ -1863,6 +1925,8 @@ function CanvasNode({
   const ports = getNodePorts(node, edges, nodes, profiles);
   const inputs = ports.filter((p) => p.side === 'input');
   const outputs = ports.filter((p) => p.side === 'output');
+  const resources = outputs.filter((p) => p.id.startsWith('out-resource-'));
+  const regularOutputs = outputs.filter((p) => !p.id.startsWith('out-resource-'));
   const h = nodeHeight(node, edges, nodes, profiles);
 
   // Preview text
@@ -1967,7 +2031,7 @@ function CanvasNode({
         );
       })}
 
-      {outputs.map((port, idx) => {
+      {regularOutputs.map((port, idx) => {
         const portKey = `${node.id}:${port.id}`;
         const isConnected = connectedPorts.has(portKey);
         return (
@@ -2000,6 +2064,48 @@ function CanvasNode({
           </div>
         );
       })}
+
+      {resources.length > 0 && (
+        <div className="wf-node__resources">
+          {resources.map((port, idx) => {
+            const portKey = `${node.id}:${port.id}`;
+            const isConnectedRes = connectedPorts.has(portKey);
+            return (
+              <div
+                key={port.id}
+                className={[
+                  'wf-port',
+                  'wf-port--resource',
+                  isConnectedRes ? 'wf-port--connected' : '',
+                ].join(' ')}
+                style={
+                  {
+                    left: `${((idx + 1) / (resources.length + 1)) * 100}%`,
+                    '--port-color': PORT_TYPE_COLOR[port.type],
+                  } as React.CSSProperties
+                }
+                title={port.label}
+                onMouseDown={(e) => {
+                  e.stopPropagation();
+                  onPortMouseDown(e, node.id, port.id, 'output');
+                }}
+                onMouseUp={(e) => {
+                  e.stopPropagation();
+                  onPortMouseUp(e, node.id, port.id);
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onPortClick(e, node.id, port.id);
+                }}
+              >
+                <span className="wf-port__label wf-port__label--bottom">
+                  {port.label}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -2079,6 +2185,17 @@ function WorkflowEditor({
   const [snapTarget, setSnapTarget] = useState<string | null>(null);
   const [editingName, setEditingName] = useState(false);
   const [nameValue, setNameValue] = useState(workflow.name);
+  const [toast, setToast] = useState<{ message: string; id: number } | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showToast = useCallback((message: string) => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    const id = Date.now();
+    setToast({ message, id });
+    toastTimer.current = setTimeout(() => {
+      setToast((prev) => (prev?.id === id ? null : prev));
+    }, 3000);
+  }, []);
 
   const canvasRef = useRef<HTMLDivElement>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -2496,12 +2613,18 @@ function WorkflowEditor({
         nodes,
         profiles,
       ).find((p) => p.id === portId);
-      if (
-        !portDef ||
-        portDef.side !== 'input' ||
-        !portsCompatible(sourcePortType, portDef.type)
-      )
+      if (!portDef || portDef.side !== 'input') {
+        showToast(
+          !portDef
+            ? 'Cannot connect: invalid port'
+            : 'Cannot connect: both ports are outputs',
+        );
         return;
+      }
+      if (!portsCompatible(sourcePortType, portDef.type)) {
+        showToast('Cannot connect: incompatible port types');
+        return;
+      }
       if (
         edges.some(
           (ed) =>
@@ -2541,11 +2664,17 @@ function WorkflowEditor({
         nodes,
         profiles,
       ).find((p) => p.id === portId);
-      if (
-        !portDef ||
-        portDef.side !== 'input' ||
-        !portsCompatible(sourcePortType, portDef.type)
-      ) {
+      if (!portDef || portDef.side !== 'input') {
+        showToast(
+          !portDef
+            ? 'Cannot connect: invalid port'
+            : 'Cannot connect: both ports are outputs',
+        );
+        commit(nodes, withoutOriginal);
+        return;
+      }
+      if (!portsCompatible(sourcePortType, portDef.type)) {
+        showToast('Cannot connect: incompatible port types');
         commit(nodes, withoutOriginal);
         return;
       }
@@ -3160,7 +3289,18 @@ function WorkflowEditor({
     </div>
   );
 
-  return createPortal(editor, document.body);
+  return (
+    <>
+      {createPortal(editor, document.body)}
+      {toast &&
+        createPortal(
+          <div key={toast.id} className="wf-toast">
+            {toast.message}
+          </div>,
+          document.body,
+        )}
+    </>
+  );
 }
 
 // ============================================================================
