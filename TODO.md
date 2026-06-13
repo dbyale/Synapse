@@ -1,5 +1,8 @@
 # App:
   * Auto-updater from Releases
+  * Correct topbar handler
+  * Correct AppData directory
+  * Naming and Metadata
 
 # Chat:
   * Set default model
