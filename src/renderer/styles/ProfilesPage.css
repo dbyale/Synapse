@@ -370,6 +370,120 @@
   border-color: var(--accent);
 }
 
+.sp-card__edit-select-trigger {
+  width: 100%;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 0;
+  font-size: 14px;
+  color: var(--text-primary);
+  font-family: inherit;
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+  text-align: left;
+}
+
+.sp-card__edit-select-trigger:hover,
+.sp-card__edit-select-trigger:focus {
+  border-color: var(--accent);
+  background: rgba(37, 99, 235, 0.04);
+}
+
+.sp-card__edit-select-trigger--card {
+  border-color: var(--accent);
+  background: rgba(37, 99, 235, 0.06);
+}
+
+.sp-card__edit-select-trigger--card:hover,
+.sp-card__edit-select-trigger--card:focus {
+  background: rgba(37, 99, 235, 0.08);
+}
+
+.sp-card__edit-select-trigger__placeholder {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+}
+
+.sp-card__edit-select-trigger__placeholder span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sp-card__edit-select-trigger__card {
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sp-card__edit-select-trigger__card-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sp-card__edit-select-trigger__card-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.sp-card__edit-select-trigger__card-bottom {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sp-card__edit-select-trigger__card-quant {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.1);
+  color: var(--accent);
+  border: 1px solid rgba(37, 99, 235, 0.25);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.sp-card__edit-select-trigger__card-size {
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.sp-card__edit-select-trigger__card-filename {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--text-secondary);
+  opacity: 0.7;
+}
+
+.sp-card__edit-select-trigger__chevron {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  transition: transform 0.15s ease;
+}
+
 .sp-card__edit-empty {
   padding: 12px 14px;
   font-size: 13px;

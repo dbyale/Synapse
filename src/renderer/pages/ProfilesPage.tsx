@@ -22,6 +22,9 @@ import {
 import type { LocalModel } from '../preload.d';
 import { Profile } from '../types/profile';
 import { AVAILABLE_TOOLS, TOOL_METADATA } from '../../data/defaultTools';
+import ModelSelectModal from '../components/ModelSelectModal';
+import ProjectorSelectModal from '../components/ProjectorSelectModal';
+import { formatBytes } from '../utils/formatters';
 import '../styles/ProfilesPage.css';
 
 interface EditSectionProps {
@@ -263,6 +266,8 @@ export default function ProfilesPage() {
   const [editTools, setEditTools] = useState<string[]>([]);
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showModelModal, setShowModelModal] = useState(false);
+  const [showProjectorModal, setShowProjectorModal] = useState(false);
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [previewOrder, setPreviewOrder] = useState<Profile[]>([]);
   const dragLeaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
@@ -407,8 +412,10 @@ export default function ProfilesPage() {
     setEditTopP(String(profile.topP));
     setEditMinP(String(profile.minP));
     setEditSeed(String(profile.seed || -1));
-    setEditModel(profile.model);
-    setEditProjector(profile.projector || '');
+    setEditModel(profile.model.split(/[/\\]/).pop() || profile.model);
+    setEditProjector(
+      profile.projector ? profile.projector.split(/[/\\]/).pop()! : '',
+    );
     setEditTools(profile.tools ?? []);
     // Load persisted repeat penalty values (or defaults if never set)
     resetRepeatPenaltyState(profile.repeatPenalty);
@@ -714,6 +721,7 @@ export default function ProfilesPage() {
       filename: string;
       quantization: string;
       name: string;
+      sizeBytes: number;
     }> = [];
     selectedGroup.fileGroups.forEach((fg) => {
       if (fg.isProjector) {
@@ -725,12 +733,54 @@ export default function ProfilesPage() {
             filename: part.filename,
             quantization: displayQuantization,
             name: `MMPROJ (${displayQuantization.toUpperCase()})`,
+            sizeBytes: part.sizeBytes,
           });
         });
       }
     });
     return projectors;
   }, [editModel, groupedLocalModels]);
+
+  const modelSelectGroups = useMemo(() => {
+    return groupedLocalModels
+      .map((group) => {
+        const variants = group.fileGroups
+          .filter((fg) => !fg.isProjector)
+          .flatMap((fg) =>
+            fg.parts.map((part) => ({
+              filename: part.filename,
+              quantization: fg.quantization,
+              sizeBytes: part.sizeBytes,
+            })),
+          );
+        return variants.length > 0
+          ? { name: group.name, totalSize: group.totalSize, variants }
+          : null;
+      })
+      .filter((g): g is NonNullable<typeof g> => g !== null);
+  }, [groupedLocalModels]);
+
+  const selectedModelDisplay = useMemo(() => {
+    if (!editModel) return null;
+    const baseName = editModel.split(/[/\\]/).pop()!;
+    for (const group of modelSelectGroups) {
+      const v = group.variants.find(
+        (v) => v.filename === baseName || v.filename === editModel,
+      );
+      if (v) return { groupName: group.name, ...v };
+    }
+    return null;
+  }, [editModel, modelSelectGroups]);
+
+  const selectedProjectorDisplay = useMemo(() => {
+    if (!editProjector) return null;
+    const baseName = editProjector.split(/[/\\]/).pop()!;
+    return (
+      availableProjectorsForEdit.find(
+        (p) => p.filename === baseName || p.filename === editProjector,
+      ) ?? null
+    );
+  }, [editProjector, availableProjectorsForEdit]);
 
   const categorizedTools = useMemo(() => {
     const categories: Record<string, string[]> = {};
@@ -864,22 +914,57 @@ export default function ProfilesPage() {
                             No models available
                           </div>
                         ) : (
-                          <select
-                            id={`edit-model-${profile.id}`}
-                            value={editModel}
-                            onChange={(e) => handleModelChange(e.target.value)}
-                            className="sp-card__edit-select"
-                          >
-                            <option value="">Select a model...</option>
-                            {availableModelsForEdit.map((model) => (
-                              <option
-                                key={model.filename}
-                                value={model.filename}
-                              >
-                                {model.name}
-                              </option>
-                            ))}
-                          </select>
+                          <>
+                            <button
+                              type="button"
+                              className={`sp-card__edit-select-trigger${selectedModelDisplay ? ' sp-card__edit-select-trigger--card' : ''}`}
+                              onClick={() => setShowModelModal(true)}
+                            >
+                              {selectedModelDisplay ? (
+                                <div className="sp-card__edit-select-trigger__card">
+                                  <div className="sp-card__edit-select-trigger__card-top">
+                                    <span className="sp-card__edit-select-trigger__card-name">
+                                      {selectedModelDisplay.groupName}
+                                    </span>
+                                    <ChevronDown
+                                      size={16}
+                                      className="sp-card__edit-select-trigger__chevron"
+                                    />
+                                  </div>
+                                  <div className="sp-card__edit-select-trigger__card-bottom">
+                                    <span className="sp-card__edit-select-trigger__card-quant">
+                                      {selectedModelDisplay.quantization.toUpperCase()}
+                                    </span>
+                                    <span className="sp-card__edit-select-trigger__card-size">
+                                      {formatBytes(selectedModelDisplay.sizeBytes)}
+                                    </span>
+                                    <span className="sp-card__edit-select-trigger__card-filename">
+                                      {selectedModelDisplay.filename}
+                                    </span>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="sp-card__edit-select-trigger__placeholder">
+                                  <span>No Model Selected</span>
+                                  <ChevronDown
+                                    size={16}
+                                    className="sp-card__edit-select-trigger__chevron"
+                                  />
+                                </div>
+                              )}
+                            </button>
+                            {showModelModal && (
+                              <ModelSelectModal
+                                groups={modelSelectGroups}
+                                selectedFilename={editModel}
+                                onSelect={(f) => {
+                                  handleModelChange(f);
+                                  setShowModelModal(false);
+                                }}
+                                onClose={() => setShowModelModal(false)}
+                              />
+                            )}
+                          </>
                         )}
                       </EditSection>
 
@@ -893,22 +978,55 @@ export default function ProfilesPage() {
                             'Only available for compatible models',
                           ]}
                         >
-                          <select
-                            id={`edit-projector-${profile.id}`}
-                            value={editProjector}
-                            onChange={(e) => setEditProjector(e.target.value)}
-                            className="sp-card__edit-select"
+                          <button
+                            type="button"
+                            className={`sp-card__edit-select-trigger${selectedProjectorDisplay ? ' sp-card__edit-select-trigger--card' : ''}`}
+                            onClick={() => setShowProjectorModal(true)}
                           >
-                            <option value="">None</option>
-                            {availableProjectorsForEdit.map((projector) => (
-                              <option
-                                key={projector.filename}
-                                value={projector.filename}
-                              >
-                                {projector.name}
-                              </option>
-                            ))}
-                          </select>
+                            {selectedProjectorDisplay ? (
+                              <div className="sp-card__edit-select-trigger__card">
+                                <div className="sp-card__edit-select-trigger__card-top">
+                                  <span className="sp-card__edit-select-trigger__card-name">
+                                    Projector
+                                  </span>
+                                  <ChevronDown
+                                    size={16}
+                                    className="sp-card__edit-select-trigger__chevron"
+                                  />
+                                </div>
+                                <div className="sp-card__edit-select-trigger__card-bottom">
+                                  <span className="sp-card__edit-select-trigger__card-quant">
+                                    {selectedProjectorDisplay.quantization.toUpperCase()}
+                                  </span>
+                                  <span className="sp-card__edit-select-trigger__card-size">
+                                    {formatBytes(selectedProjectorDisplay.sizeBytes)}
+                                  </span>
+                                  <span className="sp-card__edit-select-trigger__card-filename">
+                                    {selectedProjectorDisplay.filename}
+                                  </span>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="sp-card__edit-select-trigger__placeholder">
+                                <span>None</span>
+                                <ChevronDown
+                                  size={16}
+                                  className="sp-card__edit-select-trigger__chevron"
+                                />
+                              </div>
+                            )}
+                          </button>
+                          {showProjectorModal && (
+                            <ProjectorSelectModal
+                              projectors={availableProjectorsForEdit}
+                              selectedFilename={editProjector}
+                              onSelect={(f) => {
+                                setEditProjector(f);
+                                setShowProjectorModal(false);
+                              }}
+                              onClose={() => setShowProjectorModal(false)}
+                            />
+                          )}
                         </EditSection>
                       )}
 
