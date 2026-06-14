@@ -1,7 +1,8 @@
 import * as fs from 'fs';
-import { spawn, ChildProcess } from 'child_process';
+import { spawn, exec, ChildProcess } from 'child_process';
 import { app } from 'electron';
 import path from 'path';
+import util from 'util';
 import { graphics } from 'systeminformation';
 import {
   loadSettings,
@@ -78,6 +79,40 @@ export function getCumulativeTokenUsage(): TokenUsageStore {
   return loadTokenUsage();
 }
 
+const execAsync = util.promisify(exec);
+
+async function getNvidiaDriverVersion(): Promise<number | null> {
+  try {
+    const { stdout } = await execAsync(
+      'nvidia-smi --query-gpu=driver_version --format=csv,noheader',
+      { timeout: 5000 },
+    );
+    const v = stdout.trim().split('\n')[0]?.trim();
+    if (v) {
+      const major = parseInt(v.split('.')[0], 10);
+      if (!isNaN(major)) return major;
+    }
+  } catch {}
+
+  try {
+    const gpu = await graphics();
+    for (const ctrl of gpu.controllers) {
+      if (ctrl.vendor.toLowerCase().includes('nvidia') && ctrl.driverVersion) {
+        const parts = ctrl.driverVersion.split('.');
+        if (parts.length === 4) {
+          const last = parseInt(parts[3], 10);
+          if (!isNaN(last)) return Math.floor(last / 100);
+        } else {
+          const major = parseInt(parts[0], 10);
+          if (!isNaN(major)) return major;
+        }
+      }
+    }
+  } catch {}
+
+  return null;
+}
+
 function getAssetPath(...paths: string[]): string {
   const base = app.isPackaged
     ? path.join(process.resourcesPath, 'assets')
@@ -86,17 +121,38 @@ function getAssetPath(...paths: string[]): string {
 }
 
 async function detectBackend(): Promise<string> {
-  const { platform } = process;
-  if (platform === 'darwin') return `macos-${process.arch}`;
-  try {
-    const gpu = await graphics();
-    const isNvidia = gpu.controllers.some((c) =>
-      c.vendor.toLowerCase().includes('nvidia'),
-    );
-    if (platform === 'win32')
-      return isNvidia ? 'win-cuda-12.4-x64' : 'win-vulkan-x64';
-  } catch (e) {}
-  return platform === 'win32' ? 'win-cpu-x64' : 'ubuntu-x64';
+  const { platform, arch } = process;
+
+  if (platform === 'darwin') return `macos-${arch}`;
+
+  if (platform === 'linux') {
+    return arch === 'arm64' ? 'ubuntu-vulkan-arm64' : 'ubuntu-vulkan-x64';
+  }
+
+  if (platform === 'win32') {
+    if (arch === 'arm64') return 'win-adreno-arm64';
+
+    try {
+      const gpu = await graphics();
+      const isNvidia = gpu.controllers.some((c) =>
+        c.vendor.toLowerCase().includes('nvidia'),
+      );
+
+      if (isNvidia) {
+        const driverMajor = await getNvidiaDriverVersion();
+        if (driverMajor !== null && driverMajor >= 610) {
+          return 'win-cuda-13.3-x64';
+        }
+        return 'win-cuda-12.4-x64';
+      }
+
+      return 'win-vulkan-x64';
+    } catch {
+      return 'win-vulkan-x64';
+    }
+  }
+
+  return 'win-cpu-x64';
 }
 
 export function setEmitFunctionCallback(cb: any) {
@@ -340,6 +396,7 @@ export async function loadProfile(
     const settings = loadSettings();
     const fullModelPath = path.join(getModelsDirectory(), profile.model);
     const backendFolder = await detectBackend();
+    console.log(`Backend: ${backendFolder}`)
     const serverBin =
       process.platform === 'win32' ? 'llama-server.exe' : 'llama-server';
     const serverPath = path.join(getAssetPath('bin', backendFolder), serverBin);
