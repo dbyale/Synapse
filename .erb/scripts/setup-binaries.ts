@@ -19,8 +19,6 @@ const TARGETS: [string, string][] = [
   [`llama-${LLAMA_VERSION}-bin-win-cuda-12.4-x64.zip`, 'win-cuda-12.4-x64'],
   [`llama-${LLAMA_VERSION}-bin-win-cuda-13.3-x64.zip`, 'win-cuda-13.3-x64'],
   [`llama-${LLAMA_VERSION}-bin-win-vulkan-x64.zip`, 'win-vulkan-x64'],
-  [`llama-${LLAMA_VERSION}-bin-win-cpu-x64.zip`, 'win-cpu-x64'],
-  [`llama-${LLAMA_VERSION}-bin-ubuntu-x64.tar.gz`, 'ubuntu-x64'],
   [`llama-${LLAMA_VERSION}-bin-ubuntu-vulkan-x64.tar.gz`, 'ubuntu-vulkan-x64'],
 ];
 
