@@ -29,6 +29,7 @@ import {
 import { useNavigate, useLocation } from 'react-router-dom';
 import MessageContent from '../components/MessageContent';
 import ConfirmDialog from '../components/ConfirmDialog';
+import ProfileSelectModal from '../components/ProfileSelectModal';
 import { Profile } from '../types/profile';
 import { TOOL_METADATA } from '../../data/defaultTools';
 import { resolveIcon } from '../components/workflows/IconPicker';
@@ -246,6 +247,7 @@ export default function ChatPage() {
   const [placeholder, setPlaceholder] = useState('Select a profile first...');
   const [usedTokens, setUsedTokens] = useState<number>(0);
   const [maxTokens, setMaxTokens] = useState<number | null>(null);
+  const [showProfileModal, setShowProfileModal] = useState(false);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [pendingProfileId, setPendingProfileId] = useState<string | null>(null);
   const [tps, setTps] = useState<number>(0);
@@ -1105,23 +1107,21 @@ export default function ChatPage() {
           size={18}
           style={{ color: 'var(--text-secondary)', flexShrink: 0 }}
         />
-        <select
-          value={selectedProfileId}
-          onChange={(e) => handleProfileChange(e.target.value)}
+        <button
+          type="button"
+          className="chat-model-selector__button"
+          onClick={() => setShowProfileModal(true)}
+          disabled={profiles.length === 0}
         >
-          {profiles.length === 0 ? (
-            <option value="">No profiles available</option>
-          ) : (
-            <>
-              <option value="">Select a profile...</option>
-              {profiles.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </>
-          )}
-        </select>
+          <span className="chat-model-selector__button-text">
+            {selectedProfileId
+              ? profiles.find((p) => p.id === selectedProfileId)?.name
+              : profiles.length === 0
+                ? 'No profiles available'
+                : 'Select a profile...'}
+          </span>
+          <ChevronDown size={16} className="chat-model-selector__chevron" />
+        </button>
 
         {modelLoading && !loadError && (
           <span className="chat-model-loading-label">Loading...</span>
@@ -1146,6 +1146,15 @@ export default function ChatPage() {
           cancelText="Cancel"
           onConfirm={handleConfirmNewChat}
           onCancel={handleCancelNewChat}
+        />
+      )}
+
+      {showProfileModal && (
+        <ProfileSelectModal
+          profiles={profiles}
+          selectedProfileId={selectedProfileId}
+          onSelect={handleProfileChange}
+          onClose={() => setShowProfileModal(false)}
         />
       )}
 
