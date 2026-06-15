@@ -3332,13 +3332,11 @@ export default function WorkflowsPage() {
   useEffect(() => {
     const sync = () => setProfiles(loadProfiles());
     window.addEventListener('profiles-changed', sync);
-    window.addEventListener('profiles-updated', sync);
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden) sync();
     });
     return () => {
       window.removeEventListener('profiles-changed', sync);
-      window.removeEventListener('profiles-updated', sync);
     };
   }, []);
 
