@@ -314,6 +314,7 @@ export default function ChatPage() {
 
   const selectedProfile =
     profiles.find((p) => p.id === selectedProfileId) ?? null;
+  const profileHasProjector = !!selectedProfile?.projector;
 
   const loadProfilesFromStorage = useCallback(() => {
     const stored = localStorage.getItem('profiles');
@@ -459,6 +460,7 @@ export default function ChatPage() {
     setSystemPromptDone(null);
     setSystemPhase('ready');
     pendingSendRef.current = null;
+    setPendingImage(null);
 
     if (persistentLoadedProfileId) {
       await unloadModel();
@@ -557,6 +559,7 @@ export default function ChatPage() {
       systemMessageInsertedRef.current = false;
       setSystemPromptDone(null);
       pendingSendRef.current = null;
+      setPendingImage(null);
 
       if (persistentLoadedProfileId) {
         await unloadModel();
@@ -1585,11 +1588,11 @@ export default function ChatPage() {
         <div className="chat-input-row">
           <button
             type="button"
-            className={`chat-attach-button${projectorLoaded ? '' : ' chat-attach-button--disabled'}`}
+            className={`chat-attach-button${projectorLoaded || (profileHasProjector && !loadError) ? '' : ' chat-attach-button--disabled'}`}
             onClick={() => {
-              if (projectorLoaded) setShowImageModal(true);
+              if (projectorLoaded || (profileHasProjector && !loadError)) setShowImageModal(true);
             }}
-            title={projectorLoaded ? 'Attach image' : 'No vision model loaded'}
+            title={projectorLoaded ? 'Attach image' : profileHasProjector ? 'Attach image (will be sent once model loads)' : 'No vision model loaded'}
           >
             <ImagePlus size={18} />
           </button>
