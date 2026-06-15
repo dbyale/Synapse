@@ -511,7 +511,7 @@ export default function SettingsPage() {
           title="Restart Server?"
           message="Changing system allocation requires a server restart to take effect. Your current conversation will be lost."
           confirmText="Restart Now"
-          cancelText="Keep Conversation - Restart Later"
+          cancelText="Restart Later"
           onConfirm={handleRestartNow}
           onCancel={handleKeepConversation}
         />

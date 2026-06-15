@@ -892,7 +892,7 @@ export default function ProfilesPage() {
           title="Switch Profile?"
           message={`Switching to "${profiles.find((p) => p.id === pendingSwitchId)?.name ?? 'this profile'}" will restart the server and clear your current conversation.`}
           confirmText="Restart Now"
-          cancelText="Keep Conversation - Restart Later"
+          cancelText="Cancel"
           onConfirm={handleRestartNow}
           onCancel={handleKeepConversation}
         />
@@ -903,7 +903,7 @@ export default function ProfilesPage() {
           title="Apply Profile Changes?"
           message={`Saving changes to "${editingProfile?.name ?? 'this profile'}" will restart the server and clear your current conversation.`}
           confirmText="Restart Now"
-          cancelText="Keep Conversation - Restart Later"
+          cancelText="Restart Later"
           onConfirm={handleEditRestartNow}
           onCancel={handleEditKeepConversation}
         />
