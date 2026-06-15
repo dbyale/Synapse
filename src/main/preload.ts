@@ -5,6 +5,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   loadSettings: () => ipcRenderer.invoke('settings:load'),
   saveSettings: (settings: unknown) =>
     ipcRenderer.invoke('settings:save', settings),
+  saveSettingsSilent: (settings: unknown) =>
+    ipcRenderer.invoke('settings:save-silent', settings),
   pickDirectory: () => ipcRenderer.invoke('settings:pick-directory'),
   getVramStats: () => ipcRenderer.invoke('get-vram-stats'),
   chatMemoryUsage: (): Promise<{
@@ -181,6 +183,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   chatAbort: () => ipcRenderer.invoke('chat:abort'),
   chatUnload: () => ipcRenderer.invoke('chat:unload'),
+  chatHasConversation: () => ipcRenderer.invoke('chat:hasConversation'),
+  chatIsRunning: () => ipcRenderer.invoke('chat:isRunning'),
+  chatReloadProfile: () => ipcRenderer.invoke('chat:reloadProfile'),
 
   removeChatListeners: () => {
     ipcRenderer.removeAllListeners('chat:token');

@@ -6,6 +6,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import type { AppSettings, HardwareStats } from '../preload.d';
+import ConfirmDialog from '../components/ConfirmDialog';
 import '../styles/SettingsPage.css';
 
 // Minimal buffer — VRAM overflow is preferable to RAM overflow.
@@ -222,6 +223,7 @@ export default function SettingsPage() {
 
   const [ramStats, setRamStats] = useState<MemoryStats>(EMPTY_MEMORY);
   const [vramStats, setVramStats] = useState<MemoryStats>(EMPTY_MEMORY);
+  const [showRestartDialog, setShowRestartDialog] = useState(false);
 
   const savedAllocationsRef = useRef<{
     allocatedRAM?: number;
@@ -371,7 +373,15 @@ export default function SettingsPage() {
         delete payload.allocatedVRAM;
       }
 
-      await window.electronAPI.saveSettings(payload);
+      const isRunning = await window.electronAPI.chatIsRunning();
+      const hasConv = await window.electronAPI.chatHasConversation();
+
+      if (isRunning && hasConv) {
+        await window.electronAPI.saveSettingsSilent(payload);
+        setShowRestartDialog(true);
+      } else {
+        await window.electronAPI.saveSettings(payload);
+      }
 
       savedAllocationsRef.current = {
         allocatedRAM: payload.allocatedRAM,
@@ -384,6 +394,19 @@ export default function SettingsPage() {
     } catch {
       setSaveStatus('idle');
     }
+  };
+
+  const handleRestartNow = async () => {
+    setShowRestartDialog(false);
+    try {
+      await window.electronAPI.chatReloadProfile();
+    } catch {
+      // Silently fail
+    }
+  };
+
+  const handleKeepConversation = () => {
+    setShowRestartDialog(false);
   };
 
   async function handlePickDirectory() {
@@ -482,6 +505,17 @@ export default function SettingsPage() {
           </>
         ) : null}
       </div>
+
+      {showRestartDialog && (
+        <ConfirmDialog
+          title="Restart Server?"
+          message="Changing system allocation requires a server restart to take effect. Your current conversation will be lost."
+          confirmText="Restart Now"
+          cancelText="Keep Conversation - Restart Later"
+          onConfirm={handleRestartNow}
+          onCancel={handleKeepConversation}
+        />
+      )}
     </div>
   );
 }

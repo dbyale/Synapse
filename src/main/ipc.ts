@@ -37,6 +37,11 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     return true;
   });
 
+  ipcMain.handle('settings:save-silent', (_event, settings: AppSettings) => {
+    saveSettings(settings, true);
+    return true;
+  });
+
   ipcMain.handle('settings:pick-directory', async () => {
     const result = await dialog.showOpenDialog({
       properties: ['openDirectory', 'createDirectory'],
@@ -148,26 +153,24 @@ export function registerIpcHandlers(win: BrowserWindow): void {
           });
         }
         // Preload system prompt to warm KV cache, with progress tracking
-        chatService
-          .preloadSystemPrompt(
-            profile.systemPrompt,
-            chatService.getActiveTools(),
-            (data) => {
-              if (!event.sender.isDestroyed()) {
-                event.sender.send('chat:system-progress', data);
-              }
-            },
-            (stats, toolCount) => {
-              if (!event.sender.isDestroyed()) {
-                event.sender.send('chat:system-done', { stats, toolCount });
-                event.sender.send('chat:system-status', {
-                  phase: 'ready',
-                  message: '',
-                });
-              }
-            },
-          )
-          .catch(() => {});
+        await chatService.preloadSystemPrompt(
+          profile.systemPrompt,
+          chatService.getActiveTools(),
+          (data) => {
+            if (!event.sender.isDestroyed()) {
+              event.sender.send('chat:system-progress', data);
+            }
+          },
+          (stats, toolCount) => {
+            if (!event.sender.isDestroyed()) {
+              event.sender.send('chat:system-done', { stats, toolCount });
+              event.sender.send('chat:system-status', {
+                phase: 'ready',
+                message: '',
+              });
+            }
+          },
+        );
       }
       return result;
     } catch (err: any) {
@@ -250,6 +253,58 @@ export function registerIpcHandlers(win: BrowserWindow): void {
 
   ipcMain.handle('chat:unload', async () => {
     await chatService.unloadModel();
+  });
+
+  ipcMain.handle('chat:hasConversation', () => {
+    return chatService.hasConversationContext();
+  });
+
+  ipcMain.handle('chat:isRunning', () => {
+    return chatService.isServerRunning();
+  });
+
+  ipcMain.handle('chat:reloadProfile', async (event) => {
+    const profile = chatService.getCurrentProfile();
+    if (!profile) {
+      return { success: false, error: 'No profile loaded' };
+    }
+    try {
+      const result = await chatService.loadProfile(profile, (data) => {
+        if (!event.sender.isDestroyed()) {
+          event.sender.send('chat:system-status', data);
+        }
+      });
+      if (result.success) {
+        if (!event.sender.isDestroyed()) {
+          event.sender.send('chat:system-status', {
+            phase: 'preloading',
+            message: 'Preloading system prompt…',
+          });
+        }
+        await chatService.preloadSystemPrompt(
+          profile.systemPrompt,
+          chatService.getActiveTools(),
+          (data) => {
+            if (!event.sender.isDestroyed()) {
+              event.sender.send('chat:system-progress', data);
+            }
+          },
+          (stats, toolCount) => {
+            if (!event.sender.isDestroyed()) {
+              event.sender.send('chat:system-done', { stats, toolCount });
+              event.sender.send('chat:system-status', {
+                phase: 'ready',
+                message: '',
+              });
+            }
+          },
+        );
+      }
+      return result;
+    } catch (err: any) {
+      console.error('[chat:reloadProfile]', err);
+      return { success: false, error: err.message };
+    }
   });
 
   ipcMain.handle('chat:tokenize', async (_event, text: string) => {

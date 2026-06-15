@@ -23,6 +23,7 @@ import type { LocalModel } from '../preload.d';
 import { Profile } from '../types/profile';
 import { AVAILABLE_TOOLS, TOOL_METADATA } from '../../data/defaultTools';
 import EditProfileModal from '../components/EditProfileModal';
+import ConfirmDialog from '../components/ConfirmDialog';
 import '../styles/ProfilesPage.css';
 
 interface EditSectionProps {
@@ -256,6 +257,10 @@ export default function ProfilesPage() {
   const [editingProfile, setEditingProfile] = useState<Profile | null>(null);
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [previewOrder, setPreviewOrder] = useState<Profile[]>([]);
+  const [showRestartDialog, setShowRestartDialog] = useState(false);
+  const [pendingSwitchId, setPendingSwitchId] = useState<string | null>(null);
+  const [showEditRestartDialog, setShowEditRestartDialog] = useState(false);
+  const [pendingEditProfiles, setPendingEditProfiles] = useState<Profile[] | null>(null);
   const dragLeaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
@@ -294,10 +299,12 @@ export default function ProfilesPage() {
   }, []);
 
   // ── Persist to localStorage and notify ChatPage ──
-  const saveProfiles = (updated: Profile[]) => {
+  const saveProfiles = (updated: Profile[], suppressEvent = false) => {
     setProfiles(updated);
     localStorage.setItem('profiles', JSON.stringify(updated));
-    window.dispatchEvent(new Event('profiles-changed'));
+    if (!suppressEvent) {
+      window.dispatchEvent(new Event('profiles-changed'));
+    }
   };
 
   const handleNewProfile = () => {
@@ -325,23 +332,104 @@ export default function ProfilesPage() {
     if (selectedProfileId === id) {
       setSelectedProfileId(null);
       localStorage.removeItem('selectedProfileId');
+      localStorage.removeItem('deferredProfileSwitch');
       setError(null);
+      window.dispatchEvent(new Event('profiles-changed'));
     } else {
       const profile = profiles.find((p) => p.id === id);
       if (profile) {
-        setSelectedProfileId(id);
-        localStorage.setItem('selectedProfileId', id);
-        setError(null);
-        window.dispatchEvent(new Event('profiles-changed'));
+        const isRunning = await window.electronAPI.chatIsRunning();
+        const hasConv = await window.electronAPI.chatHasConversation();
+
+        if (isRunning && hasConv) {
+          setPendingSwitchId(id);
+          setShowRestartDialog(true);
+        } else {
+          proceedProfileSwitch(id);
+        }
       }
     }
   };
 
-  const handleSaveProfile = (updated: Profile[]) => {
+  const proceedProfileSwitch = (id: string) => {
+    setSelectedProfileId(id);
+    localStorage.setItem('selectedProfileId', id);
+    localStorage.removeItem('deferredProfileSwitch');
+    setError(null);
+    window.dispatchEvent(new Event('profiles-changed'));
+  };
+
+  const handleRestartNow = () => {
+    setShowRestartDialog(false);
+    if (pendingSwitchId) {
+      proceedProfileSwitch(pendingSwitchId);
+      setPendingSwitchId(null);
+    }
+  };
+
+  const handleKeepConversation = () => {
+    setShowRestartDialog(false);
+    if (pendingSwitchId) {
+      setSelectedProfileId(pendingSwitchId);
+      localStorage.setItem('selectedProfileId', pendingSwitchId);
+      localStorage.setItem('deferredProfileSwitch', 'true');
+      setError(null);
+      setPendingSwitchId(null);
+    }
+  };
+
+  const handleSaveProfile = async (updated: Profile[]) => {
+    // If editing an existing profile that is the currently selected one,
+    // check if a server restart dialog is needed
+    if (editingProfile && editingProfile.id === selectedProfileId) {
+      const isRunning = await window.electronAPI.chatIsRunning();
+      const hasConv = await window.electronAPI.chatHasConversation();
+      if (isRunning && hasConv) {
+        setShowEditModal(false);
+        setPendingEditProfiles(updated);
+        setShowEditRestartDialog(true);
+        return;
+      }
+    }
+    finishSaveProfile(updated);
+  };
+
+  const finishSaveProfile = (updated: Profile[]) => {
     saveProfiles(updated);
     setShowEditModal(false);
     setEditingProfile(null);
     setError(null);
+  };
+
+  const handleEditRestartNow = () => {
+    setShowEditRestartDialog(false);
+    if (pendingEditProfiles) {
+      const updated = pendingEditProfiles;
+      setPendingEditProfiles(null);
+
+      // Set flag so ChatPage knows to do a full reload
+      if (selectedProfileId) {
+        localStorage.setItem('forceProfileReload', selectedProfileId);
+      }
+
+      // Save and dispatch profiles-changed — triggers ChatPage reload via handleProfilesChanged
+      saveProfiles(updated);
+
+      setShowEditModal(false);
+      setEditingProfile(null);
+      setError(null);
+    }
+  };
+
+  const handleEditKeepConversation = () => {
+    setShowEditRestartDialog(false);
+    if (pendingEditProfiles) {
+      saveProfiles(pendingEditProfiles, true);
+      setShowEditModal(false);
+      setEditingProfile(null);
+      setPendingEditProfiles(null);
+      setError(null);
+    }
   };
 
   const handleCancelEdit = () => {
@@ -798,6 +886,28 @@ export default function ProfilesPage() {
           </div>
         )}
       </div>
+
+      {showRestartDialog && (
+        <ConfirmDialog
+          title="Switch Profile?"
+          message={`Switching to "${profiles.find((p) => p.id === pendingSwitchId)?.name ?? 'this profile'}" will restart the server and clear your current conversation.`}
+          confirmText="Restart Now"
+          cancelText="Keep Conversation - Restart Later"
+          onConfirm={handleRestartNow}
+          onCancel={handleKeepConversation}
+        />
+      )}
+
+      {showEditRestartDialog && (
+        <ConfirmDialog
+          title="Apply Profile Changes?"
+          message={`Saving changes to "${editingProfile?.name ?? 'this profile'}" will restart the server and clear your current conversation.`}
+          confirmText="Restart Now"
+          cancelText="Keep Conversation - Restart Later"
+          onConfirm={handleEditRestartNow}
+          onCancel={handleEditKeepConversation}
+        />
+      )}
 
       {showEditModal && (
         <EditProfileModal

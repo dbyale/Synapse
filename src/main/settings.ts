@@ -83,7 +83,10 @@ export function loadSettings(): AppSettings {
   return cachedSettings;
 }
 
-export function saveSettings(settings: AppSettings): void {
+export function saveSettings(
+  settings: AppSettings,
+  suppressNotify?: boolean,
+): void {
   const previous = cachedSettings;
   cachedSettings = settings;
 
@@ -99,6 +102,8 @@ export function saveSettings(settings: AppSettings): void {
       console.error('[Settings] Failed to write settings to disk:', err);
     }
   }
+
+  if (suppressNotify) return;
 
   // Notify listeners only when memory settings actually changed
   const vramChanged = previous?.allocatedVRAM !== settings.allocatedVRAM;

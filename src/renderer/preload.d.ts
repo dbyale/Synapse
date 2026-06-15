@@ -128,6 +128,7 @@ declare global {
       } | null>;
       loadSettings: () => Promise<AppSettings>;
       saveSettings: (settings: AppSettings) => Promise<void>;
+      saveSettingsSilent: (settings: AppSettings) => Promise<void>;
       pickDirectory: () => Promise<string | null>;
 
       // Chat
@@ -189,6 +190,9 @@ declare global {
       ) => () => void;
       chatAbort: () => Promise<void>;
       chatUnload: () => Promise<void>;
+      chatHasConversation: () => Promise<boolean>;
+      chatIsRunning: () => Promise<boolean>;
+      chatReloadProfile: () => Promise<{ success: boolean; error?: string; profile?: Profile }>;
       removeChatListeners: () => void;
       chatTokenize: (text: string) => Promise<{ count: number | null }>;
       chatContextUsage: () => Promise<{ used: number; total: number }>;

@@ -763,6 +763,14 @@ export async function unloadModel() {
   lastUsage = null;
 }
 
+export function hasConversationContext(): boolean {
+  return messageHistory.length > 1;
+}
+
+export function isServerRunning(): boolean {
+  return serverProcess !== null;
+}
+
 export function getContextSize() {
   return currentContextSize;
 }

@@ -68,6 +68,8 @@ const OUTPUT_PRICE_PER_MILLION = 600.0;
 let persistentMessages: Message[] = [];
 let persistentLoadedProfileId: string = '';
 let persistentMessageCounter: number = 0;
+let persistentModelLoading = false;
+let persistentLastLoadId = 0;
 let isReprocessing = false;
 let pendingSegmentIds: string[] = [];
 
@@ -402,6 +404,12 @@ export default function ChatPage() {
       if (!document.hidden) {
         loadProfilesFromStorage();
 
+        const deferredSwitch = localStorage.getItem('deferredProfileSwitch');
+        if (deferredSwitch) {
+          localStorage.removeItem('deferredProfileSwitch');
+          return;
+        }
+
         const visibilityStoredId = localStorage.getItem('selectedProfileId');
         if (
           visibilityStoredId &&
@@ -424,6 +432,12 @@ export default function ChatPage() {
   useEffect(() => {
     if (location.pathname === '/chat') {
       loadProfilesFromStorage();
+
+      const deferredSwitch = localStorage.getItem('deferredProfileSwitch');
+      if (deferredSwitch) {
+        localStorage.removeItem('deferredProfileSwitch');
+        return;
+      }
 
       const navStoredId = localStorage.getItem('selectedProfileId');
 
@@ -496,6 +510,9 @@ export default function ChatPage() {
     loadAbortController.current = abortController;
 
     const load = async () => {
+      persistentLastLoadId += 1;
+      const myLoadId = persistentLastLoadId;
+
       if (!selectedProfileId) {
         setLoadError(null);
         return;
@@ -510,18 +527,36 @@ export default function ChatPage() {
       }
 
       if (persistentLoadedProfileId === selectedProfileId) {
-        const { contextSize } = await window.electronAPI.chatContextSize();
-        if (!abortController.cancelled) {
-          setMaxTokens(contextSize);
-          setLoadError(null);
+        const forceReload = localStorage.getItem('forceProfileReload');
+        if (forceReload === selectedProfileId) {
+          localStorage.removeItem('forceProfileReload');
+          // Profile was edited and server restarted — fall through to full reload
+        } else {
+          const isRunning = await window.electronAPI.chatIsRunning();
+          if (isRunning) {
+            const { contextSize } = await window.electronAPI.chatContextSize();
+            if (contextSize !== null && contextSize > 0) {
+              if (!abortController.cancelled) {
+                setMaxTokens(contextSize);
+                setLoadError(null);
+              }
+              return;
+            }
+          }
+          // Server was restarted or not ready — fall through to full reload
         }
-        return;
       }
 
+      persistentModelLoading = true;
       setModelLoading(true);
       setLoadError(null);
       setUsedTokens(0);
       setMaxTokens(null);
+      setMessages([]);
+      persistentMessages = [];
+      systemMessageInsertedRef.current = false;
+      setSystemPromptDone(null);
+      pendingSendRef.current = null;
 
       if (persistentLoadedProfileId) {
         await unloadModel();
@@ -531,20 +566,12 @@ export default function ChatPage() {
         setTimeout(resolve, 1000);
       });
 
-      if (abortController.cancelled) {
-        setModelLoading(false);
-        return;
-      }
-
       try {
+        if (abortController.cancelled) return;
+
         const res = await window.electronAPI.chatLoadProfile(profile);
 
-        if (abortController.cancelled) {
-          setModelLoading(false);
-          return;
-        }
-
-        setModelLoading(false);
+        if (abortController.cancelled) return;
 
         if (res.success) {
           if ((res as any).profile) {
@@ -583,12 +610,16 @@ export default function ChatPage() {
           await unloadModel();
         }
       } catch (error) {
-        setModelLoading(false);
         persistentLoadedProfileId = '';
         setLoadError(
           error instanceof Error ? error.message : 'Unknown error occurred',
         );
         await unloadModel();
+      } finally {
+        if (myLoadId === persistentLastLoadId) {
+          persistentModelLoading = false;
+          setModelLoading(false);
+        }
       }
     };
 
@@ -988,7 +1019,7 @@ export default function ChatPage() {
 
   const handleSend = async () => {
     const text = inputText.trim();
-    if (!text || loading || modelLoading || !selectedProfileId || loadError)
+    if (!text || loading || modelLoading || persistentModelLoading || !selectedProfileId || loadError)
       return;
 
     // If system prompt is still preloading, queue the message
@@ -1080,6 +1111,7 @@ export default function ChatPage() {
     setLoadError(null);
 
     if (persistentLoadedProfileId || modelLoading) {
+      persistentModelLoading = false;
       setModelLoading(false);
       await unloadModel();
     }
@@ -1603,6 +1635,7 @@ export default function ChatPage() {
                 !inputText.trim() ||
                 !selectedProfileId ||
                 modelLoading ||
+                persistentModelLoading ||
                 !!loadError
               }
               onClick={handleSend}
