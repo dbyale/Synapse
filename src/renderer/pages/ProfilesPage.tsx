@@ -260,7 +260,9 @@ export default function ProfilesPage() {
   const [showRestartDialog, setShowRestartDialog] = useState(false);
   const [pendingSwitchId, setPendingSwitchId] = useState<string | null>(null);
   const [showEditRestartDialog, setShowEditRestartDialog] = useState(false);
-  const [pendingEditProfiles, setPendingEditProfiles] = useState<Profile[] | null>(null);
+  const [pendingEditProfiles, setPendingEditProfiles] = useState<
+    Profile[] | null
+  >(null);
   const dragLeaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
@@ -717,14 +719,14 @@ export default function ProfilesPage() {
                   className={`sp-card ${
                     selectedProfileId === profile.id ? 'sp-card--active' : ''
                   } ${isDragged ? 'sp-card--dragging' : ''}`}
-                  draggable={true}
+                  draggable
                   onDragStart={(e) => handleDragStart(e, profile.id)}
                   onDragOver={(e) => handleDragOver(e, profile.id)}
                   onDragLeave={handleDragLeave}
                   onDrop={(e) => handleDrop(e, profile.id)}
                   onDragEnd={handleDragEnd}
                 >
-                  {(
+                  {
                     /* ── View Mode ── */
                     <div className="sp-card__view">
                       <div className="sp-card__grip-handle">
@@ -879,7 +881,7 @@ export default function ProfilesPage() {
                         </button>
                       </div>
                     </div>
-                  )}
+                  }
                 </div>
               );
             })}

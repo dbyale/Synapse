@@ -840,16 +840,13 @@ function portOffset(
   const nonResOutputs = outputs.filter(
     (p) => !p.id.startsWith('out-resource-'),
   );
-  const resOutputs = outputs.filter((p) =>
-    p.id.startsWith('out-resource-'),
-  );
+  const resOutputs = outputs.filter((p) => p.id.startsWith('out-resource-'));
 
   const inIdx = inputs.findIndex((p) => p.id === portId);
   if (inIdx !== -1) return { x: 0, y: PORT_TOP + inIdx * PORT_GAP };
 
   const outIdx = nonResOutputs.findIndex((p) => p.id === portId);
-  if (outIdx !== -1)
-    return { x: NODE_WIDTH, y: PORT_TOP + outIdx * PORT_GAP };
+  if (outIdx !== -1) return { x: NODE_WIDTH, y: PORT_TOP + outIdx * PORT_GAP };
 
   const resIdx = resOutputs.findIndex((p) => p.id === portId);
   if (resIdx !== -1) {
@@ -883,7 +880,12 @@ function bezierPath(sx: number, sy: number, tx: number, ty: number): string {
   return `M ${sx} ${sy} C ${sx + BEZIER_OFFSET} ${sy}, ${tx - BEZIER_OFFSET} ${ty}, ${tx} ${ty}`;
 }
 
-function bottomBezierPath(sx: number, sy: number, tx: number, ty: number): string {
+function bottomBezierPath(
+  sx: number,
+  sy: number,
+  tx: number,
+  ty: number,
+): string {
   return `M ${sx} ${sy} C ${sx} ${sy + BEZIER_OFFSET}, ${tx - BEZIER_OFFSET} ${ty}, ${tx} ${ty}`;
 }
 
@@ -946,7 +948,8 @@ function getPreviewText(
     case 'profile': {
       const d = node.data as ProfileData;
       return d.profileId
-        ? (profiles.find((p) => p.id === d.profileId)?.name ?? 'Unknown profile')
+        ? (profiles.find((p) => p.id === d.profileId)?.name ??
+            'Unknown profile')
         : 'No profile selected';
     }
     case 'profile-cache': {
@@ -1095,18 +1098,11 @@ function getPreviewText(
       const resourceEdges = edges
         .filter(
           (e) =>
-            e.source === node.id &&
-            e.sourcePort.startsWith('out-resource-'),
+            e.source === node.id && e.sourcePort.startsWith('out-resource-'),
         )
         .sort((a, b) => {
-          const ai = parseInt(
-            a.sourcePort.replace('out-resource-', ''),
-            10,
-          );
-          const bi = parseInt(
-            b.sourcePort.replace('out-resource-', ''),
-            10,
-          );
+          const ai = parseInt(a.sourcePort.replace('out-resource-', ''), 10);
+          const bi = parseInt(b.sourcePort.replace('out-resource-', ''), 10);
           return ai - bi;
         });
       if (resourceEdges.length > 0) {
@@ -1171,7 +1167,9 @@ function nodeHeight(
   const ports = getNodePorts(node, edges, nodes, profiles);
   const inputs = ports.filter((p) => p.side === 'input').length;
   const outputs = ports.filter((p) => p.side === 'output');
-  const resCount = outputs.filter((p) => p.id.startsWith('out-resource-')).length;
+  const resCount = outputs.filter((p) =>
+    p.id.startsWith('out-resource-'),
+  ).length;
   const regOutputs = outputs.length - resCount;
   const maxPorts = Math.max(inputs, regOutputs, 1);
   let base = PORT_TOP + (maxPorts - 1) * PORT_GAP + 28;
@@ -1815,7 +1813,10 @@ const PALETTE_CATEGORIES: { label: string; types: NodeType[] }[] = [
     label: 'Models',
     types: ['server', 'agent', 'profile-load', 'profile-unload'],
   },
-  { label: 'Data', types: ['profile', 'profile-cache', 'text-data', 'comment'] },
+  {
+    label: 'Data',
+    types: ['profile', 'profile-cache', 'text-data', 'comment'],
+  },
   { label: 'Tools', types: ['write-text', 'edit-text', 'decide-if'] },
   {
     label: 'Files',
@@ -1930,7 +1931,9 @@ function CanvasNode({
   const inputs = ports.filter((p) => p.side === 'input');
   const outputs = ports.filter((p) => p.side === 'output');
   const resources = outputs.filter((p) => p.id.startsWith('out-resource-'));
-  const regularOutputs = outputs.filter((p) => !p.id.startsWith('out-resource-'));
+  const regularOutputs = outputs.filter(
+    (p) => !p.id.startsWith('out-resource-'),
+  );
   const h = nodeHeight(node, edges, nodes, profiles);
 
   // Preview text
@@ -2189,7 +2192,9 @@ function WorkflowEditor({
   const [snapTarget, setSnapTarget] = useState<string | null>(null);
   const [editingName, setEditingName] = useState(false);
   const [nameValue, setNameValue] = useState(workflow.name);
-  const [toast, setToast] = useState<{ message: string; id: number } | null>(null);
+  const [toast, setToast] = useState<{ message: string; id: number } | null>(
+    null,
+  );
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const showToast = useCallback((message: string) => {
@@ -3214,19 +3219,21 @@ function WorkflowEditor({
               {nonSelectedEdges.map((ed) => renderEdge(ed, false))}
               {wireSource && wireMouse && wirePortType && (
                 <path
-                  d={isWireFromResource
-                    ? bottomBezierPath(
-                        wireSource.x,
-                        wireSource.y,
-                        wireMouse.x,
-                        wireMouse.y,
-                      )
-                    : bezierPath(
-                        wireSource.x,
-                        wireSource.y,
-                        wireMouse.x,
-                        wireMouse.y,
-                      )}
+                  d={
+                    isWireFromResource
+                      ? bottomBezierPath(
+                          wireSource.x,
+                          wireSource.y,
+                          wireMouse.x,
+                          wireMouse.y,
+                        )
+                      : bezierPath(
+                          wireSource.x,
+                          wireSource.y,
+                          wireMouse.x,
+                          wireMouse.y,
+                        )
+                  }
                   fill="none"
                   className="wf-edge wf-edge--connecting"
                   strokeDasharray="6 4"
@@ -3346,10 +3353,7 @@ export default function WorkflowsPage() {
   };
 
   const handleCreate = () => {
-    const maxOrder = workflows.reduce(
-      (max, w) => Math.max(max, w.order),
-      -1,
-    );
+    const maxOrder = workflows.reduce((max, w) => Math.max(max, w.order), -1);
     const wf: Workflow = {
       id: uid(),
       name: 'Untitled Workflow',

@@ -36,7 +36,11 @@ function renderToolBadges(profileTools: string[]) {
     <div className="psm-card__tool-badges">
       {activeCategories.map(([category, { total, enabled }]) => (
         <span key={category} className="psm-card__tool-badge">
-          {enabled === total ? <PackageCheck size={10} /> : <PackageMinus size={10} />}
+          {enabled === total ? (
+            <PackageCheck size={10} />
+          ) : (
+            <PackageMinus size={10} />
+          )}
           {category}
         </span>
       ))}

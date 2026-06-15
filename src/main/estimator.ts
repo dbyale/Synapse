@@ -216,7 +216,11 @@ export async function getOrRunOptimizer(
     modelPath,
     vramMB,
     ramMB,
-    undefined, undefined, undefined, undefined, undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
     maximizeNGL,
     projectorPath,
   );

@@ -132,9 +132,12 @@ declare global {
       pickDirectory: () => Promise<string | null>;
 
       // Chat
-      chatLoadProfile: (
-        profile: Profile,
-      ) => Promise<{ success: boolean; error?: string; profile?: Profile }>;
+      chatLoadProfile: (profile: Profile) => Promise<{
+        success: boolean;
+        error?: string;
+        profile?: Profile;
+        backend?: string;
+      }>;
       chatGetCurrentProfile: () => Promise<Profile | null>;
       chatHasProjector: () => Promise<boolean>;
       chatSend: (
@@ -192,7 +195,11 @@ declare global {
       chatUnload: () => Promise<void>;
       chatHasConversation: () => Promise<boolean>;
       chatIsRunning: () => Promise<boolean>;
-      chatReloadProfile: () => Promise<{ success: boolean; error?: string; profile?: Profile }>;
+      chatReloadProfile: () => Promise<{
+        success: boolean;
+        error?: string;
+        profile?: Profile;
+      }>;
       removeChatListeners: () => void;
       chatTokenize: (text: string) => Promise<{ count: number | null }>;
       chatContextUsage: () => Promise<{ used: number; total: number }>;
@@ -234,7 +241,12 @@ declare global {
         modelPath: string;
         projectorPath?: string;
         mode: 'longest-context' | 'most-gpu';
-      }) => Promise<{ ngl: number; ctx: number; vramMB: number; ramMB: number }>;
+      }) => Promise<{
+        ngl: number;
+        ctx: number;
+        vramMB: number;
+        ramMB: number;
+      }>;
     };
   }
 }

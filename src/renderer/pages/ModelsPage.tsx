@@ -485,12 +485,19 @@ export default function ModelsPage() {
     filename: string,
   ): Promise<void> => {
     window.dispatchEvent(
-      new CustomEvent('open-download-manager', { detail: { modelId: repoId, filename } }),
+      new CustomEvent('open-download-manager', {
+        detail: { modelId: repoId, filename },
+      }),
     );
 
     setDownloads((prev) => ({
       ...prev,
-      [filename]: { modelId: repoId, filename, percent: 0, status: 'downloading' },
+      [filename]: {
+        modelId: repoId,
+        filename,
+        percent: 0,
+        status: 'downloading',
+      },
     }));
     try {
       await window.electronAPI.downloadModel(repoId, filename);

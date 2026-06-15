@@ -144,7 +144,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   ) => {
     const listener = (
       _event: IpcRendererEvent,
-      data: { progress: number; promptN: number; promptMs: number; total: number },
+      data: {
+        progress: number;
+        promptN: number;
+        promptMs: number;
+        total: number;
+      },
     ) => callback(data);
     ipcRenderer.on('chat:system-progress', listener);
     return () => ipcRenderer.removeListener('chat:system-progress', listener);
@@ -158,7 +163,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   ) => {
     const listener = (
       _event: IpcRendererEvent,
-      data: { stats: { tokens: number; timeMs: number; tokensPerSecond: number }; toolCount: number },
+      data: {
+        stats: { tokens: number; timeMs: number; tokensPerSecond: number };
+        toolCount: number;
+      },
     ) => callback(data);
     ipcRenderer.on('chat:system-done', listener);
     return () => ipcRenderer.removeListener('chat:system-done', listener);

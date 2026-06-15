@@ -214,7 +214,7 @@ export async function preloadSystemPrompt(
 
   if (preloadAbortController) preloadAbortController.abort();
   preloadAbortController = new AbortController();
-  const signal = preloadAbortController.signal;
+  const { signal } = preloadAbortController;
 
   let promptStats: GenerationStats | undefined;
   let lastProgress: {
@@ -309,8 +309,7 @@ export async function preloadSystemPrompt(
             const data = JSON.parse(dataStr);
 
             if (data.prompt_progress && !data.usage) {
-              const { total, processed, time_ms, cache } =
-                data.prompt_progress;
+              const { total, processed, time_ms, cache } = data.prompt_progress;
               lastProgress = { total, processed, time_ms, cache };
               const pct =
                 total > 0
@@ -335,10 +334,7 @@ export async function preloadSystemPrompt(
                   timeMs: time_ms || 0,
                   tokensPerSecond: timeS > 0 ? newTokens / timeS : 0,
                 };
-                console.log(
-                  '[chat] preload done from progress:',
-                  promptStats,
-                );
+                console.log('[chat] preload done from progress:', promptStats);
                 if (onDone) onDone(promptStats, tools.length);
               }
               continue;
@@ -346,8 +342,7 @@ export async function preloadSystemPrompt(
 
             if (data.usage && !promptStats) {
               const pFromUsage: GenerationStats = {
-                tokens:
-                  data.timings?.prompt_n ?? data.usage.prompt_tokens ?? 0,
+                tokens: data.timings?.prompt_n ?? data.usage.prompt_tokens ?? 0,
                 timeMs: data.timings?.prompt_ms || 0,
                 tokensPerSecond: data.timings?.prompt_per_second || 0,
               };
@@ -391,12 +386,15 @@ export async function loadProfile(
   let serverErrorLog = '';
 
   try {
-    onStatus?.({ phase: 'solving', message: 'Optimizing Your Profile Changes…' });
+    onStatus?.({
+      phase: 'solving',
+      message: 'Optimizing Your Profile Changes…',
+    });
 
     const settings = loadSettings();
     const fullModelPath = path.join(getModelsDirectory(), profile.model);
     const backendFolder = await detectBackend();
-    console.log(`Backend: ${backendFolder}`)
+    console.log(`Backend: ${backendFolder}`);
     const serverBin =
       process.platform === 'win32' ? 'llama-server.exe' : 'llama-server';
     const serverPath = path.join(getAssetPath('bin', backendFolder), serverBin);
@@ -409,7 +407,7 @@ export async function loadProfile(
       : undefined;
 
     let result: { ngl: number; ctx: number; memory: any };
-    let updatedProfile: any = undefined;
+    let updatedProfile: any;
 
     if (
       profile.autoOptimizer &&
@@ -519,9 +517,9 @@ export async function loadProfile(
     messageHistory = [{ role: 'system', content: profile.systemPrompt }];
 
     if (updatedProfile) {
-      return { success: true, profile: updatedProfile };
+      return { success: true, profile: updatedProfile, backend: backendFolder };
     }
-    return { success: true };
+    return { success: true, backend: backendFolder };
   } catch (error: any) {
     onStatus?.({ phase: 'ready', message: '' });
     return { success: false, error: error.message };
@@ -718,8 +716,7 @@ export async function sendMessage(
             total: lastUsage.total,
           };
         }
-        if (emitFunctionEvent)
-          emitFunctionEvent('result', tc.name, resultStr);
+        if (emitFunctionEvent) emitFunctionEvent('result', tc.name, resultStr);
         messageHistory.push({
           role: 'tool',
           tool_call_id: tc.id,

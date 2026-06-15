@@ -64,23 +64,22 @@ const PAGE_DEPTH: Record<string, number> = {
   'repeat-penalty': 2,
 };
 
-const BREADCRUMB_MAP: Record<
-  string,
-  { label: string; parent: string | null }
-> = {
-  main: { label: 'Profile', parent: null },
-  'system-prompt': { label: 'System Prompt', parent: 'main' },
-  tools: { label: 'Tools', parent: 'main' },
-  advanced: { label: 'Advanced Parameters', parent: 'main' },
-  'repeat-penalty': { label: 'Repeat Penalty', parent: 'advanced' },
-};
+const BREADCRUMB_MAP: Record<string, { label: string; parent: string | null }> =
+  {
+    main: { label: 'Profile', parent: null },
+    'system-prompt': { label: 'System Prompt', parent: 'main' },
+    tools: { label: 'Tools', parent: 'main' },
+    advanced: { label: 'Advanced Parameters', parent: 'main' },
+    'repeat-penalty': { label: 'Repeat Penalty', parent: 'advanced' },
+  };
 
 function buildBreadcrumb(page: string): Array<{ key: string; label: string }> {
   const crumbs: Array<{ key: string; label: string }> = [];
   let current: string | null = page;
-  const map: Record<string, { label: string; parent: string | null }> = BREADCRUMB_MAP;
+  const map: Record<string, { label: string; parent: string | null }> =
+    BREADCRUMB_MAP;
   while (current) {
-    const info: typeof BREADCRUMB_MAP[string] | undefined = map[current];
+    const info: (typeof BREADCRUMB_MAP)[string] | undefined = map[current];
     if (!info) break;
     crumbs.unshift({ key: current, label: info.label });
     current = info.parent;
@@ -141,8 +140,7 @@ function ToolCategoryCard({
       {isOpen && (
         <div className="epm-tool-category__content">
           {toolKeys.map((toolKey) => {
-            const meta =
-              TOOL_METADATA[toolKey as keyof typeof TOOL_METADATA];
+            const meta = TOOL_METADATA[toolKey as keyof typeof TOOL_METADATA];
             const isChecked = editTools.includes(toolKey);
             return (
               <label
@@ -347,7 +345,12 @@ function MainPage({
               type="button"
               className={`epm-perf-toggle${editAutoOptimizer === 'longest-context' ? ' epm-perf-toggle--active' : ''}${optimizerRunning === 'longest-context' ? ' epm-perf-toggle--loading' : ''}`}
               onClick={() => {
-                if (optimizerRunning || (editAutoOptimizer === 'longest-context' && editLayers !== undefined)) return;
+                if (
+                  optimizerRunning ||
+                  (editAutoOptimizer === 'longest-context' &&
+                    editLayers !== undefined)
+                )
+                  return;
                 onRunOptimizer('longest-context');
               }}
               disabled={!!optimizerRunning}
@@ -363,7 +366,11 @@ function MainPage({
               type="button"
               className={`epm-perf-toggle${editAutoOptimizer === 'most-gpu' ? ' epm-perf-toggle--active' : ''}${optimizerRunning === 'most-gpu' ? ' epm-perf-toggle--loading' : ''}`}
               onClick={() => {
-                if (optimizerRunning || (editAutoOptimizer === 'most-gpu' && editLayers !== undefined)) return;
+                if (
+                  optimizerRunning ||
+                  (editAutoOptimizer === 'most-gpu' && editLayers !== undefined)
+                )
+                  return;
                 onRunOptimizer('most-gpu');
               }}
               disabled={!!optimizerRunning}
@@ -376,16 +383,28 @@ function MainPage({
               <span>Most GPU</span>
             </button>
           </div>
-          {editAutoOptimizer && editLayers !== undefined && editContextSize !== undefined && (
-            <div className="epm-perf-result">
-              {editLayers} GPU layers &middot; {editContextSize} context
-            </div>
-          )}
+          {editAutoOptimizer &&
+            editLayers !== undefined &&
+            editContextSize !== undefined && (
+              <div className="epm-perf-result">
+                {editLayers} GPU layers &middot; {editContextSize} context
+              </div>
+            )}
         </div>
       </div>
 
       <div className="epm-main-right">
-        <div className="epm-sub-header" style={{ marginBottom: '8px', fontSize: '14px', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+        <div
+          className="epm-sub-header"
+          style={{
+            marginBottom: '8px',
+            fontSize: '14px',
+            fontWeight: 600,
+            color: 'var(--text-secondary)',
+            textTransform: 'uppercase',
+            letterSpacing: '0.05em',
+          }}
+        >
           Settings
         </div>
         <SectionCard
@@ -443,7 +462,14 @@ function SystemPromptPage({
 }) {
   return (
     <>
-      <p style={{ fontSize: '14px', color: 'var(--text-secondary)', margin: '0 0 16px', lineHeight: 1.5 }}>
+      <p
+        style={{
+          fontSize: '14px',
+          color: 'var(--text-secondary)',
+          margin: '0 0 16px',
+          lineHeight: 1.5,
+        }}
+      >
         Defines AI behavior and personality. Sent with every message.
       </p>
       <textarea
@@ -468,7 +494,14 @@ function ToolsPage({
 }) {
   return (
     <>
-      <p style={{ fontSize: '14px', color: 'var(--text-secondary)', margin: '0 0 16px', lineHeight: 1.5 }}>
+      <p
+        style={{
+          fontSize: '14px',
+          color: 'var(--text-secondary)',
+          margin: '0 0 16px',
+          lineHeight: 1.5,
+        }}
+      >
         Choose which built-in tools the AI can use.
       </p>
       <div className="epm-tools-list">
@@ -643,7 +676,14 @@ function RepeatPenaltyPage({
 }) {
   return (
     <>
-      <p style={{ fontSize: '14px', color: 'var(--text-secondary)', margin: '0 0 16px', lineHeight: 1.5 }}>
+      <p
+        style={{
+          fontSize: '14px',
+          color: 'var(--text-secondary)',
+          margin: '0 0 16px',
+          lineHeight: 1.5,
+        }}
+      >
         Discourages the model from repeating recent tokens.
       </p>
 
@@ -774,22 +814,24 @@ export default function EditProfileModal({
   );
 
   // Performance options
-  const [editAutoOptimizer, setEditAutoOptimizer] = useState<'longest-context' | 'most-gpu' | null>(
-    profile?.autoOptimizer ?? null,
-  );
+  const [editAutoOptimizer, setEditAutoOptimizer] = useState<
+    'longest-context' | 'most-gpu' | null
+  >(profile?.autoOptimizer ?? null);
   const [editLayers, setEditLayers] = useState<number | undefined>(
     profile?.layers,
   );
   const [editContextSize, setEditContextSize] = useState<number | undefined>(
     profile?.contextSize,
   );
-  const [editAllocatedVRAM, setEditAllocatedVRAM] = useState<number | undefined>(
-    profile?.allocatedVRAM,
-  );
+  const [editAllocatedVRAM, setEditAllocatedVRAM] = useState<
+    number | undefined
+  >(profile?.allocatedVRAM);
   const [editAllocatedRAM, setEditAllocatedRAM] = useState<number | undefined>(
     profile?.allocatedRAM,
   );
-  const [optimizerRunning, setOptimizerRunning] = useState<'longest-context' | 'most-gpu' | null>(null);
+  const [optimizerRunning, setOptimizerRunning] = useState<
+    'longest-context' | 'most-gpu' | null
+  >(null);
 
   // Model/Projector modals
   const [showModelModal, setShowModelModal] = useState(false);
@@ -905,7 +947,9 @@ export default function EditProfileModal({
         (AVAILABLE_TOOLS as readonly string[]).includes(t),
       ),
       repeatPenalty: buildRepeatPenalty(),
-      ...(editAutoOptimizer && editLayers !== undefined && editContextSize !== undefined
+      ...(editAutoOptimizer &&
+      editLayers !== undefined &&
+      editContextSize !== undefined
         ? {
             autoOptimizer: editAutoOptimizer,
             layers: editLayers,
@@ -938,7 +982,11 @@ export default function EditProfileModal({
       if (selectedGroup) break;
       for (const fg of group.fileGroups) {
         if (selectedGroup) break;
-        if (fg.parts.some((p) => p.filename === baseName || p.filename === editModel)) {
+        if (
+          fg.parts.some(
+            (p) => p.filename === baseName || p.filename === editModel,
+          )
+        ) {
           selectedGroup = group;
         }
       }
@@ -993,7 +1041,7 @@ export default function EditProfileModal({
 
   const systemPromptPreview =
     editSystemPrompt.length > 80
-      ? editSystemPrompt.slice(0, 80) + '…'
+      ? `${editSystemPrompt.slice(0, 80)}…`
       : editSystemPrompt || 'Not set';
 
   const toolCategories = categorizedTools.filter(({ toolKeys }) =>
@@ -1153,7 +1201,10 @@ export default function EditProfileModal({
         {/* Breadcrumb */}
         <div className="epm-breadcrumb">
           {breadcrumb.map((crumb, idx) => (
-            <span key={crumb.key} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span
+              key={crumb.key}
+              style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+            >
               {idx > 0 && <span className="epm-breadcrumb__sep">›</span>}
               <button
                 type="button"
@@ -1186,11 +1237,7 @@ export default function EditProfileModal({
 
         {/* Footer */}
         <div className="epm-footer">
-          <button
-            type="button"
-            className="btn-secondary"
-            onClick={onClose}
-          >
+          <button type="button" className="btn-secondary" onClick={onClose}>
             Cancel
           </button>
           <button

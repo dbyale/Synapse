@@ -65,6 +65,31 @@ interface Message {
 const INPUT_PRICE_PER_MILLION = 150.0;
 const OUTPUT_PRICE_PER_MILLION = 600.0;
 
+function formatBackend(backend: string): string {
+  const platformMap: Record<string, string> = {
+    win: 'Win',
+    macos: 'macOS',
+    ubuntu: 'Linux',
+  };
+  const archMap: Record<string, string> = {
+    x64: 'x64',
+    arm64: 'ARM64',
+  };
+  const parts = backend.split('-');
+  if (parts.length < 2) return backend;
+  const os = platformMap[parts[0]] ?? parts[0];
+  const arch = archMap[parts[parts.length - 1]] ?? parts[parts.length - 1];
+  const middle = parts.slice(1, -1);
+  if (middle.length === 0) return `${os} ${arch}`;
+  if (middle[0] === 'cpu') return `${os} ${arch} CPU`;
+  if (middle[0] === 'vulkan') return `${os} ${arch} Vulkan`;
+  if (middle[0] === 'adreno') return `${os} ${arch} Adreno`;
+  if (middle[0] === 'cuda') {
+    return `${os} ${arch} CUDA ${middle.slice(1).join('.')}`;
+  }
+  return `${os} ${arch} ${middle.join(' ')}`;
+}
+
 let persistentMessages: Message[] = [];
 let persistentLoadedProfileId: string = '';
 let persistentMessageCounter: number = 0;
@@ -261,7 +286,9 @@ export default function ChatPage() {
   const [showImageModal, setShowImageModal] = useState(false);
   const [pendingImage, setPendingImage] = useState<string | null>(null); // base64 data URL
   const [progressPercent, setProgressPercent] = useState(0);
-  const [systemPhase, setSystemPhase] = useState<'solving' | 'starting' | 'preloading' | 'ready'>('ready');
+  const [systemPhase, setSystemPhase] = useState<
+    'solving' | 'starting' | 'preloading' | 'ready'
+  >('ready');
   const [systemStatusMessage, setSystemStatusMessage] = useState('');
   const [systemProgress, setSystemProgress] = useState(0);
   const [systemPromptDone, setSystemPromptDone] = useState<{
@@ -272,6 +299,7 @@ export default function ChatPage() {
     text: string;
     imageDataUrl?: string;
   } | null>(null);
+  const [backend, setBackend] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -555,6 +583,7 @@ export default function ChatPage() {
       setUsedTokens(0);
       setMaxTokens(null);
       setMessages([]);
+      setBackend(null);
       persistentMessages = [];
       systemMessageInsertedRef.current = false;
       setSystemPromptDone(null);
@@ -577,10 +606,11 @@ export default function ChatPage() {
         if (abortController.cancelled) return;
 
         if (res.success) {
+          if ((res as any).backend) {
+            setBackend((res as any).backend);
+          }
           if ((res as any).profile) {
-            const stored = JSON.parse(
-              localStorage.getItem('profiles') || '[]',
-            );
+            const stored = JSON.parse(localStorage.getItem('profiles') || '[]');
             const idx = stored.findIndex(
               (p: any) => p.id === (res as any).profile.id,
             );
@@ -900,13 +930,12 @@ export default function ChatPage() {
       },
     );
 
-    const removeSystemProgressListener = window.electronAPI.onChatSystemProgress(
-      (data) => {
+    const removeSystemProgressListener =
+      window.electronAPI.onChatSystemProgress((data) => {
         setSystemPhase('preloading');
         setSystemStatusMessage('Preloading system prompt…');
         setSystemProgress(data.progress);
-      },
-    );
+      });
 
     const removeSystemStatusListener = window.electronAPI.onChatSystemStatus(
       (data) => {
@@ -1022,12 +1051,22 @@ export default function ChatPage() {
 
   const handleSend = async () => {
     const text = inputText.trim();
-    if (!text || loading || modelLoading || persistentModelLoading || !selectedProfileId || loadError)
+    if (
+      !text ||
+      loading ||
+      modelLoading ||
+      persistentModelLoading ||
+      !selectedProfileId ||
+      loadError
+    )
       return;
 
     // If system prompt is still preloading, queue the message
     if (systemPhase !== 'ready') {
-      pendingSendRef.current = { text, imageDataUrl: pendingImage ?? undefined };
+      pendingSendRef.current = {
+        text,
+        imageDataUrl: pendingImage ?? undefined,
+      };
       setPendingImage(null);
       setInputText('');
       const textarea = document.querySelector('textarea');
@@ -1362,10 +1401,7 @@ export default function ChatPage() {
                             MessageSegment[]
                           >();
                           msg.content.forEach((seg) => {
-                            if (
-                              seg.type === 'tool' &&
-                              seg.reprocessStats
-                            ) {
+                            if (seg.type === 'tool' && seg.reprocessStats) {
                               const ref = seg.reprocessStats;
                               if (!statsGroups.has(ref))
                                 statsGroups.set(ref, []);
@@ -1405,10 +1441,7 @@ export default function ChatPage() {
 
                           // Add shared stats blocks for groups of 2+
                           let sharedKey = 0;
-                          for (const [
-                            stats,
-                            segs,
-                          ] of statsGroups.entries()) {
+                          for (const [stats, segs] of statsGroups.entries()) {
                             if (segs.length >= 2) {
                               elements.push(
                                 <div
@@ -1503,13 +1536,21 @@ export default function ChatPage() {
                     <Hash size={12} />
                     <span>{msg.promptStats.tokens} tokens</span>
                   </div>
-                  <div className="chat-stat-item" title="Prompt processing time">
+                  <div
+                    className="chat-stat-item"
+                    title="Prompt processing time"
+                  >
                     <Timer size={12} />
                     <span>{(msg.promptStats.timeMs / 1000).toFixed(2)}s</span>
                   </div>
-                  <div className="chat-stat-item" title="Prompt processing speed">
+                  <div
+                    className="chat-stat-item"
+                    title="Prompt processing speed"
+                  >
                     <Zap size={12} />
-                    <span>{msg.promptStats.tokensPerSecond.toFixed(1)} t/s</span>
+                    <span>
+                      {msg.promptStats.tokensPerSecond.toFixed(1)} t/s
+                    </span>
                   </div>
                 </div>
               )}
@@ -1590,9 +1631,16 @@ export default function ChatPage() {
             type="button"
             className={`chat-attach-button${projectorLoaded || (profileHasProjector && !loadError) ? '' : ' chat-attach-button--disabled'}`}
             onClick={() => {
-              if (projectorLoaded || (profileHasProjector && !loadError)) setShowImageModal(true);
+              if (projectorLoaded || (profileHasProjector && !loadError))
+                setShowImageModal(true);
             }}
-            title={projectorLoaded ? 'Attach image' : profileHasProjector ? 'Attach image (will be sent once model loads)' : 'No vision model loaded'}
+            title={
+              projectorLoaded
+                ? 'Attach image'
+                : profileHasProjector
+                  ? 'Attach image (will be sent once model loads)'
+                  : 'No vision model loaded'
+            }
           >
             <ImagePlus size={18} />
           </button>
@@ -1650,28 +1698,33 @@ export default function ChatPage() {
         </div>
 
         <div className={tokenCounterClass}>
-          {loading && tps > 0 && (
-            <span
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '4px',
-                marginRight: '10px',
-                opacity: 0.75,
-              }}
-            >
-              <Gauge size={13} />
-              {tps.toFixed(1)} t/s
-            </span>
-          )}
-          {maxTokens !== null ? (
-            <span>
-              {usedTokens.toLocaleString()} / {maxTokens.toLocaleString()}{' '}
-              tokens
-            </span>
-          ) : (
-            <span>— / — tokens</span>
-          )}
+          <span className="chat-backend-indicator">
+            {backend ? formatBackend(backend) : ''}
+          </span>
+          <span>
+            {loading && tps > 0 && (
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  marginRight: '10px',
+                  opacity: 0.75,
+                }}
+              >
+                <Gauge size={13} />
+                {tps.toFixed(1)} t/s
+              </span>
+            )}
+            {maxTokens !== null ? (
+              <span>
+                {usedTokens.toLocaleString()} / {maxTokens.toLocaleString()}{' '}
+                tokens
+              </span>
+            ) : (
+              <span>— / — tokens</span>
+            )}
+          </span>
         </div>
       </div>
 
