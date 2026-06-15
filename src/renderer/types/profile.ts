@@ -21,6 +21,11 @@ export interface Profile {
     presencePenalty?: number;
   };
   tools?: string[];
+  layers?: number;
+  contextSize?: number;
+  autoOptimizer?: 'longest-context' | 'most-gpu';
+  allocatedVRAM?: number;
+  allocatedRAM?: number;
   order: number;
   createdAt: number;
 }

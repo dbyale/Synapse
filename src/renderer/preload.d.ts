@@ -133,7 +133,7 @@ declare global {
       // Chat
       chatLoadProfile: (
         profile: Profile,
-      ) => Promise<{ success: boolean; error?: string }>;
+      ) => Promise<{ success: boolean; error?: string; profile?: Profile }>;
       chatGetCurrentProfile: () => Promise<Profile | null>;
       chatHasProjector: () => Promise<boolean>;
       chatSend: (
@@ -225,6 +225,12 @@ declare global {
       ) => () => void;
 
       readImageAsDataUrl: (filePath: string) => Promise<string>;
+
+      runProfileOptimizer: (params: {
+        modelPath: string;
+        projectorPath?: string;
+        mode: 'longest-context' | 'most-gpu';
+      }) => Promise<{ ngl: number; ctx: number; vramMB: number; ramMB: number }>;
     };
   }
 }

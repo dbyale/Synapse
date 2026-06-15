@@ -547,6 +547,20 @@ export default function ChatPage() {
         setModelLoading(false);
 
         if (res.success) {
+          if ((res as any).profile) {
+            const stored = JSON.parse(
+              localStorage.getItem('profiles') || '[]',
+            );
+            const idx = stored.findIndex(
+              (p: any) => p.id === (res as any).profile.id,
+            );
+            if (idx >= 0) {
+              stored[idx] = (res as any).profile;
+              localStorage.setItem('profiles', JSON.stringify(stored));
+              window.dispatchEvent(new Event('profiles-changed'));
+            }
+          }
+
           persistentLoadedProfileId = selectedProfileId;
 
           const { contextSize } = await window.electronAPI.chatContextSize();

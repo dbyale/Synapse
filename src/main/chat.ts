@@ -11,7 +11,7 @@ import {
 } from './settings';
 import type { Profile } from '../renderer/types/profile';
 import { createChatFunctions } from './chatFunctions';
-import { solveMaxConfig } from './estimator';
+import { solveMaxConfig, getOrRunOptimizer } from './estimator';
 
 export interface GenerationStats {
   tokens: number;
@@ -378,7 +378,7 @@ export async function preloadSystemPrompt(
 export async function loadProfile(
   profile: Profile,
   onStatus?: (data: { phase: string; message: string }) => void,
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; error?: string; profile?: any }> {
   console.log('[chat] Loading Profile:', profile.name);
   await unloadModel();
 
@@ -408,18 +408,38 @@ export async function loadProfile(
       ? path.join(getModelsDirectory(), profile.projector)
       : undefined;
 
-    const result = await solveMaxConfig(
-      fullModelPath,
-      vramMB,
-      ramMB,
-      undefined, // ctk (defaults to 'f16')
-      undefined, // ctv (defaults to 'f16')
-      undefined, // flashAttention (defaults false)
-      undefined, // noKvOffload (defaults true)
-      undefined, // mmap (defaults false)
-      undefined, // maximizeNGL (defaults false)
-      fullProjectorPath,
-    );
+    let result: { ngl: number; ctx: number; memory: any };
+    let updatedProfile: any = undefined;
+
+    if (
+      profile.autoOptimizer &&
+      typeof (profile as any).layers === 'number' &&
+      typeof (profile as any).contextSize === 'number' &&
+      (profile as any).allocatedVRAM === vramMB &&
+      (profile as any).allocatedRAM === ramMB
+    ) {
+      result = {
+        ngl: (profile as any).layers,
+        ctx: (profile as any).contextSize,
+        memory: null,
+      };
+    } else {
+      const mode = (profile as any).autoOptimizer || 'longest-context';
+      const optResult = await getOrRunOptimizer(
+        fullModelPath,
+        vramMB,
+        ramMB,
+        mode === 'most-gpu',
+        fullProjectorPath,
+      );
+      result = optResult;
+      (profile as any).layers = optResult.ngl;
+      (profile as any).contextSize = optResult.ctx;
+      (profile as any).autoOptimizer = mode;
+      (profile as any).allocatedVRAM = vramMB;
+      (profile as any).allocatedRAM = ramMB;
+      updatedProfile = { ...profile };
+    }
 
     lastResolvedMemory = result.memory;
     currentContextSize = result.ctx;
@@ -498,6 +518,9 @@ export async function loadProfile(
     currentProfile = profile;
     messageHistory = [{ role: 'system', content: profile.systemPrompt }];
 
+    if (updatedProfile) {
+      return { success: true, profile: updatedProfile };
+    }
     return { success: true };
   } catch (error: any) {
     onStatus?.({ phase: 'ready', message: '' });

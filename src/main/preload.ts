@@ -233,4 +233,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   readImageAsDataUrl: (filePath: string): Promise<string> =>
     ipcRenderer.invoke('files:readImageAsDataUrl', filePath),
+
+  runProfileOptimizer: (params: {
+    modelPath: string;
+    projectorPath?: string;
+    mode: 'longest-context' | 'most-gpu';
+  }): Promise<{ ngl: number; ctx: number }> =>
+    ipcRenderer.invoke('profile:runOptimizer', params),
 });

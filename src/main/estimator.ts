@@ -196,3 +196,35 @@ Hardware Utilization:
     },
   };
 }
+
+// ── Shared optimizer state ──
+// Allows chat.ts to wait for an in-flight optimization started by the renderer.
+
+const pendingOptimizations = new Map<string, Promise<MemoryEstimation>>();
+
+export async function getOrRunOptimizer(
+  modelPath: string,
+  vramMB: number,
+  ramMB: number,
+  maximizeNGL: boolean = false,
+  projectorPath?: string,
+): Promise<MemoryEstimation> {
+  const existing = pendingOptimizations.get(modelPath);
+  if (existing) return existing;
+
+  const promise = solveMaxConfig(
+    modelPath,
+    vramMB,
+    ramMB,
+    undefined, undefined, undefined, undefined, undefined,
+    maximizeNGL,
+    projectorPath,
+  );
+
+  pendingOptimizations.set(modelPath, promise);
+  try {
+    return await promise;
+  } finally {
+    pendingOptimizations.delete(modelPath);
+  }
+}

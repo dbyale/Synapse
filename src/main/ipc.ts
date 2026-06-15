@@ -21,6 +21,7 @@ import {
   registerLocalModel,
 } from '../renderer/utils/models';
 import * as chatService from './chat';
+import { getOrRunOptimizer } from './estimator';
 import type { SearchFilter } from '../renderer/preload.d';
 
 const execAsync = util.promisify(exec);
@@ -459,6 +460,37 @@ export function registerIpcHandlers(win: BrowserWindow): void {
   ipcMain.handle('chat:hasProjector', () => {
     return chatService.hasProjector();
   });
+
+  ipcMain.handle(
+    'profile:runOptimizer',
+    async (
+      _event,
+      params: {
+        modelPath: string;
+        projectorPath?: string;
+        mode: 'longest-context' | 'most-gpu';
+      },
+    ) => {
+      const settings = loadSettings();
+      const vramMB = settings.allocatedVRAM ?? 4096;
+      const ramMB = settings.allocatedRAM ?? 8192;
+
+      const result = await getOrRunOptimizer(
+        params.modelPath,
+        vramMB,
+        ramMB,
+        params.mode === 'most-gpu',
+        params.projectorPath,
+      );
+
+      return {
+        ngl: result.ngl,
+        ctx: result.ctx,
+        vramMB,
+        ramMB,
+      };
+    },
+  );
 
   ipcMain.handle(
     'files:readImageAsDataUrl',

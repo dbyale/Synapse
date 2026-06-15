@@ -4,11 +4,13 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronDown,
+  ChevronUp,
   MessageSquare,
   Wrench,
   Settings,
   PackageCheck,
   PackageMinus,
+  Loader2,
 } from 'lucide-react';
 import { Profile } from '../types/profile';
 import type { LocalModel } from '../preload.d';
@@ -182,6 +184,11 @@ function MainPage({
   systemPromptPreview,
   toolsPreview,
   advancedPreview,
+  editAutoOptimizer,
+  editLayers,
+  editContextSize,
+  optimizerRunning,
+  onRunOptimizer,
 }: {
   editName: string;
   setEditName: (v: string) => void;
@@ -209,6 +216,11 @@ function MainPage({
   systemPromptPreview: string;
   toolsPreview: string;
   advancedPreview: string;
+  editAutoOptimizer: 'longest-context' | 'most-gpu' | null;
+  editLayers: number | undefined;
+  editContextSize: number | undefined;
+  optimizerRunning: 'longest-context' | 'most-gpu' | null;
+  onRunOptimizer: (mode: 'longest-context' | 'most-gpu') => void;
 }) {
   return (
     <div className="epm-main-grid">
@@ -326,6 +338,50 @@ function MainPage({
             </button>
           </div>
         )}
+
+        {/* Performance Options */}
+        <div className="epm-section">
+          <div className="epm-section__label">Performance</div>
+          <div className="epm-perf-toggle-group">
+            <button
+              type="button"
+              className={`epm-perf-toggle${editAutoOptimizer === 'longest-context' ? ' epm-perf-toggle--active' : ''}${optimizerRunning === 'longest-context' ? ' epm-perf-toggle--loading' : ''}`}
+              onClick={() => {
+                if (optimizerRunning || (editAutoOptimizer === 'longest-context' && editLayers !== undefined)) return;
+                onRunOptimizer('longest-context');
+              }}
+              disabled={!!optimizerRunning}
+            >
+              {optimizerRunning === 'longest-context' ? (
+                <Loader2 size={16} className="epm-perf-spinner" />
+              ) : (
+                <ChevronUp size={16} />
+              )}
+              <span>Longest Context</span>
+            </button>
+            <button
+              type="button"
+              className={`epm-perf-toggle${editAutoOptimizer === 'most-gpu' ? ' epm-perf-toggle--active' : ''}${optimizerRunning === 'most-gpu' ? ' epm-perf-toggle--loading' : ''}`}
+              onClick={() => {
+                if (optimizerRunning || (editAutoOptimizer === 'most-gpu' && editLayers !== undefined)) return;
+                onRunOptimizer('most-gpu');
+              }}
+              disabled={!!optimizerRunning}
+            >
+              {optimizerRunning === 'most-gpu' ? (
+                <Loader2 size={16} className="epm-perf-spinner" />
+              ) : (
+                <ChevronDown size={16} />
+              )}
+              <span>Most GPU</span>
+            </button>
+          </div>
+          {editAutoOptimizer && editLayers !== undefined && editContextSize !== undefined && (
+            <div className="epm-perf-result">
+              {editLayers} GPU layers &middot; {editContextSize} context
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="epm-main-right">
@@ -717,6 +773,24 @@ export default function EditProfileModal({
       : '0.00',
   );
 
+  // Performance options
+  const [editAutoOptimizer, setEditAutoOptimizer] = useState<'longest-context' | 'most-gpu' | null>(
+    profile?.autoOptimizer ?? null,
+  );
+  const [editLayers, setEditLayers] = useState<number | undefined>(
+    profile?.layers,
+  );
+  const [editContextSize, setEditContextSize] = useState<number | undefined>(
+    profile?.contextSize,
+  );
+  const [editAllocatedVRAM, setEditAllocatedVRAM] = useState<number | undefined>(
+    profile?.allocatedVRAM,
+  );
+  const [editAllocatedRAM, setEditAllocatedRAM] = useState<number | undefined>(
+    profile?.allocatedRAM,
+  );
+  const [optimizerRunning, setOptimizerRunning] = useState<'longest-context' | 'most-gpu' | null>(null);
+
   // Model/Projector modals
   const [showModelModal, setShowModelModal] = useState(false);
   const [showProjectorModal, setShowProjectorModal] = useState(false);
@@ -831,6 +905,15 @@ export default function EditProfileModal({
         (AVAILABLE_TOOLS as readonly string[]).includes(t),
       ),
       repeatPenalty: buildRepeatPenalty(),
+      ...(editAutoOptimizer && editLayers !== undefined && editContextSize !== undefined
+        ? {
+            autoOptimizer: editAutoOptimizer,
+            layers: editLayers,
+            contextSize: editContextSize,
+            allocatedVRAM: editAllocatedVRAM,
+            allocatedRAM: editAllocatedRAM,
+          }
+        : {}),
       order: profile?.order ?? now,
       createdAt: profile?.createdAt ?? now,
     };
@@ -941,6 +1024,38 @@ export default function EditProfileModal({
             systemPromptPreview={systemPromptPreview}
             toolsPreview={toolsPreview}
             advancedPreview={advancedPreview}
+            editAutoOptimizer={editAutoOptimizer}
+            editLayers={editLayers}
+            editContextSize={editContextSize}
+            optimizerRunning={optimizerRunning}
+            onRunOptimizer={(mode) => {
+              setOptimizerRunning(mode);
+              const model = localModels.find((m) => m.filename === editModel);
+              if (!model) {
+                setOptimizerRunning(null);
+                return;
+              }
+              const projector = editProjector
+                ? localModels.find((m) => m.filename === editProjector)
+                : undefined;
+              window.electronAPI
+                .runProfileOptimizer({
+                  modelPath: model.filepath,
+                  projectorPath: projector?.filepath,
+                  mode,
+                })
+                .then((res) => {
+                  setEditAutoOptimizer(mode);
+                  setEditLayers(res.ngl);
+                  setEditContextSize(res.ctx);
+                  setEditAllocatedVRAM(res.vramMB);
+                  setEditAllocatedRAM(res.ramMB);
+                  setOptimizerRunning(null);
+                })
+                .catch(() => {
+                  setOptimizerRunning(null);
+                });
+            }}
           />
         );
       case 'system-prompt':

@@ -534,6 +534,71 @@
   margin-top: 2px;
 }
 
+/* ── Performance Options ── */
+
+.epm-perf-toggle-group {
+  display: flex;
+  gap: 8px;
+}
+
+.epm-perf-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.15s ease;
+}
+
+.epm-perf-toggle:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.epm-perf-toggle--active {
+  background: rgba(37, 99, 235, 0.08);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.epm-perf-toggle--loading {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+.epm-perf-toggle:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.epm-perf-spinner {
+  animation: epm-spin 1s linear infinite;
+}
+
+@keyframes epm-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.epm-perf-result {
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  text-align: center;
+  padding: 6px 10px;
+  background: rgba(37, 99, 235, 0.04);
+  border-radius: var(--radius-sm);
+}
+
 /* ── Repeat penalty ── */
 
 .epm-repeat-penalty-fields--disabled {
