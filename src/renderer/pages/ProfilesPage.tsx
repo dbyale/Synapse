@@ -22,9 +22,7 @@ import {
 import type { LocalModel } from '../preload.d';
 import { Profile } from '../types/profile';
 import { AVAILABLE_TOOLS, TOOL_METADATA } from '../../data/defaultTools';
-import ModelSelectModal from '../components/ModelSelectModal';
-import ProjectorSelectModal from '../components/ProjectorSelectModal';
-import { formatBytes } from '../utils/formatters';
+import EditProfileModal from '../components/EditProfileModal';
 import '../styles/ProfilesPage.css';
 
 interface EditSectionProps {
@@ -252,43 +250,15 @@ export default function ProfilesPage() {
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(
     null,
   );
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [isNewProfile, setIsNewProfile] = useState(false);
-  const [editName, setEditName] = useState('');
-  const [editSystemPrompt, setEditSystemPrompt] = useState('');
-  const [editTemperature, setEditTemperature] = useState('0.8');
-  const [editTopK, setEditTopK] = useState('40');
-  const [editTopP, setEditTopP] = useState('0.95');
-  const [editMinP, setEditMinP] = useState('0.05');
-  const [editSeed, setEditSeed] = useState('');
-  const [editModel, setEditModel] = useState('');
-  const [editProjector, setEditProjector] = useState('');
-  const [editTools, setEditTools] = useState<string[]>([]);
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [showModelModal, setShowModelModal] = useState(false);
-  const [showProjectorModal, setShowProjectorModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingProfile, setEditingProfile] = useState<Profile | null>(null);
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [previewOrder, setPreviewOrder] = useState<Profile[]>([]);
   const dragLeaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
-
-  // ── Repeat Penalty state ──
-  const [editRpEnabled, setEditRpEnabled] = useState(true);
-  const [editRpLastTokens, setEditRpLastTokens] = useState('');
-  const [editRpPenalty, setEditRpPenalty] = useState('1.00');
-  const [editRpFrequencyPenalty, setEditRpFrequencyPenalty] = useState('0.00');
-  const [editRpPresencePenalty, setEditRpPresencePenalty] = useState('0.00');
-
-  // ── Toggle a single tool on/off ──
-  const handleToolToggle = (toolKey: string) => {
-    setEditTools((prev) =>
-      prev.includes(toolKey)
-        ? prev.filter((t) => t !== toolKey)
-        : [...prev, toolKey],
-    );
-  };
 
   // ── Load profiles and local models on mount ──
   useEffect(() => {
@@ -330,180 +300,16 @@ export default function ProfilesPage() {
     window.dispatchEvent(new Event('profiles-changed'));
   };
 
-  // ── Reset all repeat penalty state fields ──
-  const resetRepeatPenaltyState = (rp?: Profile['repeatPenalty']) => {
-    setEditRpEnabled(rp?.enabled !== false);
-    setEditRpLastTokens(
-      rp?.lastTokens !== undefined ? String(rp.lastTokens) : '',
-    );
-    setEditRpPenalty(rp?.penalty !== undefined ? String(rp.penalty) : '');
-    setEditRpFrequencyPenalty(
-      rp?.frequencyPenalty !== undefined ? String(rp.frequencyPenalty) : '0.00',
-    );
-    setEditRpPresencePenalty(
-      rp?.presencePenalty !== undefined ? String(rp.presencePenalty) : '0.00',
-    );
-  };
-
-  // ── Build the repeatPenalty object to persist ──
-  const buildRepeatPenalty = (): Profile['repeatPenalty'] => {
-    // User explicitly disabled the whole feature
-    if (!editRpEnabled) return { enabled: false };
-
-    const rp: NonNullable<Profile['repeatPenalty']> = {};
-    if (editRpLastTokens !== '') rp.lastTokens = parseInt(editRpLastTokens, 10);
-    // Only persist false — true is the library default, no need to store it
-    if (editRpPenalty !== '') rp.penalty = parseFloat(editRpPenalty);
-    if (editRpFrequencyPenalty !== '')
-      rp.frequencyPenalty = parseFloat(editRpFrequencyPenalty);
-    if (editRpPresencePenalty !== '')
-      rp.presencePenalty = parseFloat(editRpPresencePenalty);
-
-    // If no fields were actually set, don't persist an empty object
-    return Object.keys(rp).length > 0 ? rp : undefined;
-  };
-
   const handleNewProfile = () => {
     setError(null);
-    const newProfile: Profile = {
-      id: Date.now().toString(),
-      name: 'New Profile',
-      model: '',
-      systemPrompt: 'You are a helpful assistant.',
-      temperature: 0.8,
-      topK: 40,
-      topP: 0.95,
-      minP: 0.05,
-      seed: -1,
-      repeatPenalty: {
-        frequencyPenalty: 0.0,
-      },
-      tools: [],
-      order: Date.now(),
-      createdAt: Date.now(),
-    };
-
-    const updated = [newProfile, ...profiles];
-    saveProfiles(updated);
-    setEditingId(newProfile.id);
-    setIsNewProfile(true);
-    setEditName(newProfile.name);
-    setEditSystemPrompt(newProfile.systemPrompt);
-    setEditTemperature(String(newProfile.temperature));
-    setEditTopK(String(newProfile.topK));
-    setEditTopP(String(newProfile.topP));
-    setEditMinP(String(newProfile.minP));
-    setEditSeed(String(newProfile.seed));
-    setEditModel('');
-    setEditProjector('');
-    setEditTools([]);
-    // New profiles start with repeat penalty enabled and frequency penalty set
-    resetRepeatPenaltyState(newProfile.repeatPenalty);
+    setEditingProfile(null);
+    setShowEditModal(true);
   };
 
   const handleEdit = (profile: Profile) => {
     setError(null);
-    setEditingId(profile.id);
-    setIsNewProfile(false);
-    setEditName(profile.name);
-    setEditSystemPrompt(profile.systemPrompt);
-    setEditTemperature(String(profile.temperature));
-    setEditTopK(String(profile.topK));
-    setEditTopP(String(profile.topP));
-    setEditMinP(String(profile.minP));
-    setEditSeed(String(profile.seed || -1));
-    setEditModel(profile.model.split(/[/\\]/).pop() || profile.model);
-    setEditProjector(
-      profile.projector ? profile.projector.split(/[/\\]/).pop()! : '',
-    );
-    setEditTools(profile.tools ?? []);
-    // Load persisted repeat penalty values (or defaults if never set)
-    resetRepeatPenaltyState(profile.repeatPenalty);
-  };
-
-  const handleSaveEdit = () => {
-    if (!editingId || !editName.trim() || !editModel) return;
-
-    const selectedLocalModel = localModels.find(
-      (m) => m.filename === editModel,
-    );
-
-    let modelRelativePath = editModel;
-    if (selectedLocalModel?.filepath) {
-      const pathParts = selectedLocalModel.filepath.split(/[/\\]/);
-      const filename = pathParts.pop() || editModel;
-      const subfolder = pathParts.pop() || '';
-      const author = pathParts.pop() || '';
-      if (author && subfolder) {
-        modelRelativePath = `${author}/${subfolder}/${filename}`;
-      } else if (subfolder) {
-        modelRelativePath = `${subfolder}/${filename}`;
-      } else {
-        modelRelativePath = filename;
-      }
-    }
-
-    let projectorRelativePath: string | undefined;
-    if (editProjector) {
-      const selectedProjector = localModels.find(
-        (m) => m.filename === editProjector,
-      );
-      if (selectedProjector?.filepath) {
-        const projParts = selectedProjector.filepath.split(/[/\\]/);
-        const projFilename = projParts.pop() || editProjector;
-        const projSubfolder = projParts.pop() || '';
-        const projAuthor = projParts.pop() || '';
-
-        if (projSubfolder.toLowerCase() === 'projectors') {
-          const modelFolder = projAuthor;
-          const author = projParts.pop() || '';
-          projectorRelativePath = `${author}/${modelFolder}/projectors/${projFilename}`;
-        } else if (projAuthor && projSubfolder) {
-          projectorRelativePath = `${projAuthor}/${projSubfolder}/${projFilename}`;
-        } else if (projSubfolder) {
-          projectorRelativePath = `${projSubfolder}/${projFilename}`;
-        } else {
-          projectorRelativePath = projFilename;
-        }
-      } else {
-        projectorRelativePath = editProjector;
-      }
-    }
-
-    const updated = profiles.map((p) =>
-      p.id === editingId
-        ? {
-            ...p,
-            name: editName.trim(),
-            systemPrompt: editSystemPrompt,
-            temperature: parseFloat(editTemperature),
-            topK: parseInt(editTopK, 10),
-            topP: parseFloat(editTopP),
-            minP: parseFloat(editMinP),
-            seed: parseInt(editSeed, 10),
-            model: modelRelativePath,
-            projector: projectorRelativePath || undefined,
-            tools: editTools.filter((t) =>
-              (AVAILABLE_TOOLS as readonly string[]).includes(t),
-            ),
-            repeatPenalty: buildRepeatPenalty(),
-          }
-        : p,
-    );
-    saveProfiles(updated);
-    setEditingId(null);
-    setIsNewProfile(false);
-    setError(null);
-  };
-
-  const handleCancelEdit = () => {
-    if (isNewProfile && editingId) {
-      const updated = profiles.filter((p) => p.id !== editingId);
-      saveProfiles(updated);
-    }
-    setEditingId(null);
-    setIsNewProfile(false);
-    setError(null);
+    setEditingProfile(profile);
+    setShowEditModal(true);
   };
 
   const handleDelete = (id: string) => {
@@ -512,9 +318,6 @@ export default function ProfilesPage() {
     if (selectedProfileId === id) {
       setSelectedProfileId(null);
       localStorage.removeItem('selectedProfileId');
-    }
-    if (editingId === id) {
-      setEditingId(null);
     }
   };
 
@@ -534,8 +337,17 @@ export default function ProfilesPage() {
     }
   };
 
-  const handleModelChange = (filename: string) => {
-    setEditModel(filename);
+  const handleSaveProfile = (updated: Profile[]) => {
+    saveProfiles(updated);
+    setShowEditModal(false);
+    setEditingProfile(null);
+    setError(null);
+  };
+
+  const handleCancelEdit = () => {
+    setShowEditModal(false);
+    setEditingProfile(null);
+    setError(null);
   };
 
   // ── Drag and drop handlers ──
@@ -703,44 +515,6 @@ export default function ProfilesPage() {
     return models;
   }, [groupedLocalModels]);
 
-  const availableProjectorsForEdit = useMemo(() => {
-    if (!editModel) return [];
-    let selectedGroup: LocalModelGroup | undefined;
-    groupedLocalModels.forEach((group) => {
-      if (selectedGroup) return;
-      group.fileGroups.forEach((fg) => {
-        if (selectedGroup) return;
-        if (fg.parts.some((p) => p.filename === editModel)) {
-          selectedGroup = group;
-        }
-      });
-    });
-    if (!selectedGroup) return [];
-
-    const projectors: Array<{
-      filename: string;
-      quantization: string;
-      name: string;
-      sizeBytes: number;
-    }> = [];
-    selectedGroup.fileGroups.forEach((fg) => {
-      if (fg.isProjector) {
-        fg.parts.forEach((part) => {
-          const displayQuantization = extractQuantizationFromFilename(
-            part.filename,
-          );
-          projectors.push({
-            filename: part.filename,
-            quantization: displayQuantization,
-            name: `MMPROJ (${displayQuantization.toUpperCase()})`,
-            sizeBytes: part.sizeBytes,
-          });
-        });
-      }
-    });
-    return projectors;
-  }, [editModel, groupedLocalModels]);
-
   const modelSelectGroups = useMemo(() => {
     return groupedLocalModels
       .map((group) => {
@@ -759,28 +533,6 @@ export default function ProfilesPage() {
       })
       .filter((g): g is NonNullable<typeof g> => g !== null);
   }, [groupedLocalModels]);
-
-  const selectedModelDisplay = useMemo(() => {
-    if (!editModel) return null;
-    const baseName = editModel.split(/[/\\]/).pop()!;
-    for (const group of modelSelectGroups) {
-      const v = group.variants.find(
-        (v) => v.filename === baseName || v.filename === editModel,
-      );
-      if (v) return { groupName: group.name, ...v };
-    }
-    return null;
-  }, [editModel, modelSelectGroups]);
-
-  const selectedProjectorDisplay = useMemo(() => {
-    if (!editProjector) return null;
-    const baseName = editProjector.split(/[/\\]/).pop()!;
-    return (
-      availableProjectorsForEdit.find(
-        (p) => p.filename === baseName || p.filename === editProjector,
-      ) ?? null
-    );
-  }, [editProjector, availableProjectorsForEdit]);
 
   const categorizedTools = useMemo(() => {
     const categories: Record<string, string[]> = {};
@@ -877,571 +629,14 @@ export default function ProfilesPage() {
                   className={`sp-card ${
                     selectedProfileId === profile.id ? 'sp-card--active' : ''
                   } ${isDragged ? 'sp-card--dragging' : ''}`}
-                  draggable={editingId !== profile.id}
+                  draggable={true}
                   onDragStart={(e) => handleDragStart(e, profile.id)}
                   onDragOver={(e) => handleDragOver(e, profile.id)}
                   onDragLeave={handleDragLeave}
                   onDrop={(e) => handleDrop(e, profile.id)}
                   onDragEnd={handleDragEnd}
                 >
-                  {editingId === profile.id ? (
-                    /* ── Edit Mode ── */
-                    <div className="sp-card__edit">
-                      <EditSection
-                        label="Profile Name"
-                        htmlFor={`edit-name-${profile.id}`}
-                        helper=""
-                        tooltip={[]}
-                      >
-                        <input
-                          id={`edit-name-${profile.id}`}
-                          type="text"
-                          value={editName}
-                          onChange={(e) => setEditName(e.target.value)}
-                          placeholder="Profile name..."
-                          className="sp-card__edit-input"
-                        />
-                      </EditSection>
-
-                      <EditSection
-                        label="Model"
-                        htmlFor={`edit-model-${profile.id}`}
-                        helper=""
-                        tooltip={[]}
-                      >
-                        {availableModelsForEdit.length === 0 ? (
-                          <div className="sp-card__edit-empty">
-                            No models available
-                          </div>
-                        ) : (
-                          <>
-                            <button
-                              type="button"
-                              className={`sp-card__edit-select-trigger${selectedModelDisplay ? ' sp-card__edit-select-trigger--card' : ''}`}
-                              onClick={() => setShowModelModal(true)}
-                            >
-                              {selectedModelDisplay ? (
-                                <div className="sp-card__edit-select-trigger__card">
-                                  <div className="sp-card__edit-select-trigger__card-top">
-                                    <span className="sp-card__edit-select-trigger__card-name">
-                                      {selectedModelDisplay.groupName}
-                                    </span>
-                                    <ChevronDown
-                                      size={16}
-                                      className="sp-card__edit-select-trigger__chevron"
-                                    />
-                                  </div>
-                                  <div className="sp-card__edit-select-trigger__card-bottom">
-                                    <span className="sp-card__edit-select-trigger__card-quant">
-                                      {selectedModelDisplay.quantization.toUpperCase()}
-                                    </span>
-                                    <span className="sp-card__edit-select-trigger__card-size">
-                                      {formatBytes(selectedModelDisplay.sizeBytes)}
-                                    </span>
-                                    <span className="sp-card__edit-select-trigger__card-filename">
-                                      {selectedModelDisplay.filename}
-                                    </span>
-                                  </div>
-                                </div>
-                              ) : (
-                                <div className="sp-card__edit-select-trigger__placeholder">
-                                  <span>No Model Selected</span>
-                                  <ChevronDown
-                                    size={16}
-                                    className="sp-card__edit-select-trigger__chevron"
-                                  />
-                                </div>
-                              )}
-                            </button>
-                            {showModelModal && (
-                              <ModelSelectModal
-                                groups={modelSelectGroups}
-                                selectedFilename={editModel}
-                                onSelect={(f) => {
-                                  handleModelChange(f);
-                                  setShowModelModal(false);
-                                }}
-                                onClose={() => setShowModelModal(false)}
-                              />
-                            )}
-                          </>
-                        )}
-                      </EditSection>
-
-                      {editModel && availableProjectorsForEdit.length > 0 && (
-                        <EditSection
-                          label="Projector (Optional)"
-                          htmlFor={`edit-projector-${profile.id}`}
-                          helper=""
-                          tooltip={[
-                            'Enables vision/image capabilities',
-                            'Only available for compatible models',
-                          ]}
-                        >
-                          <button
-                            type="button"
-                            className={`sp-card__edit-select-trigger${selectedProjectorDisplay ? ' sp-card__edit-select-trigger--card' : ''}`}
-                            onClick={() => setShowProjectorModal(true)}
-                          >
-                            {selectedProjectorDisplay ? (
-                              <div className="sp-card__edit-select-trigger__card">
-                                <div className="sp-card__edit-select-trigger__card-top">
-                                  <span className="sp-card__edit-select-trigger__card-name">
-                                    Projector
-                                  </span>
-                                  <ChevronDown
-                                    size={16}
-                                    className="sp-card__edit-select-trigger__chevron"
-                                  />
-                                </div>
-                                <div className="sp-card__edit-select-trigger__card-bottom">
-                                  <span className="sp-card__edit-select-trigger__card-quant">
-                                    {selectedProjectorDisplay.quantization.toUpperCase()}
-                                  </span>
-                                  <span className="sp-card__edit-select-trigger__card-size">
-                                    {formatBytes(selectedProjectorDisplay.sizeBytes)}
-                                  </span>
-                                  <span className="sp-card__edit-select-trigger__card-filename">
-                                    {selectedProjectorDisplay.filename}
-                                  </span>
-                                </div>
-                              </div>
-                            ) : (
-                              <div className="sp-card__edit-select-trigger__placeholder">
-                                <span>None</span>
-                                <ChevronDown
-                                  size={16}
-                                  className="sp-card__edit-select-trigger__chevron"
-                                />
-                              </div>
-                            )}
-                          </button>
-                          {showProjectorModal && (
-                            <ProjectorSelectModal
-                              projectors={availableProjectorsForEdit}
-                              selectedFilename={editProjector}
-                              onSelect={(f) => {
-                                setEditProjector(f);
-                                setShowProjectorModal(false);
-                              }}
-                              onClose={() => setShowProjectorModal(false)}
-                            />
-                          )}
-                        </EditSection>
-                      )}
-
-                      <CollapsibleSection
-                        title="System Prompt"
-                        defaultOpen
-                        tooltip={[
-                          'Defines AI behavior and personality',
-                          'Sent with every message',
-                          'Guides how the model responds',
-                        ]}
-                      >
-                        <div className="sp-card__collapsible-edit-section">
-                          <textarea
-                            id={`edit-prompt-${profile.id}`}
-                            value={editSystemPrompt}
-                            onChange={(e) =>
-                              setEditSystemPrompt(e.target.value)
-                            }
-                            placeholder="Enter your system prompt here..."
-                            className="sp-card__edit-textarea"
-                            rows={6}
-                          />
-                        </div>
-                      </CollapsibleSection>
-
-                      {/* ── Tools ── */}
-                      <CollapsibleSection
-                        title="Tools"
-                        defaultOpen={false}
-                        tooltip={[
-                          'Choose which built-in tools the AI can use',
-                          'Disabled tools are never passed to the model',
-                          'Changes take effect the next time the profile is loaded',
-                        ]}
-                      >
-                        <div className="sp-card__collapsible-edit-section">
-                          <div className="sp-card__category-cards-container">
-                            {categorizedTools.map(({ category, toolKeys }) => (
-                              <ToolCategoryCard
-                                key={category}
-                                category={category}
-                                toolKeys={toolKeys}
-                                editTools={editTools}
-                                onToolToggle={handleToolToggle}
-                                onCategoryToggle={() => {
-                                  setEditTools((prev) => {
-                                    const allSelected = toolKeys.every((tk) =>
-                                      prev.includes(tk),
-                                    );
-                                    if (allSelected) {
-                                      return prev.filter(
-                                        (t) => !toolKeys.includes(t),
-                                      );
-                                    }
-                                    const newTools = toolKeys.filter(
-                                      (tk) => !prev.includes(tk),
-                                    );
-                                    return [...prev, ...newTools];
-                                  });
-                                }}
-                              />
-                            ))}
-                          </div>
-                        </div>
-                      </CollapsibleSection>
-
-                      {/* ── Advanced Parameters ── */}
-                      <CollapsibleSection
-                        title="Advanced Parameters"
-                        defaultOpen={false}
-                        tooltip={[]}
-                      >
-                        {/* Sampling parameters grid */}
-                        <div className="sp-card__edit-grid">
-                          <EditSection
-                            label="Temperature"
-                            htmlFor={`edit-temp-${profile.id}`}
-                            helper="Default: 0.8"
-                            tooltip={[
-                              'Controls how creative vs. predictable responses are',
-                              '0 = always picks the most likely word (boring, repetitive)',
-                              '0.8 = balanced',
-                              '1.5+ = very creative and unpredictable',
-                              'Higher for creative writing, lower for factual answers',
-                            ]}
-                          >
-                            <input
-                              id={`edit-temp-${profile.id}`}
-                              type="number"
-                              value={editTemperature}
-                              onChange={(e) =>
-                                setEditTemperature(e.target.value)
-                              }
-                              min="0"
-                              max="2"
-                              step="0.1"
-                              className="sp-card__edit-input"
-                            />
-                          </EditSection>
-
-                          <EditSection
-                            label="Top K"
-                            htmlFor={`edit-topk-${profile.id}`}
-                            helper="Default: 40"
-                            tooltip={[
-                              'Limits choices to the K most likely next words',
-                              'Only used when Temperature > 0',
-                              '40 = pick from top 40 candidates',
-                              '0 = disable (consider all words)',
-                              'Higher = more variety, lower = more focused',
-                            ]}
-                          >
-                            <input
-                              id={`edit-topk-${profile.id}`}
-                              type="number"
-                              value={editTopK}
-                              onChange={(e) => setEditTopK(e.target.value)}
-                              min="0"
-                              step="1"
-                              className="sp-card__edit-input"
-                            />
-                          </EditSection>
-
-                          <EditSection
-                            label="Top P"
-                            htmlFor={`edit-topp-${profile.id}`}
-                            helper="Default: 0.95"
-                            tooltip={[
-                              'Picks words until reaching a probability threshold',
-                              'Only used when Temperature > 0',
-                              '0.95 = keep picking until 95% probability is reached',
-                              '1 = disable (consider all words)',
-                              'Lower = more focused, higher = more variety',
-                            ]}
-                          >
-                            <input
-                              id={`edit-topp-${profile.id}`}
-                              type="number"
-                              value={editTopP}
-                              onChange={(e) => setEditTopP(e.target.value)}
-                              min="0"
-                              max="1"
-                              step="0.05"
-                              className="sp-card__edit-input"
-                            />
-                          </EditSection>
-
-                          <EditSection
-                            label="Min P"
-                            htmlFor={`edit-minp-${profile.id}`}
-                            helper="Default: 0.05"
-                            tooltip={[
-                              'Removes unlikely words to improve quality',
-                              'Only used when Temperature > 0',
-                              '0.05 = discard the worst 5% of word choices',
-                              'Helps prevent weird or nonsensical outputs',
-                              'Range: 0-1 (0 = disabled)',
-                            ]}
-                          >
-                            <input
-                              id={`edit-minp-${profile.id}`}
-                              type="number"
-                              value={editMinP}
-                              onChange={(e) => setEditMinP(e.target.value)}
-                              min="0"
-                              max="1"
-                              step="0.01"
-                              className="sp-card__edit-input"
-                            />
-                          </EditSection>
-
-                          <EditSection
-                            label="Seed"
-                            htmlFor={`edit-seed-${profile.id}`}
-                            helper="Default: -1 (random)"
-                            tooltip={[
-                              'Makes responses reproducible',
-                              'Only used when Temperature > 0',
-                              '-1 = different response every time',
-                              'Same seed = identical outputs',
-                              'Use when you need consistent behavior',
-                            ]}
-                          >
-                            <input
-                              id={`edit-seed-${profile.id}`}
-                              type="number"
-                              value={editSeed}
-                              onChange={(e) => setEditSeed(e.target.value)}
-                              min="0"
-                              step="1"
-                              className="sp-card__edit-input"
-                            />
-                          </EditSection>
-                        </div>
-
-                        {/* ── Repeat Penalty nested collapsible ── */}
-                        <div style={{ marginTop: '12px' }}>
-                          <CollapsibleSection
-                            title="Repeat Penalty"
-                            defaultOpen={false}
-                            tooltip={[
-                              'Discourages the model from repeating recent tokens',
-                              'Uncheck Enabled to fully disable (passes false to the engine)',
-                              'Leave numeric fields blank to use library defaults',
-                            ]}
-                          >
-                            <div className="sp-card__collapsible-edit-section">
-                              {/* Enabled toggle */}
-                              <div
-                                className="sp-card__edit-section"
-                                style={{ marginBottom: '12px' }}
-                              >
-                                <label
-                                  className="sp-card__label-row"
-                                  style={{
-                                    cursor: 'pointer',
-                                    userSelect: 'none',
-                                  }}
-                                >
-                                  <input
-                                    type="checkbox"
-                                    className="sp-card__tool-checkbox"
-                                    checked={editRpEnabled}
-                                    onChange={(e) =>
-                                      setEditRpEnabled(e.target.checked)
-                                    }
-                                  />
-                                  <div className="sp-card__label-with-tooltip">
-                                    <span
-                                      style={{
-                                        fontSize: '13px',
-                                        fontWeight: 600,
-                                        color: 'var(--text-primary)',
-                                      }}
-                                    >
-                                      Enabled
-                                    </span>
-                                    <div className="sp-card__tooltip-wrapper">
-                                      <Info
-                                        size={14}
-                                        className="sp-card__info-icon"
-                                      />
-                                      <div className="sp-card__tooltip">
-                                        <div className="sp-card__tooltip-title">
-                                          Enabled
-                                        </div>
-                                        <ul className="sp-card__tooltip-list">
-                                          <li>
-                                            When unchecked, repeat penalty is
-                                            fully disabled
-                                          </li>
-                                          <li>
-                                            Passes{' '}
-                                            <code>repeatPenalty: false</code> to
-                                            the engine
-                                          </li>
-                                          <li>
-                                            All sub-fields below are ignored
-                                            when disabled
-                                          </li>
-                                        </ul>
-                                      </div>
-                                    </div>
-                                  </div>
-                                </label>
-                              </div>
-
-                              {/* Sub-fields — greyed out when disabled */}
-                              <div
-                                className={
-                                  !editRpEnabled
-                                    ? 'sp-card__repeat-penalty-fields--disabled'
-                                    : undefined
-                                }
-                              >
-                                <div className="sp-card__edit-grid">
-                                  {/* Last Tokens */}
-                                  <EditSection
-                                    label="Last Tokens"
-                                    htmlFor={`edit-rp-lasttokens-${profile.id}`}
-                                    helper="Default: 64"
-                                    tooltip={[
-                                      'Number of recent tokens to apply penalties to',
-                                      'Higher = penalises repetition over a longer window',
-                                      'Set to 0 to disable',
-                                      'Set to -1 for entire context',
-                                    ]}
-                                  >
-                                    <input
-                                      id={`edit-rp-lasttokens-${profile.id}`}
-                                      type="number"
-                                      className="sp-card__edit-input"
-                                      placeholder="64"
-                                      min={1}
-                                      step={1}
-                                      value={editRpLastTokens}
-                                      onChange={(e) =>
-                                        setEditRpLastTokens(e.target.value)
-                                      }
-                                    />
-                                  </EditSection>
-
-                                  {/* Repeat Penalty */}
-                                  <EditSection
-                                    label="Repeat Penalty"
-                                    htmlFor={`edit-rp-penalty-${profile.id}`}
-                                    helper="Default: 1.00  •  1 = off"
-                                    tooltip={[
-                                      'Multiplier applied to repeated token probabilities',
-                                      '1.10 = repeated tokens are 10% less likely',
-                                      'Set to 1 to disable this specific multiplier',
-                                    ]}
-                                  >
-                                    <input
-                                      id={`edit-rp-penalty-${profile.id}`}
-                                      type="number"
-                                      className="sp-card__edit-input"
-                                      placeholder="1.0"
-                                      min={0}
-                                      step={0.01}
-                                      value={editRpPenalty}
-                                      onChange={(e) =>
-                                        setEditRpPenalty(e.target.value)
-                                      }
-                                    />
-                                  </EditSection>
-
-                                  {/* Frequency Penalty */}
-                                  <EditSection
-                                    label="Frequency Penalty"
-                                    htmlFor={`edit-rp-freq-${profile.id}`}
-                                    helper="Default: 0.00  •  range 0–1"
-                                    tooltip={[
-                                      'Scales penalty by how many times a token appeared',
-                                      'A token seen N times is penalised N × frequencyPenalty',
-                                      '0.0 = disabled',
-                                      'Range: 0 to 1',
-                                    ]}
-                                  >
-                                    <input
-                                      id={`edit-rp-freq-${profile.id}`}
-                                      type="number"
-                                      className="sp-card__edit-input"
-                                      placeholder="0.00"
-                                      min={0}
-                                      max={1}
-                                      step={0.01}
-                                      value={editRpFrequencyPenalty}
-                                      onChange={(e) =>
-                                        setEditRpFrequencyPenalty(
-                                          e.target.value,
-                                        )
-                                      }
-                                    />
-                                  </EditSection>
-
-                                  {/* Presence Penalty */}
-                                  <EditSection
-                                    label="Presence Penalty"
-                                    htmlFor={`edit-rp-presence-${profile.id}`}
-                                    helper="Default: 0.00  •  range 0–1"
-                                    tooltip={[
-                                      'Flat penalty for any token that has already appeared',
-                                      'Applied once regardless of how many times it appeared',
-                                      '0.0 = disabled (default)',
-                                      'Range: 0 to 1',
-                                    ]}
-                                  >
-                                    <input
-                                      id={`edit-rp-presence-${profile.id}`}
-                                      type="number"
-                                      className="sp-card__edit-input"
-                                      placeholder="0"
-                                      min={0}
-                                      max={1}
-                                      step={0.01}
-                                      value={editRpPresencePenalty}
-                                      onChange={(e) =>
-                                        setEditRpPresencePenalty(e.target.value)
-                                      }
-                                    />
-                                  </EditSection>
-                                </div>
-                              </div>
-                              {/* end sub-fields wrapper */}
-                            </div>
-                          </CollapsibleSection>
-                        </div>
-                        {/* end repeat penalty wrapper */}
-                      </CollapsibleSection>
-                      {/* end Advanced Parameters */}
-
-                      <div className="sp-card__edit-actions">
-                        <button
-                          type="button"
-                          className="btn-secondary"
-                          onClick={handleCancelEdit}
-                          aria-label="Cancel editing"
-                        >
-                          <X size={14} />
-                          Cancel
-                        </button>
-                        <button
-                          type="button"
-                          className="btn-accent"
-                          onClick={handleSaveEdit}
-                          disabled={!editName.trim() || !editModel}
-                          aria-label="Save profile"
-                        >
-                          Save
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
+                  {(
                     /* ── View Mode ── */
                     <div className="sp-card__view">
                       <div className="sp-card__grip-handle">
@@ -1603,6 +798,20 @@ export default function ProfilesPage() {
           </div>
         )}
       </div>
+
+      {showEditModal && (
+        <EditProfileModal
+          profile={editingProfile}
+          profiles={profiles}
+          localModels={localModels}
+          modelSelectGroups={modelSelectGroups}
+          availableModelsForEdit={availableModelsForEdit}
+          groupedLocalModels={groupedLocalModels}
+          categorizedTools={categorizedTools}
+          onSave={handleSaveProfile}
+          onClose={handleCancelEdit}
+        />
+      )}
     </div>
   );
 }
