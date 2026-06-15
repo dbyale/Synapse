@@ -241,9 +241,9 @@ interface LocalModelGroup {
 function extractQuantizationFromFilename(filename: string): string {
   const cleanFilename = filename.replace(/^mmproj-/i, '');
   const match = cleanFilename.match(
-    /-(Q\d+_K|f\d+|Q\d+|I\d+|A\d+B)(?:\.gguf)?$/i,
+    /-?(Q\d+_K|F\d+|f\d+|Q\d+|q\d+|I\d+|A\d+B|BF\d+)(?:\.gguf)?$/i,
   );
-  return match ? match[1] : 'Unknown';
+  return match ? match[1].toUpperCase() : 'Unknown';
 }
 
 export default function ProfilesPage() {
