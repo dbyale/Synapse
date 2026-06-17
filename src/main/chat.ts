@@ -208,10 +208,6 @@ export async function preloadSystemPrompt(
   }) => void,
   onDone?: (stats: GenerationStats, toolCount: number) => void,
 ): Promise<void> {
-  console.log(
-    `[chat] preloadSystemPrompt starting, tools: ${tools.length}, prompt length: ${systemPrompt.length}`,
-  );
-
   if (preloadAbortController) preloadAbortController.abort();
   preloadAbortController = new AbortController();
   const { signal } = preloadAbortController;
@@ -241,13 +237,6 @@ export async function preloadSystemPrompt(
     } else {
       promptStats = { tokens: 0, timeMs: 0, tokensPerSecond: 0 };
     }
-    console.log(
-      '[chat] preload emitDone:',
-      promptStats.tokens,
-      'tokens,',
-      promptStats.timeMs,
-      'ms',
-    );
     onDone(promptStats, tools.length);
   };
 
@@ -279,7 +268,6 @@ export async function preloadSystemPrompt(
     timeout.removeEventListener('abort', abortCombined);
 
     if (!res.body) {
-      console.log('[chat] preloadSystemPrompt: no response body');
       return;
     }
     const reader = res.body.getReader();
@@ -289,7 +277,6 @@ export async function preloadSystemPrompt(
       while (true) {
         const { done, value } = await reader.read();
         if (done) {
-          console.log('[chat] preload stream: reader done');
           break;
         }
 
@@ -300,7 +287,6 @@ export async function preloadSystemPrompt(
           if (!line.startsWith('data: ')) continue;
           const dataStr = line.slice(6).trim();
           if (dataStr === '[DONE]') {
-            console.log('[chat] preload stream: [DONE] received');
             emitDone();
             break;
           }
@@ -315,9 +301,6 @@ export async function preloadSystemPrompt(
                 total > 0
                   ? Math.min(100, Math.round((processed / total) * 100))
                   : 0;
-              console.log(
-                `[chat] preload progress: ${pct}% (${processed}/${total})`,
-              );
               if (onProgress) {
                 onProgress({
                   progress: pct,
@@ -334,7 +317,6 @@ export async function preloadSystemPrompt(
                   timeMs: time_ms || 0,
                   tokensPerSecond: timeS > 0 ? newTokens / timeS : 0,
                 };
-                console.log('[chat] preload done from progress:', promptStats);
                 if (onDone) onDone(promptStats, tools.length);
               }
               continue;
@@ -347,11 +329,9 @@ export async function preloadSystemPrompt(
                 tokensPerSecond: data.timings?.prompt_per_second || 0,
               };
               promptStats = pFromUsage;
-              console.log('[chat] preload done from usage:', promptStats);
               if (onDone) onDone(pFromUsage, tools.length);
             }
           } catch (e) {
-            console.log('[chat] preload parse error:', e);
           }
         }
       }
@@ -362,7 +342,6 @@ export async function preloadSystemPrompt(
     }
   } catch (e: any) {
     if (e?.name === 'AbortError') {
-      console.log('[chat] preload aborted');
     } else {
       console.error('[chat] preload error:', e?.message ?? e);
     }
@@ -409,26 +388,40 @@ export async function loadProfile(
     let result: { ngl: number; ctx: number; memory: any };
     let updatedProfile: any;
 
-    if (
-      profile.autoOptimizer &&
+    const autoOptimizer = (profile as any).autoOptimizer;
+    const hasValidCustom =
+      autoOptimizer === 'custom' &&
+      typeof (profile as any).layers === 'number' &&
+      typeof (profile as any).contextSize === 'number';
+    const hasValidCached =
+      autoOptimizer &&
+      autoOptimizer !== 'custom' &&
       typeof (profile as any).layers === 'number' &&
       typeof (profile as any).contextSize === 'number' &&
       (profile as any).allocatedVRAM === vramMB &&
-      (profile as any).allocatedRAM === ramMB
-    ) {
+      (profile as any).allocatedRAM === ramMB;
+
+    if (hasValidCustom || hasValidCached) {
       result = {
         ngl: (profile as any).layers,
         ctx: (profile as any).contextSize,
         memory: null,
       };
     } else {
-      const mode = (profile as any).autoOptimizer || 'longest-context';
+      const mode =
+        autoOptimizer && autoOptimizer !== 'custom'
+          ? autoOptimizer
+          : 'longest-context';
       const optResult = await getOrRunOptimizer(
         fullModelPath,
         vramMB,
         ramMB,
         mode === 'most-gpu',
         fullProjectorPath,
+        (profile as any).kvOffload ?? true,
+        (profile as any).mmap ?? true,
+        (profile as any).cacheTypeK ?? 'f16',
+        (profile as any).cacheTypeV ?? 'f16',
       );
       result = optResult;
       (profile as any).layers = optResult.ngl;
@@ -473,6 +466,9 @@ export async function loadProfile(
       '1',
       '--metrics',
     ];
+    if (profile.kvOffload === false) spawnArgs.push('--no-kv-offload');
+    if (profile.mmap === false) spawnArgs.push('--no-mmap');
+    if (profile.mlock === true) spawnArgs.push('--mlock');
 
     if (fullProjectorPath) {
       spawnArgs.push('--mmproj', fullProjectorPath);
@@ -481,6 +477,7 @@ export async function loadProfile(
       currentProjector = null;
     }
 
+    console.log(`NGL=${result.ngl}, Context=${result.ctx}, autoOptimizer=${(profile as any).autoOptimizer}`);
     onStatus?.({ phase: 'starting', message: 'Loading AI Model…' });
     serverProcess = spawn(serverPath, spawnArgs);
 

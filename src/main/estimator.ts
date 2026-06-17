@@ -44,8 +44,8 @@ export async function solveMaxConfig(
   ctk: string = 'f16',
   ctv: string = 'f16',
   flashAttention: boolean = false,
-  noKvOffload: boolean = true,
-  mmap: boolean = false,
+  noKvOffload: boolean = false,
+  mmap: boolean = true,
   maximizeNGL: boolean = false,
   projectorPath?: string,
 ): Promise<MemoryEstimation> {
@@ -197,6 +197,173 @@ Hardware Utilization:
   };
 }
 
+// ── Model Metadata ──
+
+export async function getModelMetadata(
+  modelPath: string,
+  projectorPath?: string,
+): Promise<{ maxLayers: number; maxContext: number } | null> {
+  const data = await runGGUFParser(modelPath, 0, 512, projectorPath);
+  if (!data?.architecture) return null;
+  return {
+    maxLayers: data.architecture.blockCount || 0,
+    maxContext: data.architecture.maximumContextLength || 4096,
+  };
+}
+
+// ── Standalone parser call ──
+
+export async function runGGUFParser(
+  modelPath: string,
+  ngl: number,
+  ctx: number,
+  projectorPath?: string,
+  kvOffload: boolean = true,
+  mmap: boolean = true,
+  cacheTypeK: string = 'f16',
+  cacheTypeV: string = 'f16',
+): Promise<any> {
+  const args = [
+    '--path',
+    modelPath,
+    '--ngl',
+    ngl.toString(),
+    '--ctx-size',
+    ctx.toString(),
+    '--cache-type-k',
+    cacheTypeK,
+    '--cache-type-v',
+    cacheTypeV,
+    '--json',
+  ];
+  if (!kvOffload) args.push('--no-kv-offload');
+  if (!mmap) args.push('--no-mmap');
+  if (projectorPath) args.push('--mmproj', projectorPath);
+
+  try {
+    const { stdout } = await execFileAsync(getParserPath(), args);
+    console.log('[gguf-parser]', args.join(' '));
+    return JSON.parse(stdout);
+  } catch (e) {
+    console.error('gguf-parser execution failed');
+    console.error('Parser path:', getParserPath());
+    console.error('Arguments:', args);
+    console.error('Error:', e instanceof Error ? e.message : String(e));
+    if (e && typeof e === 'object' && 'stderr' in e) {
+      console.error('Stderr:', (e as any).stderr);
+    }
+    return null;
+  }
+}
+
+export async function estimateMemoryAtConfig(
+  modelPath: string,
+  ngl: number,
+  ctx: number,
+  projectorPath?: string,
+  kvOffload: boolean = true,
+  mmap: boolean = true,
+  cacheTypeK: string = 'f16',
+  cacheTypeV: string = 'f16',
+): Promise<{
+  modelVramUsage: number;
+  contextVramUsage: number;
+  computeOverheadVram: number;
+  modelRamUsage: number;
+  contextRamUsage: number;
+  computeOverheadRam: number;
+  fileBufferRam: number;
+}> {
+  const [fullData, modelData, baseData] = await Promise.all([
+    runGGUFParser(modelPath, ngl, ctx, projectorPath, true, mmap, cacheTypeK, cacheTypeV),
+    runGGUFParser(modelPath, ngl, 1, projectorPath, true, mmap, cacheTypeK, cacheTypeV),
+    runGGUFParser(modelPath, 0, 1, projectorPath, true, mmap, cacheTypeK, cacheTypeV),
+  ]);
+  if (!fullData) {
+    return {
+      modelVramUsage: 0,
+      contextVramUsage: 0,
+      computeOverheadVram: 0,
+      modelRamUsage: 0,
+      contextRamUsage: 0,
+      computeOverheadRam: 0,
+      fileBufferRam: 0,
+    };
+  }
+  const total = extractTotals(fullData);
+  const withWeights = modelData ? extractTotals(modelData) : { vram: 0, ram: 0 };
+  const base = baseData ? extractTotals(baseData) : { vram: 0, ram: 0 };
+
+  let coV = base.vram;
+  let coR = base.vram;
+  let mwV = Math.max(0, withWeights.vram - base.vram);
+  let mwR = Math.max(0, withWeights.ram - base.vram);
+  let kvV = Math.max(0, total.vram - withWeights.vram);
+  let kvR = Math.max(0, total.ram - withWeights.ram);
+
+  // When KV cache offload is disabled, move KV cache from VRAM to RAM
+  if (!kvOffload) {
+    kvR += kvV;
+    kvV = 0;
+  }
+
+  // With --no-mmap, the OS reads the entire model file into a heap buffer
+  // that persists for the process lifetime. The parser's ram.nonuma doesn't
+  // track this, so we estimate it from the VRAM model weights.
+  const fileBuffer = !mmap ? mwV : 0;
+
+  return {
+    computeOverheadVram: coV,
+    computeOverheadRam: coR,
+    modelVramUsage: mwV,
+    modelRamUsage: mwR,
+    contextVramUsage: kvV,
+    contextRamUsage: kvR,
+    fileBufferRam: fileBuffer,
+  };
+}
+
+// ── Shared estimate cache ──
+// Deduplicates in-flight memory estimates and caches results per param set.
+
+const memoryEstimateCache = new Map<string, Promise<any>>();
+
+function estimateCacheKey(
+  modelPath: string,
+  ngl: number,
+  ctx: number,
+  projectorPath?: string,
+  kvOffload: boolean = true,
+  mmap: boolean = true,
+  cacheTypeK: string = 'f16',
+  cacheTypeV: string = 'f16',
+): string {
+  return `${modelPath}|${ngl}|${ctx}|${projectorPath ?? ''}|${kvOffload}|${mmap}|${cacheTypeK}|${cacheTypeV}`;
+}
+
+export async function getOrEstimateMemory(
+  modelPath: string,
+  ngl: number,
+  ctx: number,
+  projectorPath?: string,
+  kvOffload: boolean = true,
+  mmap: boolean = true,
+  cacheTypeK: string = 'f16',
+  cacheTypeV: string = 'f16',
+) {
+  const key = estimateCacheKey(modelPath, ngl, ctx, projectorPath, kvOffload, mmap, cacheTypeK, cacheTypeV);
+  const existing = memoryEstimateCache.get(key);
+  if (existing) return existing;
+
+  const promise = estimateMemoryAtConfig(modelPath, ngl, ctx, projectorPath, kvOffload, mmap, cacheTypeK, cacheTypeV);
+  memoryEstimateCache.set(key, promise);
+  try {
+    return await promise;
+  } finally {
+    memoryEstimateCache.delete(key);
+  }
+}
+
 // ── Shared optimizer state ──
 // Allows chat.ts to wait for an in-flight optimization started by the renderer.
 
@@ -208,6 +375,10 @@ export async function getOrRunOptimizer(
   ramMB: number,
   maximizeNGL: boolean = false,
   projectorPath?: string,
+  kvOffload: boolean = true,
+  mmap: boolean = true,
+  cacheTypeK: string = 'f16',
+  cacheTypeV: string = 'f16',
 ): Promise<MemoryEstimation> {
   const existing = pendingOptimizations.get(modelPath);
   if (existing) return existing;
@@ -216,11 +387,11 @@ export async function getOrRunOptimizer(
     modelPath,
     vramMB,
     ramMB,
+    cacheTypeK,
+    cacheTypeV,
     undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
+    !kvOffload,
+    mmap,
     maximizeNGL,
     projectorPath,
   );

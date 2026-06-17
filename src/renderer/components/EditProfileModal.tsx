@@ -1,18 +1,22 @@
-import { useState, MouseEvent, KeyboardEvent } from 'react';
+import { useState, useEffect, useRef, useCallback, MouseEvent, KeyboardEvent } from 'react';
 import {
   X,
   ChevronLeft,
   ChevronRight,
   ChevronDown,
-  ChevronUp,
   MessageSquare,
   Wrench,
   Settings,
   PackageCheck,
   PackageMinus,
   Loader2,
+  Zap,
+  FileText,
+  Flame,
+  SlidersHorizontal,
+  AlertTriangle,
 } from 'lucide-react';
-import { Profile } from '../types/profile';
+import { Profile, CacheType } from '../types/profile';
 import type { LocalModel } from '../preload.d';
 import { AVAILABLE_TOOLS, TOOL_METADATA } from '../../data/defaultTools';
 import { formatBytes } from '../utils/formatters';
@@ -62,6 +66,7 @@ const PAGE_DEPTH: Record<string, number> = {
   tools: 1,
   advanced: 1,
   'repeat-penalty': 2,
+  performance: 1,
 };
 
 const BREADCRUMB_MAP: Record<string, { label: string; parent: string | null }> =
@@ -71,6 +76,7 @@ const BREADCRUMB_MAP: Record<string, { label: string; parent: string | null }> =
     tools: { label: 'Tools', parent: 'main' },
     advanced: { label: 'Advanced Parameters', parent: 'main' },
     'repeat-penalty': { label: 'Repeat Penalty', parent: 'advanced' },
+    performance: { label: 'Performance', parent: 'main' },
   };
 
 function buildBreadcrumb(page: string): Array<{ key: string; label: string }> {
@@ -168,6 +174,9 @@ function ToolCategoryCard({
 
 // ── Page content components ──
 
+const autoOptimizerLabel = (v: 'longest-context' | 'most-gpu' | 'custom') =>
+  v === 'longest-context' ? 'Longest Context' : v === 'most-gpu' ? 'Most GPU' : 'Custom';
+
 function MainPage({
   editName,
   setEditName,
@@ -185,8 +194,8 @@ function MainPage({
   editAutoOptimizer,
   editLayers,
   editContextSize,
-  optimizerRunning,
-  onRunOptimizer,
+  modelMaxLayers,
+  modelMaxContext,
 }: {
   editName: string;
   setEditName: (v: string) => void;
@@ -214,11 +223,11 @@ function MainPage({
   systemPromptPreview: string;
   toolsPreview: string;
   advancedPreview: string;
-  editAutoOptimizer: 'longest-context' | 'most-gpu' | null;
+  editAutoOptimizer: 'longest-context' | 'most-gpu' | 'custom' | null;
   editLayers: number | undefined;
   editContextSize: number | undefined;
-  optimizerRunning: 'longest-context' | 'most-gpu' | null;
-  onRunOptimizer: (mode: 'longest-context' | 'most-gpu') => void;
+  modelMaxLayers: number;
+  modelMaxContext: number;
 }) {
   return (
     <div className="epm-main-grid">
@@ -337,60 +346,20 @@ function MainPage({
           </div>
         )}
 
-        {/* Performance Options */}
-        <div className="epm-section">
-          <div className="epm-section__label">Performance</div>
-          <div className="epm-perf-toggle-group">
-            <button
-              type="button"
-              className={`epm-perf-toggle${editAutoOptimizer === 'longest-context' ? ' epm-perf-toggle--active' : ''}${optimizerRunning === 'longest-context' ? ' epm-perf-toggle--loading' : ''}`}
-              onClick={() => {
-                if (
-                  optimizerRunning ||
-                  (editAutoOptimizer === 'longest-context' &&
-                    editLayers !== undefined)
-                )
-                  return;
-                onRunOptimizer('longest-context');
-              }}
-              disabled={!!optimizerRunning}
-            >
-              {optimizerRunning === 'longest-context' ? (
-                <Loader2 size={16} className="epm-perf-spinner" />
-              ) : (
-                <ChevronUp size={16} />
-              )}
-              <span>Longest Context</span>
-            </button>
-            <button
-              type="button"
-              className={`epm-perf-toggle${editAutoOptimizer === 'most-gpu' ? ' epm-perf-toggle--active' : ''}${optimizerRunning === 'most-gpu' ? ' epm-perf-toggle--loading' : ''}`}
-              onClick={() => {
-                if (
-                  optimizerRunning ||
-                  (editAutoOptimizer === 'most-gpu' && editLayers !== undefined)
-                )
-                  return;
-                onRunOptimizer('most-gpu');
-              }}
-              disabled={!!optimizerRunning}
-            >
-              {optimizerRunning === 'most-gpu' ? (
-                <Loader2 size={16} className="epm-perf-spinner" />
-              ) : (
-                <ChevronDown size={16} />
-              )}
-              <span>Most GPU</span>
-            </button>
-          </div>
-          {editAutoOptimizer &&
-            editLayers !== undefined &&
-            editContextSize !== undefined && (
-              <div className="epm-perf-result">
-                {editLayers} GPU layers &middot; {editContextSize} context
-              </div>
-            )}
-        </div>
+        {editModel && (
+          <SectionCard
+            icon={<Zap size={20} />}
+            title="Performance"
+            preview={
+              editAutoOptimizer && editLayers !== undefined && editContextSize !== undefined
+                ? `${autoOptimizerLabel(editAutoOptimizer)}: ${Math.round((editLayers / modelMaxLayers) * 100)}% Offload, ${Math.round((editContextSize / modelMaxContext) * 100)}% Context`
+                : editAutoOptimizer
+                  ? 'Optimizing\u2026'
+                  : 'Not configured'
+            }
+            onClick={() => onNavigate('performance')}
+          />
+        )}
       </div>
 
       <div className="epm-main-right">
@@ -750,6 +719,502 @@ function extractQuantizationFromFilename(filename: string): string {
   return match ? match[1].toUpperCase() : 'Unknown';
 }
 
+const CACHE_TYPE_OPTIONS: CacheType[] = ['f32', 'bf16', 'f16', 'q8_0', 'q5_1', 'q5_0', 'iq4_nl', 'q4_1', 'q4_0'];
+
+function CacheTypeSelector({ label, value, onChange }: { label: string; value: CacheType; onChange: (v: CacheType) => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClick(e: Event) {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
+  return (
+    <div className="epm-cache-selector" ref={ref}>
+      <span className="epm-cache-selector-label">{label}</span>
+      <div className="epm-cache-selector-wrap">
+        <button
+          className="epm-cache-selector-trigger"
+          onClick={() => setOpen(!open)}
+          type="button"
+        >
+          {value}
+          <ChevronDown size={13} />
+        </button>
+        {open && (
+          <div className="epm-cache-selector-dropdown">
+            {CACHE_TYPE_OPTIONS.map((t) => (
+              <button
+                key={t}
+                className={`epm-cache-selector-option${t === value ? ' epm-cache-selector-option--active' : ''}`}
+                onClick={() => { onChange(t); setOpen(false); }}
+                type="button"
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Performance Page (sub-page) ──
+
+function PerformancePage({
+  editAutoOptimizer,
+  editLayers,
+  editContextSize,
+  editKvOffload,
+  editCacheTypeK,
+  editCacheTypeV,
+  editMmap,
+  editMlock,
+  optimizerRunning,
+  modelMaxLayers,
+  modelMaxContext,
+  totalVRAM,
+  totalRAM,
+  onSetAutoOptimizer,
+  onSetLayers,
+  onSetContextSize,
+  onSetKvOffload,
+  onSetCacheTypeK,
+  onSetCacheTypeV,
+  onSetMmap,
+  onSetMlock,
+  onRunOptimizer,
+  onEstimateMemory,
+  initialEstimate,
+}: {
+  editAutoOptimizer: 'longest-context' | 'most-gpu' | 'custom' | null;
+  editLayers: number | undefined;
+  editContextSize: number | undefined;
+  editKvOffload: boolean;
+  editCacheTypeK: CacheType;
+  editCacheTypeV: CacheType;
+  editMmap: boolean;
+  editMlock: boolean;
+  optimizerRunning: 'longest-context' | 'most-gpu' | null;
+  modelMaxLayers: number;
+  modelMaxContext: number;
+  totalVRAM: number;
+  totalRAM: number;
+  onSetAutoOptimizer: (
+    v: 'longest-context' | 'most-gpu' | 'custom' | null,
+  ) => void;
+  onSetLayers: (v: number | undefined) => void;
+  onSetContextSize: (v: number | undefined) => void;
+  onSetKvOffload: (v: boolean) => void;
+  onSetCacheTypeK: (v: CacheType) => void;
+  onSetCacheTypeV: (v: CacheType) => void;
+  onSetMmap: (v: boolean) => void;
+  onSetMlock: (v: boolean) => void;
+  onRunOptimizer: (mode: 'longest-context' | 'most-gpu') => void;
+  onEstimateMemory: (
+    ngl: number,
+    ctx: number,
+    kvOffload?: boolean,
+    mmap?: boolean,
+    cacheTypeK?: CacheType,
+    cacheTypeV?: CacheType,
+  ) => Promise<{
+    modelVramUsage: number;
+    contextVramUsage: number;
+    computeOverheadVram: number;
+    modelRamUsage: number;
+    contextRamUsage: number;
+    computeOverheadRam: number;
+    fileBufferRam: number;
+  } | null>;
+  initialEstimate: {
+    modelVramUsage: number;
+    contextVramUsage: number;
+    computeOverheadVram: number;
+    modelRamUsage: number;
+    contextRamUsage: number;
+    computeOverheadRam: number;
+    fileBufferRam: number;
+  } | null;
+}) {
+  const isAuto =
+    editAutoOptimizer !== null &&
+    editAutoOptimizer !== undefined &&
+    editAutoOptimizer !== 'custom';
+  const sliderNgl = isAuto ? editLayers ?? 0 : (editLayers ?? 0);
+  const sliderCtx = isAuto ? editContextSize ?? 512 : (editContextSize ?? 512);
+
+  const [memory, setMemory] = useState<{
+    modelVramUsage: number;
+    contextVramUsage: number;
+    computeOverheadVram: number;
+    modelRamUsage: number;
+    contextRamUsage: number;
+    computeOverheadRam: number;
+    fileBufferRam: number;
+  } | null>(initialEstimate);
+  const activeLayers = isAuto ? (editLayers ?? 0) : sliderNgl;
+  const activeCtx = isAuto ? (editContextSize ?? 512) : sliderCtx;
+
+  const triggerEstimate = useCallback(
+    async (ngl: number, ctx: number, kvOffload?: boolean, mmap?: boolean, cacheTypeK?: CacheType, cacheTypeV?: CacheType) => {
+      if (ngl < 0 || ctx < 512) return;
+      const result = await onEstimateMemory(ngl, ctx, kvOffload, mmap, cacheTypeK, cacheTypeV);
+      setMemory(result);
+    },
+    [onEstimateMemory],
+  );
+
+  const prevOptimizerRunning = useRef(optimizerRunning);
+  useEffect(() => {
+    if (prevOptimizerRunning.current && !optimizerRunning) {
+      triggerEstimate(activeLayers, activeCtx);
+    }
+    prevOptimizerRunning.current = optimizerRunning;
+  }, [optimizerRunning, activeLayers, activeCtx, triggerEstimate]);
+
+  const toGB = (bytes: number) => (bytes / 1024 ** 3).toFixed(2);
+
+  const vramOverheadPct = totalVRAM > 0 ? (memory?.computeOverheadVram ?? 0) / totalVRAM : 0;
+  const vramModelPct = totalVRAM > 0 ? (memory?.modelVramUsage ?? 0) / totalVRAM : 0;
+  const vramCtxPct = totalVRAM > 0 ? (memory?.contextVramUsage ?? 0) / totalVRAM : 0;
+  const ramOverheadPct = totalRAM > 0 ? (memory?.computeOverheadRam ?? 0) / totalRAM : 0;
+  const ramModelPct = totalRAM > 0 ? (memory?.modelRamUsage ?? 0) / totalRAM : 0;
+  const ramBufferPct = totalRAM > 0 ? (memory?.fileBufferRam ?? 0) / totalRAM : 0;
+  const ramCtxPct = totalRAM > 0 ? (memory?.contextRamUsage ?? 0) / totalRAM : 0;
+  const vramFreePct = Math.max(0, 1 - vramOverheadPct - vramModelPct - vramCtxPct);
+  const ramFreePct = Math.max(0, 1 - ramOverheadPct - ramModelPct - ramBufferPct - ramCtxPct);
+
+  const showVram = totalVRAM > 0 && memory !== null;
+  const showRam = totalRAM > 0 && memory !== null;
+
+  return (
+    <>
+      <h2 className="epm-page-title">Performance</h2>
+      <p
+        style={{
+          fontSize: '14px',
+          color: 'var(--text-secondary)',
+          margin: '0 0 20px',
+          lineHeight: 1.5,
+        }}
+      >
+        Configure GPU layers and context size. Use the auto-optimizer or set
+        custom values.
+      </p>
+
+      {/* Three toggle buttons */}
+      <div className="epm-section">
+        <div className="epm-section__label">Optimization Mode</div>
+        <div className="epm-perf-three-toggle">
+          <button
+            type="button"
+            className={`epm-perf-btn${editAutoOptimizer === 'longest-context' ? ' epm-perf-btn--active' : ''}${optimizerRunning === 'longest-context' ? ' epm-perf-btn--loading' : ''}`}
+            onClick={() => {
+              if (optimizerRunning) return;
+              onRunOptimizer('longest-context');
+            }}
+            disabled={!!optimizerRunning}
+          >
+            {optimizerRunning === 'longest-context' ? (
+              <Loader2 size={16} className="epm-perf-spinner" />
+            ) : (
+              <FileText size={16} />
+            )}
+            <span>Longest Context</span>
+          </button>
+          <button
+            type="button"
+            className={`epm-perf-btn${editAutoOptimizer === 'most-gpu' ? ' epm-perf-btn--active' : ''}${optimizerRunning === 'most-gpu' ? ' epm-perf-btn--loading' : ''}`}
+            onClick={() => {
+              if (optimizerRunning) return;
+              onRunOptimizer('most-gpu');
+            }}
+            disabled={!!optimizerRunning}
+          >
+            {optimizerRunning === 'most-gpu' ? (
+              <Loader2 size={16} className="epm-perf-spinner" />
+            ) : (
+              <Flame size={16} />
+            )}
+            <span>Most GPU</span>
+          </button>
+          <button
+            type="button"
+            className={`epm-perf-btn${editAutoOptimizer === 'custom' ? ' epm-perf-btn--active' : ''}`}
+            onClick={() => {
+              if (optimizerRunning) return;
+              onSetAutoOptimizer('custom');
+              triggerEstimate(activeLayers, activeCtx);
+            }}
+            disabled={!!optimizerRunning}
+          >
+            <SlidersHorizontal size={16} />
+            <span>Custom</span>
+          </button>
+        </div>
+      </div>
+
+      {showVram && (
+        <div className="epm-section" style={{ marginTop: '20px' }}>
+          <div className="epm-section__label">Estimated Memory Usage</div>
+
+          <div className="epm-estimate-notice">
+            <AlertTriangle size={14} />
+            <span>Memory estimates provided by <a href="https://github.com/gpustack/gguf-parser-go" target="_blank" rel="noopener noreferrer">GGUF Parser Go</a>, which does not support all of Synapse's features, leading to inaccurate estimations.</span>
+          </div>
+
+          <div className="epm-mem-legend">
+            <span className="epm-mem-legend-total"><strong>Total: {toGB(memory.modelVramUsage + memory.contextVramUsage + memory.computeOverheadVram)}GB</strong></span>
+            {memory.modelVramUsage > 0 && (
+              <span className="epm-mem-legend-item">
+                <span className="epm-mem-dot epm-mem-dot--model" /> Model Weights ({toGB(memory.modelVramUsage)}GB)
+              </span>
+            )}
+            {memory.contextVramUsage > 0 && (
+              <span className="epm-mem-legend-item">
+                <span className="epm-mem-dot epm-mem-dot--ctx" /> KV Cache ({toGB(memory.contextVramUsage)}GB)
+              </span>
+            )}
+            {memory.computeOverheadVram > 0 && (
+              <span className="epm-mem-legend-item">
+                <span className="epm-mem-dot epm-mem-dot--overhead" /> Compute Overhead ({toGB(memory.computeOverheadVram)}GB)
+              </span>
+            )}
+            <span className="epm-mem-legend-item">
+              <span className="epm-mem-dot epm-mem-dot--free" /> Free ({toGB(Math.max(0, totalVRAM - memory.modelVramUsage - memory.contextVramUsage - memory.computeOverheadVram))}GB)
+            </span>
+          </div>
+
+          <div className="epm-mem-bar-wrap">
+            <div className="epm-mem-bar-label-inline">VRAM</div>
+            <div className="epm-mem-bar-track">
+              <div
+                className="epm-mem-segment epm-mem-segment--model"
+                style={{ width: `${vramModelPct * 100}%` }}
+                title={`Model Weights: ${toGB(memory.modelVramUsage)}GB`}
+              />
+              <div
+                className="epm-mem-segment epm-mem-segment--ctx"
+                style={{ width: `${vramCtxPct * 100}%` }}
+                title={`KV Cache: ${toGB(memory.contextVramUsage)}GB`}
+              />
+              <div
+                className="epm-mem-segment epm-mem-segment--overhead"
+                style={{ width: `${vramOverheadPct * 100}%` }}
+                title={`Compute Overhead: ${toGB(memory.computeOverheadVram)}GB`}
+              />
+              <div
+                className="epm-mem-segment epm-mem-segment--free"
+                style={{ width: `${vramFreePct * 100}%` }}
+                title={`Free: ${toGB(Math.max(0, totalVRAM - memory.modelVramUsage - memory.contextVramUsage - memory.computeOverheadVram))}GB`}
+              />
+            </div>
+            <div className="epm-mem-bar-total">
+              {toGB(totalVRAM)} GB
+            </div>
+          </div>
+
+          {showRam && (
+            <>
+              <div className="epm-mem-legend" style={{ marginTop: '14px' }}>
+                <span className="epm-mem-legend-total"><strong>Total: {toGB(memory.modelRamUsage + memory.contextRamUsage + memory.fileBufferRam + memory.computeOverheadRam)}GB</strong></span>
+                {memory.modelRamUsage > 0 && (
+                  <span className="epm-mem-legend-item">
+                    <span className="epm-mem-dot epm-mem-dot--model" /> Model Weights ({toGB(memory.modelRamUsage)}GB)
+                  </span>
+                )}
+                {memory.contextRamUsage > 0 && (
+                  <span className="epm-mem-legend-item">
+                    <span className="epm-mem-dot epm-mem-dot--ctx" /> KV Cache ({toGB(memory.contextRamUsage)}GB)
+                  </span>
+                )}
+                {memory.fileBufferRam > 0 && (
+                  <span className="epm-mem-legend-item">
+                    <span className="epm-mem-dot epm-mem-dot--buffer" /> File Buffer ({toGB(memory.fileBufferRam)}GB)
+                  </span>
+                )}
+                {memory.computeOverheadRam > 0 && (
+                  <span className="epm-mem-legend-item">
+                    <span className="epm-mem-dot epm-mem-dot--overhead" /> Compute Overhead ({toGB(memory.computeOverheadRam)}GB)
+                  </span>
+                )}
+                <span className="epm-mem-legend-item">
+                  <span className="epm-mem-dot epm-mem-dot--free" /> Free ({toGB(Math.max(0, totalRAM - memory.modelRamUsage - memory.contextRamUsage - memory.fileBufferRam - memory.computeOverheadRam))}GB)
+                </span>
+              </div>
+              <div className="epm-mem-bar-wrap">
+                <div className="epm-mem-bar-label-inline">RAM</div>
+                <div className="epm-mem-bar-track">
+                  <div
+                    className="epm-mem-segment epm-mem-segment--model"
+                    style={{ width: `${ramModelPct * 100}%` }}
+                    title={`Model Weights: ${toGB(memory.modelRamUsage)}GB`}
+                  />
+                  <div
+                    className="epm-mem-segment epm-mem-segment--ctx"
+                    style={{ width: `${ramCtxPct * 100}%` }}
+                    title={`KV Cache: ${toGB(memory.contextRamUsage)}GB`}
+                  />
+                  <div
+                    className="epm-mem-segment epm-mem-segment--buffer"
+                    style={{ width: `${ramBufferPct * 100}%` }}
+                    title={`File Buffer: ${toGB(memory.fileBufferRam)}GB`}
+                  />
+                  <div
+                    className="epm-mem-segment epm-mem-segment--overhead"
+                    style={{ width: `${ramOverheadPct * 100}%` }}
+                    title={`Compute Overhead: ${toGB(memory.computeOverheadRam)}GB`}
+                  />
+                  <div
+                    className="epm-mem-segment epm-mem-segment--free"
+                    style={{ width: `${ramFreePct * 100}%` }}
+                    title={`Free: ${toGB(Math.max(0, totalRAM - memory.modelRamUsage - memory.contextRamUsage - memory.fileBufferRam - memory.computeOverheadRam))}GB`}
+                  />
+                </div>
+                <div className="epm-mem-bar-total">
+                  {toGB(totalRAM)} GB
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Sliders */}
+      <div className="epm-section" style={{ marginTop: '16px' }}>
+        <div className="epm-section__label">Settings</div>
+        <div className="epm-perf-sliders">
+          <div className="epm-perf-slider-group">
+            <label className="epm-perf-slider-label">
+              GPU Layers (NGL): <strong>{sliderNgl}</strong>
+            </label>
+            <input
+              type="range"
+              min={0}
+              max={modelMaxLayers}
+              step={1}
+              value={sliderNgl}
+              disabled={isAuto}
+              className={`epm-perf-range${isAuto ? ' epm-perf-range--disabled' : ''}`}
+              onChange={(e) => {
+                if (!isAuto) {
+                  const v = parseInt(e.target.value, 10);
+                  onSetLayers(v);
+                  triggerEstimate(v, activeCtx);
+                }
+              }}
+            />
+            <div className="epm-perf-range-labels">
+              <span>0</span>
+              <span>{modelMaxLayers}</span>
+            </div>
+          </div>
+
+          <div className="epm-perf-slider-group" style={{ marginTop: '16px' }}>
+            <label className="epm-perf-slider-label">
+              Context Size: <strong>{sliderCtx.toLocaleString()}</strong>
+            </label>
+            <input
+              type="range"
+              min={512}
+              max={modelMaxContext}
+              step={512}
+              value={sliderCtx}
+              disabled={isAuto}
+              className={`epm-perf-range${isAuto ? ' epm-perf-range--disabled' : ''}`}
+              onChange={(e) => {
+                if (!isAuto) {
+                  const v = parseInt(e.target.value, 10);
+                  onSetContextSize(v);
+                  triggerEstimate(activeLayers, v);
+                }
+              }}
+            />
+            <div className="epm-perf-range-labels">
+              <span>512</span>
+              <span>{modelMaxContext.toLocaleString()}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Cache Options */}
+      <div className="epm-section" style={{ marginTop: '16px' }}>
+        <div className="epm-section__label">Cache Options</div>
+        <div className="epm-perf-toggles">
+          <label className="epm-perf-toggle-row">
+            <span className="epm-perf-toggle-label">
+              KV Cache Offload
+              <span className="epm-perf-toggle-hint">Use GPU for KV cache (lower RAM usage)</span>
+            </span>
+            <div
+              className={`epm-toggle-switch${editKvOffload ? ' epm-toggle-switch--on' : ''}`}
+              onClick={() => { const next = !editKvOffload; onSetKvOffload(next); triggerEstimate(activeLayers, activeCtx, next, editMmap, editCacheTypeK, editCacheTypeV); }}
+              role="switch"
+              aria-checked={editKvOffload}
+              tabIndex={0}
+              onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); const next = !editKvOffload; onSetKvOffload(next); triggerEstimate(activeLayers, activeCtx, next, editMmap, editCacheTypeK, editCacheTypeV); } }}
+            >
+              <div className="epm-toggle-switch__knob" />
+            </div>
+          </label>
+        </div>
+        <div className="epm-cache-selectors-row">
+          <CacheTypeSelector label="K Cache Type" value={editCacheTypeK} onChange={(v) => { onSetCacheTypeK(v); triggerEstimate(activeLayers, activeCtx, editKvOffload, editMmap, v, editCacheTypeV); }} />
+          <CacheTypeSelector label="V Cache Type" value={editCacheTypeV} onChange={(v) => { onSetCacheTypeV(v); triggerEstimate(activeLayers, activeCtx, editKvOffload, editMmap, editCacheTypeK, v); }} />
+        </div>
+      </div>
+
+      {/* Memory Options */}
+      <div className="epm-section" style={{ marginTop: '16px' }}>
+        <div className="epm-section__label">Memory Options</div>
+        <div className="epm-perf-toggles">
+          <label className="epm-perf-toggle-row">
+            <span className="epm-perf-toggle-label">
+              Memory-Mapped (MMAP)
+              <span className="epm-perf-toggle-hint">Memory-map model file (lower RAM usage)</span>
+            </span>
+            <div
+              className={`epm-toggle-switch${editMmap ? ' epm-toggle-switch--on' : ''}`}
+              onClick={() => { const next = !editMmap; onSetMmap(next); triggerEstimate(activeLayers, activeCtx, editKvOffload, next, editCacheTypeK, editCacheTypeV); }}
+              role="switch"
+              aria-checked={editMmap}
+              tabIndex={0}
+              onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); const next = !editMmap; onSetMmap(next); triggerEstimate(activeLayers, activeCtx, editKvOffload, next, editCacheTypeK, editCacheTypeV); } }}
+            >
+              <div className="epm-toggle-switch__knob" />
+            </div>
+          </label>
+          <label className="epm-perf-toggle-row">
+            <span className="epm-perf-toggle-label">
+              MLock (Pin RAM)
+              <span className="epm-perf-toggle-hint">Lock model in RAM to prevent swapping</span>
+            </span>
+            <div
+              className={`epm-toggle-switch${editMlock ? ' epm-toggle-switch--on' : ''}`}
+              onClick={() => { const next = !editMlock; onSetMlock(next); }}
+              role="switch"
+              aria-checked={editMlock}
+              tabIndex={0}
+              onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); const next = !editMlock; onSetMlock(next); } }}
+            >
+              <div className="epm-toggle-switch__knob" />
+            </div>
+          </label>
+        </div>
+      </div>
+    </>
+  );
+}
+
 // ── Main modal component ──
 
 export default function EditProfileModal({
@@ -815,7 +1280,7 @@ export default function EditProfileModal({
 
   // Performance options
   const [editAutoOptimizer, setEditAutoOptimizer] = useState<
-    'longest-context' | 'most-gpu' | null
+    'longest-context' | 'most-gpu' | 'custom' | null
   >(profile?.autoOptimizer ?? null);
   const [editLayers, setEditLayers] = useState<number | undefined>(
     profile?.layers,
@@ -829,9 +1294,79 @@ export default function EditProfileModal({
   const [editAllocatedRAM, setEditAllocatedRAM] = useState<number | undefined>(
     profile?.allocatedRAM,
   );
+  const [editKvOffload, setEditKvOffload] = useState<boolean>(
+    profile?.kvOffload ?? true,
+  );
+  const [editMmap, setEditMmap] = useState<boolean>(
+    profile?.mmap ?? true,
+  );
+  const [editMlock, setEditMlock] = useState<boolean>(
+    profile?.mlock ?? false,
+  );
+  const [editCacheTypeK, setEditCacheTypeK] = useState<CacheType>(
+    profile?.cacheTypeK ?? 'f16',
+  );
+  const [editCacheTypeV, setEditCacheTypeV] = useState<CacheType>(
+    profile?.cacheTypeV ?? 'f16',
+  );
   const [optimizerRunning, setOptimizerRunning] = useState<
     'longest-context' | 'most-gpu' | null
   >(null);
+
+  // Model metadata (max layers/context) — fetched when model changes
+  const [modelMeta, setModelMeta] = useState<{
+    maxLayers: number;
+    maxContext: number;
+  } | null>(null);
+
+  // Total system VRAM/RAM for memory bars
+  const [totalVRAM, setTotalVRAM] = useState(0);
+  const [totalRAM, setTotalRAM] = useState(0);
+
+  // Cached memory estimate (persisted in profile)
+  const [lastEstimate, setLastEstimate] = useState<{
+    modelVramUsage: number;
+    contextVramUsage: number;
+    computeOverheadVram: number;
+    modelRamUsage: number;
+    contextRamUsage: number;
+    computeOverheadRam: number;
+    fileBufferRam: number;
+  } | null>(profile?.estimation ?? null);
+
+// Fetch model metadata when model selection changes
+useEffect(() => {
+  if (profile?.maxForModel === profile?.model && profile?.maxLayers && profile?.maxContext) {
+    setModelMeta({ maxLayers: profile.maxLayers, maxContext: profile.maxContext });
+    return;
+  }
+  const model = localModels.find((m) => m.filename === editModel);
+  if (!model) {
+    setModelMeta(null);
+    return;
+  }
+  const projector = editProjector
+    ? localModels.find((m) => m.filename === editProjector)
+    : undefined;
+  window.electronAPI
+    .getModelMetadata({
+      modelPath: model.filepath,
+      projectorPath: projector?.filepath,
+    })
+    .then((meta) => setModelMeta(meta))
+    .catch(() => setModelMeta(null));
+}, [editModel, editProjector]);
+
+  // Fetch total VRAM/RAM once on mount
+  useEffect(() => {
+    window.electronAPI
+      .getVramStats()
+      .then((stats) => {
+        setTotalRAM(stats.ram.total * 1024 * 1024);
+        setTotalVRAM(stats.vram ? stats.vram.total * 1024 * 1024 : 0);
+      })
+      .catch(() => {});
+  }, []);
 
   // Model/Projector modals
   const [showModelModal, setShowModelModal] = useState(false);
@@ -847,6 +1382,74 @@ export default function EditProfileModal({
       setCurrentPage(page);
       setAnimating(false);
     }, 100);
+  };
+
+  const handleRunOptimizer = (mode: 'longest-context' | 'most-gpu') => {
+    setOptimizerRunning(mode);
+    const model = localModels.find((m) => m.filename === editModel);
+    if (!model) {
+      setOptimizerRunning(null);
+      return;
+    }
+    const projector = editProjector
+      ? localModels.find((m) => m.filename === editProjector)
+      : undefined;
+    window.electronAPI
+      .runProfileOptimizer({
+        modelPath: model.filepath,
+        projectorPath: projector?.filepath,
+        mode,
+        kvOffload: editKvOffload,
+        mmap: editMmap,
+        cacheTypeK: editCacheTypeK,
+        cacheTypeV: editCacheTypeV,
+      })
+      .then((res) => {
+        setEditAutoOptimizer(mode);
+        setEditLayers(res.ngl);
+        setEditContextSize(res.ctx);
+        setEditAllocatedVRAM(res.vramMB);
+        setEditAllocatedRAM(res.ramMB);
+        setOptimizerRunning(null);
+      })
+      .catch(() => {
+        setOptimizerRunning(null);
+      });
+  };
+
+  const handleEstimateMemory = async (
+    ngl: number,
+    ctx: number,
+    kvOffload?: boolean,
+    mmap?: boolean,
+    cacheTypeK?: CacheType,
+    cacheTypeV?: CacheType,
+  ): Promise<{
+    modelVramUsage: number;
+    contextVramUsage: number;
+    computeOverheadVram: number;
+    modelRamUsage: number;
+    contextRamUsage: number;
+    computeOverheadRam: number;
+    fileBufferRam: number;
+  } | null> => {
+    const model = localModels.find((m) => m.filename === editModel);
+    if (!model) return null;
+    const projector = editProjector
+      ? localModels.find((m) => m.filename === editProjector)
+      : undefined;
+    const result = await window.electronAPI.estimateMemory({
+      modelPath: model.filepath,
+      projectorPath: projector?.filepath,
+      ngl,
+      ctx,
+      kvOffload: kvOffload ?? editKvOffload,
+      mmap: mmap ?? editMmap,
+      cacheTypeK: cacheTypeK ?? editCacheTypeK,
+      cacheTypeV: cacheTypeV ?? editCacheTypeV,
+    });
+    setLastEstimate(result);
+    return result;
   };
 
   const handleOverlayClick = (e: MouseEvent<HTMLDivElement>) => {
@@ -947,6 +1550,11 @@ export default function EditProfileModal({
         (AVAILABLE_TOOLS as readonly string[]).includes(t),
       ),
       repeatPenalty: buildRepeatPenalty(),
+      kvOffload: editKvOffload,
+      cacheTypeK: editCacheTypeK,
+      cacheTypeV: editCacheTypeV,
+      mmap: editMmap,
+      mlock: editMlock,
       ...(editAutoOptimizer &&
       editLayers !== undefined &&
       editContextSize !== undefined
@@ -956,6 +1564,10 @@ export default function EditProfileModal({
             contextSize: editContextSize,
             allocatedVRAM: editAllocatedVRAM,
             allocatedRAM: editAllocatedRAM,
+            maxLayers: modelMeta?.maxLayers,
+            maxContext: modelMeta?.maxContext,
+            maxForModel: modelRelativePath,
+            estimation: lastEstimate ?? undefined,
           }
         : {}),
       order: profile?.order ?? now,
@@ -1075,35 +1687,8 @@ export default function EditProfileModal({
             editAutoOptimizer={editAutoOptimizer}
             editLayers={editLayers}
             editContextSize={editContextSize}
-            optimizerRunning={optimizerRunning}
-            onRunOptimizer={(mode) => {
-              setOptimizerRunning(mode);
-              const model = localModels.find((m) => m.filename === editModel);
-              if (!model) {
-                setOptimizerRunning(null);
-                return;
-              }
-              const projector = editProjector
-                ? localModels.find((m) => m.filename === editProjector)
-                : undefined;
-              window.electronAPI
-                .runProfileOptimizer({
-                  modelPath: model.filepath,
-                  projectorPath: projector?.filepath,
-                  mode,
-                })
-                .then((res) => {
-                  setEditAutoOptimizer(mode);
-                  setEditLayers(res.ngl);
-                  setEditContextSize(res.ctx);
-                  setEditAllocatedVRAM(res.vramMB);
-                  setEditAllocatedRAM(res.ramMB);
-                  setOptimizerRunning(null);
-                })
-                .catch(() => {
-                  setOptimizerRunning(null);
-                });
-            }}
+            modelMaxLayers={modelMeta?.maxLayers ?? 200}
+            modelMaxContext={modelMeta?.maxContext ?? 131072}
           />
         );
       case 'system-prompt':
@@ -1135,6 +1720,35 @@ export default function EditProfileModal({
             editSeed={editSeed}
             setEditSeed={setEditSeed}
             onNavigate={navigateTo}
+          />
+        );
+      case 'performance':
+        return (
+          <PerformancePage
+            editAutoOptimizer={editAutoOptimizer}
+            editLayers={editLayers}
+            editContextSize={editContextSize}
+            editKvOffload={editKvOffload}
+            editCacheTypeK={editCacheTypeK}
+            editCacheTypeV={editCacheTypeV}
+            editMmap={editMmap}
+            editMlock={editMlock}
+            optimizerRunning={optimizerRunning}
+            modelMaxLayers={modelMeta?.maxLayers ?? 200}
+            modelMaxContext={modelMeta?.maxContext ?? 131072}
+            totalVRAM={totalVRAM}
+            totalRAM={totalRAM}
+            onSetAutoOptimizer={setEditAutoOptimizer}
+            onSetLayers={setEditLayers}
+            onSetContextSize={setEditContextSize}
+            onSetKvOffload={setEditKvOffload}
+            onSetCacheTypeK={setEditCacheTypeK}
+            onSetCacheTypeV={setEditCacheTypeV}
+            onSetMmap={setEditMmap}
+            onSetMlock={setEditMlock}
+            onRunOptimizer={handleRunOptimizer}
+            onEstimateMemory={handleEstimateMemory}
+            initialEstimate={profile?.estimation ?? lastEstimate}
           />
         );
       case 'repeat-penalty':

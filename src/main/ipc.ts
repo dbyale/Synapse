@@ -21,7 +21,7 @@ import {
   registerLocalModel,
 } from '../renderer/utils/models';
 import * as chatService from './chat';
-import { getOrRunOptimizer } from './estimator';
+import { getOrRunOptimizer, getOrEstimateMemory, getModelMetadata } from './estimator';
 import type { SearchFilter } from '../renderer/preload.d';
 
 const execAsync = util.promisify(exec);
@@ -524,6 +524,10 @@ export function registerIpcHandlers(win: BrowserWindow): void {
         modelPath: string;
         projectorPath?: string;
         mode: 'longest-context' | 'most-gpu';
+        kvOffload?: boolean;
+        mmap?: boolean;
+        cacheTypeK?: string;
+        cacheTypeV?: string;
       },
     ) => {
       const settings = loadSettings();
@@ -536,6 +540,10 @@ export function registerIpcHandlers(win: BrowserWindow): void {
         ramMB,
         params.mode === 'most-gpu',
         params.projectorPath,
+        params.kvOffload ?? true,
+        params.mmap ?? true,
+        params.cacheTypeK ?? 'f16',
+        params.cacheTypeV ?? 'f16',
       );
 
       return {
@@ -544,6 +552,44 @@ export function registerIpcHandlers(win: BrowserWindow): void {
         vramMB,
         ramMB,
       };
+    },
+  );
+
+  ipcMain.handle(
+    'profile:getModelMetadata',
+    async (
+      _event,
+      params: { modelPath: string; projectorPath?: string },
+    ) => {
+      return getModelMetadata(params.modelPath, params.projectorPath);
+    },
+  );
+
+  ipcMain.handle(
+    'profile:estimateMemory',
+    async (
+      _event,
+      params: {
+        modelPath: string;
+        ngl: number;
+        ctx: number;
+        projectorPath?: string;
+        kvOffload?: boolean;
+        mmap?: boolean;
+        cacheTypeK?: string;
+        cacheTypeV?: string;
+      },
+    ) => {
+      return getOrEstimateMemory(
+        params.modelPath,
+        params.ngl,
+        params.ctx,
+        params.projectorPath,
+        params.kvOffload ?? true,
+        params.mmap ?? true,
+        params.cacheTypeK ?? 'f16',
+        params.cacheTypeV ?? 'f16',
+      );
     },
   );
 

@@ -1,3 +1,5 @@
+export type CacheType = 'f32' | 'f16' | 'bf16' | 'q8_0' | 'q4_0' | 'q4_1' | 'iq4_nl' | 'q5_0' | 'q5_1';
+
 export interface Profile {
   id: string;
   name: string;
@@ -23,9 +25,26 @@ export interface Profile {
   tools?: string[];
   layers?: number;
   contextSize?: number;
-  autoOptimizer?: 'longest-context' | 'most-gpu';
+  autoOptimizer?: 'longest-context' | 'most-gpu' | 'custom';
+  kvOffload?: boolean;
+  cacheTypeK?: CacheType;
+  cacheTypeV?: CacheType;
+  mmap?: boolean;
+  mlock?: boolean;
   allocatedVRAM?: number;
   allocatedRAM?: number;
+  maxLayers?: number;
+  maxContext?: number;
+  maxForModel?: string;
+  estimation?: {
+    modelVramUsage: number;
+    contextVramUsage: number;
+    computeOverheadVram: number;
+    modelRamUsage: number;
+    contextRamUsage: number;
+    computeOverheadRam: number;
+    fileBufferRam: number;
+  };
   order: number;
   createdAt: number;
 }

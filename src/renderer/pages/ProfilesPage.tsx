@@ -392,6 +392,9 @@ export default function ProfilesPage() {
         setShowEditRestartDialog(true);
         return;
       }
+      if (isRunning && selectedProfileId) {
+        localStorage.setItem('forceProfileReload', selectedProfileId);
+      }
     }
     finishSaveProfile(updated);
   };
