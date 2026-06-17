@@ -96,17 +96,23 @@ async function run() {
     await downloadAndExtract(`${llamaBase}/${file}`, folder);
   }
 
-  // 3. Download Parser (Detect OS and Arch for v0.24.0 naming convention)
+  // 3. Download Parser (Detect OS and Arch)
   let parserFile = '';
   if (process.platform === 'win32') {
-    parserFile = 'gguf-parser-windows-amd64.exe';
+    parserFile =
+      process.arch === 'arm64'
+        ? 'gguf-parser-windows-arm64.exe'
+        : 'gguf-parser-windows-amd64.exe';
   } else if (process.platform === 'darwin') {
     parserFile =
       process.arch === 'arm64'
         ? 'gguf-parser-darwin-arm64'
         : 'gguf-parser-darwin-amd64';
   } else {
-    parserFile = 'gguf-parser-linux-amd64';
+    parserFile =
+      process.arch === 'arm64'
+        ? 'gguf-parser-linux-arm64'
+        : 'gguf-parser-linux-amd64';
   }
 
   // Save parser in a central 'utils' folder
