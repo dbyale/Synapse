@@ -13,7 +13,6 @@ import {
   Pencil,
   X,
   ChevronDown,
-  Info,
   GripVertical,
   Loader2,
   PackageCheck,
@@ -22,6 +21,7 @@ import {
 import type { LocalModel } from '../preload.d';
 import { Profile } from '../types/profile';
 import { AVAILABLE_TOOLS, TOOL_METADATA } from '../../data/defaultTools';
+import InfoTooltip from '../components/InfoTooltip';
 import EditProfileModal from '../components/EditProfileModal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import '../styles/ProfilesPage.css';
@@ -44,22 +44,13 @@ function EditSection({
   return (
     <div className="sp-card__edit-section">
       <div className="sp-card__label-row">
-        <div className="sp-card__label-with-tooltip">
+        {tooltip.length > 0 ? (
+          <InfoTooltip content={tooltip} title={label} hideIcon>
+            <label htmlFor={htmlFor}>{label}</label>
+          </InfoTooltip>
+        ) : (
           <label htmlFor={htmlFor}>{label}</label>
-          {tooltip.length > 0 && (
-            <div className="sp-card__tooltip-wrapper">
-              <Info size={14} className="sp-card__info-icon" />
-              <div className="sp-card__tooltip">
-                <div className="sp-card__tooltip-title">{label}</div>
-                <ul className="sp-card__tooltip-list">
-                  {tooltip.map((item) => (
-                    <li key={item}>{item}</li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-          )}
-        </div>
+        )}
       </div>
       {children}
       {helper && <small>{helper}</small>}
@@ -94,19 +85,12 @@ function CollapsibleSection({
           size={16}
           className={`sp-card__collapsible-icon ${isOpen ? 'open' : ''}`}
         />
-        <span>{title}</span>
-        {tooltip.length > 0 && (
-          <div className="sp-card__tooltip-wrapper">
-            <Info size={14} className="sp-card__info-icon" />
-            <div className="sp-card__tooltip">
-              <div className="sp-card__tooltip-title">{title}</div>
-              <ul className="sp-card__tooltip-list">
-                {tooltip.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            </div>
-          </div>
+        {tooltip.length > 0 ? (
+          <InfoTooltip content={tooltip} title={title} hideIcon>
+            <span>{title}</span>
+          </InfoTooltip>
+        ) : (
+          <span>{title}</span>
         )}
       </button>
       {isOpen && <div className="sp-card__collapsible-content">{children}</div>}
@@ -749,7 +733,9 @@ export default function ProfilesPage() {
                         </div>
                         <p className="sp-card__model">
                           <strong>Model:</strong>{' '}
-                          {profile.model.split(/[/\\]/).pop()}
+                           <InfoTooltip content="The GGUF model file assigned to this profile." side="right" hideIcon title="Model">
+                              <span>{profile.model.split(/[/\\]/).pop()}</span>
+                           </InfoTooltip>
                         </p>
                         {/* ── Tool badges (grouped by package/category) ── */}
                         {profile.tools &&
@@ -786,10 +772,14 @@ export default function ProfilesPage() {
                               <div className="sp-card__tool-badges">
                                 {activeCategories.map(
                                   ([category, { total, enabled }]) => (
-                                    <span
-                                      key={category}
-                                      className="sp-card__tool-badge"
-                                    >
+                                    <InfoTooltip
+                                    key={category}
+                                    content={`${enabled} of ${total} tools enabled in this category.`}
+                                    side="top"
+                                    hideIcon
+                                    title={category}
+                                  >
+                                    <span className="sp-card__tool-badge">
                                       {enabled === total ? (
                                         <PackageCheck size={11} />
                                       ) : (
@@ -797,6 +787,7 @@ export default function ProfilesPage() {
                                       )}
                                       {category}
                                     </span>
+                                  </InfoTooltip>
                                   ),
                                 )}
                               </div>

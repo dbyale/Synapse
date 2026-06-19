@@ -6,6 +6,18 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import type { AppSettings, HardwareStats } from '../preload.d';
+import InfoTooltip from '../components/InfoTooltip';
+import {
+  MODELS_DIR_TOOLTIP,
+  MEMORY_ALLOCATOR_TOOLTIP,
+  MAX_LABEL_TOOLTIP,
+  RAM_LABEL_TOOLTIP,
+  VRAM_LABEL_TOOLTIP,
+  MODEL_WEIGHTS_TOOLTIP,
+  KV_CACHE_MEM_TOOLTIP,
+  COMPUTE_OVERHEAD_TOOLTIP,
+  FILE_BUFFER_TOOLTIP,
+} from '../utils/tooltipContent';
 import ConfirmDialog from '../components/ConfirmDialog';
 import '../styles/SettingsPage.css';
 
@@ -54,9 +66,13 @@ function MemorySlider({
   onSave,
   onRefresh,
 }: MemorySliderProps) {
+  const titleTooltip = title.includes('Video') || title.includes('GPU') ? VRAM_LABEL_TOOLTIP : RAM_LABEL_TOOLTIP;
+
   const TitleNode = (
     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-      <div className="mem-title">{title}</div>
+      <InfoTooltip content={titleTooltip} side="right" hideIcon title={title}>
+        <div className="mem-title">{title}</div>
+      </InfoTooltip>
       <button
         type="button"
         className={`mem-refresh-btn ${loading ? 'loading' : ''}`}
@@ -129,46 +145,40 @@ function MemorySlider({
 
       <div className="mem-bar-wrapper">
         {/* OTHER — pinned to right edge, always at the same position */}
-        <div
-          className="mem-tooltip-target mem-segment-other"
+        <InfoTooltip
+          title="OS & Other Apps"
+          content={`${otherGB} GB In Use`}
+          side="top"
+          hideIcon
+          className="mem-segment-other"
           style={{ right: 0, left: 'auto', width: `${otherPct}%` }}
-        >
-          <div className="mem-tooltip">
-            <div className="mem-tooltip-title">OS & Other Apps</div>
-            <div className="mem-tooltip-text">{otherGB} GB In Use</div>
-          </div>
-        </div>
+        />
 
         {/* FREE — fills gap between APP and OTHER */}
-        <div
-          className="mem-tooltip-target mem-segment-free"
+        <InfoTooltip
+          title="Free Space"
+          content={`${freeGB} GB Available`}
+          side="top"
+          hideIcon
+          className="mem-segment-free"
           style={{ left: `${appPct}%`, width: `${freePct}%` }}
-        >
-          <div className="mem-tooltip">
-            <div className="mem-tooltip-title">Free Space</div>
-            <div className="mem-tooltip-text">{freeGB} GB Available</div>
-          </div>
-        </div>
+        />
 
         {/* APP — grows from left edge, renders on top of OTHER when overlapping */}
-        <div
-          className={`mem-tooltip-target mem-segment-app ${isExceeded ? 'exceeded' : ''}`}
+        <InfoTooltip
+          title="Synapse Allocation"
+          content={`${appGB} GB Reserved`}
+          side="top"
+          hideIcon
+          className={`mem-segment-app${isExceeded ? ' exceeded' : ''}`}
           style={{ left: 0, width: `${appPct}%` }}
-        >
-          <div className="mem-tooltip">
-            <div
-              className="mem-tooltip-title"
-              style={{ color: isExceeded ? '#f38ba8' : 'var(--text-primary)' }}
-            >
-              Synapse Allocation
-            </div>
-            <div className="mem-tooltip-text">{appGB} GB Reserved</div>
-          </div>
-        </div>
+        />
 
         {/* MAX line — fixed at maxRecommended / total */}
         <div className="mem-max-wrapper" style={{ left: `${maxPct}%` }}>
-          <div className="mem-max-label">MAX</div>
+          <InfoTooltip content={MAX_LABEL_TOOLTIP} side="top" iconSize={10} title="Maximum">
+            <div className="mem-max-label">MAX</div>
+          </InfoTooltip>
           <div className="mem-max-line" />
         </div>
 
@@ -192,10 +202,12 @@ function MemorySlider({
 
       <div className="mem-legend-row">
         <div className={`mem-legend-box ${isExceeded ? 'exceeded' : ''}`} />
-        <span>
-          Synapse Allocation:{' '}
-          <strong className="mem-value-small">{appGB} GB</strong>
-        </span>
+        <InfoTooltip content={MEMORY_ALLOCATOR_TOOLTIP} side="right" hideIcon title="Synapse Allocation">
+          <span>
+            Synapse Allocation:{' '}
+            <strong className="mem-value-small">{appGB} GB</strong>
+          </span>
+        </InfoTooltip>
       </div>
 
       {isExceeded ? (
@@ -451,10 +463,14 @@ export default function SettingsPage() {
       </div>
 
       <div className="settings-card">
-        <h2 className="settings-card-title">Application Setup</h2>
+        <InfoTooltip content="Configure global application paths and directories." side="right" hideIcon title="Application Setup">
+          <h2 className="settings-card-title">Application Setup</h2>
+        </InfoTooltip>
 
         <div className="settings-field">
-          <span className="settings-label">Models Directory</span>
+          <InfoTooltip content={MODELS_DIR_TOOLTIP} side="right" hideIcon title="Models Directory">
+            <span className="settings-label">Models Directory</span>
+          </InfoTooltip>
           <div className="settings-row">
             <input
               className="settings-input"
@@ -474,7 +490,9 @@ export default function SettingsPage() {
       </div>
 
       <div className="settings-card">
-        <h2 className="settings-card-title">System Resource Allocator</h2>
+        <InfoTooltip content={MEMORY_ALLOCATOR_TOOLTIP} side="right" hideIcon title="System Resource Allocator">
+          <h2 className="settings-card-title">System Resource Allocator</h2>
+        </InfoTooltip>
 
         <MemorySlider
           title={ramTitle}

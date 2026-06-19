@@ -20,6 +20,39 @@ import { Profile, CacheType } from '../types/profile';
 import type { LocalModel } from '../preload.d';
 import { AVAILABLE_TOOLS, TOOL_METADATA } from '../../data/defaultTools';
 import { formatBytes } from '../utils/formatters';
+import InfoTooltip from './InfoTooltip';
+import {
+  PROFILE_NAME_TOOLTIP,
+  MODEL_TOOLTIP,
+  PROJECTOR_TOOLTIP,
+  TEMPERATURE_TOOLTIP,
+  TOP_K_TOOLTIP,
+  TOP_P_TOOLTIP,
+  MIN_P_TOOLTIP,
+  SEED_TOOLTIP,
+  REPEAT_PENALTY_TOOLTIP,
+  LAST_TOKENS_TOOLTIP,
+  REPEAT_PENALTY_VALUE_TOOLTIP,
+  FREQUENCY_PENALTY_TOOLTIP,
+  PRESENCE_PENALTY_TOOLTIP,
+  OPTIMIZATION_MODE_TOOLTIP,
+  LONGEST_CONTEXT_TOOLTIP,
+  MOST_GPU_TOOLTIP,
+  CUSTOM_TOOLTIP,
+  GPU_LAYERS_TOOLTIP,
+  CONTEXT_SIZE_TOOLTIP,
+  KV_CACHE_OFFLOAD_TOOLTIP,
+  K_CACHE_TYPE_TOOLTIP,
+  V_CACHE_TYPE_TOOLTIP,
+  MMAP_TOOLTIP,
+  MLOCK_TOOLTIP,
+  MODEL_WEIGHTS_TOOLTIP,
+  KV_CACHE_MEM_TOOLTIP,
+  COMPUTE_OVERHEAD_TOOLTIP,
+  FILE_BUFFER_TOOLTIP,
+  VRAM_LABEL_TOOLTIP,
+  RAM_LABEL_TOOLTIP,
+} from '../utils/tooltipContent';
 import ModelSelectModal from './ModelSelectModal';
 import ProjectorSelectModal from './ProjectorSelectModal';
 import './styles/EditProfileModal.css';
@@ -233,7 +266,9 @@ function MainPage({
     <div className="epm-main-grid">
       <div className="epm-main-left">
         <div className="epm-section">
-          <div className="epm-section__label">Profile Name</div>
+          <InfoTooltip content={PROFILE_NAME_TOOLTIP} side="right" hideIcon title="Profile Name">
+            <div className="epm-section__label">Profile Name</div>
+          </InfoTooltip>
           <input
             type="text"
             className="epm-input"
@@ -244,7 +279,9 @@ function MainPage({
         </div>
 
         <div className="epm-section">
-          <div className="epm-section__label">Model</div>
+          <InfoTooltip content={MODEL_TOOLTIP} side="right" hideIcon title="Model">
+            <div className="epm-section__label">Model</div>
+          </InfoTooltip>
           {availableModelsForEdit.length === 0 ? (
             <div
               style={{
@@ -303,7 +340,9 @@ function MainPage({
 
         {editModel && selectedProjectorDisplay !== undefined && (
           <div className="epm-section">
-            <div className="epm-section__label">Projector (Optional)</div>
+            <InfoTooltip content={PROJECTOR_TOOLTIP} side="right" hideIcon title="Projector (Optional)">
+              <div className="epm-section__label">Projector (Optional)</div>
+            </InfoTooltip>
             <button
               type="button"
               className={`sp-card__edit-select-trigger${selectedProjectorDisplay ? ' sp-card__edit-select-trigger--card' : ''}`}
@@ -350,6 +389,7 @@ function MainPage({
           <SectionCard
             icon={<Zap size={20} />}
             title="Performance"
+            tooltip="Configure GPU offloading, context size, cache, and memory options."
             preview={
               editAutoOptimizer && editLayers !== undefined && editContextSize !== undefined
                 ? `${autoOptimizerLabel(editAutoOptimizer)}: ${Math.round((editLayers / modelMaxLayers) * 100)}% Offload, ${Math.round((editContextSize / modelMaxContext) * 100)}% Context`
@@ -379,18 +419,21 @@ function MainPage({
         <SectionCard
           icon={<MessageSquare size={20} />}
           title="System Prompt"
+          tooltip="Define the AI's base instructions and personality. Sent with every message."
           preview={systemPromptPreview}
           onClick={() => onNavigate('system-prompt')}
         />
         <SectionCard
           icon={<Wrench size={20} />}
           title="Tools"
+          tooltip="Enable built-in capabilities like file I/O and web search that the AI can use."
           preview={toolsPreview}
           onClick={() => onNavigate('tools')}
         />
         <SectionCard
           icon={<Settings size={20} />}
           title="Advanced Parameters"
+          tooltip="Fine-tune generation behavior: temperature, sampling, penalties, and seed."
           preview={advancedPreview}
           onClick={() => onNavigate('advanced')}
         />
@@ -404,17 +447,25 @@ function SectionCard({
   title,
   preview,
   onClick,
+  tooltip,
 }: {
   icon: React.ReactNode;
   title: string;
   preview: string;
   onClick: () => void;
+  tooltip?: string | string[];
 }) {
   return (
     <button type="button" className="epm-section-card" onClick={onClick}>
       <div className="epm-section-card__icon">{icon}</div>
       <div className="epm-section-card__body">
-        <div className="epm-section-card__title">{title}</div>
+        {tooltip ? (
+          <InfoTooltip content={tooltip} title={title} side="right" hideIcon>
+            <div className="epm-section-card__title">{title}</div>
+          </InfoTooltip>
+        ) : (
+          <div className="epm-section-card__title">{title}</div>
+        )}
         <div className="epm-section-card__preview">{preview}</div>
       </div>
       <ChevronRight size={16} className="epm-section-card__chevron" />
@@ -536,6 +587,7 @@ function AdvancedPage({
           max="2"
           step="0.1"
           helper="Default: 0.8"
+          tooltip={TEMPERATURE_TOOLTIP}
         />
         <NumberField
           label="Top K"
@@ -544,6 +596,7 @@ function AdvancedPage({
           min="0"
           step="1"
           helper="Default: 40"
+          tooltip={TOP_K_TOOLTIP}
         />
         <NumberField
           label="Top P"
@@ -553,6 +606,7 @@ function AdvancedPage({
           max="1"
           step="0.05"
           helper="Default: 0.95"
+          tooltip={TOP_P_TOOLTIP}
         />
         <NumberField
           label="Min P"
@@ -562,6 +616,7 @@ function AdvancedPage({
           max="1"
           step="0.01"
           helper="Default: 0.05"
+          tooltip={MIN_P_TOOLTIP}
         />
         <NumberField
           label="Seed"
@@ -570,16 +625,19 @@ function AdvancedPage({
           min="0"
           step="1"
           helper="Default: -1 (random)"
+          tooltip={SEED_TOOLTIP}
         />
       </div>
 
       <div style={{ marginTop: '20px' }}>
-        <SectionCard
-          icon={<Settings size={18} />}
-          title="Repeat Penalty"
-          preview="Discourages the model from repeating recent tokens"
-          onClick={() => onNavigate('repeat-penalty')}
-        />
+        <InfoTooltip content={REPEAT_PENALTY_TOOLTIP} side="right" hideIcon title="Repeat Penalty">
+          <SectionCard
+            icon={<Settings size={18} />}
+            title="Repeat Penalty"
+            preview="Discourages the model from repeating recent tokens"
+            onClick={() => onNavigate('repeat-penalty')}
+          />
+        </InfoTooltip>
       </div>
     </>
   );
@@ -593,6 +651,8 @@ function NumberField({
   max,
   step,
   helper,
+  tooltip,
+  tooltipTitle,
 }: {
   label: string;
   value: string;
@@ -601,21 +661,41 @@ function NumberField({
   max?: string;
   step?: string;
   helper?: string;
+  tooltip?: string | string[];
+  tooltipTitle?: string;
 }) {
   const defaultVal = helper?.match(/Default:\s*([\d.]+)/)?.[1];
   return (
     <div className="epm-number-field">
-      <label>{label}</label>
-      <input
-        type="number"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        min={min}
-        max={max}
-        step={step}
-        placeholder={defaultVal}
-      />
-      {helper && <div className="epm-number-helper">{helper}</div>}
+      {tooltip ? (
+        <InfoTooltip content={tooltip} title={tooltipTitle || label} side="right" stretch className="info-tooltip-stretch--col">
+          <label>{label}</label>
+          <input
+            type="number"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            min={min}
+            max={max}
+            step={step}
+            placeholder={defaultVal}
+          />
+          {helper && <div className="epm-number-helper">{helper}</div>}
+        </InfoTooltip>
+      ) : (
+        <>
+          <label>{label}</label>
+          <input
+            type="number"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            min={min}
+            max={max}
+            step={step}
+            placeholder={defaultVal}
+          />
+          {helper && <div className="epm-number-helper">{helper}</div>}
+        </>
+      )}
     </div>
   );
 }
@@ -662,7 +742,9 @@ function RepeatPenaltyPage({
           checked={editRpEnabled}
           onChange={(e) => setEditRpEnabled(e.target.checked)}
         />
-        <span>Enabled</span>
+        <InfoTooltip content={REPEAT_PENALTY_TOOLTIP} side="right" hideIcon title="Enabled">
+          <span>Enabled</span>
+        </InfoTooltip>
       </label>
 
       <div
@@ -678,6 +760,7 @@ function RepeatPenaltyPage({
             min="1"
             step="1"
             helper="Default: 64"
+            tooltip={LAST_TOKENS_TOOLTIP}
           />
           <NumberField
             label="Repeat Penalty"
@@ -686,6 +769,7 @@ function RepeatPenaltyPage({
             min="0"
             step="0.01"
             helper="Default: 1.00"
+            tooltip={REPEAT_PENALTY_VALUE_TOOLTIP}
           />
           <NumberField
             label="Frequency Penalty"
@@ -695,6 +779,7 @@ function RepeatPenaltyPage({
             max="1"
             step="0.01"
             helper="Default: 0.00"
+            tooltip={FREQUENCY_PENALTY_TOOLTIP}
           />
           <NumberField
             label="Presence Penalty"
@@ -704,6 +789,7 @@ function RepeatPenaltyPage({
             max="1"
             step="0.01"
             helper="Default: 0.00"
+            tooltip={PRESENCE_PENALTY_TOOLTIP}
           />
         </div>
       </div>
@@ -912,7 +998,9 @@ function PerformancePage({
 
       {/* Three toggle buttons */}
       <div className="epm-section">
-        <div className="epm-section__label">Optimization Mode</div>
+        <InfoTooltip content={OPTIMIZATION_MODE_TOOLTIP} side="right" hideIcon title="Optimization Mode">
+          <div className="epm-section__label">Optimization Mode</div>
+        </InfoTooltip>
         <div className="epm-perf-three-toggle">
           <button
             type="button"
@@ -928,7 +1016,9 @@ function PerformancePage({
             ) : (
               <FileText size={16} />
             )}
-            <span>Longest Context</span>
+            <InfoTooltip content={LONGEST_CONTEXT_TOOLTIP} hideIcon title="Longest Context">
+              <span>Longest Context</span>
+            </InfoTooltip>
           </button>
           <button
             type="button"
@@ -944,7 +1034,9 @@ function PerformancePage({
             ) : (
               <Flame size={16} />
             )}
-            <span>Most GPU</span>
+            <InfoTooltip content={MOST_GPU_TOOLTIP} hideIcon title="Most GPU">
+              <span>Most GPU</span>
+            </InfoTooltip>
           </button>
           <button
             type="button"
@@ -957,35 +1049,50 @@ function PerformancePage({
             disabled={!!optimizerRunning}
           >
             <SlidersHorizontal size={16} />
-            <span>Custom</span>
+            <InfoTooltip content={CUSTOM_TOOLTIP} hideIcon title="Custom">
+              <span>Custom</span>
+            </InfoTooltip>
           </button>
         </div>
       </div>
 
       {showVram && (
         <div className="epm-section" style={{ marginTop: '20px' }}>
-          <div className="epm-section__label">Estimated Memory Usage</div>
+          <InfoTooltip content="Breakdown of how model weights, KV cache, and compute overhead use video memory." side="right" hideIcon title="Estimated Memory Usage">
+            <div className="epm-section__label">Estimated Memory Usage</div>
+          </InfoTooltip>
 
           <div className="epm-estimate-notice">
             <AlertTriangle size={14} />
-            <span>Memory estimates provided by <a href="https://github.com/gpustack/gguf-parser-go" target="_blank" rel="noopener noreferrer">GGUF Parser Go</a>, which does not support all of Synapse's features, leading to inaccurate estimations.</span>
+            <InfoTooltip content="The GGUF Parser Go library does not account for all Synapse-specific memory optimizations, so actual usage may differ." side="right" hideIcon title="Memory Estimates">
+              <span>Memory estimates provided by <a href="https://github.com/gpustack/gguf-parser-go" target="_blank" rel="noopener noreferrer">GGUF Parser Go</a>, which does not support all of Synapse's features, leading to inaccurate estimations.</span>
+            </InfoTooltip>
           </div>
 
           <div className="epm-mem-legend">
             <span className="epm-mem-legend-total"><strong>Total: {toGB(memory.modelVramUsage + memory.contextVramUsage + memory.computeOverheadVram)}GB</strong></span>
             {memory.modelVramUsage > 0 && (
               <span className="epm-mem-legend-item">
-                <span className="epm-mem-dot epm-mem-dot--model" /> Model Weights ({toGB(memory.modelVramUsage)}GB)
+                <span className="epm-mem-dot epm-mem-dot--model" />
+                <InfoTooltip content={MODEL_WEIGHTS_TOOLTIP} side="right" hideIcon title="Model Weights">
+                  <span>Model Weights ({toGB(memory.modelVramUsage)}GB)</span>
+                </InfoTooltip>
               </span>
             )}
             {memory.contextVramUsage > 0 && (
               <span className="epm-mem-legend-item">
-                <span className="epm-mem-dot epm-mem-dot--ctx" /> KV Cache ({toGB(memory.contextVramUsage)}GB)
+                <span className="epm-mem-dot epm-mem-dot--ctx" />
+                <InfoTooltip content={KV_CACHE_MEM_TOOLTIP} side="right" hideIcon title="KV Cache">
+                  <span>KV Cache ({toGB(memory.contextVramUsage)}GB)</span>
+                </InfoTooltip>
               </span>
             )}
             {memory.computeOverheadVram > 0 && (
               <span className="epm-mem-legend-item">
-                <span className="epm-mem-dot epm-mem-dot--overhead" /> Compute Overhead ({toGB(memory.computeOverheadVram)}GB)
+                <span className="epm-mem-dot epm-mem-dot--overhead" />
+                <InfoTooltip content={COMPUTE_OVERHEAD_TOOLTIP} side="right" hideIcon title="Compute Overhead">
+                  <span>Compute Overhead ({toGB(memory.computeOverheadVram)}GB)</span>
+                </InfoTooltip>
               </span>
             )}
             <span className="epm-mem-legend-item">
@@ -994,28 +1101,14 @@ function PerformancePage({
           </div>
 
           <div className="epm-mem-bar-wrap">
-            <div className="epm-mem-bar-label-inline">VRAM</div>
+            <InfoTooltip content={VRAM_LABEL_TOOLTIP} side="right" hideIcon title="VRAM">
+              <div className="epm-mem-bar-label-inline">VRAM</div>
+            </InfoTooltip>
             <div className="epm-mem-bar-track">
-              <div
-                className="epm-mem-segment epm-mem-segment--model"
-                style={{ width: `${vramModelPct * 100}%` }}
-                title={`Model Weights: ${toGB(memory.modelVramUsage)}GB`}
-              />
-              <div
-                className="epm-mem-segment epm-mem-segment--ctx"
-                style={{ width: `${vramCtxPct * 100}%` }}
-                title={`KV Cache: ${toGB(memory.contextVramUsage)}GB`}
-              />
-              <div
-                className="epm-mem-segment epm-mem-segment--overhead"
-                style={{ width: `${vramOverheadPct * 100}%` }}
-                title={`Compute Overhead: ${toGB(memory.computeOverheadVram)}GB`}
-              />
-              <div
-                className="epm-mem-segment epm-mem-segment--free"
-                style={{ width: `${vramFreePct * 100}%` }}
-                title={`Free: ${toGB(Math.max(0, totalVRAM - memory.modelVramUsage - memory.contextVramUsage - memory.computeOverheadVram))}GB`}
-              />
+              <InfoTooltip content={`Model Weights: ${toGB(memory.modelVramUsage)}GB`} className="epm-mem-segment epm-mem-segment--model" hideIcon side="top" title="Model Weights" style={{ width: `${vramModelPct * 100}%` }} />
+              <InfoTooltip content={`KV Cache: ${toGB(memory.contextVramUsage)}GB`} className="epm-mem-segment epm-mem-segment--ctx" hideIcon side="top" title="KV Cache" style={{ width: `${vramCtxPct * 100}%` }} />
+              <InfoTooltip content={`Compute Overhead: ${toGB(memory.computeOverheadVram)}GB`} className="epm-mem-segment epm-mem-segment--overhead" hideIcon side="top" title="Compute Overhead" style={{ width: `${vramOverheadPct * 100}%` }} />
+              <InfoTooltip content={`Free: ${toGB(Math.max(0, totalVRAM - memory.modelVramUsage - memory.contextVramUsage - memory.computeOverheadVram))}GB`} className="epm-mem-segment epm-mem-segment--free" hideIcon side="top" title="Free" style={{ width: `${vramFreePct * 100}%` }} />
             </div>
             <div className="epm-mem-bar-total">
               {toGB(totalVRAM)} GB
@@ -1028,22 +1121,34 @@ function PerformancePage({
                 <span className="epm-mem-legend-total"><strong>Total: {toGB(memory.modelRamUsage + memory.contextRamUsage + memory.fileBufferRam + memory.computeOverheadRam)}GB</strong></span>
                 {memory.modelRamUsage > 0 && (
                   <span className="epm-mem-legend-item">
-                    <span className="epm-mem-dot epm-mem-dot--model" /> Model Weights ({toGB(memory.modelRamUsage)}GB)
+                    <span className="epm-mem-dot epm-mem-dot--model" />
+                    <InfoTooltip content={MODEL_WEIGHTS_TOOLTIP} side="right" hideIcon title="Model Weights">
+                      <span>Model Weights ({toGB(memory.modelRamUsage)}GB)</span>
+                    </InfoTooltip>
                   </span>
                 )}
                 {memory.contextRamUsage > 0 && (
                   <span className="epm-mem-legend-item">
-                    <span className="epm-mem-dot epm-mem-dot--ctx" /> KV Cache ({toGB(memory.contextRamUsage)}GB)
+                    <span className="epm-mem-dot epm-mem-dot--ctx" />
+                    <InfoTooltip content={KV_CACHE_MEM_TOOLTIP} side="right" hideIcon title="KV Cache">
+                      <span>KV Cache ({toGB(memory.contextRamUsage)}GB)</span>
+                    </InfoTooltip>
                   </span>
                 )}
                 {memory.fileBufferRam > 0 && (
                   <span className="epm-mem-legend-item">
-                    <span className="epm-mem-dot epm-mem-dot--buffer" /> File Buffer ({toGB(memory.fileBufferRam)}GB)
+                    <span className="epm-mem-dot epm-mem-dot--buffer" />
+                    <InfoTooltip content={FILE_BUFFER_TOOLTIP} side="right" hideIcon title="File Buffer">
+                      <span>File Buffer ({toGB(memory.fileBufferRam)}GB)</span>
+                    </InfoTooltip>
                   </span>
                 )}
                 {memory.computeOverheadRam > 0 && (
                   <span className="epm-mem-legend-item">
-                    <span className="epm-mem-dot epm-mem-dot--overhead" /> Compute Overhead ({toGB(memory.computeOverheadRam)}GB)
+                    <span className="epm-mem-dot epm-mem-dot--overhead" />
+                    <InfoTooltip content={COMPUTE_OVERHEAD_TOOLTIP} side="right" hideIcon title="Compute Overhead">
+                      <span>Compute Overhead ({toGB(memory.computeOverheadRam)}GB)</span>
+                    </InfoTooltip>
                   </span>
                 )}
                 <span className="epm-mem-legend-item">
@@ -1051,33 +1156,15 @@ function PerformancePage({
                 </span>
               </div>
               <div className="epm-mem-bar-wrap">
-                <div className="epm-mem-bar-label-inline">RAM</div>
+                <InfoTooltip content={RAM_LABEL_TOOLTIP} side="right" hideIcon title="RAM">
+                  <div className="epm-mem-bar-label-inline">RAM</div>
+                </InfoTooltip>
                 <div className="epm-mem-bar-track">
-                  <div
-                    className="epm-mem-segment epm-mem-segment--model"
-                    style={{ width: `${ramModelPct * 100}%` }}
-                    title={`Model Weights: ${toGB(memory.modelRamUsage)}GB`}
-                  />
-                  <div
-                    className="epm-mem-segment epm-mem-segment--ctx"
-                    style={{ width: `${ramCtxPct * 100}%` }}
-                    title={`KV Cache: ${toGB(memory.contextRamUsage)}GB`}
-                  />
-                  <div
-                    className="epm-mem-segment epm-mem-segment--buffer"
-                    style={{ width: `${ramBufferPct * 100}%` }}
-                    title={`File Buffer: ${toGB(memory.fileBufferRam)}GB`}
-                  />
-                  <div
-                    className="epm-mem-segment epm-mem-segment--overhead"
-                    style={{ width: `${ramOverheadPct * 100}%` }}
-                    title={`Compute Overhead: ${toGB(memory.computeOverheadRam)}GB`}
-                  />
-                  <div
-                    className="epm-mem-segment epm-mem-segment--free"
-                    style={{ width: `${ramFreePct * 100}%` }}
-                    title={`Free: ${toGB(Math.max(0, totalRAM - memory.modelRamUsage - memory.contextRamUsage - memory.fileBufferRam - memory.computeOverheadRam))}GB`}
-                  />
+                  <InfoTooltip content={`Model Weights: ${toGB(memory.modelRamUsage)}GB`} className="epm-mem-segment epm-mem-segment--model" hideIcon side="top" title="Model Weights" style={{ width: `${ramModelPct * 100}%` }} />
+                  <InfoTooltip content={`KV Cache: ${toGB(memory.contextRamUsage)}GB`} className="epm-mem-segment epm-mem-segment--ctx" hideIcon side="top" title="KV Cache" style={{ width: `${ramCtxPct * 100}%` }} />
+                  <InfoTooltip content={`File Buffer: ${toGB(memory.fileBufferRam)}GB`} className="epm-mem-segment epm-mem-segment--buffer" hideIcon side="top" title="File Buffer" style={{ width: `${ramBufferPct * 100}%` }} />
+                  <InfoTooltip content={`Compute Overhead: ${toGB(memory.computeOverheadRam)}GB`} className="epm-mem-segment epm-mem-segment--overhead" hideIcon side="top" title="Compute Overhead" style={{ width: `${ramOverheadPct * 100}%` }} />
+                  <InfoTooltip content={`Free: ${toGB(Math.max(0, totalRAM - memory.modelRamUsage - memory.contextRamUsage - memory.fileBufferRam - memory.computeOverheadRam))}GB`} className="epm-mem-segment epm-mem-segment--free" hideIcon side="top" title="Free" style={{ width: `${ramFreePct * 100}%` }} />
                 </div>
                 <div className="epm-mem-bar-total">
                   {toGB(totalRAM)} GB
@@ -1090,124 +1177,135 @@ function PerformancePage({
 
       {/* Sliders */}
       <div className="epm-section" style={{ marginTop: '16px' }}>
-        <div className="epm-section__label">Settings</div>
+        <InfoTooltip content="Adjust GPU offloading and context size to balance speed against memory usage." side="right" hideIcon title="Settings">
+          <div className="epm-section__label">Settings</div>
+        </InfoTooltip>
         <div className="epm-perf-sliders">
           <div className="epm-perf-slider-group">
-            <label className="epm-perf-slider-label">
-              GPU Layers (NGL): <strong>{sliderNgl}</strong>
-            </label>
-            <input
-              type="range"
-              min={0}
-              max={modelMaxLayers}
-              step={1}
-              value={sliderNgl}
-              disabled={isAuto}
-              className={`epm-perf-range${isAuto ? ' epm-perf-range--disabled' : ''}`}
-              onChange={(e) => {
-                if (!isAuto) {
-                  const v = parseInt(e.target.value, 10);
-                  onSetLayers(v);
-                  triggerEstimate(v, activeCtx);
-                }
-              }}
-            />
-            <div className="epm-perf-range-labels">
-              <span>0</span>
-              <span>{modelMaxLayers}</span>
-            </div>
+            <InfoTooltip content={GPU_LAYERS_TOOLTIP} side="bottom" stretch className="info-tooltip-stretch--col" title="GPU Layers (NGL)">
+              <label className="epm-perf-slider-label">
+                GPU Layers (NGL): <strong>{sliderNgl}</strong>
+              </label>
+              <input
+                type="range"
+                min={0}
+                max={modelMaxLayers}
+                step={1}
+                value={sliderNgl}
+                disabled={isAuto}
+                className={`epm-perf-range${isAuto ? ' epm-perf-range--disabled' : ''}`}
+                onChange={(e) => {
+                  if (!isAuto) {
+                    const v = parseInt(e.target.value, 10);
+                    onSetLayers(v);
+                    triggerEstimate(v, activeCtx);
+                  }
+                }}
+              />
+              <div className="epm-perf-range-labels">
+                <span>0</span>
+                <span>{modelMaxLayers}</span>
+              </div>
+            </InfoTooltip>
           </div>
 
           <div className="epm-perf-slider-group" style={{ marginTop: '16px' }}>
-            <label className="epm-perf-slider-label">
-              Context Size: <strong>{sliderCtx.toLocaleString()}</strong>
-            </label>
-            <input
-              type="range"
-              min={512}
-              max={modelMaxContext}
-              step={512}
-              value={sliderCtx}
-              disabled={isAuto}
-              className={`epm-perf-range${isAuto ? ' epm-perf-range--disabled' : ''}`}
-              onChange={(e) => {
-                if (!isAuto) {
-                  const v = parseInt(e.target.value, 10);
-                  onSetContextSize(v);
-                  triggerEstimate(activeLayers, v);
-                }
-              }}
-            />
-            <div className="epm-perf-range-labels">
-              <span>512</span>
-              <span>{modelMaxContext.toLocaleString()}</span>
-            </div>
+            <InfoTooltip content={CONTEXT_SIZE_TOOLTIP} side="bottom" stretch className="info-tooltip-stretch--col" title="Context Size">
+              <label className="epm-perf-slider-label">
+                Context Size: <strong>{sliderCtx.toLocaleString()}</strong>
+              </label>
+              <input
+                type="range"
+                min={512}
+                max={modelMaxContext}
+                step={512}
+                value={sliderCtx}
+                disabled={isAuto}
+                className={`epm-perf-range${isAuto ? ' epm-perf-range--disabled' : ''}`}
+                onChange={(e) => {
+                  if (!isAuto) {
+                    const v = parseInt(e.target.value, 10);
+                    onSetContextSize(v);
+                    triggerEstimate(activeLayers, v);
+                  }
+                }}
+              />
+              <div className="epm-perf-range-labels">
+                <span>512</span>
+                <span>{modelMaxContext.toLocaleString()}</span>
+              </div>
+            </InfoTooltip>
           </div>
         </div>
       </div>
 
       {/* Cache Options */}
       <div className="epm-section" style={{ marginTop: '16px' }}>
-        <div className="epm-section__label">Cache Options</div>
+        <InfoTooltip content="Fine-tune KV cache behaviour and data types for memory and quality tradeoffs." side="right" hideIcon title="Cache Options">
+          <div className="epm-section__label">Cache Options</div>
+        </InfoTooltip>
         <div className="epm-perf-toggles">
           <label className="epm-perf-toggle-row">
-            <span className="epm-perf-toggle-label">
-              KV Cache Offload
-              <span className="epm-perf-toggle-hint">Use GPU for KV cache (lower RAM usage)</span>
-            </span>
-            <div
-              className={`epm-toggle-switch${editKvOffload ? ' epm-toggle-switch--on' : ''}`}
-              onClick={() => { const next = !editKvOffload; onSetKvOffload(next); triggerEstimate(activeLayers, activeCtx, next, editMmap, editCacheTypeK, editCacheTypeV); }}
-              role="switch"
-              aria-checked={editKvOffload}
-              tabIndex={0}
-              onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); const next = !editKvOffload; onSetKvOffload(next); triggerEstimate(activeLayers, activeCtx, next, editMmap, editCacheTypeK, editCacheTypeV); } }}
-            >
-              <div className="epm-toggle-switch__knob" />
-            </div>
+            <InfoTooltip content={KV_CACHE_OFFLOAD_TOOLTIP} side="right" stretch className="info-tooltip-stretch--row" title="KV Cache Offload">
+              <span className="epm-perf-toggle-label">KV Cache Offload</span>
+              <div
+                className={`epm-toggle-switch${editKvOffload ? ' epm-toggle-switch--on' : ''}`}
+                onClick={() => { const next = !editKvOffload; onSetKvOffload(next); triggerEstimate(activeLayers, activeCtx, next, editMmap, editCacheTypeK, editCacheTypeV); }}
+                role="switch"
+                aria-checked={editKvOffload}
+                tabIndex={0}
+                onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); const next = !editKvOffload; onSetKvOffload(next); triggerEstimate(activeLayers, activeCtx, next, editMmap, editCacheTypeK, editCacheTypeV); } }}
+              >
+                <div className="epm-toggle-switch__knob" />
+              </div>
+            </InfoTooltip>
           </label>
         </div>
         <div className="epm-cache-selectors-row">
-          <CacheTypeSelector label="K Cache Type" value={editCacheTypeK} onChange={(v) => { onSetCacheTypeK(v); triggerEstimate(activeLayers, activeCtx, editKvOffload, editMmap, v, editCacheTypeV); }} />
-          <CacheTypeSelector label="V Cache Type" value={editCacheTypeV} onChange={(v) => { onSetCacheTypeV(v); triggerEstimate(activeLayers, activeCtx, editKvOffload, editMmap, editCacheTypeK, v); }} />
+          <InfoTooltip content={K_CACHE_TYPE_TOOLTIP} stretch title="K Cache Type">
+            <CacheTypeSelector label="K Cache Type" value={editCacheTypeK} onChange={(v) => { onSetCacheTypeK(v); triggerEstimate(activeLayers, activeCtx, editKvOffload, editMmap, v, editCacheTypeV); }} />
+          </InfoTooltip>
+          <InfoTooltip content={V_CACHE_TYPE_TOOLTIP} stretch title="V Cache Type">
+            <CacheTypeSelector label="V Cache Type" value={editCacheTypeV} onChange={(v) => { onSetCacheTypeV(v); triggerEstimate(activeLayers, activeCtx, editKvOffload, editMmap, editCacheTypeK, v); }} />
+          </InfoTooltip>
         </div>
       </div>
 
       {/* Memory Options */}
       <div className="epm-section" style={{ marginTop: '16px' }}>
-        <div className="epm-section__label">Memory Options</div>
+        <InfoTooltip content="Control how model weights are loaded into memory." side="right" hideIcon title="Memory Options">
+          <div className="epm-section__label">Memory Options</div>
+        </InfoTooltip>
         <div className="epm-perf-toggles">
           <label className="epm-perf-toggle-row">
-            <span className="epm-perf-toggle-label">
-              Memory-Mapped (MMAP)
-              <span className="epm-perf-toggle-hint">Memory-map model file (lower RAM usage)</span>
-            </span>
-            <div
-              className={`epm-toggle-switch${editMmap ? ' epm-toggle-switch--on' : ''}`}
-              onClick={() => { const next = !editMmap; onSetMmap(next); triggerEstimate(activeLayers, activeCtx, editKvOffload, next, editCacheTypeK, editCacheTypeV); }}
-              role="switch"
-              aria-checked={editMmap}
-              tabIndex={0}
-              onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); const next = !editMmap; onSetMmap(next); triggerEstimate(activeLayers, activeCtx, editKvOffload, next, editCacheTypeK, editCacheTypeV); } }}
-            >
-              <div className="epm-toggle-switch__knob" />
-            </div>
+            <InfoTooltip content={MMAP_TOOLTIP} side="right" stretch className="info-tooltip-stretch--row" title="Memory-Mapped (MMAP)">
+              <span className="epm-perf-toggle-label">Memory-Mapped (MMAP)</span>
+              <div
+                className={`epm-toggle-switch${editMmap ? ' epm-toggle-switch--on' : ''}`}
+                onClick={() => { const next = !editMmap; onSetMmap(next); triggerEstimate(activeLayers, activeCtx, editKvOffload, next, editCacheTypeK, editCacheTypeV); }}
+                role="switch"
+                aria-checked={editMmap}
+                tabIndex={0}
+                onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); const next = !editMmap; onSetMmap(next); triggerEstimate(activeLayers, activeCtx, editKvOffload, next, editCacheTypeK, editCacheTypeV); } }}
+              >
+                <div className="epm-toggle-switch__knob" />
+              </div>
+            </InfoTooltip>
           </label>
           <label className="epm-perf-toggle-row">
-            <span className="epm-perf-toggle-label">
-              MLock (Pin RAM)
-              <span className="epm-perf-toggle-hint">Lock model in RAM to prevent swapping</span>
-            </span>
-            <div
-              className={`epm-toggle-switch${editMlock ? ' epm-toggle-switch--on' : ''}`}
-              onClick={() => { const next = !editMlock; onSetMlock(next); }}
-              role="switch"
-              aria-checked={editMlock}
-              tabIndex={0}
-              onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); const next = !editMlock; onSetMlock(next); } }}
-            >
-              <div className="epm-toggle-switch__knob" />
-            </div>
+            <InfoTooltip content={MLOCK_TOOLTIP} side="right" stretch className="info-tooltip-stretch--row" title="MLock (Pin RAM)">
+              <span className="epm-perf-toggle-label">MLock (Pin RAM)</span>
+              <div
+                className={`epm-toggle-switch${editMlock ? ' epm-toggle-switch--on' : ''}`}
+                onClick={() => { const next = !editMlock; onSetMlock(next); }}
+                role="switch"
+                aria-checked={editMlock}
+                tabIndex={0}
+                onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); const next = !editMlock; onSetMlock(next); } }}
+              >
+                <div className="epm-toggle-switch__knob" />
+              </div>
+            </InfoTooltip>
           </label>
         </div>
       </div>
