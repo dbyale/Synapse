@@ -24,6 +24,7 @@ export interface Profile {
   };
   tools?: string[];
   layers?: number;
+  gpuLayersAuto?: boolean;
   contextSize?: number;
   autoOptimizer?: 'longest-context' | 'most-gpu' | 'custom';
   kvOffload?: boolean;

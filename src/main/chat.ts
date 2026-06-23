@@ -455,7 +455,7 @@ export async function loadProfile(
       '--model',
       fullModelPath,
       '--n-gpu-layers',
-      result.ngl.toString(),
+      (profile as any).gpuLayersAuto ? 'auto' : result.ngl.toString(),
       '--ctx-size',
       result.ctx.toString(),
       '--port',

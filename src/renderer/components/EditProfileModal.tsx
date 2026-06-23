@@ -40,6 +40,7 @@ import {
   MOST_GPU_TOOLTIP,
   CUSTOM_TOOLTIP,
   GPU_LAYERS_TOOLTIP,
+  GPU_LAYERS_AUTO_TOOLTIP,
   CONTEXT_SIZE_TOOLTIP,
   KV_CACHE_OFFLOAD_TOOLTIP,
   K_CACHE_TYPE_TOOLTIP,
@@ -100,6 +101,8 @@ const PAGE_DEPTH: Record<string, number> = {
   advanced: 1,
   'repeat-penalty': 2,
   performance: 1,
+  'cache-options': 2,
+  'memory-options': 2,
 };
 
 const BREADCRUMB_MAP: Record<string, { label: string; parent: string | null }> =
@@ -110,6 +113,8 @@ const BREADCRUMB_MAP: Record<string, { label: string; parent: string | null }> =
     advanced: { label: 'Advanced Parameters', parent: 'main' },
     'repeat-penalty': { label: 'Repeat Penalty', parent: 'advanced' },
     performance: { label: 'Performance', parent: 'main' },
+    'cache-options': { label: 'Cache Options', parent: 'performance' },
+    'memory-options': { label: 'Memory Options', parent: 'performance' },
   };
 
 function buildBreadcrumb(page: string): Array<{ key: string; label: string }> {
@@ -858,6 +863,7 @@ function PerformancePage({
   editAutoOptimizer,
   editLayers,
   editContextSize,
+  editGpuLayersAuto,
   editKvOffload,
   editCacheTypeK,
   editCacheTypeV,
@@ -869,6 +875,7 @@ function PerformancePage({
   totalVRAM,
   totalRAM,
   onSetAutoOptimizer,
+  onSetGpuLayersAuto,
   onSetLayers,
   onSetContextSize,
   onSetKvOffload,
@@ -879,10 +886,12 @@ function PerformancePage({
   onRunOptimizer,
   onEstimateMemory,
   initialEstimate,
+  onNavigate,
 }: {
   editAutoOptimizer: 'longest-context' | 'most-gpu' | 'custom' | null;
   editLayers: number | undefined;
   editContextSize: number | undefined;
+  editGpuLayersAuto: boolean;
   editKvOffload: boolean;
   editCacheTypeK: CacheType;
   editCacheTypeV: CacheType;
@@ -896,6 +905,7 @@ function PerformancePage({
   onSetAutoOptimizer: (
     v: 'longest-context' | 'most-gpu' | 'custom' | null,
   ) => void;
+  onSetGpuLayersAuto: (v: boolean) => void;
   onSetLayers: (v: number | undefined) => void;
   onSetContextSize: (v: number | undefined) => void;
   onSetKvOffload: (v: boolean) => void;
@@ -929,12 +939,13 @@ function PerformancePage({
     computeOverheadRam: number;
     fileBufferRam: number;
   } | null;
+  onNavigate: (page: string) => void;
 }) {
   const isAuto =
     editAutoOptimizer !== null &&
     editAutoOptimizer !== undefined &&
     editAutoOptimizer !== 'custom';
-  const sliderNgl = isAuto ? editLayers ?? 0 : (editLayers ?? 0);
+  const sliderNgl = editGpuLayersAuto ? (editLayers ?? 0) : (isAuto ? editLayers ?? 0 : (editLayers ?? 0));
   const sliderCtx = isAuto ? editContextSize ?? 512 : (editContextSize ?? 512);
 
   const [memory, setMemory] = useState<{
@@ -946,7 +957,8 @@ function PerformancePage({
     computeOverheadRam: number;
     fileBufferRam: number;
   } | null>(initialEstimate);
-  const activeLayers = isAuto ? (editLayers ?? 0) : sliderNgl;
+  const layersDisabled = isAuto || editGpuLayersAuto;
+  const activeLayers = editGpuLayersAuto ? (editLayers ?? modelMaxLayers) : (isAuto ? (editLayers ?? 0) : sliderNgl);
   const activeCtx = isAuto ? (editContextSize ?? 512) : sliderCtx;
 
   const triggerEstimate = useCallback(
@@ -1182,9 +1194,24 @@ function PerformancePage({
         </InfoTooltip>
         <div className="epm-perf-sliders">
           <div className="epm-perf-slider-group">
+            <label className="epm-perf-toggle-row" style={{ paddingTop: 0 }}>
+              <InfoTooltip content={GPU_LAYERS_AUTO_TOOLTIP} side="right" stretch className="info-tooltip-stretch--row" title="GPU Layers Auto">
+                <span className="epm-perf-toggle-label">GPU Layers Auto</span>
+                <div
+                  className={`epm-toggle-switch${editGpuLayersAuto ? ' epm-toggle-switch--on' : ''}`}
+                  onClick={() => onSetGpuLayersAuto(!editGpuLayersAuto)}
+                  role="switch"
+                  aria-checked={editGpuLayersAuto}
+                  tabIndex={0}
+                  onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); onSetGpuLayersAuto(!editGpuLayersAuto); } }}
+                >
+                  <div className="epm-toggle-switch__knob" />
+                </div>
+              </InfoTooltip>
+            </label>
             <InfoTooltip content={GPU_LAYERS_TOOLTIP} side="bottom" stretch className="info-tooltip-stretch--col" title="GPU Layers (NGL)">
               <label className="epm-perf-slider-label">
-                GPU Layers (NGL): <strong>{sliderNgl}</strong>
+                GPU Layers (NGL): <strong>{editGpuLayersAuto ? 'Auto' : sliderNgl}</strong>
               </label>
               <input
                 type="range"
@@ -1192,10 +1219,10 @@ function PerformancePage({
                 max={modelMaxLayers}
                 step={1}
                 value={sliderNgl}
-                disabled={isAuto}
-                className={`epm-perf-range${isAuto ? ' epm-perf-range--disabled' : ''}`}
+                disabled={layersDisabled}
+                className={`epm-perf-range${layersDisabled ? ' epm-perf-range--disabled' : ''}`}
                 onChange={(e) => {
-                  if (!isAuto) {
+                  if (!layersDisabled) {
                     const v = parseInt(e.target.value, 10);
                     onSetLayers(v);
                     triggerEstimate(v, activeCtx);
@@ -1239,10 +1266,88 @@ function PerformancePage({
         </div>
       </div>
 
-      {/* Cache Options */}
-      <div className="epm-section" style={{ marginTop: '16px' }}>
-        <InfoTooltip content="Fine-tune KV cache behaviour and data types for memory and quality tradeoffs." side="right" hideIcon title="Cache Options">
-          <div className="epm-section__label">Cache Options</div>
+      {/* Submenu SectionCards */}
+      <div className="epm-section" style={{ marginTop: '20px' }}>
+        <div className="epm-section__label">Advanced Options</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '10px' }}>
+          <button type="button" className="epm-section-card" onClick={() => onNavigate('cache-options')}>
+            <div className="epm-section-card__icon">
+              <SlidersHorizontal size={18} />
+            </div>
+            <div className="epm-section-card__body">
+              <InfoTooltip content="Fine-tune KV cache behaviour and data types for memory and quality tradeoffs." title="Cache Options" side="right" hideIcon>
+                <div className="epm-section-card__title">Cache Options</div>
+              </InfoTooltip>
+              <div className="epm-section-card__preview">
+                KV Cache: {editKvOffload ? 'Offloaded' : 'CPU'}, K: {editCacheTypeK.toUpperCase()}, V: {editCacheTypeV.toUpperCase()}
+              </div>
+            </div>
+            <ChevronRight size={16} className="epm-section-card__chevron" />
+          </button>
+          <button type="button" className="epm-section-card" onClick={() => onNavigate('memory-options')}>
+            <div className="epm-section-card__icon">
+              <SlidersHorizontal size={18} />
+            </div>
+            <div className="epm-section-card__body">
+              <InfoTooltip content="Control how model weights are loaded into memory." title="Memory Options" side="right" hideIcon>
+                <div className="epm-section-card__title">Memory Options</div>
+              </InfoTooltip>
+              <div className="epm-section-card__preview">
+                MMAP: {editMmap ? 'On' : 'Off'}, MLock: {editMlock ? 'On' : 'Off'}
+              </div>
+            </div>
+            <ChevronRight size={16} className="epm-section-card__chevron" />
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ── Cache Options subpage ──
+
+function CacheOptionsPage({
+  editKvOffload,
+  editCacheTypeK,
+  editCacheTypeV,
+  onSetKvOffload,
+  onSetCacheTypeK,
+  onSetCacheTypeV,
+  onEstimateMemory,
+}: {
+  editKvOffload: boolean;
+  editCacheTypeK: CacheType;
+  editCacheTypeV: CacheType;
+  onSetKvOffload: (v: boolean) => void;
+  onSetCacheTypeK: (v: CacheType) => void;
+  onSetCacheTypeV: (v: CacheType) => void;
+  onEstimateMemory: (
+    ngl: number,
+    ctx: number,
+    kvOffload?: boolean,
+    mmap?: boolean,
+    cacheTypeK?: CacheType,
+    cacheTypeV?: CacheType,
+  ) => Promise<any>;
+}) {
+  return (
+    <>
+      <h2 className="epm-page-title">Cache Options</h2>
+      <p
+        style={{
+          fontSize: '14px',
+          color: 'var(--text-secondary)',
+          margin: '0 0 20px',
+          lineHeight: 1.5,
+        }}
+      >
+        Fine-tune KV cache behaviour and data types for memory and quality
+        tradeoffs.
+      </p>
+
+      <div className="epm-section">
+        <InfoTooltip content="Cache Options" side="right" hideIcon title="Cache Options">
+          <div className="epm-section__label">KV Cache</div>
         </InfoTooltip>
         <div className="epm-perf-toggles">
           <label className="epm-perf-toggle-row">
@@ -1250,11 +1355,11 @@ function PerformancePage({
               <span className="epm-perf-toggle-label">KV Cache Offload</span>
               <div
                 className={`epm-toggle-switch${editKvOffload ? ' epm-toggle-switch--on' : ''}`}
-                onClick={() => { const next = !editKvOffload; onSetKvOffload(next); triggerEstimate(activeLayers, activeCtx, next, editMmap, editCacheTypeK, editCacheTypeV); }}
+                onClick={() => { const next = !editKvOffload; onSetKvOffload(next); onEstimateMemory(0, 512, next, true, editCacheTypeK, editCacheTypeV); }}
                 role="switch"
                 aria-checked={editKvOffload}
                 tabIndex={0}
-                onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); const next = !editKvOffload; onSetKvOffload(next); triggerEstimate(activeLayers, activeCtx, next, editMmap, editCacheTypeK, editCacheTypeV); } }}
+                onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); const next = !editKvOffload; onSetKvOffload(next); onEstimateMemory(0, 512, next, true, editCacheTypeK, editCacheTypeV); } }}
               >
                 <div className="epm-toggle-switch__knob" />
               </div>
@@ -1262,52 +1367,76 @@ function PerformancePage({
           </label>
         </div>
         <div className="epm-cache-selectors-row">
-          <InfoTooltip content={K_CACHE_TYPE_TOOLTIP} stretch title="K Cache Type">
-            <CacheTypeSelector label="K Cache Type" value={editCacheTypeK} onChange={(v) => { onSetCacheTypeK(v); triggerEstimate(activeLayers, activeCtx, editKvOffload, editMmap, v, editCacheTypeV); }} />
+          <InfoTooltip content={K_CACHE_TYPE_TOOLTIP} stretch side="right" title="K Cache Type">
+            <CacheTypeSelector label="K Cache Type" value={editCacheTypeK} onChange={(v) => { onSetCacheTypeK(v); onEstimateMemory(0, 512, editKvOffload, true, v, editCacheTypeV); }} />
           </InfoTooltip>
-          <InfoTooltip content={V_CACHE_TYPE_TOOLTIP} stretch title="V Cache Type">
-            <CacheTypeSelector label="V Cache Type" value={editCacheTypeV} onChange={(v) => { onSetCacheTypeV(v); triggerEstimate(activeLayers, activeCtx, editKvOffload, editMmap, editCacheTypeK, v); }} />
+          <InfoTooltip content={V_CACHE_TYPE_TOOLTIP} stretch side="left" title="V Cache Type">
+            <CacheTypeSelector label="V Cache Type" value={editCacheTypeV} onChange={(v) => { onSetCacheTypeV(v); onEstimateMemory(0, 512, editKvOffload, true, editCacheTypeK, v); }} />
           </InfoTooltip>
         </div>
       </div>
+    </>
+  );
+}
 
-      {/* Memory Options */}
-      <div className="epm-section" style={{ marginTop: '16px' }}>
-        <InfoTooltip content="Control how model weights are loaded into memory." side="right" hideIcon title="Memory Options">
-          <div className="epm-section__label">Memory Options</div>
-        </InfoTooltip>
-        <div className="epm-perf-toggles">
-          <label className="epm-perf-toggle-row">
-            <InfoTooltip content={MMAP_TOOLTIP} side="right" stretch className="info-tooltip-stretch--row" title="Memory-Mapped (MMAP)">
-              <span className="epm-perf-toggle-label">Memory-Mapped (MMAP)</span>
-              <div
-                className={`epm-toggle-switch${editMmap ? ' epm-toggle-switch--on' : ''}`}
-                onClick={() => { const next = !editMmap; onSetMmap(next); triggerEstimate(activeLayers, activeCtx, editKvOffload, next, editCacheTypeK, editCacheTypeV); }}
-                role="switch"
-                aria-checked={editMmap}
-                tabIndex={0}
-                onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); const next = !editMmap; onSetMmap(next); triggerEstimate(activeLayers, activeCtx, editKvOffload, next, editCacheTypeK, editCacheTypeV); } }}
-              >
-                <div className="epm-toggle-switch__knob" />
-              </div>
-            </InfoTooltip>
-          </label>
-          <label className="epm-perf-toggle-row">
-            <InfoTooltip content={MLOCK_TOOLTIP} side="right" stretch className="info-tooltip-stretch--row" title="MLock (Pin RAM)">
-              <span className="epm-perf-toggle-label">MLock (Pin RAM)</span>
-              <div
-                className={`epm-toggle-switch${editMlock ? ' epm-toggle-switch--on' : ''}`}
-                onClick={() => { const next = !editMlock; onSetMlock(next); }}
-                role="switch"
-                aria-checked={editMlock}
-                tabIndex={0}
-                onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); const next = !editMlock; onSetMlock(next); } }}
-              >
-                <div className="epm-toggle-switch__knob" />
-              </div>
-            </InfoTooltip>
-          </label>
-        </div>
+// ── Memory Options subpage ──
+
+function MemoryOptionsPage({
+  editMmap,
+  editMlock,
+  onSetMmap,
+  onSetMlock,
+}: {
+  editMmap: boolean;
+  editMlock: boolean;
+  onSetMmap: (v: boolean) => void;
+  onSetMlock: (v: boolean) => void;
+}) {
+  return (
+    <>
+      <h2 className="epm-page-title">Memory Options</h2>
+      <p
+        style={{
+          fontSize: '14px',
+          color: 'var(--text-secondary)',
+          margin: '0 0 20px',
+          lineHeight: 1.5,
+        }}
+      >
+        Control how model weights are loaded into memory.
+      </p>
+
+      <div className="epm-perf-toggles">
+        <label className="epm-perf-toggle-row">
+          <InfoTooltip content={MMAP_TOOLTIP} side="right" stretch className="info-tooltip-stretch--row" title="Memory-Mapped (MMAP)">
+            <span className="epm-perf-toggle-label">Memory-Mapped (MMAP)</span>
+            <div
+              className={`epm-toggle-switch${editMmap ? ' epm-toggle-switch--on' : ''}`}
+              onClick={() => onSetMmap(!editMmap)}
+              role="switch"
+              aria-checked={editMmap}
+              tabIndex={0}
+              onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); onSetMmap(!editMmap); } }}
+            >
+              <div className="epm-toggle-switch__knob" />
+            </div>
+          </InfoTooltip>
+        </label>
+        <label className="epm-perf-toggle-row">
+          <InfoTooltip content={MLOCK_TOOLTIP} side="right" stretch className="info-tooltip-stretch--row" title="MLock (Pin RAM)">
+            <span className="epm-perf-toggle-label">MLock (Pin RAM)</span>
+            <div
+              className={`epm-toggle-switch${editMlock ? ' epm-toggle-switch--on' : ''}`}
+              onClick={() => onSetMlock(!editMlock)}
+              role="switch"
+              aria-checked={editMlock}
+              tabIndex={0}
+              onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); onSetMlock(!editMlock); } }}
+            >
+              <div className="epm-toggle-switch__knob" />
+            </div>
+          </InfoTooltip>
+        </label>
       </div>
     </>
   );
@@ -1391,6 +1520,9 @@ export default function EditProfileModal({
   >(profile?.allocatedVRAM);
   const [editAllocatedRAM, setEditAllocatedRAM] = useState<number | undefined>(
     profile?.allocatedRAM,
+  );
+  const [editGpuLayersAuto, setEditGpuLayersAuto] = useState<boolean>(
+    profile?.gpuLayersAuto ?? false,
   );
   const [editKvOffload, setEditKvOffload] = useState<boolean>(
     profile?.kvOffload ?? true,
@@ -1653,6 +1785,14 @@ useEffect(() => {
       cacheTypeV: editCacheTypeV,
       mmap: editMmap,
       mlock: editMlock,
+      gpuLayersAuto: editGpuLayersAuto,
+      ...(modelMeta
+        ? {
+            maxForModel: modelRelativePath,
+            maxLayers: modelMeta.maxLayers,
+            maxContext: modelMeta.maxContext,
+          }
+        : {}),
       ...(editAutoOptimizer &&
       editLayers !== undefined &&
       editContextSize !== undefined
@@ -1662,9 +1802,6 @@ useEffect(() => {
             contextSize: editContextSize,
             allocatedVRAM: editAllocatedVRAM,
             allocatedRAM: editAllocatedRAM,
-            maxLayers: modelMeta?.maxLayers,
-            maxContext: modelMeta?.maxContext,
-            maxForModel: modelRelativePath,
             estimation: lastEstimate ?? undefined,
           }
         : {}),
@@ -1826,6 +1963,7 @@ useEffect(() => {
             editAutoOptimizer={editAutoOptimizer}
             editLayers={editLayers}
             editContextSize={editContextSize}
+            editGpuLayersAuto={editGpuLayersAuto}
             editKvOffload={editKvOffload}
             editCacheTypeK={editCacheTypeK}
             editCacheTypeV={editCacheTypeV}
@@ -1837,6 +1975,7 @@ useEffect(() => {
             totalVRAM={totalVRAM}
             totalRAM={totalRAM}
             onSetAutoOptimizer={setEditAutoOptimizer}
+            onSetGpuLayersAuto={setEditGpuLayersAuto}
             onSetLayers={setEditLayers}
             onSetContextSize={setEditContextSize}
             onSetKvOffload={setEditKvOffload}
@@ -1847,6 +1986,28 @@ useEffect(() => {
             onRunOptimizer={handleRunOptimizer}
             onEstimateMemory={handleEstimateMemory}
             initialEstimate={profile?.estimation ?? lastEstimate}
+            onNavigate={navigateTo}
+          />
+        );
+      case 'cache-options':
+        return (
+          <CacheOptionsPage
+            editKvOffload={editKvOffload}
+            editCacheTypeK={editCacheTypeK}
+            editCacheTypeV={editCacheTypeV}
+            onSetKvOffload={setEditKvOffload}
+            onSetCacheTypeK={setEditCacheTypeK}
+            onSetCacheTypeV={setEditCacheTypeV}
+            onEstimateMemory={handleEstimateMemory}
+          />
+        );
+      case 'memory-options':
+        return (
+          <MemoryOptionsPage
+            editMmap={editMmap}
+            editMlock={editMlock}
+            onSetMmap={setEditMmap}
+            onSetMlock={setEditMlock}
           />
         );
       case 'repeat-penalty':

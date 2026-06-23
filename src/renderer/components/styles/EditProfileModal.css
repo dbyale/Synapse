@@ -969,7 +969,7 @@
   top: 100%;
   left: 0;
   right: 0;
-  z-index: 100;
+  z-index: 200;
   margin-top: 4px;
   background: var(--bg-primary);
   border: 1px solid var(--border);
@@ -1032,3 +1032,5 @@
   color: var(--accent);
   font-weight: 600;
 }
+
+

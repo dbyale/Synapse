@@ -196,7 +196,6 @@ body,
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  z-index: 1;
 }
 
 .info-tooltip-wrapper:hover {

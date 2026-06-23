@@ -104,16 +104,25 @@ export const KV_CACHE_OFFLOAD_TOOLTIP = [
   'System RAM KV cache: saves VRAM but can slow down generation.',
 ];
 
+export const GPU_LAYERS_AUTO_TOOLTIP = [
+  'Lets llama-server decide how many layers to offload to the GPU based on available VRAM at startup.',
+  'This option may be helpful for systems that frequently change GPUs.',
+  'For the best results on most systems, use "Longest Context" or "Most GPU" modes for quick decisions.',
+];
+
 export const K_CACHE_TYPE_TOOLTIP = [
-  'Data type for the key cache. Affects memory usage and precision.',
-  'Higher precision (f32, f16): better quality, more memory.',
-  'Lower precision (q8_0, q4_0): saves memory, small quality impact.',
+  'Data type for the key cache — stores attention key vectors during generation.',
+  'Higher precision (f32 → f16 → bf16): better quality in rare / complex token predictions, higher VRAM usage (up to 2× vs Q4_0).',
+  'Lower precision (q8_0 → q4_0 → q4_1 → iq4_nl → q5_0 → q5_1): 2–4× memory reduction with minor perplexity increase (~0.1–0.5 PPL).',
+  'Use f16 for quality-sensitive tasks. Use q8_0 for balanced quality/memory. Use q4_0/q4_1 for memory-constrained scenarios.',
 ];
 
 export const V_CACHE_TYPE_TOOLTIP = [
-  'Data type for the value cache. Same tradeoffs as K cache type.',
-  'Higher precision uses more memory but preserves more information.',
-  'Lower precision reduces memory at the cost of some quality.',
+  'Data type for the value cache — stores attention value vectors during generation.',
+  'Value cache is more sensitive to quantization than key cache; lower precision can noticeably affect output quality.',
+  'Higher precision (f32 → f16 → bf16): recommended for value cache to maintain generation quality.',
+  'Lower precision (q8_0 → q4_0 → q4_1 → iq4_nl → q5_0 → q5_1): frees VRAM at the cost of higher quality degradation than quantizing the key cache.',
+  'Consider keeping V Cache at f16 and only quantizing K Cache if memory is tight.',
 ];
 
 export const MMAP_TOOLTIP = [
