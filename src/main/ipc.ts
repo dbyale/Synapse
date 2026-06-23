@@ -26,6 +26,141 @@ import type { SearchFilter } from '../renderer/preload.d';
 
 const execAsync = util.promisify(exec);
 
+interface VramStatsResult {
+  isUnifiedMemory: boolean;
+  ram: { total: number; appCurrentUsage: number; otherUsed: number; maxRecommended: number };
+  vram: { total: number; otherUsed: number; maxRecommended: number } | null;
+  gpus: any[];
+  selectedGpu: any | null;
+}
+
+let vramStatsCache: VramStatsResult | null = null;
+let refreshPromise: Promise<void> | null = null;
+
+async function computeVramStats(): Promise<VramStatsResult> {
+  const toMB = (bytes: number) => Math.round(bytes / (1024 * 1024));
+
+  const totalRamBytes = os.totalmem();
+  const freeRamBytes = os.freemem();
+
+  const metrics = app.getAppMetrics();
+  const appUsedKB = metrics.reduce(
+    (acc, metric) => acc + metric.memory.workingSetSize,
+    0,
+  );
+  const appUsedBytes = appUsedKB * 1024;
+  const otherRamUsedBytes = totalRamBytes - freeRamBytes - appUsedBytes;
+
+  const totalRam = toMB(totalRamBytes);
+  const appUsedRam = toMB(appUsedBytes);
+  const otherUsedRam = Math.max(0, toMB(otherRamUsedBytes));
+  const recommendedRam = Math.max(0, totalRam - 4096);
+
+  const cpu = await si.cpu();
+  const isAppleSilicon =
+    process.platform === 'darwin' && cpu.vendor === 'Apple';
+
+  const graphics = await si.graphics();
+  const gpuList = (graphics.controllers || []).map((gpu, index) => ({
+    id: `${index}`,
+    vendor: gpu.vendor || 'Unknown',
+    model: gpu.model || 'Unknown',
+    bus: gpu.bus || '',
+    vram: parseInt(String(gpu.vram), 10) || 0,
+    vramDynamic:
+      typeof gpu.vramDynamic === 'boolean'
+        ? gpu.vramDynamic
+        : String(gpu.vramDynamic).toLowerCase() === 'true',
+    driverVersion: gpu.driverVersion || '',
+    busAddress: gpu.busAddress || '',
+  }));
+
+  let selectedGpu =
+    gpuList
+      .filter((gpu) => !gpu.vramDynamic && gpu.vram > 0)
+      .sort((a, b) => b.vram - a.vram)[0] ||
+    gpuList
+      .filter((gpu) => gpu.vram > 0)
+      .sort((a, b) => b.vram - a.vram)[0] ||
+    null;
+
+  let detectedVramTotal = selectedGpu?.vram || 0;
+  let detectedVramUsed = selectedGpu ? 500 : 0;
+
+  const nvidiaCommands = [
+    'nvidia-smi --query-gpu=memory.total,memory.used --format=csv,noheader,nounits',
+    '"C:\\Windows\\System32\\nvidia-smi.exe" --query-gpu=memory.total,memory.used --format=csv,noheader,nounits',
+    '"C:\\Program Files\\NVIDIA Corporation\\NVSMI\\nvidia-smi.exe" --query-gpu=memory.total,memory.used --format=csv,noheader,nounits',
+  ];
+
+  for (const cmd of nvidiaCommands) {
+    try {
+      const { stdout } = await execAsync(cmd);
+
+      const firstLine = stdout.trim().split('\n')[0];
+      const parts = firstLine.split(',');
+
+      if (parts.length >= 2) {
+        const total = parseInt(parts[0].trim(), 10) || 0;
+        const used = parseInt(parts[1].trim(), 10) || 0;
+
+        if (total > 0) {
+          detectedVramTotal = total;
+          detectedVramUsed = used;
+
+          if (!selectedGpu) {
+            selectedGpu = {
+              id: 'nvidia-0',
+              vendor: 'NVIDIA',
+              model: 'NVIDIA GPU',
+              bus: '',
+              vram: total,
+              vramDynamic: false,
+              driverVersion: '',
+              busAddress: '',
+            };
+          }
+
+          break;
+        }
+      }
+    } catch (e: any) {
+      console.log(
+        `[HW] NVIDIA-SMI failed for cmd: ${cmd}. Reason: ${
+          e?.message?.split('\n')[0] || 'Unknown error'
+        }`,
+      );
+    }
+  }
+
+  return {
+    isUnifiedMemory: isAppleSilicon,
+    ram: {
+      total: totalRam,
+      appCurrentUsage: appUsedRam,
+      otherUsed: otherUsedRam,
+      maxRecommended: recommendedRam,
+    },
+    vram: selectedGpu
+      ? {
+          total: detectedVramTotal,
+          otherUsed: detectedVramUsed,
+          maxRecommended: Math.max(0, detectedVramTotal - 500),
+        }
+      : null,
+    gpus: gpuList,
+    selectedGpu,
+  };
+}
+
+async function refreshVramStatsCache(): Promise<void> {
+  try {
+    vramStatsCache = await computeVramStats();
+  } finally {
+    refreshPromise = null;
+  }
+}
+
 export function registerIpcHandlers(win: BrowserWindow): void {
   // ── Settings ──
   ipcMain.handle('settings:load', () => {
@@ -331,158 +466,29 @@ export function registerIpcHandlers(win: BrowserWindow): void {
 
   // ── Unified Hardware Stats ──
   ipcMain.handle('get-vram-stats', async () => {
-    try {
-      const toMB = (bytes: number) => Math.round(bytes / (1024 * 1024));
-
-      // ─────────────────────────────────────────────────────────────────
-      // SYSTEM RAM
-      // ─────────────────────────────────────────────────────────────────
-      const totalRamBytes = os.totalmem();
-      const freeRamBytes = os.freemem();
-
-      const metrics = app.getAppMetrics();
-      const appUsedKB = metrics.reduce(
-        (acc, metric) => acc + metric.memory.workingSetSize,
-        0,
-      );
-      const appUsedBytes = appUsedKB * 1024;
-      const otherRamUsedBytes = totalRamBytes - freeRamBytes - appUsedBytes;
-
-      const totalRam = toMB(totalRamBytes);
-      const appUsedRam = toMB(appUsedBytes);
-      const otherUsedRam = Math.max(0, toMB(otherRamUsedBytes));
-      const recommendedRam = Math.max(0, totalRam - 4096);
-
-      // ─────────────────────────────────────────────────────────────────
-      // APPLE SILICON CHECK
-      // ─────────────────────────────────────────────────────────────────
-      const cpu = await si.cpu();
-      const isAppleSilicon =
-        process.platform === 'darwin' && cpu.vendor === 'Apple';
-
-      // ─────────────────────────────────────────────────────────────────
-      // GPU INVENTORY
-      // ─────────────────────────────────────────────────────────────────
-      const graphics = await si.graphics();
-      const gpuList = (graphics.controllers || []).map((gpu, index) => ({
-        id: `${index}`,
-        vendor: gpu.vendor || 'Unknown',
-        model: gpu.model || 'Unknown',
-        bus: gpu.bus || '',
-        vram: parseInt(String(gpu.vram), 10) || 0,
-        vramDynamic:
-          typeof gpu.vramDynamic === 'boolean'
-            ? gpu.vramDynamic
-            : String(gpu.vramDynamic).toLowerCase() === 'true',
-        driverVersion: gpu.driverVersion || '',
-        busAddress: gpu.busAddress || '',
-      }));
-
-      // ─────────────────────────────────────────────────────────────────
-      // SELECT BEST GPU
-      // Prefer non-dynamic VRAM, then highest VRAM overall
-      // ─────────────────────────────────────────────────────────────────
-      let selectedGpu =
-        gpuList
-          .filter((gpu) => !gpu.vramDynamic && gpu.vram > 0)
-          .sort((a, b) => b.vram - a.vram)[0] ||
-        gpuList
-          .filter((gpu) => gpu.vram > 0)
-          .sort((a, b) => b.vram - a.vram)[0] ||
-        null;
-
-      // ─────────────────────────────────────────────────────────────────
-      // NVIDIA REAL USAGE OVERRIDE
-      // If nvidia-smi works, use it for usage and possibly total.
-      // ─────────────────────────────────────────────────────────────────
-      let detectedVramTotal = selectedGpu?.vram || 0;
-      let detectedVramUsed = selectedGpu ? 500 : 0;
-
-      const nvidiaCommands = [
-        'nvidia-smi --query-gpu=memory.total,memory.used --format=csv,noheader,nounits',
-        '"C:\\Windows\\System32\\nvidia-smi.exe" --query-gpu=memory.total,memory.used --format=csv,noheader,nounits',
-        '"C:\\Program Files\\NVIDIA Corporation\\NVSMI\\nvidia-smi.exe" --query-gpu=memory.total,memory.used --format=csv,noheader,nounits',
-      ];
-
-      for (const cmd of nvidiaCommands) {
-        try {
-          const { stdout } = await execAsync(cmd);
-
-          const firstLine = stdout.trim().split('\n')[0];
-          const parts = firstLine.split(',');
-
-          if (parts.length >= 2) {
-            const total = parseInt(parts[0].trim(), 10) || 0;
-            const used = parseInt(parts[1].trim(), 10) || 0;
-
-            if (total > 0) {
-              detectedVramTotal = total;
-              detectedVramUsed = used;
-
-              if (!selectedGpu) {
-                selectedGpu = {
-                  id: 'nvidia-0',
-                  vendor: 'NVIDIA',
-                  model: 'NVIDIA GPU',
-                  bus: '',
-                  vram: total,
-                  vramDynamic: false,
-                  driverVersion: '',
-                  busAddress: '',
-                };
-              }
-
-              break;
-            }
-          }
-        } catch (e: any) {
-          console.log(
-            `[HW] NVIDIA-SMI failed for cmd: ${cmd}. Reason: ${
-              e?.message?.split('\n')[0] || 'Unknown error'
-            }`,
-          );
-        }
+    if (vramStatsCache) {
+      if (!refreshPromise) {
+        refreshPromise = refreshVramStatsCache();
       }
-
-      // ─────────────────────────────────────────────────────────────────
-      // UNIFIED RESPONSE
-      // ─────────────────────────────────────────────────────────────────
-      const result = {
-        isUnifiedMemory: isAppleSilicon,
-        ram: {
-          total: totalRam,
-          appCurrentUsage: appUsedRam,
-          otherUsed: otherUsedRam,
-          maxRecommended: recommendedRam,
-        },
-        vram: selectedGpu
-          ? {
-              total: detectedVramTotal,
-              otherUsed: detectedVramUsed,
-              maxRecommended: Math.max(0, detectedVramTotal - 500),
-            }
-          : null,
-        gpus: gpuList,
-        selectedGpu,
-      };
-
+      return vramStatsCache;
+    }
+    try {
+      const result = await computeVramStats();
+      vramStatsCache = result;
       return result;
     } catch (error) {
       console.error('[HW] Fatal error during hardware detection:', error);
       return {
         isUnifiedMemory: false,
-        ram: {
-          total: 0,
-          appCurrentUsage: 0,
-          otherUsed: 0,
-          maxRecommended: 0,
-        },
+        ram: { total: 0, appCurrentUsage: 0, otherUsed: 0, maxRecommended: 0 },
         vram: null,
         gpus: [],
         selectedGpu: null,
       };
     }
   });
+
+  refreshPromise = refreshVramStatsCache();
 
   ipcMain.handle('open-models-folder', async () => {
     const modelsDir = getModelsDirectory();

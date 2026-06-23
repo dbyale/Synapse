@@ -970,6 +970,14 @@ function PerformancePage({
     [onEstimateMemory],
   );
 
+  const initialLoadDone = useRef(false);
+  useEffect(() => {
+    if (!initialLoadDone.current && memory === null && activeLayers >= 0 && activeCtx >= 512) {
+      initialLoadDone.current = true;
+      triggerEstimate(activeLayers, activeCtx);
+    }
+  }, [memory, activeLayers, activeCtx, triggerEstimate]);
+
   const prevOptimizerRunning = useRef(optimizerRunning);
   useEffect(() => {
     if (prevOptimizerRunning.current && !optimizerRunning) {
@@ -989,9 +997,6 @@ function PerformancePage({
   const ramCtxPct = totalRAM > 0 ? (memory?.contextRamUsage ?? 0) / totalRAM : 0;
   const vramFreePct = Math.max(0, 1 - vramOverheadPct - vramModelPct - vramCtxPct);
   const ramFreePct = Math.max(0, 1 - ramOverheadPct - ramModelPct - ramBufferPct - ramCtxPct);
-
-  const showVram = totalVRAM > 0 && memory !== null;
-  const showRam = totalRAM > 0 && memory !== null;
 
   return (
     <>
@@ -1068,124 +1073,152 @@ function PerformancePage({
         </div>
       </div>
 
-      {showVram && (
-        <div className="epm-section" style={{ marginTop: '20px' }}>
-          <InfoTooltip content="Breakdown of how model weights, KV cache, and compute overhead use video memory." side="right" hideIcon title="Estimated Memory Usage">
-            <div className="epm-section__label">Estimated Memory Usage</div>
+      <div className="epm-section" style={{ marginTop: '20px' }}>
+        <InfoTooltip content="Breakdown of how model weights, KV cache, and compute overhead use video memory." side="right" hideIcon title="Estimated Memory Usage">
+          <div className="epm-section__label">Estimated Memory Usage</div>
+        </InfoTooltip>
+
+        <div className="epm-estimate-notice">
+          <AlertTriangle size={14} />
+          <InfoTooltip content="The GGUF Parser Go library does not account for all Synapse-specific memory optimizations, so actual usage may differ." side="right" hideIcon title="Memory Estimates">
+            <span>Memory estimates provided by <a href="https://github.com/gpustack/gguf-parser-go" target="_blank" rel="noopener noreferrer">GGUF Parser Go</a>, which does not support all of Synapse's features, leading to inaccurate estimations.</span>
           </InfoTooltip>
-
-          <div className="epm-estimate-notice">
-            <AlertTriangle size={14} />
-            <InfoTooltip content="The GGUF Parser Go library does not account for all Synapse-specific memory optimizations, so actual usage may differ." side="right" hideIcon title="Memory Estimates">
-              <span>Memory estimates provided by <a href="https://github.com/gpustack/gguf-parser-go" target="_blank" rel="noopener noreferrer">GGUF Parser Go</a>, which does not support all of Synapse's features, leading to inaccurate estimations.</span>
-            </InfoTooltip>
-          </div>
-
-          <div className="epm-mem-legend">
-            <span className="epm-mem-legend-total"><strong>Total: {toGB(memory.modelVramUsage + memory.contextVramUsage + memory.computeOverheadVram)}GB</strong></span>
-            {memory.modelVramUsage > 0 && (
-              <span className="epm-mem-legend-item">
-                <span className="epm-mem-dot epm-mem-dot--model" />
-                <InfoTooltip content={MODEL_WEIGHTS_TOOLTIP} side="right" hideIcon title="Model Weights">
-                  <span>Model Weights ({toGB(memory.modelVramUsage)}GB)</span>
-                </InfoTooltip>
-              </span>
-            )}
-            {memory.contextVramUsage > 0 && (
-              <span className="epm-mem-legend-item">
-                <span className="epm-mem-dot epm-mem-dot--ctx" />
-                <InfoTooltip content={KV_CACHE_MEM_TOOLTIP} side="right" hideIcon title="KV Cache">
-                  <span>KV Cache ({toGB(memory.contextVramUsage)}GB)</span>
-                </InfoTooltip>
-              </span>
-            )}
-            {memory.computeOverheadVram > 0 && (
-              <span className="epm-mem-legend-item">
-                <span className="epm-mem-dot epm-mem-dot--overhead" />
-                <InfoTooltip content={COMPUTE_OVERHEAD_TOOLTIP} side="right" hideIcon title="Compute Overhead">
-                  <span>Compute Overhead ({toGB(memory.computeOverheadVram)}GB)</span>
-                </InfoTooltip>
-              </span>
-            )}
-            <span className="epm-mem-legend-item">
-              <span className="epm-mem-dot epm-mem-dot--free" /> Free ({toGB(Math.max(0, totalVRAM - memory.modelVramUsage - memory.contextVramUsage - memory.computeOverheadVram))}GB)
-            </span>
-          </div>
-
-          <div className="epm-mem-bar-wrap">
-            <InfoTooltip content={VRAM_LABEL_TOOLTIP} side="right" hideIcon title="VRAM">
-              <div className="epm-mem-bar-label-inline">VRAM</div>
-            </InfoTooltip>
-            <div className="epm-mem-bar-track">
-              <InfoTooltip content={`Model Weights: ${toGB(memory.modelVramUsage)}GB`} className="epm-mem-segment epm-mem-segment--model" hideIcon side="top" title="Model Weights" style={{ width: `${vramModelPct * 100}%` }} />
-              <InfoTooltip content={`KV Cache: ${toGB(memory.contextVramUsage)}GB`} className="epm-mem-segment epm-mem-segment--ctx" hideIcon side="top" title="KV Cache" style={{ width: `${vramCtxPct * 100}%` }} />
-              <InfoTooltip content={`Compute Overhead: ${toGB(memory.computeOverheadVram)}GB`} className="epm-mem-segment epm-mem-segment--overhead" hideIcon side="top" title="Compute Overhead" style={{ width: `${vramOverheadPct * 100}%` }} />
-              <InfoTooltip content={`Free: ${toGB(Math.max(0, totalVRAM - memory.modelVramUsage - memory.contextVramUsage - memory.computeOverheadVram))}GB`} className="epm-mem-segment epm-mem-segment--free" hideIcon side="top" title="Free" style={{ width: `${vramFreePct * 100}%` }} />
-            </div>
-            <div className="epm-mem-bar-total">
-              {toGB(totalVRAM)} GB
-            </div>
-          </div>
-
-          {showRam && (
-            <>
-              <div className="epm-mem-legend" style={{ marginTop: '14px' }}>
-                <span className="epm-mem-legend-total"><strong>Total: {toGB(memory.modelRamUsage + memory.contextRamUsage + memory.fileBufferRam + memory.computeOverheadRam)}GB</strong></span>
-                {memory.modelRamUsage > 0 && (
-                  <span className="epm-mem-legend-item">
-                    <span className="epm-mem-dot epm-mem-dot--model" />
-                    <InfoTooltip content={MODEL_WEIGHTS_TOOLTIP} side="right" hideIcon title="Model Weights">
-                      <span>Model Weights ({toGB(memory.modelRamUsage)}GB)</span>
-                    </InfoTooltip>
-                  </span>
-                )}
-                {memory.contextRamUsage > 0 && (
-                  <span className="epm-mem-legend-item">
-                    <span className="epm-mem-dot epm-mem-dot--ctx" />
-                    <InfoTooltip content={KV_CACHE_MEM_TOOLTIP} side="right" hideIcon title="KV Cache">
-                      <span>KV Cache ({toGB(memory.contextRamUsage)}GB)</span>
-                    </InfoTooltip>
-                  </span>
-                )}
-                {memory.fileBufferRam > 0 && (
-                  <span className="epm-mem-legend-item">
-                    <span className="epm-mem-dot epm-mem-dot--buffer" />
-                    <InfoTooltip content={FILE_BUFFER_TOOLTIP} side="right" hideIcon title="File Buffer">
-                      <span>File Buffer ({toGB(memory.fileBufferRam)}GB)</span>
-                    </InfoTooltip>
-                  </span>
-                )}
-                {memory.computeOverheadRam > 0 && (
-                  <span className="epm-mem-legend-item">
-                    <span className="epm-mem-dot epm-mem-dot--overhead" />
-                    <InfoTooltip content={COMPUTE_OVERHEAD_TOOLTIP} side="right" hideIcon title="Compute Overhead">
-                      <span>Compute Overhead ({toGB(memory.computeOverheadRam)}GB)</span>
-                    </InfoTooltip>
-                  </span>
-                )}
-                <span className="epm-mem-legend-item">
-                  <span className="epm-mem-dot epm-mem-dot--free" /> Free ({toGB(Math.max(0, totalRAM - memory.modelRamUsage - memory.contextRamUsage - memory.fileBufferRam - memory.computeOverheadRam))}GB)
-                </span>
-              </div>
-              <div className="epm-mem-bar-wrap">
-                <InfoTooltip content={RAM_LABEL_TOOLTIP} side="right" hideIcon title="RAM">
-                  <div className="epm-mem-bar-label-inline">RAM</div>
-                </InfoTooltip>
-                <div className="epm-mem-bar-track">
-                  <InfoTooltip content={`Model Weights: ${toGB(memory.modelRamUsage)}GB`} className="epm-mem-segment epm-mem-segment--model" hideIcon side="top" title="Model Weights" style={{ width: `${ramModelPct * 100}%` }} />
-                  <InfoTooltip content={`KV Cache: ${toGB(memory.contextRamUsage)}GB`} className="epm-mem-segment epm-mem-segment--ctx" hideIcon side="top" title="KV Cache" style={{ width: `${ramCtxPct * 100}%` }} />
-                  <InfoTooltip content={`File Buffer: ${toGB(memory.fileBufferRam)}GB`} className="epm-mem-segment epm-mem-segment--buffer" hideIcon side="top" title="File Buffer" style={{ width: `${ramBufferPct * 100}%` }} />
-                  <InfoTooltip content={`Compute Overhead: ${toGB(memory.computeOverheadRam)}GB`} className="epm-mem-segment epm-mem-segment--overhead" hideIcon side="top" title="Compute Overhead" style={{ width: `${ramOverheadPct * 100}%` }} />
-                  <InfoTooltip content={`Free: ${toGB(Math.max(0, totalRAM - memory.modelRamUsage - memory.contextRamUsage - memory.fileBufferRam - memory.computeOverheadRam))}GB`} className="epm-mem-segment epm-mem-segment--free" hideIcon side="top" title="Free" style={{ width: `${ramFreePct * 100}%` }} />
-                </div>
-                <div className="epm-mem-bar-total">
-                  {toGB(totalRAM)} GB
-                </div>
-              </div>
-            </>
-          )}
         </div>
-      )}
+
+        {memory && totalVRAM > 0 ? (
+          <>
+            <div className="epm-mem-legend">
+              <span className="epm-mem-legend-total"><strong>Total: {toGB(memory.modelVramUsage + memory.contextVramUsage + memory.computeOverheadVram)}GB</strong></span>
+              {memory.modelVramUsage > 0 && (
+                <span className="epm-mem-legend-item">
+                  <span className="epm-mem-dot epm-mem-dot--model" />
+                  <InfoTooltip content={MODEL_WEIGHTS_TOOLTIP} side="right" hideIcon title="Model Weights">
+                    <span>Model Weights ({toGB(memory.modelVramUsage)}GB)</span>
+                  </InfoTooltip>
+                </span>
+              )}
+              {memory.contextVramUsage > 0 && (
+                <span className="epm-mem-legend-item">
+                  <span className="epm-mem-dot epm-mem-dot--ctx" />
+                  <InfoTooltip content={KV_CACHE_MEM_TOOLTIP} side="right" hideIcon title="KV Cache">
+                    <span>KV Cache ({toGB(memory.contextVramUsage)}GB)</span>
+                  </InfoTooltip>
+                </span>
+              )}
+              {memory.computeOverheadVram > 0 && (
+                <span className="epm-mem-legend-item">
+                  <span className="epm-mem-dot epm-mem-dot--overhead" />
+                  <InfoTooltip content={COMPUTE_OVERHEAD_TOOLTIP} side="right" hideIcon title="Compute Overhead">
+                    <span>Compute Overhead ({toGB(memory.computeOverheadVram)}GB)</span>
+                  </InfoTooltip>
+                </span>
+              )}
+              <span className="epm-mem-legend-item">
+                <span className="epm-mem-dot epm-mem-dot--free" /> Free ({toGB(Math.max(0, totalVRAM - memory.modelVramUsage - memory.contextVramUsage - memory.computeOverheadVram))}GB)
+              </span>
+            </div>
+
+            <div className="epm-mem-bar-wrap">
+              <InfoTooltip content={VRAM_LABEL_TOOLTIP} side="right" hideIcon title="VRAM">
+                <div className="epm-mem-bar-label-inline">VRAM</div>
+              </InfoTooltip>
+              <div className="epm-mem-bar-track">
+                <InfoTooltip content={`Model Weights: ${toGB(memory.modelVramUsage)}GB`} className="epm-mem-segment epm-mem-segment--model" hideIcon side="top" title="Model Weights" style={{ width: `${vramModelPct * 100}%` }} />
+                <InfoTooltip content={`KV Cache: ${toGB(memory.contextVramUsage)}GB`} className="epm-mem-segment epm-mem-segment--ctx" hideIcon side="top" title="KV Cache" style={{ width: `${vramCtxPct * 100}%` }} />
+                <InfoTooltip content={`Compute Overhead: ${toGB(memory.computeOverheadVram)}GB`} className="epm-mem-segment epm-mem-segment--overhead" hideIcon side="top" title="Compute Overhead" style={{ width: `${vramOverheadPct * 100}%` }} />
+                <InfoTooltip content={`Free: ${toGB(Math.max(0, totalVRAM - memory.modelVramUsage - memory.contextVramUsage - memory.computeOverheadVram))}GB`} className="epm-mem-segment epm-mem-segment--free" hideIcon side="top" title="Free" style={{ width: `${vramFreePct * 100}%` }} />
+              </div>
+              <div className="epm-mem-bar-total">
+                {toGB(totalVRAM)} GB
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="epm-mem-legend">
+              <span className="epm-mem-legend-total"><strong>Total: — GB</strong></span>
+            </div>
+            <div className="epm-mem-bar-wrap">
+              <div className="epm-mem-bar-label-inline">VRAM</div>
+              <div className="epm-mem-bar-track">
+                <div className="epm-mem-segment epm-mem-segment--loading" style={{ width: '100%' }} />
+              </div>
+              <div className="epm-mem-bar-total">— GB</div>
+            </div>
+          </>
+        )}
+
+        {memory && totalRAM > 0 ? (
+          <>
+            <div className="epm-mem-legend" style={{ marginTop: '14px' }}>
+              <span className="epm-mem-legend-total"><strong>Total: {toGB(memory.modelRamUsage + memory.contextRamUsage + memory.fileBufferRam + memory.computeOverheadRam)}GB</strong></span>
+              {memory.modelRamUsage > 0 && (
+                <span className="epm-mem-legend-item">
+                  <span className="epm-mem-dot epm-mem-dot--model" />
+                  <InfoTooltip content={MODEL_WEIGHTS_TOOLTIP} side="right" hideIcon title="Model Weights">
+                    <span>Model Weights ({toGB(memory.modelRamUsage)}GB)</span>
+                  </InfoTooltip>
+                </span>
+              )}
+              {memory.contextRamUsage > 0 && (
+                <span className="epm-mem-legend-item">
+                  <span className="epm-mem-dot epm-mem-dot--ctx" />
+                  <InfoTooltip content={KV_CACHE_MEM_TOOLTIP} side="right" hideIcon title="KV Cache">
+                    <span>KV Cache ({toGB(memory.contextRamUsage)}GB)</span>
+                  </InfoTooltip>
+                </span>
+              )}
+              {memory.fileBufferRam > 0 && (
+                <span className="epm-mem-legend-item">
+                  <span className="epm-mem-dot epm-mem-dot--buffer" />
+                  <InfoTooltip content={FILE_BUFFER_TOOLTIP} side="right" hideIcon title="File Buffer">
+                    <span>File Buffer ({toGB(memory.fileBufferRam)}GB)</span>
+                  </InfoTooltip>
+                </span>
+              )}
+              {memory.computeOverheadRam > 0 && (
+                <span className="epm-mem-legend-item">
+                  <span className="epm-mem-dot epm-mem-dot--overhead" />
+                  <InfoTooltip content={COMPUTE_OVERHEAD_TOOLTIP} side="right" hideIcon title="Compute Overhead">
+                    <span>Compute Overhead ({toGB(memory.computeOverheadRam)}GB)</span>
+                  </InfoTooltip>
+                </span>
+              )}
+              <span className="epm-mem-legend-item">
+                <span className="epm-mem-dot epm-mem-dot--free" /> Free ({toGB(Math.max(0, totalRAM - memory.modelRamUsage - memory.contextRamUsage - memory.fileBufferRam - memory.computeOverheadRam))}GB)
+              </span>
+            </div>
+            <div className="epm-mem-bar-wrap">
+              <InfoTooltip content={RAM_LABEL_TOOLTIP} side="right" hideIcon title="RAM">
+                <div className="epm-mem-bar-label-inline">RAM</div>
+              </InfoTooltip>
+              <div className="epm-mem-bar-track">
+                <InfoTooltip content={`Model Weights: ${toGB(memory.modelRamUsage)}GB`} className="epm-mem-segment epm-mem-segment--model" hideIcon side="top" title="Model Weights" style={{ width: `${ramModelPct * 100}%` }} />
+                <InfoTooltip content={`KV Cache: ${toGB(memory.contextRamUsage)}GB`} className="epm-mem-segment epm-mem-segment--ctx" hideIcon side="top" title="KV Cache" style={{ width: `${ramCtxPct * 100}%` }} />
+                <InfoTooltip content={`File Buffer: ${toGB(memory.fileBufferRam)}GB`} className="epm-mem-segment epm-mem-segment--buffer" hideIcon side="top" title="File Buffer" style={{ width: `${ramBufferPct * 100}%` }} />
+                <InfoTooltip content={`Compute Overhead: ${toGB(memory.computeOverheadRam)}GB`} className="epm-mem-segment epm-mem-segment--overhead" hideIcon side="top" title="Compute Overhead" style={{ width: `${ramOverheadPct * 100}%` }} />
+                <InfoTooltip content={`Free: ${toGB(Math.max(0, totalRAM - memory.modelRamUsage - memory.contextRamUsage - memory.fileBufferRam - memory.computeOverheadRam))}GB`} className="epm-mem-segment epm-mem-segment--free" hideIcon side="top" title="Free" style={{ width: `${ramFreePct * 100}%` }} />
+              </div>
+              <div className="epm-mem-bar-total">
+                {toGB(totalRAM)} GB
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="epm-mem-legend" style={{ marginTop: '14px' }}>
+              <span className="epm-mem-legend-total"><strong>Total: — GB</strong></span>
+            </div>
+            <div className="epm-mem-bar-wrap">
+              <div className="epm-mem-bar-label-inline">RAM</div>
+              <div className="epm-mem-bar-track">
+                <div className="epm-mem-segment epm-mem-segment--loading" style={{ width: '100%' }} />
+              </div>
+              <div className="epm-mem-bar-total">— GB</div>
+            </div>
+          </>
+        )}
+      </div>
 
       {/* Sliders */}
       <div className="epm-section" style={{ marginTop: '16px' }}>
@@ -1793,6 +1826,7 @@ useEffect(() => {
             maxContext: modelMeta.maxContext,
           }
         : {}),
+      estimation: lastEstimate ?? undefined,
       ...(editAutoOptimizer &&
       editLayers !== undefined &&
       editContextSize !== undefined
@@ -1802,7 +1836,6 @@ useEffect(() => {
             contextSize: editContextSize,
             allocatedVRAM: editAllocatedVRAM,
             allocatedRAM: editAllocatedRAM,
-            estimation: lastEstimate ?? undefined,
           }
         : {}),
       order: profile?.order ?? now,

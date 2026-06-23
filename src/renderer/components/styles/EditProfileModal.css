@@ -780,6 +780,17 @@
   background: transparent;
 }
 
+.epm-mem-segment--loading {
+  background: var(--bg-input);
+  border-radius: 4px;
+  animation: epm-mem-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes epm-mem-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.8; }
+}
+
 .epm-mem-bar-total {
   font-size: 11px;
   color: var(--text-secondary);
