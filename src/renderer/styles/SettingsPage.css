@@ -203,6 +203,7 @@
   margin-top: 12px;
   margin-bottom: 8px;
   border-radius: 4px;
+  transform: translateZ(0);
 }
 
 /* Updated MAX Label & Line alignment using flexbox */
@@ -213,7 +214,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  z-index: 10;
+  z-index: 30;
   pointer-events: none;
   transform: translateX(-50%);
 }
@@ -225,6 +226,24 @@
   text-transform: uppercase;
   white-space: nowrap;
   margin-bottom: 2px;
+}
+
+.mem-max-wrapper .info-tooltip-wrapper {
+  pointer-events: auto;
+}
+
+.mem-title-tooltip {
+  width: fit-content;
+}
+
+
+
+.models-dir-tooltip {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: stretch;
 }
 
 .mem-max-line {

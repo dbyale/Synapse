@@ -395,10 +395,17 @@ body,
   display: flex;
 }
 
-/* ── Positioned segment variant (for memory bar segments) ── */
+/* ── SettingsPage MemorySlider segments ── */
 .info-tooltip-wrapper.mem-segment-other,
 .info-tooltip-wrapper.mem-segment-app,
-.info-tooltip-wrapper.mem-segment-free,
+.info-tooltip-wrapper.mem-segment-free {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  pointer-events: auto;
+}
+
+/* ── EditProfileModal PerformancePage segments ── */
 .info-tooltip-wrapper.epm-mem-segment {
   display: block;
   pointer-events: auto;

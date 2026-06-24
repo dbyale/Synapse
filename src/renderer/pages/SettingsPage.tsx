@@ -70,18 +70,19 @@ function MemorySlider({
 
   const TitleNode = (
     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-      <InfoTooltip content={titleTooltip} side="right" hideIcon title={title}>
+      <InfoTooltip content={titleTooltip} side="right" hideIcon title={title} className="mem-title-tooltip">
         <div className="mem-title">{title}</div>
       </InfoTooltip>
-      <button
-        type="button"
-        className={`mem-refresh-btn ${loading ? 'loading' : ''}`}
-        onClick={onRefresh}
-        disabled={loading}
-        title="Refresh memory usage"
-      >
-        <RefreshCw size={14} />
-      </button>
+      <InfoTooltip content="Refresh memory usage" side="bottom" hideIcon>
+        <button
+          type="button"
+          className={`mem-refresh-btn ${loading ? 'loading' : ''}`}
+          onClick={onRefresh}
+          disabled={loading}
+        >
+          <RefreshCw size={14} />
+        </button>
+      </InfoTooltip>
     </div>
   );
 
@@ -148,7 +149,7 @@ function MemorySlider({
         <InfoTooltip
           title="OS & Other Apps"
           content={`${otherGB} GB In Use`}
-          side="top"
+          side="bottom"
           hideIcon
           className="mem-segment-other"
           style={{ right: 0, left: 'auto', width: `${otherPct}%` }}
@@ -158,7 +159,7 @@ function MemorySlider({
         <InfoTooltip
           title="Free Space"
           content={`${freeGB} GB Available`}
-          side="top"
+          side="bottom"
           hideIcon
           className="mem-segment-free"
           style={{ left: `${appPct}%`, width: `${freePct}%` }}
@@ -168,7 +169,7 @@ function MemorySlider({
         <InfoTooltip
           title="Synapse Allocation"
           content={`${appGB} GB Reserved`}
-          side="top"
+          side="bottom"
           hideIcon
           className={`mem-segment-app${isExceeded ? ' exceeded' : ''}`}
           style={{ left: 0, width: `${appPct}%` }}
@@ -463,34 +464,34 @@ export default function SettingsPage() {
       </div>
 
       <div className="settings-card">
-        <InfoTooltip content="Configure global application paths and directories." side="right" hideIcon title="Application Setup">
+        <InfoTooltip content="Configure global application paths and directories." side="right" hideIcon title="Application Setup" className="mem-title-tooltip">
           <h2 className="settings-card-title">Application Setup</h2>
         </InfoTooltip>
 
         <div className="settings-field">
-          <InfoTooltip content={MODELS_DIR_TOOLTIP} side="right" hideIcon title="Models Directory">
+          <InfoTooltip content={MODELS_DIR_TOOLTIP} side="bottom" hideIcon title="Models Directory" className="models-dir-tooltip">
             <span className="settings-label">Models Directory</span>
+            <div className="settings-row">
+              <input
+                className="settings-input"
+                value={settings.modelsDirectory}
+                readOnly
+              />
+              <button
+                type="button"
+                className="settings-icon-btn"
+                onClick={handlePickDirectory}
+                title="Browse"
+              >
+                <FolderOpen size={16} />
+              </button>
+            </div>
           </InfoTooltip>
-          <div className="settings-row">
-            <input
-              className="settings-input"
-              value={settings.modelsDirectory}
-              readOnly
-            />
-            <button
-              type="button"
-              className="settings-icon-btn"
-              onClick={handlePickDirectory}
-              title="Browse"
-            >
-              <FolderOpen size={16} />
-            </button>
-          </div>
         </div>
       </div>
 
       <div className="settings-card">
-        <InfoTooltip content={MEMORY_ALLOCATOR_TOOLTIP} side="right" hideIcon title="System Resource Allocator">
+        <InfoTooltip content={MEMORY_ALLOCATOR_TOOLTIP} side="right" hideIcon title="System Resource Allocator" className="mem-title-tooltip">
           <h2 className="settings-card-title">System Resource Allocator</h2>
         </InfoTooltip>
 

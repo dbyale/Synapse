@@ -54,7 +54,6 @@
   * Optional HF token
   * Models returned per API request
     * (Maybe limit those shown at a time?, Performance problems seem to stem from extreme amount of elements rendered)
-  * Caches RAM/VRAM config (slow to open)
 
 # Maintenance:
   * Clear unnecessary packages
