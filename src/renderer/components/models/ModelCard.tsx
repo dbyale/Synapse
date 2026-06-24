@@ -26,6 +26,45 @@ import {
   FALLBACK_PIPELINE_DESCRIPTION,
 } from '../../../data/pipelineDescriptions';
 
+// ── Tags inferred from model name ──
+const NAME_TAG_PATTERNS: { pattern: RegExp; tag: string }[] = [
+  { pattern: /\bqat\b/i, tag: 'QAT' },
+  { pattern: /\binstruct\b/i, tag: 'Instruct' },
+  { pattern: /\bchat\b/i, tag: 'Chat' },
+  { pattern: /\bvision\b/i, tag: 'Vision' },
+  { pattern: /\bcode\b/i, tag: 'Code' },
+  { pattern: /\bmoe\b/i, tag: 'MoE' },
+  { pattern: /\bfp(?:8|16|32)\b/i, tag: 'FP' },
+  { pattern: /\biq[234]\b/i, tag: 'I-Quant' },
+];
+
+function detectNameTags(repoId: string): string[] {
+  const tags: string[] = [];
+  NAME_TAG_PATTERNS.forEach(({ pattern, tag }) => {
+    if (pattern.test(repoId) && !tags.includes(tag)) {
+      tags.push(tag);
+    }
+  });
+  return tags;
+}
+
+const API_TAG_ALLOWLIST: Record<string, string> = {
+  thinking: 'Thinking',
+  reasoning: 'Reasoning',
+  function_calling: 'Function Calling',
+  vision: 'Vision',
+  code: 'Code',
+};
+
+function extractApiTags(apiTags: string[]): string[] {
+  const result: string[] = [];
+  apiTags.forEach((t) => {
+    const label = API_TAG_ALLOWLIST[t];
+    if (label && !result.includes(label)) result.push(label);
+  });
+  return result;
+}
+
 // ── Tooltip Strings ──
 const TOOLTIP_DOWNLOADS = 'Total downloads on HuggingFace';
 const TOOLTIP_LIKES = 'Total likes on HuggingFace';
@@ -368,6 +407,12 @@ export default function ModelCard({
     ),
   );
 
+  const detectedTags = useMemo(() => {
+    const nameTags = detectNameTags(model.id);
+    const apiTags = extractApiTags(model.tags);
+    return [...new Set([...nameTags, ...apiTags])];
+  }, [model.id, model.tags]);
+
   const hasDetails =
     languageLabels.length > 0 ||
     baseModels.length > 0 ||
@@ -473,6 +518,12 @@ export default function ModelCard({
                   </div>
                 </div>
               )}
+
+              {detectedTags.map((tag) => (
+                <span key={tag} className="model-card__tag-pill">
+                  {tag}
+                </span>
+              ))}
 
               {model.parameters && paramTooltip && (
                 <div className="model-card__meta-tooltip-wrapper">
