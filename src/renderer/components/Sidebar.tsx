@@ -16,7 +16,7 @@ const navItems = [
   { path: '/settings', icon: Settings, label: 'Settings' },
 ];
 
-const COLLAPSED_WIDTH = 52;
+const COLLAPSED_WIDTH = 60;
 const MIN_WIDTH = 180;
 const MAX_WIDTH = 500;
 const EXPAND_DELAY_MS = 0; // instant expand on hover
