@@ -126,6 +126,7 @@ declare global {
         modelRamUsage: number;
         contextRamUsage: number;
       } | null>;
+      getServerPid: () => Promise<number | null>;
       loadSettings: () => Promise<AppSettings>;
       saveSettings: (settings: AppSettings) => Promise<void>;
       saveSettingsSilent: (settings: AppSettings) => Promise<void>;

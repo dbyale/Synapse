@@ -37,6 +37,46 @@ interface VramStatsResult {
 let vramStatsCache: VramStatsResult | null = null;
 let refreshPromise: Promise<void> | null = null;
 
+async function readServerProcessMemoryMB(pid: number): Promise<number> {
+  try {
+    if (process.platform === 'win32') {
+      const { stdout } = await execAsync(
+        `tasklist /FI "PID eq ${pid}" /FO CSV /NH`,
+      );
+      const line = stdout.trim();
+      if (!line) return 0;
+      const parts = line.split('","');
+      const memStr = parts[parts.length - 1]?.replace('"', '').replace(' K', '').replace(/,/g, '');
+      const kb = parseInt(memStr, 10);
+      return kb ? Math.round(kb / 1024) : 0;
+    } else {
+      const { stdout } = await execAsync(`ps -o rss= -p ${pid}`);
+      const kb = parseInt(stdout.trim(), 10);
+      return kb ? Math.round(kb / 1024) : 0;
+    }
+  } catch {
+    return 0;
+  }
+}
+
+async function readServerProcessVramMB(pid: number): Promise<number> {
+  try {
+    const { stdout } = await execAsync(
+      'nvidia-smi --query-compute-apps=pid,used_memory --format=csv,noheader',
+    );
+    const lines = stdout.trim().split('\n');
+    for (const line of lines) {
+      const [linePid, usedMem] = line.split(', ');
+      if (parseInt(linePid, 10) === pid) {
+        return parseInt(usedMem, 10) || 0;
+      }
+    }
+    return 0;
+  } catch {
+    return 0;
+  }
+}
+
 async function computeVramStats(): Promise<VramStatsResult> {
   const toMB = (bytes: number) => Math.round(bytes / (1024 * 1024));
 
@@ -49,7 +89,15 @@ async function computeVramStats(): Promise<VramStatsResult> {
     0,
   );
   const appUsedBytes = appUsedKB * 1024;
-  const otherRamUsedBytes = totalRamBytes - freeRamBytes - appUsedBytes;
+  let otherRamUsedBytes = totalRamBytes - freeRamBytes - appUsedBytes;
+
+  const serverPid = chatService.getServerPid();
+  if (serverPid) {
+    const serverRamMB = await readServerProcessMemoryMB(serverPid);
+    if (serverRamMB > 0) {
+      otherRamUsedBytes = Math.max(0, otherRamUsedBytes - serverRamMB * 1024 * 1024);
+    }
+  }
 
   const totalRam = toMB(totalRamBytes);
   const appUsedRam = toMB(appUsedBytes);
@@ -130,6 +178,13 @@ async function computeVramStats(): Promise<VramStatsResult> {
           e?.message?.split('\n')[0] || 'Unknown error'
         }`,
       );
+    }
+  }
+
+  if (serverPid && selectedGpu) {
+    const serverVramMB = await readServerProcessVramMB(serverPid);
+    if (serverVramMB > 0) {
+      detectedVramUsed = Math.max(0, detectedVramUsed - serverVramMB);
     }
   }
 
@@ -462,6 +517,10 @@ export function registerIpcHandlers(win: BrowserWindow): void {
 
   ipcMain.handle('chat:memoryUsage', () => {
     return chatService.getModelMemoryUsage();
+  });
+
+  ipcMain.handle('get-server-pid', () => {
+    return chatService.getServerPid();
   });
 
   // ── Unified Hardware Stats ──

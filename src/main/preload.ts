@@ -15,6 +15,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     modelRamUsage: number;
     contextRamUsage: number;
   } | null> => ipcRenderer.invoke('chat:memoryUsage'),
+  getServerPid: (): Promise<number | null> =>
+    ipcRenderer.invoke('get-server-pid'),
 
   // Models
   searchModels: (

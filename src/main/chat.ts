@@ -765,6 +765,10 @@ export function isServerRunning(): boolean {
   return serverProcess !== null;
 }
 
+export function getServerPid(): number | null {
+  return serverProcess?.pid ?? null;
+}
+
 export function getContextSize() {
   return currentContextSize;
 }

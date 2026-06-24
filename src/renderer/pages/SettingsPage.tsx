@@ -248,42 +248,26 @@ export default function SettingsPage() {
     setGpuLoading(true);
 
     try {
-      const [hw, modelMemory]: [any, any] = await Promise.all([
-        window.electronAPI.getVramStats(),
-        window.electronAPI.chatMemoryUsage(),
-      ]);
+      const hw = await window.electronAPI.getVramStats();
 
       if (!hw) return;
 
       setHardware(hw);
 
-      const modelRamMB = modelMemory
-        ? Math.round(
-            (modelMemory.modelRamUsage + modelMemory.contextRamUsage) /
-              1024 /
-              1024,
-          )
-        : 0;
-
-      const modelVramMB = modelMemory
-        ? Math.round(
-            (modelMemory.modelVramUsage + modelMemory.contextVramUsage) /
-              1024 /
-              1024,
-          )
-        : 0;
+      // NOTE: llama-server's own memory is already excluded from
+      // hw.ram.otherUsed and hw.vram.otherUsed at the source
+      // (computeVramStats reads the server process directly).
 
       // -- SYSTEM RAM --
       if (hw.ram && hw.ram.total > 0) {
         const savedRam = savedAllocationsRef.current.allocatedRAM;
-        const adjustedOtherRam = Math.max(0, hw.ram.otherUsed - modelRamMB);
 
         // MAX = everything except other processes and the safety buffer.
         // RAM_SAFETY_BUFFER_MB is intentionally generous — RAM overflow
         // destabilises the entire OS, not just the inference process.
         const adjustedMaxRam = Math.max(
           0,
-          hw.ram.total - adjustedOtherRam - RAM_SAFETY_BUFFER_MB,
+          hw.ram.total - hw.ram.otherUsed - RAM_SAFETY_BUFFER_MB,
         );
 
         setRamStats((prev) => ({
@@ -292,7 +276,7 @@ export default function SettingsPage() {
             prev.appAllocated > 0
               ? prev.appAllocated
               : savedRam || Math.floor(hw.ram.total / 2),
-          otherUsed: adjustedOtherRam,
+          otherUsed: hw.ram.otherUsed,
           maxRecommended: adjustedMaxRam,
         }));
       } else {
@@ -302,23 +286,23 @@ export default function SettingsPage() {
       // -- VRAM (GPU) --
       if (hw.vram && hw.vram.total > 0) {
         const savedVram = savedAllocationsRef.current.allocatedVRAM;
-        const adjustedOtherVram = Math.max(0, hw.vram.otherUsed - modelVramMB);
+        const vram = hw.vram;
 
         // MAX = everything except other processes and the safety buffer.
         // VRAM_SAFETY_BUFFER_MB is intentionally tight — VRAM overflow only
         // slows inference via CPU offload, it does not crash the system.
         const adjustedMaxVram = Math.max(
           0,
-          hw.vram.total - adjustedOtherVram - VRAM_SAFETY_BUFFER_MB,
+          vram.total - vram.otherUsed - VRAM_SAFETY_BUFFER_MB,
         );
 
         setVramStats((prev) => ({
-          total: hw.vram.total,
+          total: vram.total,
           appAllocated:
             prev.appAllocated > 0
               ? prev.appAllocated
-              : savedVram || hw.vram.maxRecommended,
-          otherUsed: adjustedOtherVram,
+              : savedVram || vram.maxRecommended,
+          otherUsed: vram.otherUsed,
           maxRecommended: adjustedMaxVram,
         }));
       } else {
