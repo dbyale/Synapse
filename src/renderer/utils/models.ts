@@ -288,8 +288,6 @@ export function registerLocalModel(payload: {
   return { success: true };
 }
 
-const DOWNLOAD_TIMEOUT_MS = 30_000;
-
 export function downloadModel(
   repoId: string,
   filename: string,
@@ -391,7 +389,6 @@ export function downloadModel(
         let downloadedBytes = 0;
 
         response.on('data', (chunk: Buffer) => {
-          req.setTimeout(0);
           downloadedBytes += chunk.length;
           file.write(chunk);
 
@@ -419,10 +416,6 @@ export function downloadModel(
       });
 
       req.on('error', cleanupAndReject);
-
-      req.setTimeout(DOWNLOAD_TIMEOUT_MS, () => {
-        req.destroy(new Error('Download timed out'));
-      });
 
       activeDownloads.set(filename, { req, destPath, win, repoId });
     };
