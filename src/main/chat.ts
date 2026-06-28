@@ -543,6 +543,7 @@ export async function sendMessage(
   if (!currentProfile) throw new Error('No profile loaded');
 
   const userTokens = (await tokenize(text)) ?? 0;
+  let currentNewTokens = userTokens;
   if (lastUsage) {
     lastUsage = { used: lastUsage.used + userTokens, total: lastUsage.total };
   }
@@ -626,9 +627,9 @@ export async function sendMessage(
               if (total > 0 && processed >= total && !promptStats) {
                 const timeS = (time_ms || 0) / 1000;
                 const pStats: GenerationStats = {
-                  tokens: userTokens,
+                  tokens: currentNewTokens,
                   timeMs: time_ms || 0,
-                  tokensPerSecond: timeS > 0 ? userTokens / timeS : 0,
+                  tokensPerSecond: timeS > 0 ? currentNewTokens / timeS : 0,
                 };
                 promptStats = pStats;
                 if (onPromptDone) onPromptDone(pStats);
@@ -651,7 +652,7 @@ export async function sendMessage(
                 tokensPerSecond: data.timings?.predicted_per_second || 0,
               };
               const pFromUsage: GenerationStats = {
-                tokens: userTokens,
+                tokens: currentNewTokens,
                 timeMs: data.timings?.prompt_ms || 0,
                 tokensPerSecond: data.timings?.prompt_per_second || 0,
               };
@@ -697,13 +698,17 @@ export async function sendMessage(
     if (aborted) return { content: 'Aborted' };
 
     if (toolCalls.length > 0) {
+      const toolCallRequests = toolCalls.map((tc) => ({
+        id: tc.id,
+        type: 'function',
+        function: { name: tc.name, arguments: tc.args },
+      }));
+      const toolCallRequestStr = JSON.stringify(toolCallRequests);
+      const toolCallRequestTokens = (await tokenize(toolCallRequestStr)) ?? 0;
+      let totalResultTokens = 0;
       messageHistory.push({
         role: 'assistant',
-        tool_calls: toolCalls.map((tc) => ({
-          id: tc.id,
-          type: 'function',
-          function: { name: tc.name, arguments: tc.args },
-        })),
+        tool_calls: toolCallRequests,
       });
       for (const tc of toolCalls) {
         const handler = chatFunctions[tc.name]?.handler;
@@ -713,6 +718,7 @@ export async function sendMessage(
         const resultStr = JSON.stringify(result);
         if (lastUsage) {
           const resultTokens = (await tokenize(resultStr)) ?? 0;
+          totalResultTokens += resultTokens;
           lastUsage = {
             used: lastUsage.used + resultTokens,
             total: lastUsage.total,
@@ -725,6 +731,7 @@ export async function sendMessage(
           content: resultStr,
         });
       }
+      currentNewTokens = toolCallRequestTokens + totalResultTokens;
       return runCompletion();
     }
 
