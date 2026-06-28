@@ -64,3 +64,12 @@
   * Add file name as top comment to all files
   * Set up Metadata in package.json
   * Update README before 1.0.0
+
+# Bugs:
+  ## Chat
+    * Backend does not reappear after switching pages
+  ## Models
+    * Projectors with same quant get deleted
+    * Projectors with same quant believe they are same download
+  ## Profiles
+    * Hitting "save" prompts profile restart even when no settings changed
