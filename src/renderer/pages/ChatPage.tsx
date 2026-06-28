@@ -92,6 +92,7 @@ function formatBackend(backend: string): string {
 
 let persistentMessages: Message[] = [];
 let persistentLoadedProfileId: string = '';
+let persistentBackend: string | null = null;
 let persistentMessageCounter: number = 0;
 let persistentModelLoading = false;
 let persistentLastLoadId = 0;
@@ -299,7 +300,7 @@ export default function ChatPage() {
     text: string;
     imageDataUrl?: string;
   } | null>(null);
-  const [backend, setBackend] = useState<string | null>(null);
+  const [backend, setBackend] = useState<string | null>(persistentBackend);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -513,7 +514,8 @@ export default function ChatPage() {
 
   useEffect(() => {
     persistentMessages = messages;
-  }, [messages]);
+    persistentBackend = backend;
+  }, [messages, backend]);
 
   useEffect(() => {
     if (selectedProfileId) {

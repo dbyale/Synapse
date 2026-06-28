@@ -66,8 +66,6 @@
   * Update README before 1.0.0
 
 # Bugs:
-  ## Chat
-    * Backend does not reappear after switching pages
   ## Models
     * Projectors with same quant get deleted
     * Projectors with same quant believe they are same download
