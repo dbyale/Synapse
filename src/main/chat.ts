@@ -354,22 +354,21 @@ export async function loadProfile(
   onStatus?: (data: { phase: string; message: string }) => void,
 ): Promise<{ success: boolean; error?: string; profile?: any }> {
   console.log('[chat] Loading Profile:', profile.name);
-  await unloadModel();
-
-  // Cancel any in-flight system prompt preload
-  if (preloadAbortController) {
-    preloadAbortController.abort();
-    preloadAbortController = null;
-  }
+  onStatus?.({ phase: 'fetching', message: `Fetching Profile…` });
 
   let serverErrorLog = '';
 
   try {
-    onStatus?.({
-      phase: 'solving',
-      message: 'Optimizing Your Profile Changes…',
-    });
+    // Start unload in background
+    const unloadPromise = unloadModel();
 
+    // Cancel any in-flight system prompt preload
+    if (preloadAbortController) {
+      preloadAbortController.abort();
+      preloadAbortController = null;
+    }
+
+    // Prep work + optimizer run concurrently with old server shutdown
     const settings = loadSettings();
     const fullModelPath = path.join(getModelsDirectory(), profile.model);
     const backendFolder = await detectBackend();
@@ -412,6 +411,7 @@ export async function loadProfile(
         autoOptimizer && autoOptimizer !== 'custom'
           ? autoOptimizer
           : 'longest-context';
+      onStatus?.({ phase: 'solving', message: `Optimizing Profile ${profile.name}…` });
       const optResult = await getOrRunOptimizer(
         fullModelPath,
         vramMB,
@@ -435,6 +435,11 @@ export async function loadProfile(
     lastResolvedMemory = result.memory;
     currentContextSize = result.ctx;
 
+    // Check our Async unloader
+    onStatus?.({ phase: 'unloading', message: 'Unloading Previous Profile…' });
+    await unloadPromise;
+
+    onStatus?.({ phase: 'loadprofile', message: `Loading New Profile…` });
     if (!chatFunctions)
       chatFunctions = createChatFunctions(((fn: any) => fn) as any);
     activeTools = (profile.tools || [])
