@@ -250,14 +250,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('files:readImageAsDataUrl', filePath),
 
   getModelMetadata: (params: {
-    modelPath: string;
-    projectorPath?: string;
+    modelAuthor: string;
+    modelFolder: string;
+    modelFilename: string;
+    projectorFilename?: string;
   }): Promise<{ maxLayers: number; maxContext: number } | null> =>
     ipcRenderer.invoke('profile:getModelMetadata', params),
 
   runProfileOptimizer: (params: {
-    modelPath: string;
-    projectorPath?: string;
+    modelAuthor: string;
+    modelFolder: string;
+    modelFilename: string;
+    projectorFilename?: string;
     mode: 'longest-context' | 'most-gpu';
     kvOffload?: boolean;
     mmap?: boolean;
@@ -267,10 +271,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('profile:runOptimizer', params),
 
   estimateMemory: (params: {
-    modelPath: string;
+    modelAuthor: string;
+    modelFolder: string;
+    modelFilename: string;
+    projectorFilename?: string;
     ngl: number;
     ctx: number;
-    projectorPath?: string;
     kvOffload?: boolean;
     mmap?: boolean;
     cacheTypeK?: string;

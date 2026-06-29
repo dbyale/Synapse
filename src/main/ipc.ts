@@ -586,8 +586,10 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     async (
       _event,
       params: {
-        modelPath: string;
-        projectorPath?: string;
+        modelAuthor: string;
+        modelFolder: string;
+        modelFilename: string;
+        projectorFilename?: string;
         mode: 'longest-context' | 'most-gpu';
         kvOffload?: boolean;
         mmap?: boolean;
@@ -598,13 +600,18 @@ export function registerIpcHandlers(win: BrowserWindow): void {
       const settings = loadSettings();
       const vramMB = settings.allocatedVRAM ?? 4096;
       const ramMB = settings.allocatedRAM ?? 8192;
+      const modelsDir = getModelsDirectory();
+      const modelPath = path.join(modelsDir, params.modelAuthor, params.modelFolder, params.modelFilename);
+      const projectorPath = params.projectorFilename
+        ? path.join(modelsDir, params.modelAuthor, params.modelFolder, 'projectors', params.projectorFilename)
+        : undefined;
 
       const result = await getOrRunOptimizer(
-        params.modelPath,
+        modelPath,
         vramMB,
         ramMB,
         params.mode === 'most-gpu',
-        params.projectorPath,
+        projectorPath,
         params.kvOffload ?? true,
         params.mmap ?? true,
         params.cacheTypeK ?? 'f16',
@@ -624,9 +631,19 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     'profile:getModelMetadata',
     async (
       _event,
-      params: { modelPath: string; projectorPath?: string },
+      params: {
+        modelAuthor: string;
+        modelFolder: string;
+        modelFilename: string;
+        projectorFilename?: string;
+      },
     ) => {
-      return getModelMetadata(params.modelPath, params.projectorPath);
+      const modelsDir = getModelsDirectory();
+      const modelPath = path.join(modelsDir, params.modelAuthor, params.modelFolder, params.modelFilename);
+      const projectorPath = params.projectorFilename
+        ? path.join(modelsDir, params.modelAuthor, params.modelFolder, 'projectors', params.projectorFilename)
+        : undefined;
+      return getModelMetadata(modelPath, projectorPath);
     },
   );
 
@@ -635,21 +652,28 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     async (
       _event,
       params: {
-        modelPath: string;
+        modelAuthor: string;
+        modelFolder: string;
+        modelFilename: string;
+        projectorFilename?: string;
         ngl: number;
         ctx: number;
-        projectorPath?: string;
         kvOffload?: boolean;
         mmap?: boolean;
         cacheTypeK?: string;
         cacheTypeV?: string;
       },
     ) => {
+      const modelsDir = getModelsDirectory();
+      const modelPath = path.join(modelsDir, params.modelAuthor, params.modelFolder, params.modelFilename);
+      const projectorPath = params.projectorFilename
+        ? path.join(modelsDir, params.modelAuthor, params.modelFolder, 'projectors', params.projectorFilename)
+        : undefined;
       return getOrEstimateMemory(
-        params.modelPath,
+        modelPath,
         params.ngl,
         params.ctx,
-        params.projectorPath,
+        projectorPath,
         params.kvOffload ?? true,
         params.mmap ?? true,
         params.cacheTypeK ?? 'f16',

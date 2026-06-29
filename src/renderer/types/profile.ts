@@ -5,6 +5,10 @@ export interface Profile {
   name: string;
   model: string;
   projector?: string;
+  modelAuthor: string;
+  modelFolder: string;
+  modelFilename: string;
+  projectorFilename?: string;
   systemPrompt: string;
   temperature?: number;
   topK?: number;

@@ -1507,11 +1507,17 @@ export default function EditProfileModal({
   const [editTopP, setEditTopP] = useState(String(profile?.topP ?? 0.95));
   const [editMinP, setEditMinP] = useState(String(profile?.minP ?? 0.05));
   const [editSeed, setEditSeed] = useState(String(profile?.seed ?? -1));
-  const [editModel, setEditModel] = useState(
-    profile?.model ? profile.model.split(/[/\\]/).pop()! : '',
+  const [editModelAuthor, setEditModelAuthor] = useState(
+    profile?.modelAuthor ?? '',
   );
-  const [editProjector, setEditProjector] = useState(
-    profile?.projector ? profile.projector.split(/[/\\]/).pop()! : '',
+  const [editModelFolder, setEditModelFolder] = useState(
+    profile?.modelFolder ?? '',
+  );
+  const [editModelFilename, setEditModelFilename] = useState(
+    profile?.modelFilename ?? '',
+  );
+  const [editProjectorFilename, setEditProjectorFilename] = useState(
+    profile?.projectorFilename ?? '',
   );
   const [editTools, setEditTools] = useState<string[]>(profile?.tools ?? []);
   const [editRpEnabled, setEditRpEnabled] = useState(
@@ -1597,28 +1603,23 @@ export default function EditProfileModal({
     fileBufferRam: number;
   } | null>(profile?.estimation ?? null);
 
-// Fetch model metadata when model selection changes
-useEffect(() => {
-  if (profile?.maxForModel === profile?.model && profile?.maxLayers && profile?.maxContext) {
-    setModelMeta({ maxLayers: profile.maxLayers, maxContext: profile.maxContext });
-    return;
-  }
-  const model = localModels.find((m) => m.filename === editModel);
-  if (!model) {
-    setModelMeta(null);
-    return;
-  }
-  const projector = editProjector
-    ? localModels.find((m) => m.filename === editProjector)
-    : undefined;
-  window.electronAPI
-    .getModelMetadata({
-      modelPath: model.filepath,
-      projectorPath: projector?.filepath,
-    })
-    .then((meta) => setModelMeta(meta))
-    .catch(() => setModelMeta(null));
-}, [editModel, editProjector]);
+  // Fetch model metadata when model selection changes
+  useEffect(() => {
+    if (!editModelFilename) return;
+    if (profile?.maxForModel === profile?.model && profile?.maxLayers && profile?.maxContext) {
+      setModelMeta({ maxLayers: profile.maxLayers, maxContext: profile.maxContext });
+      return;
+    }
+    window.electronAPI
+      .getModelMetadata({
+        modelAuthor: editModelAuthor,
+        modelFolder: editModelFolder,
+        modelFilename: editModelFilename,
+        projectorFilename: editProjectorFilename || undefined,
+      })
+      .then((meta) => setModelMeta(meta))
+      .catch(() => setModelMeta(null));
+  }, [editModelFilename, editProjectorFilename, editModelAuthor, editModelFolder]);
 
   // Fetch total VRAM/RAM once on mount
   useEffect(() => {
@@ -1649,18 +1650,16 @@ useEffect(() => {
 
   const handleRunOptimizer = (mode: 'longest-context' | 'most-gpu') => {
     setOptimizerRunning(mode);
-    const model = localModels.find((m) => m.filename === editModel);
-    if (!model) {
+    if (!editModelFilename) {
       setOptimizerRunning(null);
       return;
     }
-    const projector = editProjector
-      ? localModels.find((m) => m.filename === editProjector)
-      : undefined;
     window.electronAPI
       .runProfileOptimizer({
-        modelPath: model.filepath,
-        projectorPath: projector?.filepath,
+        modelAuthor: editModelAuthor,
+        modelFolder: editModelFolder,
+        modelFilename: editModelFilename,
+        projectorFilename: editProjectorFilename || undefined,
         mode,
         kvOffload: editKvOffload,
         mmap: editMmap,
@@ -1696,14 +1695,12 @@ useEffect(() => {
     computeOverheadRam: number;
     fileBufferRam: number;
   } | null> => {
-    const model = localModels.find((m) => m.filename === editModel);
-    if (!model) return null;
-    const projector = editProjector
-      ? localModels.find((m) => m.filename === editProjector)
-      : undefined;
+    if (!editModelFilename) return null;
     const result = await window.electronAPI.estimateMemory({
-      modelPath: model.filepath,
-      projectorPath: projector?.filepath,
+      modelAuthor: editModelAuthor,
+      modelFolder: editModelFolder,
+      modelFilename: editModelFilename,
+      projectorFilename: editProjectorFilename || undefined,
       ngl,
       ctx,
       kvOffload: kvOffload ?? editKvOffload,
@@ -1736,52 +1733,13 @@ useEffect(() => {
   };
 
   const handleSave = () => {
-    if (!editName.trim() || !editModel) return;
+    if (!editName.trim() || !editModelFilename) return;
 
-    const selectedLocalModel = localModels.find(
-      (m) => m.filename === editModel,
-    );
-
-    let modelRelativePath = editModel;
-    if (selectedLocalModel?.filepath) {
-      const pathParts = selectedLocalModel.filepath.split(/[/\\]/);
-      const filename = pathParts.pop() || editModel;
-      const subfolder = pathParts.pop() || '';
-      const author = pathParts.pop() || '';
-      if (author && subfolder) {
-        modelRelativePath = `${author}/${subfolder}/${filename}`;
-      } else if (subfolder) {
-        modelRelativePath = `${subfolder}/${filename}`;
-      } else {
-        modelRelativePath = filename;
-      }
-    }
+    const modelRelativePath = `${editModelAuthor}/${editModelFolder}/${editModelFilename}`;
 
     let projectorRelativePath: string | undefined;
-    if (editProjector) {
-      const selectedProjector = localModels.find(
-        (m) => m.filename === editProjector,
-      );
-      if (selectedProjector?.filepath) {
-        const projParts = selectedProjector.filepath.split(/[/\\]/);
-        const projFilename = projParts.pop() || editProjector;
-        const projSubfolder = projParts.pop() || '';
-        const projAuthor = projParts.pop() || '';
-
-        if (projSubfolder.toLowerCase() === 'projectors') {
-          const modelFolder = projAuthor;
-          const author = projParts.pop() || '';
-          projectorRelativePath = `${author}/${modelFolder}/projectors/${projFilename}`;
-        } else if (projAuthor && projSubfolder) {
-          projectorRelativePath = `${projAuthor}/${projSubfolder}/${projFilename}`;
-        } else if (projSubfolder) {
-          projectorRelativePath = `${projSubfolder}/${projFilename}`;
-        } else {
-          projectorRelativePath = projFilename;
-        }
-      } else {
-        projectorRelativePath = editProjector;
-      }
+    if (editProjectorFilename) {
+      projectorRelativePath = `${editModelAuthor}/${editModelFolder}/projectors/${editProjectorFilename}`;
     }
 
     const buildRepeatPenalty = (): Profile['repeatPenalty'] => {
@@ -1803,6 +1761,10 @@ useEffect(() => {
       name: editName.trim(),
       model: modelRelativePath,
       projector: projectorRelativePath || undefined,
+      modelAuthor: editModelAuthor,
+      modelFolder: editModelFolder,
+      modelFilename: editModelFilename,
+      projectorFilename: editProjectorFilename || undefined,
       systemPrompt: editSystemPrompt,
       temperature: parseFloat(editTemperature),
       topK: parseInt(editTopK, 10),
@@ -1855,22 +1817,13 @@ useEffect(() => {
 
   // Computed display values
   const availableProjectorsForEdit = (() => {
-    if (!editModel) return [];
-    const baseName = editModel.split(/[/\\]/).pop()!;
-    let selectedGroup: (typeof groupedLocalModels)[number] | undefined;
-    for (const group of groupedLocalModels) {
-      if (selectedGroup) break;
-      for (const fg of group.fileGroups) {
-        if (selectedGroup) break;
-        if (
-          fg.parts.some(
-            (p) => p.filename === baseName || p.filename === editModel,
-          )
-        ) {
-          selectedGroup = group;
-        }
-      }
-    }
+    if (!editModelFolder) return [];
+    const targetName = editModelAuthor
+      ? `${editModelAuthor}/${editModelFolder}`
+      : editModelFolder;
+    const selectedGroup = groupedLocalModels.find(
+      (g) => g.name === targetName,
+    );
     if (!selectedGroup) return [];
 
     const result: Array<{
@@ -1896,25 +1849,37 @@ useEffect(() => {
   })();
 
   const selectedModelDisplay = (() => {
-    if (!editModel) return null;
-    const baseName = editModel.split(/[/\\]/).pop()!;
+    if (!editModelFilename) return null;
+    const groupName = editModelAuthor
+      ? `${editModelAuthor}/${editModelFolder}`
+      : editModelFolder;
     for (const group of modelSelectGroups) {
+      if (group.name !== groupName) continue;
       const v = group.variants.find(
-        (v) => v.filename === baseName || v.filename === editModel,
+        (v) => v.filename === editModelFilename,
       );
-      if (v) return { groupName: group.name, ...v };
+      if (v) return { groupName, ...v };
+      break;
     }
-    return null;
+    return {
+      groupName,
+      filename: editModelFilename,
+      quantization: extractQuantizationFromFilename(editModelFilename),
+      sizeBytes: 0,
+    };
   })();
 
   const selectedProjectorDisplay = (() => {
-    if (!editProjector) return null;
-    const baseName = editProjector.split(/[/\\]/).pop()!;
-    return (
-      availableProjectorsForEdit.find(
-        (p) => p.filename === baseName || p.filename === editProjector,
-      ) ?? null
+    if (!editProjectorFilename) return null;
+    const found = availableProjectorsForEdit.find(
+      (p) => p.filename === editProjectorFilename,
     );
+    if (found) return found;
+    return {
+      filename: editProjectorFilename,
+      quantization: extractQuantizationFromFilename(editProjectorFilename),
+      sizeBytes: 0,
+    };
   })();
 
   const breadcrumb = buildBreadcrumb(currentPage);
@@ -1941,8 +1906,8 @@ useEffect(() => {
           <MainPage
             editName={editName}
             setEditName={setEditName}
-            editModel={editModel}
-            editProjector={editProjector}
+            editModel={editModelFilename}
+            editProjector={editProjectorFilename}
             selectedModelDisplay={selectedModelDisplay}
             selectedProjectorDisplay={selectedProjectorDisplay}
             availableModelsForEdit={availableModelsForEdit}
@@ -2150,7 +2115,7 @@ useEffect(() => {
             type="button"
             className="btn-accent"
             onClick={handleSave}
-            disabled={!editName.trim() || !editModel}
+            disabled={!editName.trim() || !editModelFilename}
           >
             Save
           </button>
@@ -2160,9 +2125,13 @@ useEffect(() => {
       {showModelModal && (
         <ModelSelectModal
           groups={modelSelectGroups}
-          selectedFilename={editModel}
-          onSelect={(f) => {
-            setEditModel(f);
+          selectedFilename={editModelFilename}
+          onSelect={(f, groupName) => {
+            const parts = groupName.split('/');
+            setEditModelAuthor(parts[0]);
+            setEditModelFolder(parts.length >= 2 ? parts[1] : parts[0]);
+            setEditModelFilename(f);
+            setEditProjectorFilename('');
             setShowModelModal(false);
           }}
           onClose={() => setShowModelModal(false)}
@@ -2171,9 +2140,9 @@ useEffect(() => {
       {showProjectorModal && (
         <ProjectorSelectModal
           projectors={availableProjectorsForEdit}
-          selectedFilename={editProjector}
+          selectedFilename={editProjectorFilename}
           onSelect={(f) => {
-            setEditProjector(f);
+            setEditProjectorFilename(f);
             setShowProjectorModal(false);
           }}
           onClose={() => setShowProjectorModal(false)}

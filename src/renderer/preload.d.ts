@@ -239,13 +239,17 @@ declare global {
       readImageAsDataUrl: (filePath: string) => Promise<string>;
 
       getModelMetadata: (params: {
-        modelPath: string;
-        projectorPath?: string;
+        modelAuthor: string;
+        modelFolder: string;
+        modelFilename: string;
+        projectorFilename?: string;
       }) => Promise<{ maxLayers: number; maxContext: number } | null>;
 
       runProfileOptimizer: (params: {
-        modelPath: string;
-        projectorPath?: string;
+        modelAuthor: string;
+        modelFolder: string;
+        modelFilename: string;
+        projectorFilename?: string;
         mode: 'longest-context' | 'most-gpu';
         kvOffload?: boolean;
         mmap?: boolean;
@@ -259,10 +263,12 @@ declare global {
       }>;
 
       estimateMemory: (params: {
-        modelPath: string;
+        modelAuthor: string;
+        modelFolder: string;
+        modelFilename: string;
+        projectorFilename?: string;
         ngl: number;
         ctx: number;
-        projectorPath?: string;
         kvOffload?: boolean;
         mmap?: boolean;
         cacheTypeK?: string;

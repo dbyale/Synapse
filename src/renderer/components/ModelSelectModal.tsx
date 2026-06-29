@@ -18,7 +18,7 @@ interface GroupData {
 interface ModelSelectModalProps {
   groups: GroupData[];
   selectedFilename: string;
-  onSelect: (filename: string) => void;
+  onSelect: (filename: string, groupName: string) => void;
   onClose: () => void;
 }
 
@@ -73,7 +73,7 @@ export default function ModelSelectModal({
                   className="msm-group-header"
                   onClick={() => {
                     if (group.variants.length > 0) {
-                      onSelect(group.variants[0].filename);
+                      onSelect(group.variants[0].filename, group.name);
                       onClose();
                     }
                   }}
@@ -89,7 +89,7 @@ export default function ModelSelectModal({
                     type="button"
                     className={`msm-variant${selectedFilename === variant.filename ? ' msm-variant--selected' : ''}`}
                     onClick={() => {
-                      onSelect(variant.filename);
+                      onSelect(variant.filename, group.name);
                       onClose();
                     }}
                   >
