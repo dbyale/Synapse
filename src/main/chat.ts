@@ -411,7 +411,7 @@ export async function loadProfile(
         autoOptimizer && autoOptimizer !== 'custom'
           ? autoOptimizer
           : 'longest-context';
-      onStatus?.({ phase: 'solving', message: `Optimizing Profile ${profile.name}…` });
+      onStatus?.({ phase: 'solving', message: `Optimizing Profile "${profile.name}"…` });
       const optResult = await getOrRunOptimizer(
         fullModelPath,
         vramMB,
