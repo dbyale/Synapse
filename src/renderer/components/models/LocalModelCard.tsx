@@ -266,7 +266,7 @@ export default function LocalModelCard({
                     className="local-variant__delete"
                     onClick={(e) => {
                       e.stopPropagation();
-                      onDelete(fg.parts.map((p) => p.filename));
+                      onDelete(fg.parts.map((p) => p.filepath));
                     }}
                     title="Delete this variant"
                   >
