@@ -238,15 +238,17 @@ export default function ModelsPage() {
 
     const unsubscribe = window.electronAPI.onDownloadProgress(
       (progress: DownloadProgress & { status?: string }) => {
+        const key = progress.modelId + ':' + progress.filename;
         setDownloads((prev) => {
           if (progress.status === 'cancelled' || progress.status === 'failed') {
             const next = { ...prev };
-            delete next[progress.filename];
+            delete next[key];
             return next;
           }
           return {
             ...prev,
-            [progress.filename]: {
+            [key]: {
+              modelId: progress.modelId,
               filename: progress.filename,
               percent: progress.percent,
               status: progress.status,
@@ -258,7 +260,7 @@ export default function ModelsPage() {
           setTimeout(async () => {
             setDownloads((prev) => {
               const updated = { ...prev };
-              delete updated[progress.filename];
+              delete updated[key];
               return updated;
             });
 
@@ -490,9 +492,10 @@ export default function ModelsPage() {
       }),
     );
 
+    const compositeKey = repoId + ':' + filename;
     setDownloads((prev) => ({
       ...prev,
-      [filename]: {
+      [compositeKey]: {
         modelId: repoId,
         filename,
         percent: 0,
@@ -505,7 +508,7 @@ export default function ModelsPage() {
       console.error('Download failed:', dlErr);
       setDownloads((prev) => {
         const updated = { ...prev };
-        delete updated[filename];
+        delete updated[compositeKey];
         return updated;
       });
     }

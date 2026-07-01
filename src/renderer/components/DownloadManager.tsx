@@ -37,12 +37,14 @@ export default function DownloadManager() {
     const handleOpen = (e: Event) => {
       setOpen(true);
       const customEvent = e as CustomEvent;
-      if (customEvent.detail?.filename) {
+      const { modelId, filename } = customEvent.detail;
+      if (filename) {
+        const key = (modelId || '') + ':' + filename;
         setDownloads((prev) => ({
           ...prev,
-          [customEvent.detail.filename]: {
-            modelId: customEvent.detail.modelId || '',
-            filename: customEvent.detail.filename,
+          [key]: {
+            modelId: modelId || '',
+            filename,
             percent: 0,
             downloadedBytes: 0,
             totalBytes: 0,
@@ -66,15 +68,16 @@ export default function DownloadManager() {
     const unsubscribe = window.electronAPI.onDownloadProgress(
       (progress: DownloadProgress & { status?: 'cancelled' | 'failed' }) => {
         const now = Date.now();
+        const key = (progress.modelId || '') + ':' + progress.filename;
 
         setDownloads((prev) => {
-          const existing = prev[progress.filename];
+          const existing = prev[key];
 
           // If the backend explicitly broadcasts a cancel/fail event, apply it
           if (progress.status === 'cancelled' || progress.status === 'failed') {
             return {
               ...prev,
-              [progress.filename]: {
+              [key]: {
                 ...(existing || {
                   modelId: progress.modelId || '',
                   filename: progress.filename,
@@ -123,7 +126,7 @@ export default function DownloadManager() {
 
           return {
             ...prev,
-            [progress.filename]: {
+            [key]: {
               modelId: existing ? existing.modelId : progress.modelId || '',
               filename: progress.filename,
               percent: progress.percent,
@@ -145,8 +148,9 @@ export default function DownloadManager() {
   }, []);
 
   // ── Handle Clear / Cancel ──
-  const handleCancel = async (filename: string) => {
-    const dl = downloads[filename];
+  const handleCancel = async (modelId: string, filename: string) => {
+    const key = (modelId || '') + ':' + filename;
+    const dl = downloads[key];
     if (!dl) return;
 
     const isComplete = dl.percent >= 100;
@@ -155,7 +159,7 @@ export default function DownloadManager() {
     if (isComplete || dl.status === 'cancelled' || dl.status === 'failed') {
       setDownloads((prev) => {
         const next = { ...prev };
-        delete next[filename];
+        delete next[key];
         return next;
       });
       return;
@@ -163,16 +167,17 @@ export default function DownloadManager() {
 
     // Call backend to abort HTTP request. (This will trigger the broadcast above)
     if (window.electronAPI.cancelDownload) {
-      await window.electronAPI.cancelDownload(filename);
+      await window.electronAPI.cancelDownload(modelId, filename);
     }
   };
 
   // ── Handle Retry ──
   const handleRetry = async (modelId: string, filename: string) => {
+    const key = (modelId || '') + ':' + filename;
     setDownloads((prev) => ({
       ...prev,
-      [filename]: {
-        ...prev[filename],
+      [key]: {
+        ...prev[key],
         percent: 0,
         downloadedBytes: 0,
         totalBytes: 0,
@@ -250,7 +255,7 @@ export default function DownloadManager() {
                 }
 
                 return (
-                  <div key={dl.filename} className="dl-manager__item">
+                  <div key={dl.modelId + ':' + dl.filename} className="dl-manager__item">
                     <div className="dl-manager__item-header">
                       <div className="dl-manager__item-title">
                         <div
@@ -279,7 +284,7 @@ export default function DownloadManager() {
                       <button
                         type="button"
                         className="dl-manager__cancel-btn"
-                        onClick={() => handleCancel(dl.filename)}
+                        onClick={() => handleCancel(dl.modelId, dl.filename)}
                         title={
                           isComplete || isCancelled || isFailed
                             ? 'Clear'

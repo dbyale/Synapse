@@ -685,7 +685,7 @@ export default function ModelCard({
                   <div className="model-card__dl-pills">
                     {sortedGroups.map((group) => {
                       const activeDls = group.parts
-                        .map((p) => downloads[p.filename])
+                        .map((p) => downloads[model.id + ':' + p.filename])
                         .filter(Boolean);
 
                       const isDownloading =
@@ -702,7 +702,7 @@ export default function ModelCard({
 
                         const totalProgress = group.parts.reduce(
                           (sum, part) => {
-                            const dl = downloads[part.filename];
+                            const dl = downloads[model.id + ':' + part.filename];
                             if (dl) return sum + dl.percent;
                             return sum + (anyStarted ? 100 : 0);
                           },

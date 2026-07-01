@@ -314,8 +314,8 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     },
   );
 
-  ipcMain.handle('models:cancel-download', async (_event, filename: string) => {
-    return cancelDownload(filename);
+  ipcMain.handle('models:cancel-download', async (_event, repoId: string, filename: string) => {
+    return cancelDownload(repoId, filename);
   });
 
   // ── Models: Local ──

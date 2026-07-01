@@ -408,8 +408,8 @@ export function downloadModel(
 
         response.on('end', () => {
           file.end();
-          activeDownloads.delete(filename);
-          resolve(destPath);
+      activeDownloads.delete(repoId + ':' + filename);
+      resolve(destPath);
         });
 
         response.on('error', cleanupAndReject);
@@ -417,15 +417,15 @@ export function downloadModel(
 
       req.on('error', cleanupAndReject);
 
-      activeDownloads.set(filename, { req, destPath, win, repoId });
+      activeDownloads.set(repoId + ':' + filename, { req, destPath, win, repoId });
     };
 
     request(url);
   });
 }
 
-export function cancelDownload(filename: string): boolean {
-  const record = activeDownloads.get(filename);
+export function cancelDownload(repoId: string, filename: string): boolean {
+  const record = activeDownloads.get(repoId + ':' + filename);
   if (record) {
     record.cancelled = true;
 

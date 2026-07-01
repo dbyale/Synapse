@@ -66,8 +66,5 @@
   * Update README before 1.0.0
 
 # Bugs:
-  ## Models
-    * Projectors with same quant get deleted
-    * Projectors with same quant believe they are same download
   ## Profiles
     * Hitting "save" prompts profile restart even when no settings changed
