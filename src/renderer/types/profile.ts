@@ -50,6 +50,13 @@ export interface Profile {
     computeOverheadRam: number;
     fileBufferRam: number;
   };
+  videoSettings?: {
+    fps?: number;
+    maxFrames?: number;
+    quality?: number;
+    maxWidth?: number;
+    unlimitedMaxFrames?: boolean;
+  };
   order: number;
   createdAt: number;
 }

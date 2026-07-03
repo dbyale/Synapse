@@ -100,6 +100,8 @@ const PAGE_DEPTH: Record<string, number> = {
   tools: 1,
   advanced: 1,
   'repeat-penalty': 2,
+  projector: 1,
+  'video-settings': 2,
   performance: 1,
   'cache-options': 2,
   'memory-options': 2,
@@ -112,6 +114,8 @@ const BREADCRUMB_MAP: Record<string, { label: string; parent: string | null }> =
     tools: { label: 'Tools', parent: 'main' },
     advanced: { label: 'Advanced Parameters', parent: 'main' },
     'repeat-penalty': { label: 'Repeat Penalty', parent: 'advanced' },
+    projector: { label: 'Projector', parent: 'main' },
+    'video-settings': { label: 'Video Settings', parent: 'projector' },
     performance: { label: 'Performance', parent: 'main' },
     'cache-options': { label: 'Cache Options', parent: 'performance' },
     'memory-options': { label: 'Memory Options', parent: 'performance' },
@@ -219,12 +223,10 @@ function MainPage({
   editName,
   setEditName,
   editModel,
-  editProjector,
   selectedModelDisplay,
   selectedProjectorDisplay,
   availableModelsForEdit,
   onOpenModelModal,
-  onOpenProjectorModal,
   onNavigate,
   systemPromptPreview,
   toolsPreview,
@@ -238,7 +240,6 @@ function MainPage({
   editName: string;
   setEditName: (v: string) => void;
   editModel: string;
-  editProjector: string;
   selectedModelDisplay: {
     groupName: string;
     filename: string;
@@ -256,7 +257,6 @@ function MainPage({
     name: string;
   }>;
   onOpenModelModal: () => void;
-  onOpenProjectorModal: () => void;
   onNavigate: (page: string) => void;
   systemPromptPreview: string;
   toolsPreview: string;
@@ -344,50 +344,13 @@ function MainPage({
         </div>
 
         {editModel && selectedProjectorDisplay !== undefined && (
-          <div className="epm-section">
-            <InfoTooltip content={PROJECTOR_TOOLTIP} side="right" hideIcon title="Projector (Optional)">
-              <div className="epm-section__label">Projector (Optional)</div>
-            </InfoTooltip>
-            <button
-              type="button"
-              className={`sp-card__edit-select-trigger${selectedProjectorDisplay ? ' sp-card__edit-select-trigger--card' : ''}`}
-              style={{ background: 'var(--bg-primary)' }}
-              onClick={onOpenProjectorModal}
-            >
-              {selectedProjectorDisplay ? (
-                <div className="sp-card__edit-select-trigger__card">
-                  <div className="sp-card__edit-select-trigger__card-top">
-                    <span className="sp-card__edit-select-trigger__card-name">
-                      Projector
-                    </span>
-                    <ChevronDown
-                      size={18}
-                      className="sp-card__edit-select-trigger__chevron"
-                    />
-                  </div>
-                  <div className="sp-card__edit-select-trigger__card-bottom">
-                    <span className="sp-card__edit-select-trigger__card-quant">
-                      {selectedProjectorDisplay.quantization.toUpperCase()}
-                    </span>
-                    <span className="sp-card__edit-select-trigger__card-size">
-                      {formatBytes(selectedProjectorDisplay.sizeBytes)}
-                    </span>
-                    <span className="sp-card__edit-select-trigger__card-filename">
-                      {selectedProjectorDisplay.filename}
-                    </span>
-                  </div>
-                </div>
-              ) : (
-                <div className="sp-card__edit-select-trigger__placeholder">
-                  <span>None</span>
-                  <ChevronDown
-                    size={18}
-                    className="sp-card__edit-select-trigger__chevron"
-                  />
-                </div>
-              )}
-            </button>
-          </div>
+          <SectionCard
+            icon={<FileText size={20} />}
+            title="Projector"
+            tooltip={PROJECTOR_TOOLTIP}
+            preview={selectedProjectorDisplay ? selectedProjectorDisplay.filename : 'None'}
+            onClick={() => onNavigate('projector')}
+          />
         )}
 
         {editModel && (
@@ -658,6 +621,7 @@ function NumberField({
   helper,
   tooltip,
   tooltipTitle,
+  disabled,
 }: {
   label: string;
   value: string;
@@ -668,6 +632,7 @@ function NumberField({
   helper?: string;
   tooltip?: string | string[];
   tooltipTitle?: string;
+  disabled?: boolean;
 }) {
   const defaultVal = helper?.match(/Default:\s*([\d.]+)/)?.[1];
   return (
@@ -683,6 +648,7 @@ function NumberField({
             max={max}
             step={step}
             placeholder={defaultVal}
+            disabled={disabled}
           />
           {helper && <div className="epm-number-helper">{helper}</div>}
         </InfoTooltip>
@@ -697,6 +663,7 @@ function NumberField({
             max={max}
             step={step}
             placeholder={defaultVal}
+            disabled={disabled}
           />
           {helper && <div className="epm-number-helper">{helper}</div>}
         </>
@@ -854,6 +821,160 @@ function CacheTypeSelector({ label, value, onChange }: { label: string; value: C
         )}
       </div>
     </div>
+  );
+}
+
+// ── Projector Page (sub-page) ──
+
+function ProjectorPage({
+  selectedProjectorDisplay,
+  onOpenProjectorModal,
+  editProjector,
+  onNavigate,
+  videoSettingsPreview,
+}: {
+  selectedProjectorDisplay: {
+    filename: string;
+    quantization: string;
+    sizeBytes: number;
+  } | null;
+  onOpenProjectorModal: () => void;
+  editProjector: string;
+  onNavigate: (page: string) => void;
+  videoSettingsPreview: string;
+}) {
+  return (
+    <>
+      <div className="epm-section">
+        <InfoTooltip content={PROJECTOR_TOOLTIP} side="right" hideIcon title="Projector">
+          <div className="epm-section__label">Projector</div>
+        </InfoTooltip>
+        <button
+          type="button"
+          className={`sp-card__edit-select-trigger${selectedProjectorDisplay ? ' sp-card__edit-select-trigger--card' : ''}`}
+          style={{ background: 'var(--bg-primary)' }}
+          onClick={onOpenProjectorModal}
+        >
+          {selectedProjectorDisplay ? (
+            <div className="sp-card__edit-select-trigger__card">
+              <div className="sp-card__edit-select-trigger__card-top">
+                <span className="sp-card__edit-select-trigger__card-name">
+                  Projector
+                </span>
+                <ChevronDown
+                  size={18}
+                  className="sp-card__edit-select-trigger__chevron"
+                />
+              </div>
+              <div className="sp-card__edit-select-trigger__card-bottom">
+                <span className="sp-card__edit-select-trigger__card-quant">
+                  {selectedProjectorDisplay.quantization.toUpperCase()}
+                </span>
+                <span className="sp-card__edit-select-trigger__card-size">
+                  {formatBytes(selectedProjectorDisplay.sizeBytes)}
+                </span>
+                <span className="sp-card__edit-select-trigger__card-filename">
+                  {selectedProjectorDisplay.filename}
+                </span>
+              </div>
+            </div>
+          ) : (
+            <div className="sp-card__edit-select-trigger__placeholder">
+              <span>None</span>
+              <ChevronDown
+                size={18}
+                className="sp-card__edit-select-trigger__chevron"
+              />
+            </div>
+          )}
+        </button>
+      </div>
+      {editProjector && (
+        <div style={{ marginTop: '20px' }}>
+          <SectionCard
+            icon={<SlidersHorizontal size={18} />}
+            title="Video Settings"
+            tooltip="Configure how video frames are extracted before being sent to the vision model."
+            preview={videoSettingsPreview}
+            onClick={() => onNavigate('video-settings')}
+          />
+        </div>
+      )}
+    </>
+  );
+}
+
+// ── Video Settings Page (sub-page) ──
+
+function VideoSettingsPage({
+  editVideoFps,
+  setEditVideoFps,
+  editVideoMaxFrames,
+  setEditVideoMaxFrames,
+  editVideoQuality,
+  setEditVideoQuality,
+  editVideoWidth,
+  setEditVideoWidth,
+  editVideoUnlimitedMaxFrames,
+  setEditVideoUnlimitedMaxFrames,
+}: {
+  editVideoFps: string;
+  setEditVideoFps: (v: string) => void;
+  editVideoMaxFrames: string;
+  setEditVideoMaxFrames: (v: string) => void;
+  editVideoQuality: string;
+  setEditVideoQuality: (v: string) => void;
+  editVideoWidth: string;
+  setEditVideoWidth: (v: string) => void;
+  editVideoUnlimitedMaxFrames: boolean;
+  setEditVideoUnlimitedMaxFrames: (v: boolean) => void;
+}) {
+  return (
+    <>
+      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', cursor: 'pointer' }}>
+        <input
+          type="checkbox"
+          checked={editVideoUnlimitedMaxFrames}
+          onChange={(e) => setEditVideoUnlimitedMaxFrames(e.target.checked)}
+        />
+        <span>Disable Frame Limit</span>
+      </label>
+      <div className="epm-number-grid">
+      <NumberField
+        label="Frames Per Second (FPS)"
+        value={editVideoFps}
+        onChange={setEditVideoFps}
+        step="0.5"
+        helper="Default: 1"
+        tooltip="How many video frames to sample per second. Higher values capture more temporal detail but increase token usage and processing time. (default: 1)"
+      />
+      <NumberField
+          label="Max Frames"
+          value={editVideoMaxFrames}
+          onChange={setEditVideoMaxFrames}
+          step="1"
+          helper="Default: 15"
+          tooltip="Maximum total frames to extract from a video. Longer videos are truncated at this limit. (default: 15)"
+          disabled={editVideoUnlimitedMaxFrames}
+        />
+      <NumberField
+        label="JPEG Quality"
+        value={editVideoQuality}
+        onChange={setEditVideoQuality}
+        step="0.1"
+        helper="Default: 0.8"
+        tooltip="Quality of extracted frame images. Higher values preserve more visual detail but produce larger payloads. Range: 0.0–1.0. (default: 0.8)"
+      />
+      <NumberField
+        label="Max Width (px)"
+        value={editVideoWidth}
+        onChange={setEditVideoWidth}
+        step="1"
+        helper="Default: 640"
+        tooltip="Maximum width in pixels for extracted frames. Frames are scaled down to fit while maintaining aspect ratio. (default: 640)"
+      />
+    </div>
+    </>
   );
 }
 
@@ -1582,6 +1703,21 @@ export default function EditProfileModal({
     'longest-context' | 'most-gpu' | null
   >(null);
 
+  const [editVideoFps, setEditVideoFps] = useState<string>(
+    profile?.videoSettings?.fps?.toString() ?? '',
+  );
+  const [editVideoMaxFrames, setEditVideoMaxFrames] = useState<string>(
+    profile?.videoSettings?.maxFrames?.toString() ?? '',
+  );
+  const [editVideoQuality, setEditVideoQuality] = useState<string>(
+    profile?.videoSettings?.quality?.toString() ?? '',
+  );
+  const [editVideoWidth, setEditVideoWidth] = useState<string>(
+    profile?.videoSettings?.maxWidth?.toString() ?? '',
+  );
+  const [editVideoUnlimitedMaxFrames, setEditVideoUnlimitedMaxFrames] =
+    useState<boolean>(profile?.videoSettings?.unlimitedMaxFrames ?? false);
+
   const profileSnapshotRef = useRef(profile ? JSON.stringify(profile) : null);
 
   // Model metadata (max layers/context) — fetched when model changes
@@ -1744,6 +1880,23 @@ export default function EditProfileModal({
       projectorRelativePath = `${editModelAuthor}/${editModelFolder}/projectors/${editProjectorFilename}`;
     }
 
+    const buildVideoSettings = (): Profile['videoSettings'] => {
+      const fps = parseFloat(editVideoFps);
+      const maxFrames = parseFloat(editVideoMaxFrames);
+      const quality = parseFloat(editVideoQuality);
+      const maxWidth = parseFloat(editVideoWidth);
+      const vs: NonNullable<Profile['videoSettings']> = {};
+      if (!isNaN(fps) && fps > 0) vs.fps = fps;
+      if (editVideoUnlimitedMaxFrames) {
+        vs.unlimitedMaxFrames = true;
+      } else if (!isNaN(maxFrames) && maxFrames > 0) {
+        vs.maxFrames = maxFrames;
+      }
+      if (!isNaN(quality) && quality > 0 && quality <= 1) vs.quality = quality;
+      if (!isNaN(maxWidth) && maxWidth > 0) vs.maxWidth = maxWidth;
+      return Object.keys(vs).length > 0 ? vs : undefined;
+    };
+
     const buildRepeatPenalty = (): Profile['repeatPenalty'] => {
       if (!editRpEnabled) return { enabled: false };
       const rp: NonNullable<Profile['repeatPenalty']> = {};
@@ -1802,6 +1955,7 @@ export default function EditProfileModal({
             allocatedRAM: editAllocatedRAM,
           }
         : {}),
+      videoSettings: buildVideoSettings(),
       order: profile?.order ?? now,
       createdAt: profile?.createdAt ?? now,
     };
@@ -1910,6 +2064,15 @@ export default function EditProfileModal({
 
   const advancedPreview = `Temperature: ${editTemperature}, Top K: ${editTopK}, Top P: ${editTopP}`;
 
+  const videoSettingsPreview = [
+    editVideoFps ? `${editVideoFps} FPS` : '',
+    editVideoUnlimitedMaxFrames ? 'Unlimited' : (editVideoMaxFrames ? `Max ${editVideoMaxFrames} frames` : ''),
+    editVideoQuality ? `Quality ${editVideoQuality}` : '',
+    editVideoWidth ? `${editVideoWidth}px` : '',
+  ]
+    .filter(Boolean)
+    .join(', ') || 'Default';
+
   const renderPage = () => {
     switch (currentPage) {
       case 'main':
@@ -1918,12 +2081,10 @@ export default function EditProfileModal({
             editName={editName}
             setEditName={setEditName}
             editModel={editModelFilename}
-            editProjector={editProjectorFilename}
             selectedModelDisplay={selectedModelDisplay}
             selectedProjectorDisplay={selectedProjectorDisplay}
             availableModelsForEdit={availableModelsForEdit}
             onOpenModelModal={() => setShowModelModal(true)}
-            onOpenProjectorModal={() => setShowProjectorModal(true)}
             onNavigate={navigateTo}
             systemPromptPreview={systemPromptPreview}
             toolsPreview={toolsPreview}
@@ -2032,6 +2193,31 @@ export default function EditProfileModal({
             setEditRpFrequencyPenalty={setEditRpFrequencyPenalty}
             editRpPresencePenalty={editRpPresencePenalty}
             setEditRpPresencePenalty={setEditRpPresencePenalty}
+          />
+        );
+      case 'projector':
+        return (
+          <ProjectorPage
+            selectedProjectorDisplay={selectedProjectorDisplay}
+            onOpenProjectorModal={() => setShowProjectorModal(true)}
+            editProjector={editProjectorFilename}
+            onNavigate={navigateTo}
+            videoSettingsPreview={videoSettingsPreview}
+          />
+        );
+      case 'video-settings':
+        return (
+          <VideoSettingsPage
+            editVideoFps={editVideoFps}
+            setEditVideoFps={setEditVideoFps}
+            editVideoMaxFrames={editVideoMaxFrames}
+            setEditVideoMaxFrames={setEditVideoMaxFrames}
+            editVideoQuality={editVideoQuality}
+            setEditVideoQuality={setEditVideoQuality}
+            editVideoWidth={editVideoWidth}
+            setEditVideoWidth={setEditVideoWidth}
+            editVideoUnlimitedMaxFrames={editVideoUnlimitedMaxFrames}
+            setEditVideoUnlimitedMaxFrames={setEditVideoUnlimitedMaxFrames}
           />
         );
       default:

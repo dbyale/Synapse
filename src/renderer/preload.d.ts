@@ -144,6 +144,7 @@ declare global {
       chatSend: (
         text: string,
         mediaDataUrls?: string[],
+        fps?: number,
       ) => Promise<{ success: boolean; error?: string; aborted?: boolean }>;
       onChatToken: (
         callback: (data: {

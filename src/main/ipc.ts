@@ -380,7 +380,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
 
   ipcMain.handle(
     'chat:send',
-    async (event, text: string, mediaDataUrls?: string[]) => {
+    async (event, text: string, mediaDataUrls?: string[], fps?: number) => {
       try {
         const onTokenCallback = (
           token: string,
@@ -418,6 +418,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
           mediaDataUrls,
           onProgressCallback,
           onPromptDoneCallback,
+          fps,
         );
 
         if (!event.sender.isDestroyed()) {

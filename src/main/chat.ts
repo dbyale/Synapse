@@ -160,13 +160,13 @@ export function setEmitFunctionCallback(cb: any) {
 }
 
 // --- Build multimodal content from media data URLs (frames + timestamps + text) ---
-function buildMediaContent(urls: string[], text: string): any[] {
+function buildMediaContent(urls: string[], text: string, fps = 1): any[] {
   const content: any[] = [];
-  const intervalSec = 1;
+  const intervalSec = 1 / fps;
   urls.forEach((url, i) => {
     content.push({ type: 'image_url', image_url: { url } });
+    const secs = Math.floor(i * intervalSec % 60);
     const mins = Math.floor((i * intervalSec) / 60);
-    const secs = Math.floor((i * intervalSec) % 60);
     content.push({ type: 'text', text: `[${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}]` });
   });
   content.push({ type: 'text', text });
@@ -553,6 +553,7 @@ export async function sendMessage(
     total: number;
   }) => void,
   onPromptDone?: (stats: GenerationStats) => void,
+  fps?: number,
 ): Promise<SendMessageResponse> {
   if (!currentProfile) throw new Error('No profile loaded');
 
@@ -563,7 +564,7 @@ export async function sendMessage(
   }
 
   const userContent: any = mediaDataUrls && mediaDataUrls.length > 0
-    ? buildMediaContent(mediaDataUrls, text)
+    ? buildMediaContent(mediaDataUrls, text, fps)
     : text;
   messageHistory.push({ role: 'user', content: userContent });
   abortController = new AbortController();

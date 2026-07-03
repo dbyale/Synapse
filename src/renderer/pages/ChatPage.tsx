@@ -280,7 +280,13 @@ function MediaAttachModal({
   );
 }
 
-async function extractVideoFrames(file: File, fps = 1, maxFrames = 15): Promise<string[]> {
+async function extractVideoFrames(
+  file: File,
+  fps = 1,
+  maxFrames?: number,
+  quality = 0.8,
+  maxWidth = 640,
+): Promise<{ frames: string[]; fps: number }> {
   const url = URL.createObjectURL(file);
   const video = document.createElement('video');
   video.muted = true;
@@ -298,20 +304,24 @@ async function extractVideoFrames(file: File, fps = 1, maxFrames = 15): Promise<
   if (!duration || !isFinite(duration)) {
     URL.revokeObjectURL(url);
     video.remove();
-    return [];
+    return { frames: [], fps };
   }
 
-  const totalFrames = Math.min(Math.max(1, Math.floor(duration * fps)), maxFrames);
+  let totalFrames = Math.max(1, Math.floor(duration * fps));
+  if (maxFrames !== undefined) {
+    totalFrames = Math.min(totalFrames, maxFrames);
+  }
   const interval = duration / totalFrames;
 
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d')!;
-  const maxWidth = 640;
   const scale = Math.min(1, maxWidth / video.videoWidth);
-  canvas.width = Math.round(video.videoWidth * scale) || 640;
+  canvas.width = Math.round(video.videoWidth * scale) || maxWidth;
   canvas.height = Math.round(video.videoHeight * scale) || 480;
 
   const frames: string[] = [];
+  let lastActualTime = -1;
+  let actualCount = 0;
 
   for (let i = 0; i < totalFrames; i++) {
     const time = Math.min(i * interval, duration - 0.01);
@@ -329,13 +339,20 @@ async function extractVideoFrames(file: File, fps = 1, maxFrames = 15): Promise<
         }
       }, 2000);
     });
+    if (video.currentTime === lastActualTime) continue;
+    lastActualTime = video.currentTime;
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    frames.push(canvas.toDataURL('image/jpeg', 0.8));
+    frames.push(canvas.toDataURL('image/jpeg', quality));
+    actualCount++;
   }
 
   URL.revokeObjectURL(url);
   video.remove();
-  return frames;
+
+  const achievedFps = actualCount > 0 && lastActualTime > 0
+    ? actualCount / lastActualTime
+    : fps;
+  return { frames, fps: achievedFps };
 }
 
 export default function ChatPage() {
@@ -1071,11 +1088,21 @@ export default function ChatPage() {
       (async () => {
         let mediaUrls: string[] | undefined;
         let videoUrl: string | undefined;
+        let achievedFps: number | undefined;
 
         if (videoFile) {
           videoUrl = URL.createObjectURL(videoFile);
           try {
-            mediaUrls = await extractVideoFrames(videoFile);
+            const vs = selectedProfile?.videoSettings;
+            const result = await extractVideoFrames(
+              videoFile,
+              vs?.fps,
+              vs?.unlimitedMaxFrames ? undefined : (vs?.maxFrames ?? 15),
+              vs?.quality,
+              vs?.maxWidth,
+            );
+            mediaUrls = result.frames;
+            achievedFps = result.fps;
             if (!mediaUrls || mediaUrls.length === 0) {
               throw new Error('Could not extract any frames from this video');
             }
@@ -1129,7 +1156,7 @@ export default function ChatPage() {
         generationBaselineTokens.current = null;
         lastTokenSnapshot.current = null;
 
-        await window.electronAPI.chatSend(text, mediaUrls);
+        await window.electronAPI.chatSend(text, mediaUrls, achievedFps);
       })();
     }
   }, [systemPhase, systemPromptDone]);
@@ -1178,13 +1205,23 @@ export default function ChatPage() {
     // Extract frames for video, or wrap single image
     let mediaUrls: string[] | undefined;
     let videoUrl: string | undefined;
+    let achievedFps: number | undefined;
 
     if (pendingVideo) {
       videoUrl = pendingVideo.objectUrl;
       setLoading(true);
       setProcessing(true);
       try {
-        mediaUrls = await extractVideoFrames(pendingVideo.file);
+        const vs = selectedProfile?.videoSettings;
+        const result = await extractVideoFrames(
+          pendingVideo.file,
+          vs?.fps,
+          vs?.unlimitedMaxFrames ? undefined : (vs?.maxFrames ?? 15),
+          vs?.quality,
+          vs?.maxWidth,
+        );
+        mediaUrls = result.frames;
+        achievedFps = result.fps;
         if (!mediaUrls || mediaUrls.length === 0) {
           throw new Error('Could not extract any frames from this video');
         }
@@ -1259,7 +1296,7 @@ export default function ChatPage() {
     lastTokenSnapshot.current = null;
     setTps(0);
 
-    await window.electronAPI.chatSend(text, mediaUrls);
+    await window.electronAPI.chatSend(text, mediaUrls, achievedFps);
   };
 
   const handleAbort = () => window.electronAPI.chatAbort();
