@@ -71,8 +71,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   chatLoadProfile: (profile: any) =>
     ipcRenderer.invoke('chat:loadProfile', profile),
   chatGetCurrentProfile: () => ipcRenderer.invoke('chat:getCurrentProfile'),
-  chatSend: (text: string, imageDataUrl?: string) =>
-    ipcRenderer.invoke('chat:send', text, imageDataUrl),
+  chatSend: (text: string, mediaDataUrls?: string[]) =>
+    ipcRenderer.invoke('chat:send', text, mediaDataUrls),
 
   onChatToken: (
     callback: (data: {
@@ -246,8 +246,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   chatHasProjector: (): Promise<boolean> =>
     ipcRenderer.invoke('chat:hasProjector'),
 
-  readImageAsDataUrl: (filePath: string): Promise<string> =>
-    ipcRenderer.invoke('files:readImageAsDataUrl', filePath),
+  readFileAsDataUrl: (filePath: string): Promise<string> =>
+    ipcRenderer.invoke('files:readFileAsDataUrl', filePath),
+
+  readFileAsBuffer: (filePath: string): Promise<Uint8Array> =>
+    ipcRenderer.invoke('files:readFileAsBuffer', filePath),
 
   getModelMetadata: (params: {
     modelAuthor: string;

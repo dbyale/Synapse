@@ -143,7 +143,7 @@ declare global {
       chatHasProjector: () => Promise<boolean>;
       chatSend: (
         text: string,
-        imageDataUrl?: string,
+        mediaDataUrls?: string[],
       ) => Promise<{ success: boolean; error?: string; aborted?: boolean }>;
       onChatToken: (
         callback: (data: {
@@ -236,7 +236,8 @@ declare global {
         callback: (data: { name: string; result: string }) => void,
       ) => () => void;
 
-      readImageAsDataUrl: (filePath: string) => Promise<string>;
+      readFileAsDataUrl: (filePath: string) => Promise<string>;
+      readFileAsBuffer: (filePath: string) => Promise<Uint8Array>;
 
       getModelMetadata: (params: {
         modelAuthor: string;

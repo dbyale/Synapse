@@ -159,6 +159,20 @@ export function setEmitFunctionCallback(cb: any) {
   emitFunctionEvent = cb;
 }
 
+// --- Build multimodal content from media data URLs (frames + timestamps + text) ---
+function buildMediaContent(urls: string[], text: string): any[] {
+  const content: any[] = [];
+  const intervalSec = 1;
+  urls.forEach((url, i) => {
+    content.push({ type: 'image_url', image_url: { url } });
+    const mins = Math.floor((i * intervalSec) / 60);
+    const secs = Math.floor((i * intervalSec) % 60);
+    content.push({ type: 'text', text: `[${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}]` });
+  });
+  content.push({ type: 'text', text });
+  return content;
+}
+
 // --- Build request body, only including profile fields that are defined ---
 function buildChatBody(messages: any[], tools: any[]): Record<string, any> {
   const p = currentProfile;
@@ -531,7 +545,7 @@ export async function loadProfile(
 export async function sendMessage(
   text: string,
   onToken: (t: string, type?: 'thought' | 'comment') => void,
-  imageDataUrl?: string,
+  mediaDataUrls?: string[],
   onProgress?: (data: {
     progress: number;
     promptN: number;
@@ -548,11 +562,8 @@ export async function sendMessage(
     lastUsage = { used: lastUsage.used + userTokens, total: lastUsage.total };
   }
 
-  const userContent: any = imageDataUrl
-    ? [
-        { type: 'image_url', image_url: { url: imageDataUrl } },
-        { type: 'text', text },
-      ]
+  const userContent: any = mediaDataUrls && mediaDataUrls.length > 0
+    ? buildMediaContent(mediaDataUrls, text)
     : text;
   messageHistory.push({ role: 'user', content: userContent });
   abortController = new AbortController();

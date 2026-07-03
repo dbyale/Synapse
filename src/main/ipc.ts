@@ -380,7 +380,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
 
   ipcMain.handle(
     'chat:send',
-    async (event, text: string, imageDataUrl?: string) => {
+    async (event, text: string, mediaDataUrls?: string[]) => {
       try {
         const onTokenCallback = (
           token: string,
@@ -415,7 +415,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
         const result = await chatService.sendMessage(
           text,
           onTokenCallback,
-          imageDataUrl,
+          mediaDataUrls,
           onProgressCallback,
           onPromptDoneCallback,
         );
@@ -688,26 +688,43 @@ export function registerIpcHandlers(win: BrowserWindow): void {
   );
 
   ipcMain.handle(
-    'files:readImageAsDataUrl',
+    'files:readFileAsDataUrl',
     async (_event, filePath: string) => {
       const ext = path.extname(filePath).toLowerCase();
-      const mime =
+      const mime:
+        | 'image/png'
+        | 'image/jpeg'
+        | 'image/gif'
+        | 'image/webp'
+        | 'video/mp4'
+        | 'video/webm'
+        | null =
         ext === '.png'
           ? 'image/png'
-          : ext === '.jpg'
+          : ext === '.jpg' || ext === '.jpeg'
             ? 'image/jpeg'
-            : ext === '.jpeg'
-              ? 'image/jpeg'
-              : ext === '.gif'
-                ? 'image/gif'
-                : ext === '.webp'
-                  ? 'image/webp'
-                  : null;
+            : ext === '.gif'
+              ? 'image/gif'
+              : ext === '.webp'
+                ? 'image/webp'
+                : ext === '.mp4'
+                  ? 'video/mp4'
+                  : ext === '.webm'
+                    ? 'video/webm'
+                    : null;
 
-      if (!mime) throw new Error(`Unsupported image type: ${ext}`);
+      if (!mime) throw new Error(`Unsupported file type: ${ext}`);
 
       const buf = await fs.promises.readFile(filePath);
       return `data:${mime};base64,${buf.toString('base64')}`;
+    },
+  );
+
+  ipcMain.handle(
+    'files:readFileAsBuffer',
+    async (_event, filePath: string) => {
+      const buf = await fs.promises.readFile(filePath);
+      return buf;
     },
   );
 }
