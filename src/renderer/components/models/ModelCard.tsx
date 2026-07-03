@@ -112,6 +112,8 @@ function parseBillionsOfParams(params: string | null | undefined): number {
   const aMatch = upper.match(/^([0-9.]+[BM])-A([0-9.]+[BM])$/);
   // Check for "x" format (e.g., 8X7B)
   const xMatch = upper.match(/^([0-9]+)X([0-9.]+[BM])$/);
+  // Check for letter-prefixed format (e.g., E4B)
+  const letterPrefixedMatch = upper.match(/^([A-Z])([0-9.]+[BM])$/);
   // Standard parameter format (e.g. 8B)
   const standardMatch = upper.match(/^([0-9.]+)[BM]$/);
 
@@ -123,6 +125,10 @@ function parseBillionsOfParams(params: string | null | undefined): number {
   if (xMatch) {
     // Experts count * Size per expert
     return parseFloat(xMatch[1]) * parseFloat(xMatch[2]);
+  }
+  if (letterPrefixedMatch) {
+    // Effective parameter size (e.g. E4B → 4)
+    return parseFloat(letterPrefixedMatch[2]);
   }
   if (standardMatch) {
     // Standard dense model

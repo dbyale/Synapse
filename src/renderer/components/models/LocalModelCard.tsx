@@ -55,6 +55,7 @@ function extractParametersFromName(modelName: string): string | null {
   const patterns = [
     /[-_](\d+\.?\d*[BM][-]?A\d+\.?\d*[BM])(?:[-_]|$)/i, // MoE with -A format (e.g., 26B-A4B)
     /[-_](\d+X\d+\.?\d*[BM])(?:[-_]|$)/i, // MoE with X format (e.g., 8X7B)
+    /[-_]([A-Za-z]\d+\.?\d*[BM])(?:[-_]|$)/i, // Letter-prefixed format (e.g., E4B)
     /[-_](\d+\.?\d*[BM])(?:[-_]|$)/i, // Standard format (e.g., 8B, 1.5B)
   ];
 
