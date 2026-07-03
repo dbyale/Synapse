@@ -308,9 +308,14 @@ export function registerIpcHandlers(win: BrowserWindow): void {
   ipcMain.handle(
     'models:download',
     async (event, repoId: string, filename: string) => {
-      const downloadWin = BrowserWindow.fromWebContents(event.sender);
-      if (!downloadWin) throw new Error('No window found');
-      return downloadModel(repoId, filename, downloadWin);
+      try {
+        const downloadWin = BrowserWindow.fromWebContents(event.sender);
+        if (!downloadWin) throw new Error('No window found');
+        return await downloadModel(repoId, filename, downloadWin);
+      } catch (err) {
+        console.error('[models:download]', err);
+        throw err;
+      }
     },
   );
 

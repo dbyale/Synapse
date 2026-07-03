@@ -585,6 +585,9 @@
   font-weight: 600;
   color: var(--text-primary);
   background: rgba(255, 255, 255, 0.04);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .model-card__dl-size {
@@ -1376,6 +1379,24 @@
 
 .model-card__dl-pill--error:hover {
   background: rgba(243, 139, 168, 0.1);
+}
+
+.model-card__dl-pill--downloaded {
+  border-color: var(--success, #a6e3a1);
+  background: rgba(166, 227, 161, 0.08);
+  cursor: default;
+  opacity: 0.85;
+}
+
+.model-card__dl-pill--downloaded:hover {
+  border-color: var(--success, #a6e3a1);
+  background: rgba(166, 227, 161, 0.08);
+}
+
+.model-card__dl-check {
+  flex-shrink: 0;
+  color: var(--success, #a6e3a1);
+  vertical-align: middle;
 }
 
 .model-card__dl-tooltip-alert {

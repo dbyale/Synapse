@@ -343,10 +343,10 @@ export function downloadModel(
           }
         }
 
-        const record = activeDownloads.get(filename);
+        const record = activeDownloads.get(repoId + ':' + filename);
         const wasCancelled = record?.cancelled;
 
-        activeDownloads.delete(filename);
+        activeDownloads.delete(repoId + ':' + filename);
 
         if (wasCancelled) {
           resolve('CANCELLED');
@@ -371,6 +371,8 @@ export function downloadModel(
           response.statusCode < 400 &&
           response.headers.location
         ) {
+          response.resume();
+          response.on('error', cleanupAndReject);
           request(response.headers.location);
           return;
         }

@@ -101,6 +101,12 @@ export default function ModelsPage() {
 
   const [expanded, setExpanded] = useState<ExpandedModel | null>(null);
   const [localModels, setLocalModels] = useState<LocalModel[]>([]);
+  const downloadingRef = useRef(new Set<string>());
+  const localModelKeys = useMemo(() => {
+    const keys = new Set<string>();
+    localModels.forEach((m) => keys.add(m.generalName + ':' + m.filename));
+    return keys;
+  }, [localModels]);
   const [downloads, setDownloads] = useState<Record<string, ActiveDownload>>(
     {},
   );
@@ -486,13 +492,16 @@ export default function ModelsPage() {
     repoId: string,
     filename: string,
   ): Promise<void> => {
+    const compositeKey = repoId + ':' + filename;
+    if (downloadingRef.current.has(compositeKey)) return;
+    downloadingRef.current.add(compositeKey);
+
     window.dispatchEvent(
       new CustomEvent('open-download-manager', {
         detail: { modelId: repoId, filename },
       }),
     );
 
-    const compositeKey = repoId + ':' + filename;
     setDownloads((prev) => ({
       ...prev,
       [compositeKey]: {
@@ -511,6 +520,8 @@ export default function ModelsPage() {
         delete updated[compositeKey];
         return updated;
       });
+    } finally {
+      downloadingRef.current.delete(compositeKey);
     }
   };
 
@@ -662,6 +673,7 @@ export default function ModelsPage() {
                               : false
                           }
                           downloads={downloads}
+                          localModelKeys={localModelKeys}
                           onToggleExpand={handleExpand}
                           onDownload={handleDownload}
                           onSearchBaseModel={(bmQuery) => {
@@ -804,6 +816,7 @@ export default function ModelsPage() {
                 expanded?.repoId === model.id ? expanded.loading : false
               }
               downloads={downloads}
+              localModelKeys={localModelKeys}
               onToggleExpand={handleExpand}
               onDownload={handleDownload}
               onSearchBaseModel={(bmQuery) => {

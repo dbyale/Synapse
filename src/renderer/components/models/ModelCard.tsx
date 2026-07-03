@@ -9,6 +9,7 @@ import {
   ExternalLink,
   AlertTriangle,
   AlertCircle,
+  Check,
 } from 'lucide-react';
 import type { ModelSearchResult, RemoteModelFile } from '../../preload.d';
 import { getCompanyLogoComponent } from '../../utils/companyLogos';
@@ -81,6 +82,7 @@ interface ModelCardProps {
   files: RemoteModelFile[];
   filesLoading: boolean;
   downloads: Record<string, ActiveDownload>;
+  localModelKeys: Set<string>;
   systemMemoryMB: number; // Inherited from Settings
   onToggleExpand: (repoId: string) => void;
   onDownload: (repoId: string, filename: string) => void;
@@ -310,6 +312,7 @@ export default function ModelCard({
   files,
   filesLoading,
   downloads,
+  localModelKeys,
   systemMemoryMB,
   onToggleExpand,
   onDownload,
@@ -744,6 +747,10 @@ export default function ModelCard({
                         pillState = 'warning';
                       }
 
+                      const allLocal = group.parts.every(
+                        (p) => localModelKeys.has(model.id + ':' + p.filename),
+                      );
+
                       let activePillClass = '';
                       if (isDownloading)
                         activePillClass = 'model-card__dl-pill--active';
@@ -751,6 +758,10 @@ export default function ModelCard({
                         activePillClass = 'model-card__dl-pill--error';
                       else if (pillState === 'warning')
                         activePillClass = 'model-card__dl-pill--warning';
+
+                      if (allLocal) {
+                        activePillClass += ' model-card__dl-pill--downloaded';
+                      }
 
                       return (
                         <div
@@ -760,8 +771,9 @@ export default function ModelCard({
                           <button
                             type="button"
                             className={`model-card__dl-pill ${activePillClass}`}
+                            disabled={allLocal}
                             onClick={() => {
-                              if (!isDownloading) {
+                              if (!isDownloading && !allLocal) {
                                 group.parts.forEach((p) =>
                                   onDownload(model.id, p.filename),
                                 );
@@ -776,6 +788,7 @@ export default function ModelCard({
                             )}
                             <div className="model-card__dl-content">
                               <span className="model-card__dl-quant">
+                                {allLocal && <Check size={12} className="model-card__dl-check" />}
                                 {group.displayQuantization}
                               </span>
                               <span className="model-card__dl-size">
