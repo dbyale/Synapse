@@ -14,6 +14,8 @@
     * Add text-based filetypes to upload [File->MD](https://github.com/microsoft/markitdown)
     * Official LLama CPP video support rather than frame extractor
       * This seems to currently be broken, even on official WebUI always fails
+        * (Maybe missing unknown dependency or user error but either way would be too unreliable)
+      * Current frame extractor does not extract audio
 
 # Models:
   * Search
