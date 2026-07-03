@@ -1582,6 +1582,8 @@ export default function EditProfileModal({
     'longest-context' | 'most-gpu' | null
   >(null);
 
+  const profileSnapshotRef = useRef(profile ? JSON.stringify(profile) : null);
+
   // Model metadata (max layers/context) — fetched when model changes
   const [modelMeta, setModelMeta] = useState<{
     maxLayers: number;
@@ -1803,6 +1805,15 @@ export default function EditProfileModal({
       order: profile?.order ?? now,
       createdAt: profile?.createdAt ?? now,
     };
+
+    // Don't save if nothing actually changed
+    if (profile) {
+      const currentSnapshot = JSON.stringify(updatedProfile);
+      if (currentSnapshot === profileSnapshotRef.current) {
+        onClose();
+        return;
+      }
+    }
 
     if (profile) {
       const updated = profiles.map((p) =>

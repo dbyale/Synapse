@@ -64,7 +64,3 @@
   * Add file name as top comment to all files
   * Set up Metadata in package.json
   * Update README before 1.0.0
-
-# Bugs:
-  ## Profiles
-    * Hitting "save" prompts profile restart even when no settings changed
