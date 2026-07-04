@@ -30,6 +30,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import MessageContent from '../components/MessageContent';
 import ImageViewer from '../components/ImageViewer';
 import ConfirmDialog from '../components/ConfirmDialog';
+import UserInputModal from '../components/UserInputModal';
 import ProfileSelectModal from '../components/ProfileSelectModal';
 import { Profile } from '../types/profile';
 import type { ContentPart } from '../preload.d';
@@ -405,6 +406,15 @@ export default function ChatPage() {
     pendingMedia: PendingMedia[];
   } | null>(null);
   const [backend, setBackend] = useState<string | null>(persistentBackend);
+  const [userInputRequest, setUserInputRequest] = useState<{
+    requestId: string;
+    type: 'confirm' | 'select' | 'freeform';
+    prompt: string;
+    options?: string[];
+    allowOther?: boolean;
+    toolName: string;
+    toolParams: any;
+  } | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -1040,6 +1050,12 @@ export default function ChatPage() {
       },
     );
 
+    const unsubscribeUserInput = window.electronAPI.onChatUserInput(
+      (data) => {
+        setUserInputRequest(data);
+      },
+    );
+
     const removeSystemProgressListener =
       window.electronAPI.onChatSystemProgress((data) => {
         setSystemPhase('preloading');
@@ -1073,6 +1089,7 @@ export default function ChatPage() {
       unsubscribeFunctionCalling();
       unsubscribeFunctionCall();
       unsubscribeFunctionResult();
+      unsubscribeUserInput();
       removeSystemProgressListener();
       removeSystemStatusListener();
       removeSystemDoneListener();
@@ -1422,6 +1439,21 @@ export default function ChatPage() {
           <SlidersHorizontal size={18} />
         </button>
       </div>
+
+      {userInputRequest && (
+        <UserInputModal
+          type={userInputRequest.type}
+          prompt={userInputRequest.prompt}
+          options={userInputRequest.options}
+          allowOther={userInputRequest.allowOther}
+          toolName={userInputRequest.toolName}
+          toolParams={userInputRequest.toolParams}
+          onResponse={async (response) => {
+            setUserInputRequest(null);
+            await window.electronAPI.respondToUserInput(response);
+          }}
+        />
+      )}
 
       {showConfirmDialog && (
         <ConfirmDialog

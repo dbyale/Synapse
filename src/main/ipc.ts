@@ -446,6 +446,10 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     },
   );
 
+  ipcMain.handle('chat:respond-input', async (_event, response) => {
+    return { success: chatService.resolveUserInput(response) };
+  });
+
   ipcMain.handle('chat:abort', async () => {
     await chatService.abort();
   });
@@ -564,12 +568,11 @@ export function registerIpcHandlers(win: BrowserWindow): void {
   });
 
   chatService.setEmitFunctionCallback(
-    (event: 'calling' | 'call' | 'result', name: string, data: string) => {
+    (event: 'calling' | 'call' | 'result' | 'input-request', name: string, data: string) => {
       const win = BrowserWindow.getAllWindows()[0];
       if (!win || win.isDestroyed()) return;
 
       if (event === 'calling') {
-        // Notify renderer that a function call is initiating, before params are available
         win.webContents.send('chat-function-calling', { name });
       } else if (event === 'call') {
         win.webContents.send('chat-function-call', { name, params: data });
@@ -578,6 +581,8 @@ export function registerIpcHandlers(win: BrowserWindow): void {
           name,
           result: data,
         });
+      } else if (event === 'input-request') {
+        win.webContents.send('chat:user-input', JSON.parse(data));
       }
     },
   );

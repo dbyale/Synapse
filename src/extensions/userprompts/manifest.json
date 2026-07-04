@@ -1,0 +1,9 @@
+{
+  "id": "userprompts",
+  "name": "User Prompts",
+  "description": "Ask the user clarifying questions with predefined options or free-form input",
+  "author": "Synapse",
+  "version": "1.0.0",
+  "icon": "HelpCircle",
+  "builtIn": true
+}

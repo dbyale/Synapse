@@ -42,6 +42,50 @@ let chatFunctions: any = null;
 let activeTools: any[] = [];
 let emitFunctionEvent: any = null;
 
+// --- Pending user input ---
+let pendingInputResolve: ((value: UserInputResponse) => void) | null = null;
+let pendingInputReject: ((err: Error) => void) | null = null;
+
+export interface UserInputRequest {
+  requestId: string;
+  type: 'confirm' | 'select' | 'freeform';
+  prompt: string;
+  options?: string[];
+  allowOther?: boolean;
+  toolName: string;
+  toolParams: any;
+}
+
+export interface UserInputResponse {
+  action: 'confirmed' | 'denied' | 'selected';
+  value?: string;
+}
+
+export function waitForUserInput(): Promise<UserInputResponse> {
+  return new Promise((resolve, reject) => {
+    pendingInputResolve = resolve;
+    pendingInputReject = reject;
+  });
+}
+
+export function resolveUserInput(response: UserInputResponse): boolean {
+  if (pendingInputResolve) {
+    pendingInputResolve(response);
+    pendingInputResolve = null;
+    pendingInputReject = null;
+    return true;
+  }
+  return false;
+}
+
+export function cancelPendingInput(): void {
+  if (pendingInputReject) {
+    pendingInputReject(new Error('User input request cancelled'));
+    pendingInputResolve = null;
+    pendingInputReject = null;
+  }
+}
+
 let preloadAbortController: AbortController | null = null;
 let lastResolvedMemory: any = null;
 let currentContextSize: number | null = null;
@@ -720,7 +764,35 @@ export async function sendMessage(
         const handler = chatFunctions[tc.name]?.handler;
         if (emitFunctionEvent) emitFunctionEvent('calling', tc.name, '');
         if (emitFunctionEvent) emitFunctionEvent('call', tc.name, tc.args);
-        const result = await handler(JSON.parse(tc.args));
+        let result = await handler(JSON.parse(tc.args));
+
+        // Check if tool requests user input
+        if (result && typeof result === 'object' && result._userInput) {
+          const inputReq: UserInputRequest = {
+            requestId: tc.id,
+            type: result._userInput.type || 'confirm',
+            prompt: result._userInput.prompt || `Allow ${tc.name}?`,
+            options: result._userInput.options,
+            allowOther: result._userInput.allowOther,
+            toolName: tc.name,
+            toolParams: JSON.parse(tc.args),
+          };
+          if (emitFunctionEvent) emitFunctionEvent('input-request', tc.name, JSON.stringify(inputReq));
+          const userResponse = await waitForUserInput();
+
+          if (inputReq.type === 'confirm') {
+            if (userResponse.action === 'confirmed') {
+              // Re-call handler with confirmation
+              result = await handler({ ...JSON.parse(tc.args), _confirmed: true });
+            } else {
+              result = { _denied: true, message: 'User denied this action.' };
+            }
+          } else {
+            // select / freeform: use user's response directly as tool result
+            result = { _userResponse: userResponse.action, value: userResponse.value };
+          }
+        }
+
         const resultStr = JSON.stringify(result);
         if (lastUsage) {
           const resultTokens = (await tokenize(resultStr)) ?? 0;
@@ -756,6 +828,7 @@ export async function sendMessage(
 
 export async function abort() {
   aborted = true;
+  cancelPendingInput();
   if (abortController) {
     abortController.abort();
     abortController = null;

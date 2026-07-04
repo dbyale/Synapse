@@ -1,0 +1,9 @@
+{
+  "id": "shell",
+  "name": "Shell",
+  "description": "Execute shell commands and retrieve environment information",
+  "author": "Synapse",
+  "version": "1.0.0",
+  "icon": "Command",
+  "builtIn": true
+}

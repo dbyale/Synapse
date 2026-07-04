@@ -310,6 +310,20 @@ declare global {
         params: Record<string, any>;
       }>>;
       extensionsOpenFolder: () => Promise<void>;
+
+      onChatUserInput: (callback: (data: {
+        requestId: string;
+        type: 'confirm' | 'select' | 'freeform';
+        prompt: string;
+        options?: string[];
+        allowOther?: boolean;
+        toolName: string;
+        toolParams: any;
+      }) => void) => () => void;
+      respondToUserInput: (response: {
+        action: 'confirmed' | 'denied' | 'selected';
+        value?: string;
+      }) => Promise<{ success: boolean }>;
     };
   }
 }

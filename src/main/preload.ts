@@ -302,4 +302,25 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('extensions:toggle', id, enabled),
   extensionsGetAllTools: () => ipcRenderer.invoke('extensions:getAllTools'),
   extensionsOpenFolder: () => ipcRenderer.invoke('extensions:openFolder'),
+
+  // ── User Input ──
+  onChatUserInput: (
+    callback: (data: {
+      requestId: string;
+      type: 'confirm' | 'select' | 'freeform';
+      prompt: string;
+      options?: string[];
+      allowOther?: boolean;
+      toolName: string;
+      toolParams: any;
+    }) => void,
+  ) => {
+    const listener = (_event: any, data: any) => callback(data);
+    ipcRenderer.on('chat:user-input', listener);
+    return () => ipcRenderer.removeListener('chat:user-input', listener);
+  },
+  respondToUserInput: (response: {
+    action: 'confirmed' | 'denied' | 'selected';
+    value?: string;
+  }) => ipcRenderer.invoke('chat:respond-input', response),
 });
