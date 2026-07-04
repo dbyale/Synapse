@@ -36,6 +36,8 @@ import { Profile } from '../types/profile';
 import type { ContentPart } from '../preload.d';
 import { getToolMeta } from '../utils/extensionData';
 import { resolveIcon } from '../components/workflows/IconPicker';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import '../styles/ChatPage.css';
 
 interface GenerationStatsData {
@@ -180,17 +182,39 @@ function ToolCallSegment({
           {segment.toolParams && (
             <>
               <div className="tool-call-segment__label">Params</div>
-              <pre className="tool-call-segment__json">
+              <SyntaxHighlighter
+                language="json"
+                style={oneDark}
+                customStyle={{
+                  margin: 0,
+                  borderRadius: 0,
+                  fontSize: 11,
+                  lineHeight: 1.4,
+                  background: 'transparent',
+                }}
+                codeTagProps={{ style: { fontFamily: 'inherit' } }}
+              >
                 {prettyPrintJson(segment.toolParams)}
-              </pre>
+              </SyntaxHighlighter>
             </>
           )}
           {segment.toolResult && (
             <>
               <div className="tool-call-segment__label">Result</div>
-              <pre className="tool-call-segment__json">
+              <SyntaxHighlighter
+                language="json"
+                style={oneDark}
+                customStyle={{
+                  margin: 0,
+                  borderRadius: 0,
+                  fontSize: 11,
+                  lineHeight: 1.4,
+                  background: 'transparent',
+                }}
+                codeTagProps={{ style: { fontFamily: 'inherit' } }}
+              >
                 {prettyPrintJson(segment.toolResult)}
-              </pre>
+              </SyntaxHighlighter>
             </>
           )}
         </div>
