@@ -48,7 +48,7 @@ interface MediaDisplayItem {
 }
 
 type PendingMedia =
-  | { id: string; type: 'image'; dataUrl: string }
+  | { id: string; type: 'image'; dataUrl: string; name?: string }
   | { id: string; type: 'video'; file: File; objectUrl: string };
 
 interface MessageSegment {
@@ -203,7 +203,7 @@ function MediaAttachModal({
   onAttachVideo,
   onClose,
 }: {
-  onAttach: (dataUrl: string) => void;
+  onAttach: (dataUrl: string, name: string) => void;
   onAttachVideo: (file: File) => void;
   onClose: () => void;
 }) {
@@ -219,7 +219,7 @@ function MediaAttachModal({
         reader.onload = (ev) => {
           const result = ev.target?.result;
           if (typeof result === 'string') {
-            onAttach(result);
+            onAttach(result, file.name);
           }
         };
         reader.readAsDataURL(file);
@@ -243,9 +243,9 @@ function MediaAttachModal({
     for (const filePath of paths) {
       const ext = filePath.toLowerCase();
       const isVideo = ext.endsWith('.mp4') || ext.endsWith('.webm');
+      const filename = filePath.split(/[/\\]/).pop() || 'media';
       if (isVideo) {
         const uint8 = await window.electronAPI.readFileAsBuffer(filePath);
-        const filename = filePath.split(/[/\\]/).pop() || 'video';
         const mime = ext.endsWith('.webm') ? 'video/webm' : 'video/mp4';
         const blob = new Blob([uint8.buffer as ArrayBuffer], { type: mime });
         const file = new File([blob], filename, { type: mime });
@@ -253,7 +253,7 @@ function MediaAttachModal({
         break;
       } else {
         const dataUrl = await window.electronAPI.readFileAsDataUrl(filePath);
-        onAttach(dataUrl);
+        onAttach(dataUrl, filename);
       }
     }
     onClose();
@@ -1104,9 +1104,11 @@ export default function ChatPage() {
 
         for (const item of queuedMedia) {
           if (item.type === 'image') {
+            if (item.name) contentParts.push({ kind: 'text', text: `[${item.name}]` });
             contentParts.push({ kind: 'image_url', url: item.dataUrl });
             mediaItems.push({ type: 'image', url: item.dataUrl });
           } else if (item.type === 'video') {
+            contentParts.push({ kind: 'text', text: `[${item.file.name}]` });
             const vs = selectedProfile?.videoSettings;
             try {
               const result = await extractVideoFrames(
@@ -1229,9 +1231,11 @@ export default function ChatPage() {
 
     for (const item of pendingMedia) {
       if (item.type === 'image') {
+        if (item.name) contentParts.push({ kind: 'text', text: `[${item.name}]` });
         contentParts.push({ kind: 'image_url', url: item.dataUrl });
         mediaItems.push({ type: 'image', url: item.dataUrl });
       } else if (item.type === 'video') {
+        contentParts.push({ kind: 'text', text: `[${item.file.name}]` });
         const vs = selectedProfile?.videoSettings;
         try {
           const result = await extractVideoFrames(
@@ -1958,9 +1962,9 @@ export default function ChatPage() {
 
       {showImageModal && (
         <MediaAttachModal
-          onAttach={(dataUrl) => {
+          onAttach={(dataUrl, name) => {
             const id = crypto.randomUUID();
-            setPendingMedia((prev) => [...prev, { id, type: 'image', dataUrl }]);
+            setPendingMedia((prev) => [...prev, { id, type: 'image', dataUrl, name }]);
           }}
           onAttachVideo={(file) => {
             const id = crypto.randomUUID();
