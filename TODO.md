@@ -27,7 +27,8 @@
 # Estimator:
   * Reports missing model
   * Reports model too large
-  * Use parser on Models page remotely
+  * Use parser on Models page remotely (it only downloads GGUF header)
+  * We just need a whole new estimator
 
 # RAG:
   * Built into Profiles
