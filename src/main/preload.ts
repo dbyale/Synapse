@@ -71,8 +71,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   chatLoadProfile: (profile: any) =>
     ipcRenderer.invoke('chat:loadProfile', profile),
   chatGetCurrentProfile: () => ipcRenderer.invoke('chat:getCurrentProfile'),
-  chatSend: (text: string, mediaDataUrls?: string[], fps?: number) =>
-    ipcRenderer.invoke('chat:send', text, mediaDataUrls, fps),
+  chatSend: (text: string, contentParts?: { kind: string; url?: string; filePath?: string; text?: string }[]) =>
+    ipcRenderer.invoke('chat:send', text, contentParts),
 
   onChatToken: (
     callback: (data: {

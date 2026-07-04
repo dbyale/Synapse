@@ -1305,17 +1305,23 @@
 }
 
 /* ============================================================================
-   PENDING IMAGE THUMBNAIL
+   MEDIA PREVIEW (images, video, audio)
    ============================================================================ */
 
-.chat-image-preview {
-  position: relative;
-  align-self: flex-start;
-  margin-top: 6px;
-  margin-bottom: 2px;
+.chat-media-preview {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 4px 0;
 }
 
-.chat-image-preview img {
+.chat-media-preview__item {
+  position: relative;
+  align-self: flex-start;
+}
+
+.chat-media-preview__image {
   display: block;
   height: 64px;
   width: auto;
@@ -1325,7 +1331,17 @@
   border: 1.5px solid var(--border);
 }
 
-.chat-image-preview__remove {
+.chat-media-preview__video {
+  display: block;
+  height: 80px;
+  width: auto;
+  max-width: 140px;
+  border-radius: 6px;
+  border: 1.5px solid var(--border);
+  background: #000;
+}
+
+.chat-media-preview__remove {
   position: absolute;
   top: -6px;
   right: -6px;
@@ -1345,7 +1361,7 @@
   transition: background 0.15s ease;
 }
 
-.chat-image-preview__remove:hover {
+.chat-media-preview__remove:hover {
   background: #ef4444;
 }
 
@@ -1359,23 +1375,6 @@
   margin-bottom: 4px;
 }
 
-.chat-video-preview {
-  position: relative;
-  align-self: flex-start;
-  margin-top: 6px;
-  margin-bottom: 2px;
-}
-
-.chat-video-preview__player {
-  display: block;
-  height: 80px;
-  width: auto;
-  max-width: 140px;
-  border-radius: 6px;
-  border: 1.5px solid var(--border);
-  background: #000;
-}
-
 .chat-message__user-video {
   display: block;
   width: 100%;
@@ -1384,6 +1383,8 @@
   border-radius: 8px;
   margin-bottom: 4px;
 }
+
+
 
 /* ============================================================================
    IMAGE ATTACH MODAL

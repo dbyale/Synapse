@@ -143,8 +143,7 @@ declare global {
       chatHasProjector: () => Promise<boolean>;
       chatSend: (
         text: string,
-        mediaDataUrls?: string[],
-        fps?: number,
+        contentParts?: ContentPart[],
       ) => Promise<{ success: boolean; error?: string; aborted?: boolean }>;
       onChatToken: (
         callback: (data: {
@@ -286,6 +285,12 @@ declare global {
       }>;
     };
   }
+}
+
+export interface ContentPart {
+  kind: 'image_url' | 'text';
+  url?: string;
+  text?: string;
 }
 
 export {};

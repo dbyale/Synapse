@@ -31,6 +31,7 @@ import MessageContent from '../components/MessageContent';
 import ConfirmDialog from '../components/ConfirmDialog';
 import ProfileSelectModal from '../components/ProfileSelectModal';
 import { Profile } from '../types/profile';
+import type { ContentPart } from '../preload.d';
 import { TOOL_METADATA } from '../../data/defaultTools';
 import { resolveIcon } from '../components/workflows/IconPicker';
 import '../styles/ChatPage.css';
@@ -41,6 +42,15 @@ interface GenerationStatsData {
   tokensPerSecond: number;
 }
 
+interface MediaDisplayItem {
+  type: 'image' | 'video';
+  url: string;
+}
+
+type PendingMedia =
+  | { id: string; type: 'image'; dataUrl: string }
+  | { id: string; type: 'video'; file: File; objectUrl: string };
+
 interface MessageSegment {
   id: string;
   text: string;
@@ -50,8 +60,7 @@ interface MessageSegment {
   toolParams?: string;
   toolResult?: string;
   reprocessStats?: GenerationStatsData;
-  imageDataUrl?: string;
-  videoUrl?: string;
+  mediaItems?: MediaDisplayItem[];
 }
 
 interface Message {
@@ -200,50 +209,52 @@ function MediaAttachModal({
 }) {
   const [dragging, setDragging] = useState(false);
 
-  const processFile = (file: File) => {
-    if (file.type.startsWith('image/')) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const result = e.target?.result;
-        if (typeof result === 'string') {
-          onAttach(result);
-          onClose();
-        }
-      };
-      reader.readAsDataURL(file);
-    } else if (file.type.startsWith('video/')) {
-      onAttachVideo(file);
-      onClose();
-    }
-  };
-
   const handleDrop = (e: DragEvent) => {
     e.preventDefault();
     setDragging(false);
-    const file = e.dataTransfer.files[0];
-    if (file) processFile(file);
+    const files = Array.from(e.dataTransfer.files);
+    for (const file of files) {
+      if (file.type.startsWith('image/')) {
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          const result = ev.target?.result;
+          if (typeof result === 'string') {
+            onAttach(result);
+          }
+        };
+        reader.readAsDataURL(file);
+      } else if (file.type.startsWith('video/')) {
+        onAttachVideo(file);
+        onClose();
+        return;
+      }
+    }
   };
 
   const handleSelectFromDisk = async () => {
     const paths = await window.electronAPI.browseForFiles({
       title: 'Select Media',
+      multiSelections: true,
       filters: [
         { name: 'All supported media', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'mp4', 'webm'] },
       ],
     });
     if (paths.length === 0) return;
-    const ext = paths[0].toLowerCase();
-    const isVideo = ext.endsWith('.mp4') || ext.endsWith('.webm');
-    if (isVideo) {
-      const uint8 = await window.electronAPI.readFileAsBuffer(paths[0]);
-      const filename = paths[0].split(/[/\\]/).pop() || 'video';
-      const mime = ext.endsWith('.webm') ? 'video/webm' : 'video/mp4';
-      const blob = new Blob([uint8.buffer as ArrayBuffer], { type: mime });
-      const file = new File([blob], filename, { type: mime });
-      onAttachVideo(file);
-    } else {
-      const dataUrl = await window.electronAPI.readFileAsDataUrl(paths[0]);
-      onAttach(dataUrl);
+    for (const filePath of paths) {
+      const ext = filePath.toLowerCase();
+      const isVideo = ext.endsWith('.mp4') || ext.endsWith('.webm');
+      if (isVideo) {
+        const uint8 = await window.electronAPI.readFileAsBuffer(filePath);
+        const filename = filePath.split(/[/\\]/).pop() || 'video';
+        const mime = ext.endsWith('.webm') ? 'video/webm' : 'video/mp4';
+        const blob = new Blob([uint8.buffer as ArrayBuffer], { type: mime });
+        const file = new File([blob], filename, { type: mime });
+        onAttachVideo(file);
+        break;
+      } else {
+        const dataUrl = await window.electronAPI.readFileAsDataUrl(filePath);
+        onAttach(dataUrl);
+      }
     }
     onClose();
   };
@@ -377,8 +388,7 @@ export default function ChatPage() {
   }>({ totalInputTokens: 0, totalOutputTokens: 0 });
   const [projectorLoaded, setProjectorLoaded] = useState(false);
   const [showImageModal, setShowImageModal] = useState(false);
-  const [pendingImage, setPendingImage] = useState<string | null>(null); // base64 data URL
-  const [pendingVideo, setPendingVideo] = useState<{ file: File; objectUrl: string } | null>(null);
+  const [pendingMedia, setPendingMedia] = useState<PendingMedia[]>([]);
   const [progressPercent, setProgressPercent] = useState(0);
   const [systemPhase, setSystemPhase] = useState<
     'solving' | 'starting' | 'preloading' | 'ready'
@@ -391,8 +401,7 @@ export default function ChatPage() {
   } | null>(null);
   const [pendingSendData, setPendingSendData] = useState<{
     text: string;
-    imageDataUrl?: string;
-    videoFile?: File;
+    pendingMedia: PendingMedia[];
   } | null>(null);
   const [backend, setBackend] = useState<string | null>(persistentBackend);
 
@@ -411,7 +420,7 @@ export default function ChatPage() {
     null,
   );
   const systemMessageInsertedRef = useRef(false);
-  const pendingSendRef = useRef<{ text: string; imageDataUrl?: string; videoFile?: File } | null>(null);
+  const pendingSendRef = useRef<{ text: string; pendingMedia: PendingMedia[] } | null>(null);
 
   const navigate = useNavigate();
   const location = useLocation();
@@ -581,8 +590,10 @@ export default function ChatPage() {
     setSystemPromptDone(null);
     setSystemPhase('ready');
     pendingSendRef.current = null;
-    setPendingImage(null);
-    if (pendingVideo) { URL.revokeObjectURL(pendingVideo.objectUrl); setPendingVideo(null); }
+    pendingMedia.forEach((m) => {
+      if (m.type === 'video') URL.revokeObjectURL(m.objectUrl);
+    });
+    setPendingMedia([]);
 
     if (persistentLoadedProfileId) {
       await unloadModel();
@@ -683,8 +694,10 @@ export default function ChatPage() {
       systemMessageInsertedRef.current = false;
       setSystemPromptDone(null);
       pendingSendRef.current = null;
-      setPendingImage(null);
-      if (pendingVideo) { URL.revokeObjectURL(pendingVideo.objectUrl); setPendingVideo(null); }
+      pendingMedia.forEach((m) => {
+        if (m.type === 'video') URL.revokeObjectURL(m.objectUrl);
+      });
+      setPendingMedia([]);
 
       if (persistentLoadedProfileId) {
         await unloadModel();
@@ -1082,35 +1095,42 @@ export default function ChatPage() {
   // Flush queued message when system prompt preloading completes
   useEffect(() => {
     if (systemPhase === 'ready' && systemPromptDone && pendingSendRef.current) {
-      const { text, imageDataUrl, videoFile } = pendingSendRef.current;
+      const { text, pendingMedia: queuedMedia } = pendingSendRef.current;
       pendingSendRef.current = null;
 
       (async () => {
-        let mediaUrls: string[] | undefined;
-        let videoUrl: string | undefined;
-        let achievedFps: number | undefined;
+        const contentParts: ContentPart[] = [];
+        const mediaItems: MediaDisplayItem[] = [];
 
-        if (videoFile) {
-          videoUrl = URL.createObjectURL(videoFile);
-          try {
+        for (const item of queuedMedia) {
+          if (item.type === 'image') {
+            contentParts.push({ kind: 'image_url', url: item.dataUrl });
+            mediaItems.push({ type: 'image', url: item.dataUrl });
+          } else if (item.type === 'video') {
             const vs = selectedProfile?.videoSettings;
-            const result = await extractVideoFrames(
-              videoFile,
-              vs?.fps,
-              vs?.unlimitedMaxFrames ? undefined : (vs?.maxFrames ?? 15),
-              vs?.quality,
-              vs?.maxWidth,
-            );
-            mediaUrls = result.frames;
-            achievedFps = result.fps;
-            if (!mediaUrls || mediaUrls.length === 0) {
-              throw new Error('Could not extract any frames from this video');
+            try {
+              const result = await extractVideoFrames(
+                item.file,
+                vs?.fps,
+                vs?.unlimitedMaxFrames ? undefined : (vs?.maxFrames ?? 15),
+                vs?.quality,
+                vs?.maxWidth,
+              );
+              if (!result.frames || result.frames.length === 0) {
+                throw new Error('Could not extract any frames from this video');
+              }
+              result.frames.forEach((frame, i) => {
+                contentParts.push({ kind: 'image_url', url: frame });
+                const secs = i / result.fps;
+                const mins = Math.floor(secs / 60);
+                const secsOnly = Math.floor(secs % 60);
+                contentParts.push({ kind: 'text', text: `[${String(mins).padStart(2, '0')}:${String(secsOnly).padStart(2, '0')}]` });
+              });
+              mediaItems.push({ type: 'video', url: item.objectUrl });
+            } catch {
+              return;
             }
-          } catch {
-            return;
           }
-        } else if (imageDataUrl) {
-          mediaUrls = [imageDataUrl];
         }
 
         const sysId = messageCounter.current++;
@@ -1141,8 +1161,7 @@ export default function ChatPage() {
               id: `seg-${Date.now()}-${segId}`,
               text,
               type: 'normal',
-              imageDataUrl: imageDataUrl ?? undefined,
-              videoUrl,
+              mediaItems,
             },
           ],
           collapsed: text.length >= 20 && text.split('\n').length > 5,
@@ -1156,7 +1175,7 @@ export default function ChatPage() {
         generationBaselineTokens.current = null;
         lastTokenSnapshot.current = null;
 
-        await window.electronAPI.chatSend(text, mediaUrls, achievedFps);
+        await window.electronAPI.chatSend(text, contentParts);
       })();
     }
   }, [systemPhase, systemPromptDone]);
@@ -1191,54 +1210,66 @@ export default function ChatPage() {
     if (systemPhase !== 'ready') {
       pendingSendRef.current = {
         text,
-        imageDataUrl: pendingImage ?? undefined,
-        videoFile: pendingVideo?.file ?? undefined,
+        pendingMedia: [...pendingMedia],
       };
-      setPendingImage(null);
-      setPendingVideo(null);
+      setPendingMedia([]);
       setInputText('');
       const textarea = document.querySelector('textarea');
       if (textarea) textarea.style.height = 'auto';
       return;
     }
 
-    // Extract frames for video, or wrap single image
-    let mediaUrls: string[] | undefined;
-    let videoUrl: string | undefined;
-    let achievedFps: number | undefined;
+    // Build content parts and media display items from pendingMedia
+    const contentParts: ContentPart[] = [];
+    const mediaItems: MediaDisplayItem[] = [];
+    let videoExtractError: string | null = null;
 
-    if (pendingVideo) {
-      videoUrl = pendingVideo.objectUrl;
-      setLoading(true);
-      setProcessing(true);
-      try {
+    setLoading(true);
+    setProcessing(true);
+
+    for (const item of pendingMedia) {
+      if (item.type === 'image') {
+        contentParts.push({ kind: 'image_url', url: item.dataUrl });
+        mediaItems.push({ type: 'image', url: item.dataUrl });
+      } else if (item.type === 'video') {
         const vs = selectedProfile?.videoSettings;
-        const result = await extractVideoFrames(
-          pendingVideo.file,
-          vs?.fps,
-          vs?.unlimitedMaxFrames ? undefined : (vs?.maxFrames ?? 15),
-          vs?.quality,
-          vs?.maxWidth,
-        );
-        mediaUrls = result.frames;
-        achievedFps = result.fps;
-        if (!mediaUrls || mediaUrls.length === 0) {
-          throw new Error('Could not extract any frames from this video');
+        try {
+          const result = await extractVideoFrames(
+            item.file,
+            vs?.fps,
+            vs?.unlimitedMaxFrames ? undefined : (vs?.maxFrames ?? 15),
+            vs?.quality,
+            vs?.maxWidth,
+          );
+          if (!result.frames || result.frames.length === 0) {
+            throw new Error('Could not extract any frames from this video');
+          }
+          result.frames.forEach((frame, i) => {
+            contentParts.push({ kind: 'image_url', url: frame });
+            const secs = i / result.fps;
+            const mins = Math.floor(secs / 60);
+            const secsOnly = Math.floor(secs % 60);
+            contentParts.push({ kind: 'text', text: `[${String(mins).padStart(2, '0')}:${String(secsOnly).padStart(2, '0')}]` });
+          });
+          mediaItems.push({ type: 'video', url: item.objectUrl });
+        } catch (err: any) {
+          videoExtractError = err.message;
+          URL.revokeObjectURL(item.objectUrl);
+          break;
         }
-      } catch (err: any) {
-        setPendingVideo(null);
-        if (pendingVideo) URL.revokeObjectURL(pendingVideo.objectUrl);
-        setLoading(false);
-        setProcessing(false);
-        alert(`Failed to process video: ${err.message}`);
-        return;
       }
-      setPendingVideo(null);
-    } else if (pendingImage) {
-      mediaUrls = [pendingImage];
     }
 
-    const imageDataUrl = pendingImage;
+    if (videoExtractError) {
+      setPendingMedia([]);
+      setLoading(false);
+      setProcessing(false);
+      alert(`Failed to process video: ${videoExtractError}`);
+      return;
+    }
+
+    setPendingMedia([]);
+
     const userMessage: Message = {
       id: messageCounter.current,
       role: 'user',
@@ -1247,8 +1278,7 @@ export default function ChatPage() {
           id: `seg-${Date.now()}-${segmentCounter.current}`,
           text,
           type: 'normal',
-          imageDataUrl: imageDataUrl ?? undefined,
-          videoUrl,
+          mediaItems,
         },
       ],
       collapsed: text.length >= 20 && text.split('\n').length > 5,
@@ -1257,7 +1287,6 @@ export default function ChatPage() {
     messageCounter.current += 1;
     segmentCounter.current += 1;
 
-    setPendingImage(null);
     setMessages((prev) => {
       const updated = [...prev];
       if (systemPromptDone && !systemMessageInsertedRef.current) {
@@ -1286,8 +1315,6 @@ export default function ChatPage() {
     setInputText('');
     isReprocessing = false;
     pendingSegmentIds = [];
-    setLoading(true);
-    setProcessing(true);
 
     const textarea = document.querySelector('textarea');
     if (textarea) textarea.style.height = 'auto';
@@ -1296,7 +1323,7 @@ export default function ChatPage() {
     lastTokenSnapshot.current = null;
     setTps(0);
 
-    await window.electronAPI.chatSend(text, mediaUrls, achievedFps);
+    await window.electronAPI.chatSend(text, contentParts);
   };
 
   const handleAbort = () => window.electronAPI.chatAbort();
@@ -1678,19 +1705,29 @@ export default function ChatPage() {
                       <>{msg.content[0]?.text || ''}</>
                     ) : (
                       <>
-                        {msg.content[0]?.videoUrl ? (
-                          <video
-                            src={msg.content[0].videoUrl}
-                            controls
-                            className="chat-message__user-video"
-                          />
-                        ) : msg.content[0]?.imageDataUrl ? (
-                          <img
-                            src={msg.content[0].imageDataUrl}
-                            alt="Attached media"
-                            className="chat-message__user-image"
-                          />
-                        ) : null}
+                        {msg.content[0]?.mediaItems?.map((item) => {
+                          if (item.type === 'image') {
+                            return (
+                              <img
+                                key={item.url}
+                                src={item.url}
+                                alt="Attached media"
+                                className="chat-message__user-image"
+                              />
+                            );
+                          }
+                          if (item.type === 'video') {
+                            return (
+                              <video
+                                key={item.url}
+                                src={item.url}
+                                controls
+                                className="chat-message__user-video"
+                              />
+                            );
+                          }
+                          return null;
+                        })}
                         {msg.content[0]?.text || ''}
                       </>
                     )}
@@ -1800,7 +1837,7 @@ export default function ChatPage() {
         <div className="chat-input-row">
           <button
             type="button"
-            className={`chat-attach-button${projectorLoaded || (profileHasProjector && !loadError) ? '' : ' chat-attach-button--disabled'}`}
+            className={`chat-attach-button${(projectorLoaded || (profileHasProjector && !loadError)) ? '' : ' chat-attach-button--disabled'}`}
             onClick={() => {
               if (projectorLoaded || (profileHasProjector && !loadError))
                 setShowImageModal(true);
@@ -1817,33 +1854,31 @@ export default function ChatPage() {
           </button>
 
           <div className="chat-input-inner">
-            {pendingVideo && (
-              <div className="chat-video-preview">
-                <video src={pendingVideo.objectUrl} controls className="chat-video-preview__player" />
-                <button
-                  type="button"
-                  className="chat-image-preview__remove"
-                  onClick={() => {
-                    URL.revokeObjectURL(pendingVideo.objectUrl);
-                    setPendingVideo(null);
-                  }}
-                  title="Remove video"
-                >
-                  ×
-                </button>
-              </div>
-            )}
-            {pendingImage && (
-              <div className="chat-image-preview">
-                <img src={pendingImage} alt="Attached" />
-                <button
-                  type="button"
-                  className="chat-image-preview__remove"
-                  onClick={() => setPendingImage(null)}
-                  title="Remove image"
-                >
-                  ×
-                </button>
+            {pendingMedia.length > 0 && (
+              <div className="chat-media-preview">
+                {pendingMedia.map((item) => (
+                  <div key={item.id} className="chat-media-preview__item">
+                    {item.type === 'image' && (
+                      <img src={item.dataUrl} alt="Attached" className="chat-media-preview__image" />
+                    )}
+                    {item.type === 'video' && (
+                      <video src={item.objectUrl} controls className="chat-media-preview__video" />
+                    )}
+                    <button
+                      type="button"
+                      className="chat-media-preview__remove"
+                      onClick={() => {
+                        if (item.type === 'video') {
+                          URL.revokeObjectURL(item.objectUrl);
+                        }
+                        setPendingMedia((prev) => prev.filter((m) => m.id !== item.id));
+                      }}
+                      title={`Remove ${item.type}`}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
               </div>
             )}
             <textarea
@@ -1923,9 +1958,13 @@ export default function ChatPage() {
 
       {showImageModal && (
         <MediaAttachModal
-          onAttach={(dataUrl) => setPendingImage(dataUrl)}
+          onAttach={(dataUrl) => {
+            const id = crypto.randomUUID();
+            setPendingMedia((prev) => [...prev, { id, type: 'image', dataUrl }]);
+          }}
           onAttachVideo={(file) => {
-            setPendingVideo({ file, objectUrl: URL.createObjectURL(file) });
+            const id = crypto.randomUUID();
+            setPendingMedia((prev) => [...prev, { id, type: 'video', file, objectUrl: URL.createObjectURL(file) }]);
           }}
           onClose={() => setShowImageModal(false)}
         />

@@ -7,15 +7,14 @@
 # Chat:
   * Set default model
   * Cancel model loading
-  * Modal to select profile
-  ## Tools
-    * Vector Icons Per-Tools
   ## Uploads
     * Add text-based filetypes to upload [File->MD](https://github.com/microsoft/markitdown)
     * Official LLama CPP video support rather than frame extractor
       * This seems to currently be broken, even on official WebUI always fails
         * (Maybe missing unknown dependency or user error but either way would be too unreliable)
       * Current frame extractor does not extract audio
+    * Audio Support
+      * Similar to video support, appears to be broken
 
 # Models:
   * Search

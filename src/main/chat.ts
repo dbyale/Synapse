@@ -159,20 +159,6 @@ export function setEmitFunctionCallback(cb: any) {
   emitFunctionEvent = cb;
 }
 
-// --- Build multimodal content from media data URLs (frames + timestamps + text) ---
-function buildMediaContent(urls: string[], text: string, fps = 1): any[] {
-  const content: any[] = [];
-  const intervalSec = 1 / fps;
-  urls.forEach((url, i) => {
-    content.push({ type: 'image_url', image_url: { url } });
-    const secs = Math.floor(i * intervalSec % 60);
-    const mins = Math.floor((i * intervalSec) / 60);
-    content.push({ type: 'text', text: `[${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}]` });
-  });
-  content.push({ type: 'text', text });
-  return content;
-}
-
 // --- Build request body, only including profile fields that are defined ---
 function buildChatBody(messages: any[], tools: any[]): Record<string, any> {
   const p = currentProfile;
@@ -545,7 +531,7 @@ export async function loadProfile(
 export async function sendMessage(
   text: string,
   onToken: (t: string, type?: 'thought' | 'comment') => void,
-  mediaDataUrls?: string[],
+  contentParts?: { kind: string; url?: string; filePath?: string; text?: string }[],
   onProgress?: (data: {
     progress: number;
     promptN: number;
@@ -553,7 +539,6 @@ export async function sendMessage(
     total: number;
   }) => void,
   onPromptDone?: (stats: GenerationStats) => void,
-  fps?: number,
 ): Promise<SendMessageResponse> {
   if (!currentProfile) throw new Error('No profile loaded');
 
@@ -563,9 +548,18 @@ export async function sendMessage(
     lastUsage = { used: lastUsage.used + userTokens, total: lastUsage.total };
   }
 
-  const userContent: any = mediaDataUrls && mediaDataUrls.length > 0
-    ? buildMediaContent(mediaDataUrls, text, fps)
-    : text;
+  const userContent: any[] = [];
+  if (contentParts && contentParts.length > 0) {
+    for (const part of contentParts) {
+      if (part.kind === 'image_url' && part.url) {
+        userContent.push({ type: 'image_url', image_url: { url: part.url } });
+      } else if (part.kind === 'text' && part.text) {
+        userContent.push({ type: 'text', text: part.text });
+      }
+    }
+  }
+  userContent.push({ type: 'text', text });
+
   messageHistory.push({ role: 'user', content: userContent });
   abortController = new AbortController();
   aborted = false;
