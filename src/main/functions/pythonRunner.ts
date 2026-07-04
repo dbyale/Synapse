@@ -344,6 +344,10 @@ function spawnWithTimeout(
       shell: false,
       // Cap the internal Node.js buffer as a secondary safeguard
       maxBuffer: SANDBOX_CONFIG.maxOutputBytes * 2,
+      // Force UTF-8 decoding to handle Unicode/emoji in output (e.g. DDGS book results)
+      encoding: 'utf8',
+      // Force Python to use UTF-8 for stdout/stderr (fixes 'charmap' codec errors on Windows)
+      env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
     });
 
     const timer = setTimeout(() => {
