@@ -301,6 +301,7 @@ declare global {
           params: Record<string, any>;
         }>;
         enabled: boolean;
+        extensionDir?: string;
       }>>;
       extensionsInstall: () => Promise<{ success: boolean; error?: string }>;
       extensionsRemove: (id: string) => Promise<{ success: boolean; error?: string }>;

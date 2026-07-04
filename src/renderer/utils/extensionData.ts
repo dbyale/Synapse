@@ -19,6 +19,7 @@ type ExtensionInfo = {
   };
   tools: Record<string, { meta: ToolMeta; params: Record<string, any> }>;
   enabled: boolean;
+  extensionDir?: string;
 };
 
 let cachedExtensions: ExtensionInfo[] | null = null;

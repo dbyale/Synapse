@@ -28,4 +28,5 @@ export interface Extension {
   manifest: ExtensionManifest;
   tools: Record<string, ExtensionToolDef>;
   enabled: boolean;
+  extensionDir?: string;
 }

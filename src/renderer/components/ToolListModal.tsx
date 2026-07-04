@@ -64,9 +64,13 @@ export default function ToolListModal({
                 <div
                   key={tool.name || `tool-${idx}`}
                   className={`tlm-tool-row${isChecked ? ' tlm-tool-row--checked' : ''}`}
+                  onClick={() => { if (onToolToggle) onToolToggle(tool.name); }}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && onToolToggle) { e.preventDefault(); onToolToggle(tool.name); } }}
                 >
                   {editTools !== undefined && onToolToggle ? (
-                    <label className="tlm-tool-checkbox-label">
+                    <label className="tlm-tool-checkbox-label" onClick={(e) => e.stopPropagation()}>
                       <input
                         type="checkbox"
                         className="tlm-tool-checkbox"

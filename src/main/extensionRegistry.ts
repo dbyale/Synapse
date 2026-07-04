@@ -106,6 +106,7 @@ class ExtensionRegistry {
         manifest: { ...manifest, builtIn: false, iconSvgData },
         tools,
         enabled: true,
+        extensionDir: extDir,
       });
     } catch (err) {
       console.error(`[Extensions] Failed to load extension from ${extDir}:`, err);
@@ -173,16 +174,25 @@ class ExtensionRegistry {
     }
   }
 
-  removeExtension(id: string): { success: boolean; error?: string } {
-    const ext = this.extensions.get(id);
-    if (!ext) return { success: false, error: `Extension "${id}" not found` };
+  removeExtension(idOrName: string): { success: boolean; error?: string } {
+    let ext = this.extensions.get(idOrName);
+    // Fall back to searching by manifest name if direct ID lookup fails
+    if (!ext) {
+      for (const [, e] of this.extensions) {
+        if (e.manifest.name === idOrName || e.manifest.id === idOrName) {
+          ext = e;
+          break;
+        }
+      }
+    }
+    if (!ext) return { success: false, error: `Extension "${idOrName}" not found` };
     if (ext.manifest.builtIn) return { success: false, error: 'Cannot remove built-in extension' };
     try {
-      const extDir = path.join(this.userExtensionsDir, id);
+      const extDir = ext.extensionDir || path.join(this.userExtensionsDir, ext.manifest.id);
       if (fs.existsSync(extDir)) {
         fs.rmSync(extDir, { recursive: true, force: true });
       }
-      this.extensions.delete(id);
+      this.extensions.delete(ext.manifest.id);
       return { success: true };
     } catch (err) {
       return { success: false, error: err instanceof Error ? err.message : String(err) };

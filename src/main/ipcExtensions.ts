@@ -15,6 +15,7 @@ export function registerExtensionIpcHandlers(): void {
         ]),
       ),
       enabled: ext.enabled,
+      extensionDir: ext.extensionDir,
     }));
   });
 

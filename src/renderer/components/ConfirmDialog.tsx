@@ -19,25 +19,24 @@ export default function ConfirmDialog({
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
-  const handleOverlayClick = (e: MouseEvent<HTMLButtonElement>) => {
+  const handleOverlayClick = (e: MouseEvent<HTMLDivElement>) => {
     if (e.target === e.currentTarget) {
       onCancel();
     }
   };
 
-  const handleKeyDown = (e: KeyboardEvent<HTMLButtonElement>) => {
+  const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     if (e.key === 'Escape') {
       onCancel();
     }
   };
 
   return (
-    <button
-      type="button"
+    <div
       className="confirm-dialog-overlay"
       onClick={handleOverlayClick}
       onKeyDown={handleKeyDown}
-      aria-label="Close dialog"
+      role="presentation"
     >
       <div
         className="confirm-dialog"
@@ -64,6 +63,6 @@ export default function ConfirmDialog({
           </button>
         </div>
       </div>
-    </button>
+    </div>
   );
 }

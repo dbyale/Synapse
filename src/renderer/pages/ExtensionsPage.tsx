@@ -28,6 +28,7 @@ type ExtensionInfo = {
   };
   tools: Record<string, { meta: { name: string; label: string; description: string; icon: string }; params: Record<string, any> }>;
   enabled: boolean;
+  extensionDir?: string;
 };
 
 function ExtensionIcon({ manifest }: { manifest: ExtensionInfo['manifest'] }) {
@@ -215,7 +216,7 @@ export default function ExtensionsPage() {
                         <button
                           type="button"
                           className="ep-card__action-btn ep-card__action-btn--danger"
-                          onClick={(e) => { e.stopPropagation(); setRemoveId(ext.manifest.id); }}
+                          onClick={(e) => { e.stopPropagation(); setRemoveId(ext.manifest.id || ext.manifest.name); }}
                           title="Remove extension"
                         >
                           <Trash2 size={13} />
