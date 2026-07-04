@@ -11,6 +11,7 @@ import { tools as memoryTools, manifest as memoryManifest } from '../extensions/
 import { tools as pythonTools, manifest as pythonManifest } from '../extensions/python';
 import { tools as shellTools, manifest as shellManifest } from '../extensions/shell';
 import { tools as userpromptsTools, manifest as userpromptsManifest } from '../extensions/userprompts';
+import { tools as ddgSearchTools, manifest as ddgSearchManifest } from '../extensions/ddg_search';
 
 const BUILT_IN_EXTENSIONS: Array<{ tools: Record<string, ExtensionToolDef>; manifest: ExtensionManifest }> = [
   { tools: timeTools, manifest: timeManifest as ExtensionManifest },
@@ -21,6 +22,7 @@ const BUILT_IN_EXTENSIONS: Array<{ tools: Record<string, ExtensionToolDef>; mani
   { tools: pythonTools, manifest: pythonManifest as ExtensionManifest },
   { tools: shellTools, manifest: shellManifest as ExtensionManifest },
   { tools: userpromptsTools, manifest: userpromptsManifest as ExtensionManifest },
+  { tools: ddgSearchTools, manifest: ddgSearchManifest as ExtensionManifest },
 ];
 
 class ExtensionRegistry {

@@ -1,0 +1,9 @@
+{
+  "id": "ddg_search",
+  "name": "DuckDuckGo Search",
+  "description": "Web, news, image, video, and book search powered by the ddgs (Dux Distributed Global Search) Python library. Auto-installs the ddgs pip package on first use.",
+  "author": "Synapse",
+  "version": "1.0.0",
+  "icon": "Search",
+  "builtIn": true
+}

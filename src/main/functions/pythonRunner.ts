@@ -18,6 +18,8 @@ const SANDBOX_CONFIG = {
   memoryLimitMb: 256,
   recursionLimit: 200,
   allowedModules: new Set([
+    // Web search
+    'ddgs',
     // Numeric / scientific
     'numpy',
     'pandas',
@@ -282,7 +284,7 @@ _builtins_dict['__import__'] = _safe_import
 # ── Clean up ─────────────────────────────────────────────────────
 # We keep 'exec', 'open', 'compile' because libraries need them to load.
 # Static analysis (regex) prevents the user from calling them.
-_REMOVE = ['breakpoint', 'input']
+_REMOVE = ['breakpoint']
 for _name in _REMOVE:
     _builtins_dict.pop(_name, None)
 
@@ -458,6 +460,33 @@ export async function runPython(code: string): Promise<PythonRunResult> {
   } finally {
     // ── Always clean up — never skipped ───────────────────────
     await cleanupTempDir(runId);
+  }
+}
+
+/**
+ * Ensure a Python pip package is installed. Checks for the package first,
+ * and runs `pip install --quiet` if it is not found.
+ */
+export async function ensurePackage(
+  packageName: string,
+  importName?: string,
+): Promise<{ success: boolean; error?: string }> {
+  const checkName = importName ?? packageName.replace(/-/g, '_');
+  try {
+    const binary = await resolvePythonBinary();
+    await execFileAsync(binary, ['-c', `import ${checkName}`]);
+    return { success: true };
+  } catch {
+    try {
+      const binary = await resolvePythonBinary();
+      await execFileAsync(binary, ['-m', 'pip', 'install', packageName, '--quiet'], {
+        timeout: 120_000,
+      });
+      return { success: true };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { success: false, error: `Failed to install ${packageName}: ${msg}` };
+    }
   }
 }
 
