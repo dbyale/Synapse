@@ -9,12 +9,15 @@ import {
   Puzzle,
 } from 'lucide-react';
 
-const navItems = [
+const mainNavItems = [
   { path: '/', icon: MessageSquare, label: 'Chat' },
   { path: '/profiles', icon: SlidersHorizontal, label: 'Profiles' },
   { path: '/models', icon: Bot, label: 'Models' },
   { path: '/extensions', icon: Puzzle, label: 'Extensions' },
   { path: '/workflows', icon: GitBranch, label: 'Workflows' },
+];
+
+const bottomNavItems = [
   { path: '/settings', icon: Settings, label: 'Settings' },
 ];
 
@@ -140,7 +143,7 @@ export default function Sidebar() {
     >
       {/* Main Pages Navigation */}
       <div style={s.navGroup} className="no-drag">
-        {navItems.map((item) => {
+        {mainNavItems.map((item) => {
           const Icon = item.icon;
           const isActive = location.pathname === item.path;
           return (
@@ -152,7 +155,37 @@ export default function Sidebar() {
               title={!isExpanded ? item.label : undefined}
             >
               <Icon size={18} strokeWidth={2} style={s.icon} />
-              {/* Label fades in/out with the sidebar width */}
+              <span
+                style={{
+                  opacity: isExpanded ? 1 : 0,
+                  transition: isResizing ? 'none' : 'opacity 0.15s ease',
+                  pointerEvents: 'none',
+                }}
+              >
+                {item.label}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Spacer pushes bottom nav items to the bottom */}
+      <div style={{ flex: 1 }} />
+
+      {/* Settings at the bottom */}
+      <div style={s.navGroup} className="no-drag">
+        {bottomNavItems.map((item) => {
+          const Icon = item.icon;
+          const isActive = location.pathname === item.path;
+          return (
+            <button
+              type="button"
+              key={item.path}
+              style={{ ...s.menuItem, ...(isActive ? s.menuItemActive : {}) }}
+              onClick={() => navigate(item.path)}
+              title={!isExpanded ? item.label : undefined}
+            >
+              <Icon size={18} strokeWidth={2} style={s.icon} />
               <span
                 style={{
                   opacity: isExpanded ? 1 : 0,
