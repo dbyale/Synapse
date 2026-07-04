@@ -9,6 +9,7 @@ import type { Components } from 'react-markdown';
 
 type Props = {
   content: string;
+  onImageClick?: (url: string) => void;
 };
 
 function CodeBlock({ lang, code }: { lang: string; code: string }) {
@@ -84,15 +85,29 @@ const components: Components = {
   },
 };
 
-export default function MarkdownRenderer({ content }: Props) {
+export default function MarkdownRenderer({ content, onImageClick }: Props) {
   const cleaned = content.replace(/^\n+/, '');
+
+  const componentsWithImg: Components = {
+    ...components,
+    img({ src, alt }) {
+      return (
+        <img
+          src={src}
+          alt={alt || ''}
+          onClick={() => onImageClick?.(src || '')}
+          style={{ cursor: 'pointer' }}
+        />
+      );
+    },
+  };
 
   return (
     <div className="md">
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkMath]}
         rehypePlugins={[rehypeKatex]}
-        components={components}
+        components={componentsWithImg}
       >
         {cleaned}
       </ReactMarkdown>

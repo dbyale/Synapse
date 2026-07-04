@@ -1373,6 +1373,7 @@
   object-fit: cover;
   border-radius: 8px;
   margin-bottom: 4px;
+  cursor: pointer;
 }
 
 .chat-message__user-video {

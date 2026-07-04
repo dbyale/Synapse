@@ -11,9 +11,10 @@ interface MessageSegment {
 
 interface MessageContentProps {
   segments: MessageSegment[];
+  onImageClick?: (url: string) => void;
 }
 
-function ThoughtSegment({ text }: { text: string }) {
+function ThoughtSegment({ text, onImageClick }: { text: string; onImageClick?: (url: string) => void }) {
   const [isOpen, setIsOpen] = useState(true);
 
   return (
@@ -33,14 +34,14 @@ function ThoughtSegment({ text }: { text: string }) {
       </button>
       {isOpen && (
         <div className="message-segment__content">
-          <MarkdownRenderer content={text} />
+          <MarkdownRenderer content={text} onImageClick={onImageClick} />
         </div>
       )}
     </div>
   );
 }
 
-export default function MessageContent({ segments }: MessageContentProps) {
+export default function MessageContent({ segments, onImageClick }: MessageContentProps) {
   // Filter out empty thought segments (models that open/close thinking immediately)
   const filteredSegments = segments.filter((seg) => {
     if (seg.type === 'thought') {
@@ -57,7 +58,7 @@ export default function MessageContent({ segments }: MessageContentProps) {
   // If no special segments, just render all normal content together
   if (!hasSpecialSegments) {
     const combinedText = filteredSegments.map((seg) => seg.text).join('');
-    return <MarkdownRenderer content={combinedText} />;
+    return <MarkdownRenderer content={combinedText} onImageClick={onImageClick} />;
   }
 
   // Otherwise, render each segment with its appropriate wrapper
@@ -65,7 +66,7 @@ export default function MessageContent({ segments }: MessageContentProps) {
     <div className="message-content">
       {filteredSegments.map((segment) => {
         if (segment.type === 'thought') {
-          return <ThoughtSegment key={segment.id} text={segment.text} />;
+          return <ThoughtSegment key={segment.id} text={segment.text} onImageClick={onImageClick} />;
         }
 
         if (segment.type === 'comment') {
@@ -79,7 +80,7 @@ export default function MessageContent({ segments }: MessageContentProps) {
                 <span>Comment</span>
               </div>
               <div className="message-segment__content">
-                <MarkdownRenderer content={segment.text} />
+                <MarkdownRenderer content={segment.text} onImageClick={onImageClick} />
               </div>
             </div>
           );
@@ -91,7 +92,7 @@ export default function MessageContent({ segments }: MessageContentProps) {
             key={segment.id}
             className="message-segment message-segment--normal"
           >
-            <MarkdownRenderer content={segment.text} />
+            <MarkdownRenderer content={segment.text} onImageClick={onImageClick} />
           </div>
         );
       })}

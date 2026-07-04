@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import MessageContent from '../components/MessageContent';
+import ImageViewer from '../components/ImageViewer';
 import ConfirmDialog from '../components/ConfirmDialog';
 import ProfileSelectModal from '../components/ProfileSelectModal';
 import { Profile } from '../types/profile';
@@ -388,6 +389,7 @@ export default function ChatPage() {
   }>({ totalInputTokens: 0, totalOutputTokens: 0 });
   const [projectorLoaded, setProjectorLoaded] = useState(false);
   const [showImageModal, setShowImageModal] = useState(false);
+  const [imageViewerUrl, setImageViewerUrl] = useState<string | null>(null);
   const [pendingMedia, setPendingMedia] = useState<PendingMedia[]>([]);
   const [progressPercent, setProgressPercent] = useState(0);
   const [systemPhase, setSystemPhase] = useState<
@@ -1612,6 +1614,7 @@ export default function ChatPage() {
                                   <MessageContent
                                     key={`text-batch-${elements.length}`}
                                     segments={currentTextSegments}
+                                    onImageClick={setImageViewerUrl}
                                   />,
                                 );
                                 currentTextSegments = [];
@@ -1679,6 +1682,7 @@ export default function ChatPage() {
                               <MessageContent
                                 key={`text-batch-${elements.length}`}
                                 segments={currentTextSegments}
+                                onImageClick={setImageViewerUrl}
                               />,
                             );
                           }
@@ -1717,6 +1721,7 @@ export default function ChatPage() {
                                 src={item.url}
                                 alt="Attached media"
                                 className="chat-message__user-image"
+                                onClick={() => setImageViewerUrl(item.url)}
                               />
                             );
                           }
@@ -1971,6 +1976,13 @@ export default function ChatPage() {
             setPendingMedia((prev) => [...prev, { id, type: 'video', file, objectUrl: URL.createObjectURL(file) }]);
           }}
           onClose={() => setShowImageModal(false)}
+        />
+      )}
+
+      {imageViewerUrl && (
+        <ImageViewer
+          imageUrl={imageViewerUrl}
+          onClose={() => setImageViewerUrl(null)}
         />
       )}
     </div>
