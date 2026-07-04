@@ -1,0 +1,9 @@
+{
+  "id": "time",
+  "name": "Time",
+  "description": "Current time and timezone conversion tools",
+  "author": "Synapse",
+  "version": "1.0.0",
+  "icon": "Clock",
+  "builtIn": true
+}

@@ -1,7 +1,7 @@
 import { MouseEvent, KeyboardEvent } from 'react';
 import { X, PackageCheck, PackageMinus } from 'lucide-react';
 import { Profile } from '../types/profile';
-import { AVAILABLE_TOOLS, TOOL_METADATA } from '../../data/defaultTools';
+import { getExtensions } from '../utils/extensionData';
 import './styles/ProfileSelectModal.css';
 
 interface ProfileSelectModalProps {
@@ -14,34 +14,25 @@ interface ProfileSelectModalProps {
 function renderToolBadges(profileTools: string[]) {
   if (!profileTools || profileTools.length === 0) return null;
 
-  const categoryMap: Record<string, { total: number; enabled: number }> = {};
-
-  AVAILABLE_TOOLS.forEach((toolKey) => {
-    const meta = TOOL_METADATA[toolKey as keyof typeof TOOL_METADATA];
-    const category = meta.category || 'Uncategorized';
-    if (!categoryMap[category]) {
-      categoryMap[category] = { total: 0, enabled: 0 };
-    }
-    categoryMap[category].total += 1;
-    if (profileTools.includes(toolKey)) {
-      categoryMap[category].enabled += 1;
-    }
-  });
-
-  const activeCategories = Object.entries(categoryMap)
-    .filter(([, { enabled }]) => enabled > 0)
-    .sort(([a], [b]) => a.localeCompare(b));
+  const badges = getExtensions()
+    .map((ext) => {
+      const toolKeys = Object.keys(ext.tools);
+      const total = toolKeys.length;
+      const enabled = toolKeys.filter((tk) => profileTools.includes(tk)).length;
+      return { id: ext.manifest.id, name: ext.manifest.name, total, enabled };
+    })
+    .filter(({ enabled }) => enabled > 0);
 
   return (
     <div className="psm-card__tool-badges">
-      {activeCategories.map(([category, { total, enabled }]) => (
-        <span key={category} className="psm-card__tool-badge">
+      {badges.map(({ id, name, total, enabled }) => (
+        <span key={id} className="psm-card__tool-badge">
           {enabled === total ? (
             <PackageCheck size={10} />
           ) : (
             <PackageMinus size={10} />
           )}
-          {category}
+          {name}
         </span>
       ))}
     </div>

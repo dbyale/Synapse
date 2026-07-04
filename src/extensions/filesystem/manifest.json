@@ -1,0 +1,9 @@
+{
+  "id": "filesystem",
+  "name": "Filesystem",
+  "description": "File reading, writing, directory management, and search tools",
+  "author": "Synapse",
+  "version": "1.0.0",
+  "icon": "FolderOpen",
+  "builtIn": true
+}

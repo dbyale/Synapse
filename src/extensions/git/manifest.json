@@ -1,0 +1,9 @@
+{
+  "id": "git",
+  "name": "Git",
+  "description": "Git repository management tools: status, diff, commit, branch operations",
+  "author": "Synapse",
+  "version": "1.0.0",
+  "icon": "GitFork",
+  "builtIn": true
+}

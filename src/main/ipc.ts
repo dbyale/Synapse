@@ -22,6 +22,7 @@ import {
 } from '../renderer/utils/models';
 import * as chatService from './chat';
 import { getOrRunOptimizer, getOrEstimateMemory, getModelMetadata } from './estimator';
+import { registerExtensionIpcHandlers } from './ipcExtensions';
 import type { SearchFilter } from '../renderer/preload.d';
 
 const execAsync = util.promisify(exec);
@@ -217,6 +218,9 @@ async function refreshVramStatsCache(): Promise<void> {
 }
 
 export function registerIpcHandlers(win: BrowserWindow): void {
+  // ── Extensions ──
+  registerExtensionIpcHandlers();
+
   // ── Settings ──
   ipcMain.handle('settings:load', () => {
     return loadSettings();

@@ -33,7 +33,7 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import ProfileSelectModal from '../components/ProfileSelectModal';
 import { Profile } from '../types/profile';
 import type { ContentPart } from '../preload.d';
-import { TOOL_METADATA } from '../../data/defaultTools';
+import { getToolMeta } from '../utils/extensionData';
 import { resolveIcon } from '../components/workflows/IconPicker';
 import '../styles/ChatPage.css';
 
@@ -143,15 +143,14 @@ function ToolCallSegment({
       >
         {(() => {
           const meta = segment.toolName
-            ? TOOL_METADATA[segment.toolName as keyof typeof TOOL_METADATA]
+            ? getToolMeta(segment.toolName)
             : undefined;
           const IconComp = meta?.icon ? resolveIcon(meta.icon) : Wrench;
           return <IconComp className="tool-call-segment__icon" size={16} />;
         })()}
         <span className="tool-call-segment__name">
           {(segment.toolName &&
-            TOOL_METADATA[segment.toolName as keyof typeof TOOL_METADATA]
-              ?.label) ??
+            getToolMeta(segment.toolName)?.label) ??
             segment.toolName}
         </span>
         {segment.toolStatus === 'calling' ? (

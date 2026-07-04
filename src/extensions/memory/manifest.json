@@ -1,0 +1,9 @@
+{
+  "id": "memory",
+  "name": "Memory",
+  "description": "Knowledge graph memory tools for entities, relations, and observations",
+  "author": "Synapse",
+  "version": "1.0.0",
+  "icon": "Network",
+  "builtIn": true
+}

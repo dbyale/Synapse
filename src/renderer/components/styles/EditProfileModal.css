@@ -411,40 +411,79 @@
 /* ── Tool category cards ── */
 
 .epm-tools-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+@media (max-width: 768px) {
+  .epm-tools-list {
+    grid-template-columns: 1fr;
+  }
 }
 
 .epm-tool-category {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-secondary);
+  transition: border-color 0.12s ease;
+}
+
+.epm-tool-category:hover {
+  border-color: var(--accent);
 }
 
 .epm-tool-category__header {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 12px 16px;
-  background: var(--bg-secondary);
+  gap: 8px;
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.06);
   border: none;
   border-bottom: 1px solid var(--border);
   width: 100%;
   cursor: pointer;
   font-family: inherit;
-  font-size: 14px;
+  font-size: 13px;
   color: var(--text-primary);
   text-align: left;
   transition: background 0.12s ease;
 }
 
 .epm-tool-category__header:hover {
-  background: var(--bg-hover);
+  background: rgba(0, 0, 0, 0.1);
 }
 
 .epm-tool-category__header.open {
   border-bottom-color: var(--border);
+}
+
+.epm-tool-category__icon-wrap {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: var(--bg-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.epm-tool-category__lucide-icon {
+  color: var(--text-secondary);
+  width: 16px;
+  height: 16px;
+}
+
+.epm-tool-category__svg-icon {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+  display: block;
 }
 
 .epm-tool-category__chevron {
@@ -460,15 +499,16 @@
 .epm-tool-category__name {
   flex: 1;
   font-weight: 600;
+  font-size: 13px;
 }
 
 .epm-tool-category__badge {
   background: rgba(37, 99, 235, 0.08);
   border: 1px solid rgba(37, 99, 235, 0.2);
   color: var(--accent);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 500;
-  padding: 2px 8px;
+  padding: 1px 6px;
   border-radius: 999px;
   cursor: pointer;
   white-space: nowrap;
@@ -483,15 +523,18 @@
 }
 
 .epm-tool-category__content {
+  flex: 1;
   background: var(--bg-secondary);
-  padding: 8px 12px;
+  padding: 6px 10px;
+  max-height: 260px;
+  overflow-y: auto;
 }
 
 .epm-tool-row {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
+  gap: 10px;
+  padding: 7px 10px;
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition: background 0.12s ease;
@@ -511,11 +554,16 @@
 }
 
 .epm-tool-checkbox {
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   accent-color: var(--accent);
   cursor: pointer;
   flex-shrink: 0;
+}
+
+.epm-tool-checkbox:not(:checked) {
+  opacity: 0.35;
+  filter: grayscale(1);
 }
 
 .epm-tool-info {
@@ -524,15 +572,15 @@
 }
 
 .epm-tool-label {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--text-primary);
 }
 
 .epm-tool-description {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-secondary);
-  margin-top: 2px;
+  margin-top: 1px;
 }
 
 /* ── Performance Options ── */

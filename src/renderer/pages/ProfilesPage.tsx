@@ -20,7 +20,13 @@ import {
 } from 'lucide-react';
 import type { LocalModel } from '../preload.d';
 import { Profile } from '../types/profile';
-import { AVAILABLE_TOOLS, TOOL_METADATA } from '../../data/defaultTools';
+import {
+  getExtensions,
+  getEnabledExtensions,
+  getToolMeta,
+  getAvailableToolNames,
+  getCategorizedExtensions,
+} from '../utils/extensionData';
 import InfoTooltip from '../components/InfoTooltip';
 import EditProfileModal from '../components/EditProfileModal';
 import ConfirmDialog from '../components/ConfirmDialog';
@@ -94,112 +100,6 @@ function CollapsibleSection({
         )}
       </button>
       {isOpen && <div className="sp-card__collapsible-content">{children}</div>}
-    </div>
-  );
-}
-
-interface ToolCategoryCardProps {
-  category: string;
-  toolKeys: string[];
-  editTools: string[];
-  onToolToggle: (toolKey: string) => void;
-  onCategoryToggle: (toolKeys: string[]) => void;
-}
-
-function ToolCategoryCard({
-  category,
-  toolKeys,
-  editTools,
-  onToolToggle,
-  onCategoryToggle,
-}: ToolCategoryCardProps) {
-  const [isOpen, setIsOpen] = useState(false);
-
-  const enabledCount = toolKeys.filter((tk) => editTools.includes(tk)).length;
-  const totalCount = toolKeys.length;
-  const allEnabled = enabledCount === totalCount;
-
-  const handleSelectAll = () => {
-    if (allEnabled) {
-      onCategoryToggle([]);
-    } else {
-      onCategoryToggle(toolKeys.filter((tk) => !editTools.includes(tk)));
-    }
-  };
-
-  return (
-    <div className="sp-card__category-card">
-      <div
-        className={`sp-card__category-header${isOpen ? ' open' : ''}`}
-        onClick={() => setIsOpen(!isOpen)}
-        role="button"
-        tabIndex={0}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            setIsOpen(!isOpen);
-          }
-        }}
-      >
-        <ChevronDown
-          size={18}
-          className={`sp-card__category-chevron ${
-            isOpen ? 'sp-card__category-chevron--open' : ''
-          }`}
-        />
-        <span className="sp-card__category-name">{category}</span>
-        <span
-          className="sp-card__category-badge"
-          onClick={(e) => {
-            e.stopPropagation();
-            handleSelectAll();
-          }}
-          role="button"
-          tabIndex={0}
-          title={allEnabled ? 'Deselect All' : 'Select All'}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              handleSelectAll();
-            }
-          }}
-        >
-          {enabledCount} / {totalCount}
-        </span>
-      </div>
-
-      {isOpen && (
-        <div className="sp-card__category-content">
-          <div className="sp-card__tools-list">
-            {toolKeys.map((toolKey) => {
-              const meta = TOOL_METADATA[toolKey as keyof typeof TOOL_METADATA];
-              const checked = editTools.includes(toolKey);
-              return (
-                <label
-                  key={toolKey}
-                  htmlFor={toolKey}
-                  className={`sp-card__tool-row ${
-                    checked ? 'sp-card__tool-row--checked' : ''
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    className="sp-card__tool-checkbox"
-                    checked={checked}
-                    onChange={() => onToolToggle(toolKey)}
-                  />
-                  <div className="sp-card__tool-info">
-                    <span className="sp-card__tool-label">{meta.label}</span>
-                    <span className="sp-card__tool-description">
-                      {meta.description}
-                    </span>
-                  </div>
-                </label>
-              );
-            })}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -611,22 +511,8 @@ export default function ProfilesPage() {
       .filter((g): g is NonNullable<typeof g> => g !== null);
   }, [groupedLocalModels]);
 
-  const categorizedTools = useMemo(() => {
-    const categories: Record<string, string[]> = {};
-
-    AVAILABLE_TOOLS.forEach((toolKey) => {
-      const meta = TOOL_METADATA[toolKey];
-      const category = meta.category || 'Uncategorized';
-
-      if (!categories[category]) {
-        categories[category] = [];
-      }
-      categories[category].push(toolKey);
-    });
-
-    return Object.entries(categories)
-      .sort(([catA], [catB]) => catA.localeCompare(catB))
-      .map(([category, toolKeys]) => ({ category, toolKeys }));
+  const extensionGroups = useMemo(() => {
+    return getCategorizedExtensions();
   }, []);
 
   const displayProfiles =
@@ -737,47 +623,30 @@ export default function ProfilesPage() {
                               <span>{profile.model.split(/[/\\]/).pop()}</span>
                            </InfoTooltip>
                         </p>
-                        {/* ── Tool badges (grouped by package/category) ── */}
+                        {/* ── Tool badges (grouped by extension) ── */}
                         {profile.tools &&
                           profile.tools.length > 0 &&
                           (() => {
-                            const categoryMap: Record<
-                              string,
-                              { total: number; enabled: number }
-                            > = {};
-
-                            AVAILABLE_TOOLS.forEach((toolKey) => {
-                              const meta =
-                                TOOL_METADATA[
-                                  toolKey as keyof typeof TOOL_METADATA
-                                ];
-                              const category = meta.category || 'Uncategorized';
-                              if (!categoryMap[category]) {
-                                categoryMap[category] = {
-                                  total: 0,
-                                  enabled: 0,
-                                };
-                              }
-                              categoryMap[category].total += 1;
-                              if ((profile.tools ?? []).includes(toolKey)) {
-                                categoryMap[category].enabled += 1;
-                              }
-                            });
-
-                            const activeCategories = Object.entries(categoryMap)
-                              .filter(([, { enabled }]) => enabled > 0)
-                              .sort(([a], [b]) => a.localeCompare(b));
+                            const extensions = getExtensions();
+                            const badgeData = extensions.map((ext) => {
+                              const toolKeys = Object.keys(ext.tools);
+                              const total = toolKeys.length;
+                              const enabled = toolKeys.filter(
+                                (tk) => profile.tools?.includes(tk),
+                              ).length;
+                              return { id: ext.manifest.id, name: ext.manifest.name, total, enabled };
+                            }).filter(({ enabled }) => enabled > 0);
 
                             return (
                               <div className="sp-card__tool-badges">
-                                {activeCategories.map(
-                                  ([category, { total, enabled }]) => (
+                                {badgeData.map(
+                                  ({ id, name, total, enabled }) => (
                                     <InfoTooltip
-                                    key={category}
-                                    content={`${enabled} of ${total} tools enabled in this category.`}
+                                    key={id}
+                                    content={`${enabled} of ${total} tools enabled in ${name}.`}
                                     side="top"
                                     hideIcon
-                                    title={category}
+                                    title={name}
                                   >
                                     <span className="sp-card__tool-badge">
                                       {enabled === total ? (
@@ -785,7 +654,7 @@ export default function ProfilesPage() {
                                       ) : (
                                         <PackageMinus size={11} />
                                       )}
-                                      {category}
+                                      {name}
                                     </span>
                                   </InfoTooltip>
                                   ),
@@ -913,7 +782,7 @@ export default function ProfilesPage() {
           modelSelectGroups={modelSelectGroups}
           availableModelsForEdit={availableModelsForEdit}
           groupedLocalModels={groupedLocalModels}
-          categorizedTools={categorizedTools}
+          extensionGroups={extensionGroups}
           onSave={handleSaveProfile}
           onClose={handleCancelEdit}
         />

@@ -441,7 +441,7 @@ export async function loadProfile(
 
     onStatus?.({ phase: 'loadprofile', message: `Loading New Profile…` });
     if (!chatFunctions)
-      chatFunctions = createChatFunctions(((fn: any) => fn) as any);
+      chatFunctions = createChatFunctions();
     activeTools = (profile.tools || [])
       .map((t) => chatFunctions[t])
       .filter(Boolean)

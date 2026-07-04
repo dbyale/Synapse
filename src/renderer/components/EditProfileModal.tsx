@@ -15,10 +15,13 @@ import {
   Flame,
   SlidersHorizontal,
   AlertTriangle,
+  Puzzle,
 } from 'lucide-react';
 import { Profile, CacheType } from '../types/profile';
 import type { LocalModel } from '../preload.d';
-import { AVAILABLE_TOOLS, TOOL_METADATA } from '../../data/defaultTools';
+import { getToolMeta, getAvailableToolNames } from '../utils/extensionData';
+import { resolveIcon } from './workflows/IconPicker';
+import ToolListModal from './ToolListModal';
 import { formatBytes } from '../utils/formatters';
 import InfoTooltip from './InfoTooltip';
 import {
@@ -70,6 +73,15 @@ interface GroupData {
   variants: VariantData[];
 }
 
+interface ExtensionGroup {
+  extension: {
+    manifest: { id: string; name: string; description: string; author: string; version: string; icon: string; builtIn: boolean; iconSvgData?: string };
+    tools: Record<string, { meta: { name: string; label: string; description: string; icon: string }; params: Record<string, any> }>;
+    enabled: boolean;
+  };
+  toolKeys: string[];
+}
+
 interface EditProfileModalProps {
   profile: Profile | null;
   profiles: Profile[];
@@ -89,7 +101,7 @@ interface EditProfileModalProps {
     }>;
     totalSize: number;
   }>;
-  categorizedTools: Array<{ category: string; toolKeys: string[] }>;
+  extensionGroups: ExtensionGroup[];
   onSave: (updatedProfiles: Profile[]) => void;
   onClose: () => void;
 }
@@ -143,29 +155,45 @@ function ToolCategoryCard({
   editTools,
   onToolToggle,
   onCategoryToggle,
+  iconName,
+  iconSvgData,
+  onOpenToolModal,
 }: {
   category: string;
   toolKeys: string[];
   editTools: string[];
   onToolToggle: (key: string) => void;
   onCategoryToggle: () => void;
+  iconName?: string;
+  iconSvgData?: string;
+  onOpenToolModal: () => void;
 }) {
-  const [isOpen, setIsOpen] = useState(false);
   const enabledCount = toolKeys.filter((tk) => editTools.includes(tk)).length;
   const totalCount = toolKeys.length;
-  const allEnabled = enabledCount === totalCount;
 
   return (
     <div className="epm-tool-category">
       <button
         type="button"
-        className={`epm-tool-category__header${isOpen ? ' open' : ''}`}
-        onClick={() => setIsOpen(!isOpen)}
+        className="epm-tool-category__header"
+        onClick={onOpenToolModal}
+        title="View tools"
       >
-        <ChevronDown
-          size={14}
-          className={`epm-tool-category__chevron${isOpen ? ' open' : ''}`}
-        />
+        <div className="epm-tool-category__icon-wrap">
+          {iconSvgData ? (
+            <img src={iconSvgData} alt="" className="epm-tool-category__svg-icon" />
+          ) : iconName ? (
+            (() => {
+              const IconComp = resolveIcon(iconName);
+              return <IconComp className="epm-tool-category__lucide-icon" />;
+            })()
+          ) : (
+            (() => {
+              const IconComp = Puzzle;
+              return <IconComp className="epm-tool-category__lucide-icon" />;
+            })()
+          )}
+        </div>
         <span className="epm-tool-category__name">{category}</span>
         <span
           className="epm-tool-category__badge"
@@ -185,31 +213,6 @@ function ToolCategoryCard({
           {enabledCount}/{totalCount}
         </span>
       </button>
-      {isOpen && (
-        <div className="epm-tool-category__content">
-          {toolKeys.map((toolKey) => {
-            const meta = TOOL_METADATA[toolKey as keyof typeof TOOL_METADATA];
-            const isChecked = editTools.includes(toolKey);
-            return (
-              <label
-                key={toolKey}
-                className={`epm-tool-row${isChecked ? ' epm-tool-row--checked' : ''}`}
-              >
-                <input
-                  type="checkbox"
-                  className="epm-tool-checkbox"
-                  checked={isChecked}
-                  onChange={() => onToolToggle(toolKey)}
-                />
-                <div className="epm-tool-info">
-                  <div className="epm-tool-label">{meta.label}</div>
-                  <div className="epm-tool-description">{meta.description}</div>
-                </div>
-              </label>
-            );
-          })}
-        </div>
-      )}
     </div>
   );
 }
@@ -472,14 +475,21 @@ function SystemPromptPage({
 }
 
 function ToolsPage({
-  categorizedTools,
+  extensionGroups,
   editTools,
   onToolToggle,
 }: {
-  categorizedTools: Array<{ category: string; toolKeys: string[] }>;
+  extensionGroups: Array<{ extension: { manifest: { id: string; name: string; icon: string; iconSvgData?: string }; tools: Record<string, any> }; toolKeys: string[] }>;
   editTools: string[];
   onToolToggle: (key: string) => void;
 }) {
+  const [modalExt, setModalExt] = useState<{
+    id: string;
+    name: string;
+    description: string;
+    toolKeys: string[];
+  } | null>(null);
+
   return (
     <>
       <p
@@ -490,16 +500,26 @@ function ToolsPage({
           lineHeight: 1.5,
         }}
       >
-        Choose which built-in tools the AI can use.
+        Choose which tools the AI can use, grouped by extension.
       </p>
       <div className="epm-tools-list">
-        {categorizedTools.map(({ category, toolKeys }) => (
+        {extensionGroups.map(({ extension, toolKeys }) => (
           <ToolCategoryCard
-            key={category}
-            category={category}
+            key={extension.manifest.id}
+            category={extension.manifest.name}
             toolKeys={toolKeys}
             editTools={editTools}
             onToolToggle={onToolToggle}
+            iconName={extension.manifest.icon}
+            iconSvgData={extension.manifest.iconSvgData}
+            onOpenToolModal={() =>
+              setModalExt({
+                id: extension.manifest.id,
+                name: extension.manifest.name,
+                description: extension.manifest.description,
+                toolKeys,
+              })
+            }
             onCategoryToggle={() => {
               const allSelected = toolKeys.every((tk) =>
                 editTools.includes(tk),
@@ -515,6 +535,24 @@ function ToolsPage({
           />
         ))}
       </div>
+
+      {modalExt && (
+        <ToolListModal
+          title={`${modalExt.name} Tools`}
+          description={modalExt.description}
+          tools={modalExt.toolKeys
+              .map((tk) => {
+                const meta = getToolMeta(tk);
+                return meta
+                  ? { name: tk, label: meta.label, description: meta.description, descriptionForHuman: meta.descriptionForHuman }
+                  : null;
+              })
+              .filter((t): t is NonNullable<typeof t> => t !== null)}
+          editTools={editTools}
+          onToolToggle={onToolToggle}
+          onClose={() => setModalExt(null)}
+        />
+      )}
     </>
   );
 }
@@ -1605,7 +1643,7 @@ export default function EditProfileModal({
   modelSelectGroups,
   availableModelsForEdit,
   groupedLocalModels,
-  categorizedTools,
+  extensionGroups,
   onSave,
   onClose,
 }: EditProfileModalProps) {
@@ -1927,7 +1965,7 @@ export default function EditProfileModal({
       minP: parseFloat(editMinP),
       seed: parseInt(editSeed, 10),
       tools: editTools.filter((t) =>
-        (AVAILABLE_TOOLS as readonly string[]).includes(t),
+        getAvailableToolNames().includes(t),
       ),
       repeatPenalty: buildRepeatPenalty(),
       kvOffload: editKvOffload,
@@ -2054,12 +2092,12 @@ export default function EditProfileModal({
       ? `${editSystemPrompt.slice(0, 80)}…`
       : editSystemPrompt || 'Not set';
 
-  const toolCategories = categorizedTools.filter(({ toolKeys }) =>
+  const activeExtGroups = extensionGroups.filter(({ toolKeys }) =>
     toolKeys.some((tk) => editTools.includes(tk)),
   );
   const toolsPreview =
-    toolCategories.length > 0
-      ? `${toolCategories.length} of ${categorizedTools.length} categories enabled`
+    activeExtGroups.length > 0
+      ? `${activeExtGroups.length} of ${extensionGroups.length} extensions enabled`
       : 'None enabled';
 
   const advancedPreview = `Temperature: ${editTemperature}, Top K: ${editTopK}, Top P: ${editTopP}`;
@@ -2106,7 +2144,7 @@ export default function EditProfileModal({
       case 'tools':
         return (
           <ToolsPage
-            categorizedTools={categorizedTools}
+            extensionGroups={extensionGroups}
             editTools={editTools}
             onToolToggle={handleToolToggle}
           />

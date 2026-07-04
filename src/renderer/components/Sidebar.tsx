@@ -6,12 +6,14 @@ import {
   Settings,
   SlidersHorizontal,
   GitBranch,
+  Puzzle,
 } from 'lucide-react';
 
 const navItems = [
   { path: '/', icon: MessageSquare, label: 'Chat' },
   { path: '/profiles', icon: SlidersHorizontal, label: 'Profiles' },
   { path: '/models', icon: Bot, label: 'Models' },
+  { path: '/extensions', icon: Puzzle, label: 'Extensions' },
   { path: '/workflows', icon: GitBranch, label: 'Workflows' },
   { path: '/settings', icon: Settings, label: 'Settings' },
 ];

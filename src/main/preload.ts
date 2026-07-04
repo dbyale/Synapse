@@ -293,4 +293,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     computeOverheadRam: number;
     fileBufferRam: number;
   }> => ipcRenderer.invoke('profile:estimateMemory', params),
+
+  // ── Extensions ──
+  extensionsList: () => ipcRenderer.invoke('extensions:list'),
+  extensionsInstall: () => ipcRenderer.invoke('extensions:install'),
+  extensionsRemove: (id: string) => ipcRenderer.invoke('extensions:remove', id),
+  extensionsToggle: (id: string, enabled: boolean) =>
+    ipcRenderer.invoke('extensions:toggle', id, enabled),
+  extensionsGetAllTools: () => ipcRenderer.invoke('extensions:getAllTools'),
+  extensionsOpenFolder: () => ipcRenderer.invoke('extensions:openFolder'),
 });

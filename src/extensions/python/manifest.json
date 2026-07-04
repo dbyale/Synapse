@@ -1,0 +1,9 @@
+{
+  "id": "python",
+  "name": "Python",
+  "description": "Python environment checking and sandboxed script execution tools",
+  "author": "Synapse",
+  "version": "1.0.0",
+  "icon": "Terminal",
+  "builtIn": true
+}
