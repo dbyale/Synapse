@@ -7,6 +7,7 @@
 # Chat:
   * Set default model
   * Cancel model loading
+  * Token counter includes images/overhead
   ## Uploads
     * Add text-based filetypes to upload [File->MD](https://github.com/microsoft/markitdown)
     * Official LLama CPP video support rather than frame extractor
