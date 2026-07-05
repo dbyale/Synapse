@@ -1,9 +1,0 @@
-{
-  "id": "web",
-  "name": "Web",
-  "description": "Web page fetching and content retrieval tools",
-  "author": "Synapse",
-  "version": "1.0.0",
-  "icon": "Globe",
-  "builtIn": true
-}

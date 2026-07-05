@@ -63,6 +63,20 @@ except Exception as e:
 `;
 }
 
+function buildExtractRunner(quotedUrl: string): string {
+  return `from ddgs import DDGS
+import json
+try:
+    with DDGS() as ddgs:
+        result = ddgs.extract(${quotedUrl})
+    print(json.dumps(result, default=str, ensure_ascii=False))
+except ImportError as e:
+    print(json.dumps({"error": f"Missing Python package: {e}. Run: pip install ddgs"}))
+except Exception as e:
+    print(json.dumps({"error": str(e)}))
+`;
+}
+
 async function runSearch(
   ddgsMethod: string,
   keywordArgs: Record<string, string>,
@@ -82,6 +96,32 @@ async function runSearch(
     return parsed as SearchResult;
   } catch {
     return { success: false, results: [], error: `Failed to parse search results: ${result.stdout.slice(0, 500)}` };
+  }
+}
+
+interface ExtractResult {
+  url?: string;
+  content?: string;
+  error?: string;
+}
+
+async function runExtract(url: string): Promise<ExtractResult> {
+  const pkgErr = await ensureDdgsPackage();
+  if (pkgErr) {
+    return { error: pkgErr };
+  }
+  const quotedUrl = `'${escapePyString(url)}'`;
+  const code = buildExtractRunner(quotedUrl);
+  const result = await runPython(code);
+  if (!result.success) {
+    return { error: result.error || result.stderr || 'Unknown error' };
+  }
+  try {
+    const parsed = JSON.parse(result.stdout);
+    if (parsed.error) return { error: parsed.error };
+    return { url: parsed.url, content: parsed.content };
+  } catch {
+    return { error: `Failed to parse extract result: ${result.stdout.slice(0, 500)}` };
   }
 }
 
@@ -287,6 +327,40 @@ export const tools: Record<string, ExtensionToolDef> = {
         max_results: String(Math.min(params.max_results ?? 10, 50)),
       };
       return await runSearch('books', keywordArgs);
+    },
+  },
+
+  web_fetch: {
+    meta: {
+      name: 'web_fetch',
+      label: 'Web Fetch',
+      description: 'Fetch and extract the content of a webpage as markdown using DDGS.',
+      descriptionForModel:
+        'Fetch a URL and extract its content as clean markdown. Useful for reading articles, documentation, and web pages.\n' +
+        'Parameters:\n' +
+        '  url (required) — the URL to fetch\n' +
+        '  max_length (optional, default 5000) — maximum characters to return\n' +
+        '  start_index (optional, default 0) — character offset to start from',
+      icon: 'Globe',
+    },
+    params: {
+      type: 'object',
+      properties: {
+        url: { type: 'string', description: 'The URL to fetch and extract content from.' },
+        max_length: { type: 'integer', description: 'Maximum number of characters to return (default: 5000).', default: 5000 },
+        start_index: { type: 'integer', description: 'Start content from this character index (default: 0).', default: 0 },
+      },
+      required: ['url'],
+    },
+    async handler(params: { url: string; max_length?: number; start_index?: number }) {
+      const { url, max_length = 5000, start_index = 0 } = params;
+      const result = await runExtract(url);
+      if (result.error) {
+        return `Error: ${result.error}`;
+      }
+      const content = result.content || '';
+      const sliced = content.slice(start_index, start_index + max_length);
+      return sliced || 'No content found at the specified index.';
     },
   },
 };

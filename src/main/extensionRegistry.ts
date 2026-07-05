@@ -4,7 +4,6 @@ import { app } from 'electron';
 import { createRequire } from 'module';
 import type { Extension, ExtensionManifest, ExtensionToolDef } from '../extensions/types';
 import { tools as timeTools, manifest as timeManifest } from '../extensions/time';
-import { tools as webTools, manifest as webManifest } from '../extensions/web';
 import { tools as filesystemTools, manifest as filesystemManifest } from '../extensions/filesystem';
 import { tools as gitTools, manifest as gitManifest } from '../extensions/git';
 import { tools as memoryTools, manifest as memoryManifest } from '../extensions/memory';
@@ -15,7 +14,6 @@ import { tools as ddgSearchTools, manifest as ddgSearchManifest } from '../exten
 
 const BUILT_IN_EXTENSIONS: Array<{ tools: Record<string, ExtensionToolDef>; manifest: ExtensionManifest }> = [
   { tools: timeTools, manifest: timeManifest as ExtensionManifest },
-  { tools: webTools, manifest: webManifest as ExtensionManifest },
   { tools: filesystemTools, manifest: filesystemManifest as ExtensionManifest },
   { tools: gitTools, manifest: gitManifest as ExtensionManifest },
   { tools: memoryTools, manifest: memoryManifest as ExtensionManifest },
