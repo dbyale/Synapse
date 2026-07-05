@@ -2,223 +2,139 @@ import type { ExtensionToolDef } from '../types';
 import { createMemoryManager } from '../../main/functions/memory';
 import manifest from './manifest.json';
 
-const memory = createMemoryManager('./memory.json');
+const memory = createMemoryManager();
 
 export const tools: Record<string, ExtensionToolDef> = {
-  create_entities: {
+  save_memory: {
     meta: {
-      name: 'create_entities',
-      label: 'Create Entities',
-      description: 'Create new entities in the memory knowledge graph',
-      icon: 'Boxes',
+      name: 'save_memory',
+      label: 'Save Memory',
+      description: 'Save or update a memory as a markdown file in local storage.',
+      descriptionForModel:
+        'Save a new memory or update an existing one. Each memory is stored as a markdown (.md) file in the app\'s local user data directory.\n' +
+        'If a memory with the same title already exists, it will be updated (preserving the original creation date, type, and tags unless new values are provided).\n' +
+        'Use this to persistently store information about people, projects, concepts, events, or anything else you want the AI to remember across conversations.\n' +
+        'Parameters:\n' +
+        '  title (required) — unique title for the memory (used as the filename)\n' +
+        '  content (required) — markdown body content with observations, notes, details\n' +
+        '  type (optional) — category: person, place, concept, event, project, code, book, etc.\n' +
+        '  tags (optional) — array of tag strings for categorization and search\n' +
+        'TIP: Use [[WikiLinks]] in content to cross-reference other memories (e.g. [[Project Alpha]]).',
+      icon: 'Save',
     },
     params: {
       type: 'object',
       properties: {
-        entities: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              name: { type: 'string', description: 'Name of the entity' },
-              entityType: { type: 'string', description: 'Type of the entity' },
-              observations: { type: 'array', items: { type: 'string' }, description: 'Initial observations about the entity' },
-            },
-          },
-          description: 'Array of entities to create',
-        },
+        title: { type: 'string', description: 'Unique title for the memory (used as the filename).' },
+        content: { type: 'string', description: 'Markdown body content with observations, notes, and details.' },
+        type: { type: 'string', description: 'Category: person, place, concept, event, project, code, book, etc.' },
+        tags: { type: 'array', items: { type: 'string' }, description: 'Tags for categorization.' },
       },
-      required: ['entities'],
+      required: ['title', 'content'],
     },
-    async handler(params: { entities: Array<{ name: string; entityType: string; observations?: string[] }> }) {
-      try { return await memory.createEntities(params.entities); }
-      catch (error) { return { error: `Failed to create entities: ${error instanceof Error ? error.message : String(error)}` }; }
+    async handler(params: { title: string; content: string; type?: string; tags?: string[] }) {
+      return await memory.saveMemory(params.title, params.content, params.type, params.tags);
     },
   },
-  create_relations: {
+
+  read_memory: {
     meta: {
-      name: 'create_relations',
-      label: 'Create Relations',
-      description: 'Create relations between existing entities in the memory graph',
-      icon: 'Link',
+      name: 'read_memory',
+      label: 'Read Memory',
+      description: 'Read a memory markdown file by title and return its full content with metadata.',
+      descriptionForModel:
+        'Read a specific memory by its title. Returns the full markdown content, frontmatter metadata (type, tags, created, modified), and any cross-references found via [[WikiLinks]].\n' +
+        'If the memory is not found, use search_memories or list_memories to find available memories.\n' +
+        'Parameters:\n' +
+        '  title (required) — the memory title to read',
+      icon: 'FileText',
     },
     params: {
       type: 'object',
       properties: {
-        relations: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              from: { type: 'string', description: 'Source entity name' },
-              to: { type: 'string', description: 'Target entity name' },
-              relationType: { type: 'string', description: 'Type of the relation' },
-            },
-          },
-          description: 'Array of relations to create',
-        },
+        title: { type: 'string', description: 'The memory title to read.' },
       },
-      required: ['relations'],
+      required: ['title'],
     },
-    async handler(params: { relations: Array<{ from: string; to: string; relationType: string }> }) {
-      try { return await memory.createRelations(params.relations); }
-      catch (error) { return { error: `Failed to create relations: ${error instanceof Error ? error.message : String(error)}` }; }
-    },
-  },
-  add_observations: {
-    meta: {
-      name: 'add_observations',
-      label: 'Add Observations',
-      description: 'Add observations to an existing entity in the memory graph',
-      icon: 'Edit',
-    },
-    params: {
-      type: 'object',
-      properties: {
-        updates: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              entityName: { type: 'string', description: 'Name of the entity' },
-              observations: { type: 'array', items: { type: 'string' }, description: 'Observations to add' },
-            },
-          },
-          description: 'Array of entity updates with observations',
-        },
-      },
-      required: ['updates'],
-    },
-    async handler(params: { updates: Array<{ entityName: string; observations: string[] }> }) {
-      try { return await memory.addObservations(params.updates); }
-      catch (error) { return { error: `Failed to add observations: ${error instanceof Error ? error.message : String(error)}` }; }
+    async handler(params: { title: string }) {
+      return await memory.readMemory(params.title);
     },
   },
-  delete_entities: {
+
+  search_memories: {
     meta: {
-      name: 'delete_entities',
-      label: 'Delete Entities',
-      description: 'Delete entities and their associated relations from the memory graph',
-      icon: 'Scissors',
-    },
-    params: {
-      type: 'object',
-      properties: {
-        entityNames: { type: 'array', items: { type: 'string' }, description: 'Names of entities to delete' },
-      },
-      required: ['entityNames'],
-    },
-    async handler(params: { entityNames: string[] }) {
-      try { return await memory.deleteEntities(params.entityNames); }
-      catch (error) { return { error: `Failed to delete entities: ${error instanceof Error ? error.message : String(error)}` }; }
-    },
-  },
-  delete_observations: {
-    meta: {
-      name: 'delete_observations',
-      label: 'Delete Observations',
-      description: 'Delete specific observations from an entity in the memory graph',
-      icon: 'Scissors',
-    },
-    params: {
-      type: 'object',
-      properties: {
-        updates: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              entityName: { type: 'string', description: 'Name of the entity' },
-              observations: { type: 'array', items: { type: 'string' }, description: 'Observations to delete' },
-            },
-          },
-          description: 'Array of entity updates with observations to delete',
-        },
-      },
-      required: ['updates'],
-    },
-    async handler(params: { updates: Array<{ entityName: string; observations: string[] }> }) {
-      try { return await memory.deleteObservations(params.updates); }
-      catch (error) { return { error: `Failed to delete observations: ${error instanceof Error ? error.message : String(error)}` }; }
-    },
-  },
-  delete_relations: {
-    meta: {
-      name: 'delete_relations',
-      label: 'Delete Relations',
-      description: 'Delete specific relations between entities in the memory graph',
-      icon: 'Scissors',
-    },
-    params: {
-      type: 'object',
-      properties: {
-        relations: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              from: { type: 'string', description: 'Source entity name' },
-              to: { type: 'string', description: 'Target entity name' },
-              relationType: { type: 'string', description: 'Type of the relation' },
-            },
-          },
-          description: 'Array of relations to delete',
-        },
-      },
-      required: ['relations'],
-    },
-    async handler(params: { relations: Array<{ from: string; to: string; relationType: string }> }) {
-      try { return await memory.deleteRelations(params.relations); }
-      catch (error) { return { error: `Failed to delete relations: ${error instanceof Error ? error.message : String(error)}` }; }
-    },
-  },
-  read_graph: {
-    meta: {
-      name: 'read_graph',
-      label: 'Read Graph',
-      description: 'Read the full memory knowledge graph including all entities and relations',
-      icon: 'Network',
-    },
-    params: { type: 'object', properties: {} },
-    async handler() {
-      try { return await memory.readGraph(); }
-      catch (error) { return { error: `Failed to read graph: ${error instanceof Error ? error.message : String(error)}` }; }
-    },
-  },
-  search_nodes: {
-    meta: {
-      name: 'search_nodes',
-      label: 'Search Nodes',
-      description: 'Search entities and observations in the memory graph by keyword',
+      name: 'search_memories',
+      label: 'Search Memories',
+      description: 'Search across all memory files by keyword, type, or tag.',
+      descriptionForModel:
+        'Search all saved memories for a keyword. The query searches across memory titles, body content, types, and tags. Returns results with a content snippet and related memory cross-references.\n' +
+        'You can optionally filter by type (e.g. "person", "project") or exact tag match.\n' +
+        'Parameters:\n' +
+        '  query (required) — keyword to search for in titles, content, types, and tags\n' +
+        '  type (optional) — filter by exact memory type (person, place, concept, event, project, etc.)\n' +
+        '  tag (optional) — filter by exact tag name',
       icon: 'Search',
     },
     params: {
       type: 'object',
-      properties: { query: { type: 'string', description: 'Search query term' } },
+      properties: {
+        query: { type: 'string', description: 'Keyword to search for in titles, content, types, and tags.' },
+        type: { type: 'string', description: 'Filter by exact memory type (person, place, concept, etc.).' },
+        tag: { type: 'string', description: 'Filter by exact tag name.' },
+      },
       required: ['query'],
     },
-    async handler(params: { query: string }) {
-      try { return await memory.searchNodes({ searchTerm: params.query, observationKeyword: params.query }); }
-      catch (error) { return { error: `Failed to search nodes: ${error instanceof Error ? error.message : String(error)}` }; }
+    async handler(params: { query: string; type?: string; tag?: string }) {
+      return await memory.searchMemories(params.query, params.type, params.tag);
     },
   },
-  open_nodes: {
+
+  delete_memory: {
     meta: {
-      name: 'open_nodes',
-      label: 'Open Nodes',
-      description: 'Retrieve specific entities and the relations between them from the memory graph',
-      icon: 'Target',
+      name: 'delete_memory',
+      label: 'Delete Memory',
+      description: 'Delete a memory markdown file by title.',
+      descriptionForModel:
+        'Permanently delete a memory by its title. This removes the markdown file from disk. This action cannot be undone.\n' +
+        'Parameters:\n' +
+        '  title (required) — the memory title to delete',
+      icon: 'Trash2',
     },
     params: {
       type: 'object',
       properties: {
-        names: { type: 'array', items: { type: 'string' }, description: 'Names of nodes to open' },
+        title: { type: 'string', description: 'The memory title to delete.' },
       },
-      required: ['names'],
+      required: ['title'],
     },
-    async handler(params: { names: string[] }) {
-      try { return await memory.openNodes(params.names); }
-      catch (error) { return { error: `Failed to open nodes: ${error instanceof Error ? error.message : String(error)}` }; }
+    async handler(params: { title: string }) {
+      return await memory.deleteMemory(params.title);
+    },
+  },
+
+  list_memories: {
+    meta: {
+      name: 'list_memories',
+      label: 'List Memories',
+      description: 'List all saved memories, optionally filtered by type or tag.',
+      descriptionForModel:
+        'List all saved memories with their metadata (title, type, tags, created, modified). Results are sorted by modification date (newest first).\n' +
+        'You can optionally filter by type or tag to narrow the list.\n' +
+        'This is useful for getting an overview of what information is stored, or for finding memory titles to pass to read_memory.\n' +
+        'Parameters:\n' +
+        '  type (optional) — filter by exact memory type (person, place, concept, event, project, etc.)\n' +
+        '  tag (optional) — filter by exact tag name',
+      icon: 'List',
+    },
+    params: {
+      type: 'object',
+      properties: {
+        type: { type: 'string', description: 'Filter by exact memory type (person, place, concept, etc.).' },
+        tag: { type: 'string', description: 'Filter by exact tag name.' },
+      },
+    },
+    async handler(params: { type?: string; tag?: string }) {
+      return await memory.listMemories(params.type, params.tag);
     },
   },
 };

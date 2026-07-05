@@ -1,323 +1,282 @@
-import { promises as fs } from 'fs';
-import path from 'path';
+import { readFile, writeFile, readdir, unlink, mkdir } from 'fs/promises';
+import { existsSync } from 'fs';
+import { join, parse } from 'path';
+import { app } from 'electron';
 
-/**
- * Knowledge Graph Data Structures
- */
-export interface Entity {
-  name: string;
-  entityType: string;
-  observations: string[];
+// ──────────────────────────────────────────────
+// Internal helpers
+// ──────────────────────────────────────────────
+
+interface ParsedFrontmatter {
+  frontmatter: Record<string, string>;
+  body: string;
 }
 
-export interface Relation {
-  from: string;
-  to: string;
-  relationType: string;
+function parseFrontmatter(content: string): ParsedFrontmatter {
+  const lines = content.split('\n');
+  if (lines.length < 2 || lines[0].trim() !== '---') {
+    return { frontmatter: {}, body: content };
+  }
+  const endIndex = lines.findIndex((line, i) => i > 0 && line.trim() === '---');
+  if (endIndex === -1) return { frontmatter: {}, body: content };
+  const frontmatter: Record<string, string> = {};
+  for (let i = 1; i < endIndex; i++) {
+    const match = lines[i].match(/^([^:]+):\s*(.*)$/);
+    if (match) frontmatter[match[1].trim()] = match[2].trim();
+  }
+  const body = lines.slice(endIndex + 1).join('\n').trim();
+  return { frontmatter, body };
 }
 
-export interface KnowledgeGraph {
-  entities: Entity[];
-  relations: Relation[];
+function buildMarkdown(opts: {
+  title: string;
+  body: string;
+  type?: string;
+  tags?: string[];
+  created: string;
+  modified: string;
+}): string {
+  const lines = ['---'];
+  lines.push(`title: ${opts.title}`);
+  if (opts.type) lines.push(`type: ${opts.type}`);
+  if (opts.tags && opts.tags.length > 0) lines.push(`tags: ${opts.tags.join(', ')}`);
+  lines.push(`created: ${opts.created}`);
+  lines.push(`modified: ${opts.modified}`);
+  lines.push('---');
+  lines.push('');
+  lines.push(opts.body);
+  return lines.join('\n');
 }
 
-/**
- * MemoryManager: Handles all knowledge graph operations with file persistence
- */
+function parseTags(raw: string): string[] {
+  return raw.split(',').map((t) => t.trim()).filter(Boolean);
+}
+
+function extractWikiLinks(content: string): string[] {
+  const links: string[] = [];
+  const regex = /\[\[([^\]]+)\]\]/g;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(content)) !== null) links.push(match[1].trim());
+  return [...new Set(links)];
+}
+
+function sanitizeFilename(title: string): string {
+  return title.toLowerCase().replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') + '.md';
+}
+
+function createSnippet(body: string, query?: string, maxLen = 150): string {
+  if (!body) return '';
+  if (!query) return body.length > maxLen ? body.slice(0, maxLen) + '...' : body;
+  const q = query.toLowerCase();
+  const idx = body.toLowerCase().indexOf(q);
+  if (idx === -1) return body.length > maxLen ? body.slice(0, maxLen) + '...' : body;
+  const start = Math.max(0, idx - 40);
+  const end = Math.min(body.length, idx + q.length + 60);
+  let snippet = '';
+  if (start > 0) snippet += '...';
+  snippet += body.slice(start, end);
+  if (end < body.length) snippet += '...';
+  return snippet;
+}
+
+// ──────────────────────────────────────────────
+// Public types
+// ──────────────────────────────────────────────
+
+export interface MemoryMeta {
+  title: string;
+  type: string;
+  tags: string[];
+  created: string;
+  modified: string;
+}
+
+export interface MemoryItem extends MemoryMeta {
+  snippet: string;
+  related_memories: string[];
+}
+
+// ──────────────────────────────────────────────
+// Memory Manager
+// ──────────────────────────────────────────────
+
 export class MemoryManager {
-  private filePath: string;
+  private baseDir: string;
 
-  constructor(filePath: string = './memory.json') {
-    this.filePath = filePath;
+  constructor(baseDir?: string) {
+    this.baseDir = baseDir || join(app.getPath('userData'), 'memories');
   }
 
-  /**
-   * Load the knowledge graph from file
-   * Returns empty graph if file doesn't exist
-   */
-  private async loadGraph(): Promise<KnowledgeGraph> {
-    try {
-      const data = await fs.readFile(this.filePath, 'utf-8');
-      return JSON.parse(data);
-    } catch (error) {
-      // File doesn't exist or is invalid JSON - return empty graph
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-        return { entities: [], relations: [] };
-      }
-      // If it's a JSON parse error, also return empty graph
-      if (error instanceof SyntaxError) {
-        return { entities: [], relations: [] };
-      }
-      throw error;
-    }
+  private async ensureDir(): Promise<void> {
+    if (!existsSync(this.baseDir)) await mkdir(this.baseDir, { recursive: true });
   }
 
-  /**
-   * Save the knowledge graph to file
-   */
-  private async saveGraph(graph: KnowledgeGraph): Promise<void> {
-    // Ensure directory exists
-    const dir = path.dirname(this.filePath);
-    if (dir !== '.') {
-      await fs.mkdir(dir, { recursive: true });
-    }
-    await fs.writeFile(this.filePath, JSON.stringify(graph, null, 2), 'utf-8');
-  }
-
-  /**
-   * Create multiple entities (ignore duplicates by name)
-   */
-  async createEntities(
-    entities: Array<{ name: string; entityType: string }>,
-  ): Promise<{ created: number; skipped: number }> {
-    const graph = await this.loadGraph();
-    const existingNames = new Set(graph.entities.map((e) => e.name));
-
-    let created = 0;
-    for (const entity of entities) {
-      if (!existingNames.has(entity.name)) {
-        graph.entities.push({
-          name: entity.name,
-          entityType: entity.entityType,
-          observations: [],
-        });
-        existingNames.add(entity.name);
-        created++;
-      }
-    }
-
-    await this.saveGraph(graph);
-    return { created, skipped: entities.length - created };
-  }
-
-  /**
-   * Create multiple relations (skip duplicates)
-   */
-  async createRelations(
-    relations: Array<{ from: string; to: string; relationType: string }>,
-  ): Promise<{ created: number; skipped: number }> {
-    const graph = await this.loadGraph();
-
-    // Check that both entities exist
-    const entityNames = new Set(graph.entities.map((e) => e.name));
-    const validRelations = relations.filter(
-      (r) => entityNames.has(r.from) && entityNames.has(r.to),
-    );
-
-    // Remove duplicates
-    const relationKey = (r: Relation) => `${r.from}|${r.to}|${r.relationType}`;
-    const existingKeys = new Set(graph.relations.map(relationKey));
-
-    let created = 0;
-    for (const relation of validRelations) {
-      const key = relationKey(relation);
-      if (!existingKeys.has(key)) {
-        graph.relations.push(relation);
-        existingKeys.add(key);
-        created++;
-      }
-    }
-
-    await this.saveGraph(graph);
-    return { created, skipped: relations.length - created };
-  }
-
-  /**
-   * Add observations to existing entities
-   * Fails if entity doesn't exist
-   */
-  async addObservations(
-    updates: Array<{ entityName: string; observations: string[] }>,
-  ): Promise<{ success: boolean; message: string; updated: number }> {
-    const graph = await this.loadGraph();
-    const entityMap = new Map(graph.entities.map((e) => [e.name, e]));
-
-    let updated = 0;
-    const errors: string[] = [];
-
-    for (const update of updates) {
-      const entity = entityMap.get(update.entityName);
-      if (!entity) {
-        errors.push(`Entity "${update.entityName}" not found`);
-        continue; // ← skip, don't return
-      }
-
-      // Add non-duplicate observations
-      const existingSet = new Set(entity.observations);
-      for (const obs of update.observations) {
-        if (!existingSet.has(obs)) {
-          entity.observations.push(obs);
-          existingSet.add(obs);
-        }
-      }
-      updated++;
-    }
-
-    // Always save — even if some entities were missing
-    await this.saveGraph(graph);
-
+  private async readFileMeta(filePath: string) {
+    const content = await readFile(filePath, 'utf-8');
+    const { frontmatter, body } = parseFrontmatter(content);
+    const title = frontmatter['title'] || parse(filePath).name;
     return {
-      success: errors.length === 0,
-      message:
-        errors.length === 0
-          ? 'Observations added'
-          : `Partial success — errors: ${errors.join('; ')}`,
-      updated,
+      title,
+      type: frontmatter['type'] || '',
+      tags: parseTags(frontmatter['tags'] || ''),
+      created: frontmatter['created'] || '',
+      modified: frontmatter['modified'] || '',
+      content: body,
     };
   }
 
-  /**
-   * Delete entities and cascade-delete their relations
-   */
-  async deleteEntities(entityNames: string[]): Promise<{ deleted: number }> {
-    const graph = await this.loadGraph();
-    const namesToDelete = new Set(entityNames);
+  async saveMemory(
+    title: string,
+    content: string,
+    type?: string,
+    tags?: string[],
+  ): Promise<{ success: boolean; title: string; file: string; created?: string; error?: string }> {
+    try {
+      if (!title || !title.trim()) return { success: false, title: '', file: '', error: 'Title is required.' };
+      if (content === undefined || content === null) return { success: false, title, file: '', error: 'Content is required.' };
+      await this.ensureDir();
+      const filename = sanitizeFilename(title.trim());
+      const filePath = join(this.baseDir, filename);
+      const now = new Date().toISOString();
+      let created = now;
+      let finalType = type;
+      let finalTags = tags;
 
-    // Remove entities
-    graph.entities = graph.entities.filter((e) => !namesToDelete.has(e.name));
-
-    // Cascade-delete relations involving deleted entities
-    graph.relations = graph.relations.filter(
-      (r) => !namesToDelete.has(r.from) && !namesToDelete.has(r.to),
-    );
-
-    await this.saveGraph(graph);
-    return { deleted: entityNames.length };
-  }
-
-  /**
-   * Remove specific observations from entities (silent if not found)
-   */
-  async deleteObservations(
-    updates: Array<{ entityName: string; observations: string[] }>,
-  ): Promise<{ success: boolean }> {
-    const graph = await this.loadGraph();
-    const entityMap = new Map(graph.entities.map((e) => [e.name, e]));
-
-    for (const update of updates) {
-      const entity = entityMap.get(update.entityName);
-      if (entity) {
-        const obsSet = new Set(update.observations);
-        entity.observations = entity.observations.filter(
-          (obs) => !obsSet.has(obs),
-        );
+      if (existsSync(filePath)) {
+        try {
+          const existing = await this.readFileMeta(filePath);
+          created = existing.created || now;
+          if (!finalType) finalType = existing.type;
+          if (!finalTags || finalTags.length === 0) finalTags = existing.tags;
+        } catch {
+          // ignore
+        }
       }
+
+      const markdown = buildMarkdown({ title: title.trim(), body: content, type: finalType, tags: finalTags, created, modified: now });
+      await writeFile(filePath, markdown, 'utf-8');
+      return { success: true, title: title.trim(), file: filename, created };
+    } catch (error) {
+      return { success: false, title, file: '', error: error instanceof Error ? error.message : String(error) };
     }
-
-    await this.saveGraph(graph);
-    return { success: true };
   }
 
-  /**
-   * Remove specific relations (silent if not found)
-   */
-  async deleteRelations(
-    relations: Array<{ from: string; to: string; relationType: string }>,
-  ): Promise<{ deleted: number }> {
-    const graph = await this.loadGraph();
-    const relationKey = (r: Relation) => `${r.from}|${r.to}|${r.relationType}`;
-    const keysToDelete = new Set(relations.map(relationKey));
-
-    const initialLength = graph.relations.length;
-    graph.relations = graph.relations.filter(
-      (r) => !keysToDelete.has(relationKey(r)),
-    );
-
-    await this.saveGraph(graph);
-    return { deleted: initialLength - graph.relations.length };
-  }
-
-  /**
-   * Return the entire knowledge graph
-   */
-  async readGraph(): Promise<KnowledgeGraph> {
-    return this.loadGraph();
-  }
-
-  /**
-   * Search entities by name, type, or observation content
-   * Returns matching entities + all relations involving those entities
-   */
-  async searchNodes(query: {
-    searchTerm?: string;
-    entityType?: string;
-    observationKeyword?: string;
-  }): Promise<{
-    entities: Entity[];
-    relations: Relation[];
+  async readMemory(
+    title: string,
+  ): Promise<{
+    success: boolean;
+    title?: string;
+    type?: string;
+    tags?: string[];
+    content?: string;
+    related_memories?: string[];
+    created?: string;
+    modified?: string;
+    error?: string;
   }> {
-    const graph = await this.loadGraph();
-    const matchedEntityNames = new Set<string>();
+    try {
+      if (!title || !title.trim()) return { success: false, error: 'Title is required.' };
+      await this.ensureDir();
+      const filename = sanitizeFilename(title.trim());
+      const filePath = join(this.baseDir, filename);
+      if (!existsSync(filePath)) return { success: false, error: `Memory "${title.trim()}" not found. Use list_memories or search_memories to find available memories.` };
 
-    // Filter by search term (matches name)
-    if (query.searchTerm) {
-      const term = query.searchTerm.toLowerCase();
-      graph.entities.forEach((e) => {
-        if (e.name.toLowerCase().includes(term)) {
-          matchedEntityNames.add(e.name);
-        }
-      });
+      const { title: memTitle, type, tags, created, modified, content } = await this.readFileMeta(filePath);
+      return { success: true, title: memTitle, type, tags, content, related_memories: extractWikiLinks(content), created, modified };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
-
-    // Filter by entity type
-    if (query.entityType) {
-      graph.entities.forEach((e) => {
-        if (e.entityType === query.entityType) {
-          matchedEntityNames.add(e.name);
-        }
-      });
-    }
-
-    // Filter by observation keyword
-    if (query.observationKeyword) {
-      const keyword = query.observationKeyword.toLowerCase();
-      graph.entities.forEach((e) => {
-        if (e.observations.some((obs) => obs.toLowerCase().includes(keyword))) {
-          matchedEntityNames.add(e.name);
-        }
-      });
-    }
-
-    // Get matched entities
-    const entities = graph.entities.filter((e) =>
-      matchedEntityNames.has(e.name),
-    );
-
-    // Get relations involving matched entities
-    const relations = graph.relations.filter(
-      (r) => matchedEntityNames.has(r.from) || matchedEntityNames.has(r.to),
-    );
-
-    return { entities, relations };
   }
 
-  /**
-   * Retrieve specific entities by name + relations BETWEEN them
-   */
-  async openNodes(entityNames: string[]): Promise<{
-    entities: Entity[];
-    relations: Relation[];
+  async searchMemories(
+    query?: string,
+    type?: string,
+    tag?: string,
+  ): Promise<{
+    success: boolean;
+    results: MemoryItem[];
+    total: number;
+    error?: string;
   }> {
-    const graph = await this.loadGraph();
-    const namesSet = new Set(entityNames);
+    try {
+      await this.ensureDir();
+      if (!existsSync(this.baseDir)) return { success: true, results: [], total: 0 };
+      const files = await readdir(this.baseDir);
+      const results: MemoryItem[] = [];
 
-    // Get requested entities
-    const entities = graph.entities.filter((e) => namesSet.has(e.name));
+      for (const file of files) {
+        if (!file.endsWith('.md')) continue;
+        try {
+          const { title, type: fileType, tags, created, modified, content } = await this.readFileMeta(join(this.baseDir, file));
+          const q = (query || '').toLowerCase();
+          const matchesQuery = !query || title.toLowerCase().includes(q) || fileType.toLowerCase().includes(q) || content.toLowerCase().includes(q) || tags.some((t) => t.toLowerCase().includes(q));
+          const matchesType = !type || fileType === type;
+          const matchesTag = !tag || tags.includes(tag);
+          if (matchesQuery && matchesType && matchesTag) {
+            results.push({ title, type: fileType, tags, snippet: createSnippet(content, query), related_memories: extractWikiLinks(content), created, modified });
+          }
+        } catch {
+          // skip unparseable
+        }
+      }
 
-    // Get relations BETWEEN the requested nodes only
-    const relations = graph.relations.filter(
-      (r) => namesSet.has(r.from) && namesSet.has(r.to),
-    );
+      return { success: true, results, total: results.length };
+    } catch (error) {
+      return { success: false, results: [], total: 0, error: error instanceof Error ? error.message : String(error) };
+    }
+  }
 
-    return { entities, relations };
+  async deleteMemory(
+    title: string,
+  ): Promise<{ success: boolean; title: string; deleted: boolean; error?: string }> {
+    try {
+      if (!title || !title.trim()) return { success: false, title: '', deleted: false, error: 'Title is required.' };
+      await this.ensureDir();
+      const filename = sanitizeFilename(title.trim());
+      const filePath = join(this.baseDir, filename);
+      if (!existsSync(filePath)) return { success: false, title: title.trim(), deleted: false, error: `Memory "${title.trim()}" not found.` };
+      await unlink(filePath);
+      return { success: true, title: title.trim(), deleted: true };
+    } catch (error) {
+      return { success: false, title, deleted: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
+  async listMemories(
+    type?: string,
+    tag?: string,
+  ): Promise<{
+    success: boolean;
+    memories: MemoryMeta[];
+    total: number;
+    error?: string;
+  }> {
+    try {
+      await this.ensureDir();
+      if (!existsSync(this.baseDir)) return { success: true, memories: [], total: 0 };
+      const files = await readdir(this.baseDir);
+      const memories: MemoryMeta[] = [];
+
+      for (const file of files) {
+        if (!file.endsWith('.md')) continue;
+        try {
+          const { title, type: fileType, tags, created, modified } = await this.readFileMeta(join(this.baseDir, file));
+          const matchesType = !type || fileType === type;
+          const matchesTag = !tag || tags.includes(tag);
+          if (matchesType && matchesTag) memories.push({ title, type: fileType, tags, created, modified });
+        } catch {
+          // skip
+        }
+      }
+
+      memories.sort((a, b) => b.modified.localeCompare(a.modified));
+      return { success: true, memories, total: memories.length };
+    } catch (error) {
+      return { success: false, memories: [], total: 0, error: error instanceof Error ? error.message : String(error) };
+    }
   }
 }
 
-/**
- * Factory function for creating a MemoryManager instance
- */
-export function createMemoryManager(
-  filePath: string = './memory.json',
-): MemoryManager {
-  return new MemoryManager(filePath);
+export function createMemoryManager(baseDir?: string): MemoryManager {
+  return new MemoryManager(baseDir);
 }
