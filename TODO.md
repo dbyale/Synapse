@@ -6,8 +6,10 @@
 
 # Chat:
   * Set default model
+  * Better scroll hooking
   * Cancel model loading
   * Token counter includes images/overhead
+  * Contain tool calls while thinking within the initial thinking section
   ## Uploads
     * Add text-based filetypes to upload [File->MD](https://github.com/microsoft/markitdown)
     * Official LLama CPP video support rather than frame extractor
@@ -16,10 +18,20 @@
       * Current frame extractor does not extract audio
     * Audio Support
       * Similar to video support, appears to be broken
+  ## Stored messages
+    * Save sessions to localstorage per-profile
+      * Delete/rename sessions
+      * Default name is start of user input
+      * New Sessions extension
+        * AI can rename current/previous session
+        * Can access previous sessions
+    * Allow exporting of sessions as MD
+    * Allow easy clearing of sessions
 
 # Models:
   * Search
-    * Return more data per query (settings)
+    * Return more data per query
+      * Cache results instead of rendering too many elements, then pull from cache rather than re-search on scroll
     * Check for equivelent HF Resolvers (higher API Limit)
       * Warn on other
         * Not sure what file is, will be treated as model
@@ -57,8 +69,7 @@
 
 # Settings:
   * Optional HF token
-  * Models returned per API request
-    * (Maybe limit those shown at a time?, Performance problems seem to stem from extreme amount of elements rendered)
+  * Setting to automatically expand thinking sections, or automatically contract them after finish
 
 # Maintenance:
   * Clear unnecessary packages
