@@ -707,7 +707,7 @@ export default function ChatPage() {
           if (isRunning) {
             const { contextSize } = await window.electronAPI.chatContextSize();
             if (contextSize !== null && contextSize > 0) {
-              if (!abortController.cancelled) {
+              if (!abortController.cancelled && myLoadId === persistentLastLoadId) {
                 setMaxTokens(contextSize);
                 setLoadError(null);
               }
@@ -738,16 +738,12 @@ export default function ChatPage() {
         await unloadModel();
       }
 
-      await new Promise<void>((resolve) => {
-        setTimeout(resolve, 1000);
-      });
-
       try {
-        if (abortController.cancelled) return;
+        if (abortController.cancelled || myLoadId !== persistentLastLoadId) return;
 
         const res = await window.electronAPI.chatLoadProfile(profile);
 
-        if (abortController.cancelled) return;
+        if (abortController.cancelled || myLoadId !== persistentLastLoadId) return;
 
         if (res.success) {
           if ((res as any).backend) {
@@ -769,7 +765,7 @@ export default function ChatPage() {
 
           const { contextSize } = await window.electronAPI.chatContextSize();
 
-          if (!abortController.cancelled) {
+          if (!abortController.cancelled && myLoadId === persistentLastLoadId) {
             if (contextSize !== null && contextSize > 0) {
               setMaxTokens(contextSize);
               setLoadError(null);
@@ -1390,18 +1386,19 @@ export default function ChatPage() {
 
     setLoadError(null);
 
+    if (messages.length > 0) {
+      setPendingProfileId(newProfileId);
+      setShowConfirmDialog(true);
+      return;
+    }
+
     if (persistentLoadedProfileId || modelLoading) {
       persistentModelLoading = false;
       setModelLoading(false);
       await unloadModel();
     }
 
-    if (messages.length > 0) {
-      setPendingProfileId(newProfileId);
-      setShowConfirmDialog(true);
-    } else {
-      setSelectedProfileId(newProfileId);
-    }
+    setSelectedProfileId(newProfileId);
   };
 
   const handleRetry = async () => {

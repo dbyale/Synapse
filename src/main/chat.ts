@@ -42,6 +42,9 @@ let chatFunctions: any = null;
 let activeTools: any[] = [];
 let emitFunctionEvent: any = null;
 
+// Ensures only one loadProfile() runs at a time
+let loadProfileMutex: Promise<void> = Promise.resolve();
+
 // --- Pending user input ---
 let pendingInputResolve: ((value: UserInputResponse) => void) | null = null;
 let pendingInputReject: ((err: Error) => void) | null = null;
@@ -397,178 +400,193 @@ export async function loadProfile(
   profile: Profile,
   onStatus?: (data: { phase: string; message: string }) => void,
 ): Promise<{ success: boolean; error?: string; profile?: any }> {
-  console.log('[chat] Loading Profile:', profile.name);
-  onStatus?.({ phase: 'fetching', message: `Fetching Profile…` });
-
-  let serverErrorLog = '';
+  const prevMutex = loadProfileMutex;
+  let releaseMutex: () => void;
+  loadProfileMutex = new Promise<void>((r) => { releaseMutex = r; });
+  await prevMutex;
 
   try {
-    // Start unload in background
-    const unloadPromise = unloadModel();
+    console.log('[chat] Loading Profile:', profile.name);
+    onStatus?.({ phase: 'fetching', message: `Fetching Profile…` });
 
-    // Cancel any in-flight system prompt preload
-    if (preloadAbortController) {
-      preloadAbortController.abort();
-      preloadAbortController = null;
-    }
+    let serverErrorLog = '';
 
-    // Prep work + optimizer run concurrently with old server shutdown
-    const settings = loadSettings();
-    const fullModelPath = path.join(getModelsDirectory(), profile.model);
-    const backendFolder = await detectBackend();
-    console.log(`Backend: ${backendFolder}`);
-    const serverBin =
-      process.platform === 'win32' ? 'llama-server.exe' : 'llama-server';
-    const serverPath = path.join(getAssetPath('bin', backendFolder), serverBin);
+    try {
+      // Start unload in background
+      const unloadPromise = unloadModel();
 
-    const vramMB = settings.allocatedVRAM ?? 4096;
-    const ramMB = settings.allocatedRAM ?? 8192;
+      // Cancel any in-flight system prompt preload
+      if (preloadAbortController) {
+        preloadAbortController.abort();
+        preloadAbortController = null;
+      }
 
-    const fullProjectorPath = profile.projector
-      ? path.join(getModelsDirectory(), profile.projector)
-      : undefined;
+      // Prep work + optimizer run concurrently with old server shutdown
+      const settings = loadSettings();
+      const fullModelPath = path.join(getModelsDirectory(), profile.model);
+      const backendFolder = await detectBackend();
+      console.log(`Backend: ${backendFolder}`);
+      const serverBin =
+        process.platform === 'win32' ? 'llama-server.exe' : 'llama-server';
+      const serverPath = path.join(getAssetPath('bin', backendFolder), serverBin);
 
-    let result: { ngl: number; ctx: number; memory: any };
-    let updatedProfile: any;
+      const vramMB = settings.allocatedVRAM ?? 4096;
+      const ramMB = settings.allocatedRAM ?? 8192;
 
-    const autoOptimizer = (profile as any).autoOptimizer;
-    const hasValidCustom =
-      autoOptimizer === 'custom' &&
-      typeof (profile as any).layers === 'number' &&
-      typeof (profile as any).contextSize === 'number';
-    const hasValidCached =
-      autoOptimizer &&
-      autoOptimizer !== 'custom' &&
-      typeof (profile as any).layers === 'number' &&
-      typeof (profile as any).contextSize === 'number' &&
-      (profile as any).allocatedVRAM === vramMB &&
-      (profile as any).allocatedRAM === ramMB;
+      const fullProjectorPath = profile.projector
+        ? path.join(getModelsDirectory(), profile.projector)
+        : undefined;
 
-    if (hasValidCustom || hasValidCached) {
-      result = {
-        ngl: (profile as any).layers,
-        ctx: (profile as any).contextSize,
-        memory: null,
-      };
-    } else {
-      const mode =
-        autoOptimizer && autoOptimizer !== 'custom'
-          ? autoOptimizer
-          : 'longest-context';
-      onStatus?.({ phase: 'solving', message: `Optimizing Profile "${profile.name}"…` });
-      const optResult = await getOrRunOptimizer(
+      let result: { ngl: number; ctx: number; memory: any };
+      let updatedProfile: any;
+
+      const autoOptimizer = (profile as any).autoOptimizer;
+      const hasValidCustom =
+        autoOptimizer === 'custom' &&
+        typeof (profile as any).layers === 'number' &&
+        typeof (profile as any).contextSize === 'number';
+      const hasValidCached =
+        autoOptimizer &&
+        autoOptimizer !== 'custom' &&
+        typeof (profile as any).layers === 'number' &&
+        typeof (profile as any).contextSize === 'number' &&
+        (profile as any).allocatedVRAM === vramMB &&
+        (profile as any).allocatedRAM === ramMB;
+
+      if (hasValidCustom || hasValidCached) {
+        result = {
+          ngl: (profile as any).layers,
+          ctx: (profile as any).contextSize,
+          memory: null,
+        };
+      } else {
+        const mode =
+          autoOptimizer && autoOptimizer !== 'custom'
+            ? autoOptimizer
+            : 'longest-context';
+        onStatus?.({ phase: 'solving', message: `Optimizing Profile "${profile.name}"…` });
+        const optResult = await getOrRunOptimizer(
+          fullModelPath,
+          vramMB,
+          ramMB,
+          mode === 'most-gpu',
+          fullProjectorPath,
+          (profile as any).kvOffload ?? true,
+          (profile as any).mmap ?? true,
+          (profile as any).cacheTypeK ?? 'f16',
+          (profile as any).cacheTypeV ?? 'f16',
+        );
+        result = optResult;
+        (profile as any).layers = optResult.ngl;
+        (profile as any).contextSize = optResult.ctx;
+        (profile as any).autoOptimizer = mode;
+        (profile as any).allocatedVRAM = vramMB;
+        (profile as any).allocatedRAM = ramMB;
+        updatedProfile = { ...profile };
+      }
+
+      // Check our Async unloader
+      onStatus?.({ phase: 'unloading', message: 'Unloading Previous Profile…' });
+      await unloadPromise;
+
+      lastResolvedMemory = result.memory;
+      currentContextSize = result.ctx;
+
+      onStatus?.({ phase: 'loadprofile', message: `Loading New Profile…` });
+      if (!chatFunctions)
+        chatFunctions = createChatFunctions();
+      activeTools = (profile.tools || [])
+        .map((t) => chatFunctions[t])
+        .filter(Boolean)
+        .map((f) => ({
+          type: 'function',
+          function: {
+            name:
+              f.name ||
+              Object.keys(chatFunctions).find((k) => chatFunctions[k] === f),
+            description: f.description,
+            parameters: f.params,
+          },
+        }));
+
+      const spawnArgs = [
+        '--model',
         fullModelPath,
-        vramMB,
-        ramMB,
-        mode === 'most-gpu',
-        fullProjectorPath,
-        (profile as any).kvOffload ?? true,
-        (profile as any).mmap ?? true,
-        (profile as any).cacheTypeK ?? 'f16',
-        (profile as any).cacheTypeV ?? 'f16',
-      );
-      result = optResult;
-      (profile as any).layers = optResult.ngl;
-      (profile as any).contextSize = optResult.ctx;
-      (profile as any).autoOptimizer = mode;
-      (profile as any).allocatedVRAM = vramMB;
-      (profile as any).allocatedRAM = ramMB;
-      updatedProfile = { ...profile };
+        '--n-gpu-layers',
+        (profile as any).gpuLayersAuto ? 'auto' : result.ngl.toString(),
+        '--ctx-size',
+        result.ctx.toString(),
+        '--port',
+        '8080',
+        '--host',
+        '127.0.0.1',
+        '--parallel',
+        '1',
+        '--metrics',
+      ];
+      if (profile.kvOffload === false) spawnArgs.push('--no-kv-offload');
+      if (profile.mmap === false) spawnArgs.push('--no-mmap');
+      if (profile.mlock === true) spawnArgs.push('--mlock');
+
+      if (fullProjectorPath) {
+        spawnArgs.push('--mmproj', fullProjectorPath);
+        currentProjector = fullProjectorPath;
+      } else {
+        currentProjector = null;
+      }
+
+      console.log(`NGL=${result.ngl}, Context=${result.ctx}, autoOptimizer=${(profile as any).autoOptimizer}`);
+      onStatus?.({ phase: 'starting', message: 'Loading AI Model…' });
+
+      // Defensive kill: ensure no stale server process before spawning
+      if (serverProcess) {
+        await unloadModel();
+      }
+
+      serverProcess = spawn(serverPath, spawnArgs);
+
+      serverProcess.stderr?.on('data', (d) => {
+        serverErrorLog += d.toString();
+      });
+
+      let ready = false;
+      for (let i = 0; i < 45; i++) {
+        try {
+          const res = await fetch('http://127.0.0.1:8080/health');
+          if (res.ok) {
+            ready = true;
+            break;
+          }
+        } catch (e) {}
+        await new Promise((r) => setTimeout(r, 1000));
+      }
+
+      if (!ready) {
+        console.error('[llama-server] Startup failed. Logs:\n', serverErrorLog);
+        throw new Error('Inference server failed to respond.');
+      }
+
+      const systemTokens = (await tokenize(profile.systemPrompt)) ?? 0;
+      const toolTokens =
+        activeTools.length > 0
+          ? ((await tokenize(JSON.stringify(activeTools))) ?? 0)
+          : 0;
+      lastUsage = { used: systemTokens + toolTokens, total: result.ctx };
+
+      onStatus?.({ phase: 'ready', message: '' });
+      currentProfile = profile;
+      messageHistory = [{ role: 'system', content: profile.systemPrompt }];
+
+      if (updatedProfile) {
+        return { success: true, profile: updatedProfile, backend: backendFolder };
+      }
+      return { success: true, backend: backendFolder };
+    } catch (error: any) {
+      onStatus?.({ phase: 'ready', message: '' });
+      return { success: false, error: error.message };
     }
-
-    lastResolvedMemory = result.memory;
-    currentContextSize = result.ctx;
-
-    // Check our Async unloader
-    onStatus?.({ phase: 'unloading', message: 'Unloading Previous Profile…' });
-    await unloadPromise;
-
-    onStatus?.({ phase: 'loadprofile', message: `Loading New Profile…` });
-    if (!chatFunctions)
-      chatFunctions = createChatFunctions();
-    activeTools = (profile.tools || [])
-      .map((t) => chatFunctions[t])
-      .filter(Boolean)
-      .map((f) => ({
-        type: 'function',
-        function: {
-          name:
-            f.name ||
-            Object.keys(chatFunctions).find((k) => chatFunctions[k] === f),
-          description: f.description,
-          parameters: f.params,
-        },
-      }));
-
-    const spawnArgs = [
-      '--model',
-      fullModelPath,
-      '--n-gpu-layers',
-      (profile as any).gpuLayersAuto ? 'auto' : result.ngl.toString(),
-      '--ctx-size',
-      result.ctx.toString(),
-      '--port',
-      '8080',
-      '--host',
-      '127.0.0.1',
-      '--parallel',
-      '1',
-      '--metrics',
-    ];
-    if (profile.kvOffload === false) spawnArgs.push('--no-kv-offload');
-    if (profile.mmap === false) spawnArgs.push('--no-mmap');
-    if (profile.mlock === true) spawnArgs.push('--mlock');
-
-    if (fullProjectorPath) {
-      spawnArgs.push('--mmproj', fullProjectorPath);
-      currentProjector = fullProjectorPath;
-    } else {
-      currentProjector = null;
-    }
-
-    console.log(`NGL=${result.ngl}, Context=${result.ctx}, autoOptimizer=${(profile as any).autoOptimizer}`);
-    onStatus?.({ phase: 'starting', message: 'Loading AI Model…' });
-    serverProcess = spawn(serverPath, spawnArgs);
-
-    serverProcess.stderr?.on('data', (d) => {
-      serverErrorLog += d.toString();
-    });
-
-    let ready = false;
-    for (let i = 0; i < 45; i++) {
-      try {
-        const res = await fetch('http://127.0.0.1:8080/health');
-        if (res.ok) {
-          ready = true;
-          break;
-        }
-      } catch (e) {}
-      await new Promise((r) => setTimeout(r, 1000));
-    }
-
-    if (!ready) {
-      console.error('[llama-server] Startup failed. Logs:\n', serverErrorLog);
-      throw new Error('Inference server failed to respond.');
-    }
-
-    const systemTokens = (await tokenize(profile.systemPrompt)) ?? 0;
-    const toolTokens =
-      activeTools.length > 0
-        ? ((await tokenize(JSON.stringify(activeTools))) ?? 0)
-        : 0;
-    lastUsage = { used: systemTokens + toolTokens, total: result.ctx };
-
-    onStatus?.({ phase: 'ready', message: '' });
-    currentProfile = profile;
-    messageHistory = [{ role: 'system', content: profile.systemPrompt }];
-
-    if (updatedProfile) {
-      return { success: true, profile: updatedProfile, backend: backendFolder };
-    }
-    return { success: true, backend: backendFolder };
-  } catch (error: any) {
-    onStatus?.({ phase: 'ready', message: '' });
-    return { success: false, error: error.message };
+  } finally {
+    releaseMutex?.();
   }
 }
 
@@ -838,10 +856,14 @@ export async function abort() {
 }
 
 export async function unloadModel() {
-  if (serverProcess) {
-    serverProcess.kill();
+  const proc = serverProcess;
+  if (proc) {
     serverProcess = null;
     currentProjector = null;
+    proc.kill();
+    await new Promise<void>((resolve) => {
+      proc.on('exit', () => resolve());
+    });
   }
   messageHistory = [];
   currentContextSize = null;
