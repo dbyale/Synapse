@@ -66,6 +66,7 @@
   * Autosave
   * Better list auto-selection
     * Recreate lists to be a modal with search
+  * System prompt variables (dates, device info, etc)
 
 # Settings:
   * Optional HF token
