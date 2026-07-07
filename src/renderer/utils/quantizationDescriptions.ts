@@ -87,6 +87,9 @@ export function parseQuantization(
       case 'XL':
         info.details.push('Extra Large (maximum quality for this bit-rate)');
         break;
+      case 'P':
+        info.details.push('Perfect (HauhauCS custom optimization)');
+        break;
     }
   }
 
