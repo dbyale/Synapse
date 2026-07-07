@@ -253,15 +253,9 @@ export default function ProfilesPage() {
     }
   };
 
-  const handleKeepConversation = () => {
+  const handleCancelProfileSwitch = () => {
     setShowRestartDialog(false);
-    if (pendingSwitchId) {
-      setSelectedProfileId(pendingSwitchId);
-      localStorage.setItem('selectedProfileId', pendingSwitchId);
-      localStorage.setItem('deferredProfileSwitch', 'true');
-      setError(null);
-      setPendingSwitchId(null);
-    }
+    setPendingSwitchId(null);
   };
 
   const handleSaveProfile = async (updated: Profile[]) => {
@@ -759,7 +753,7 @@ export default function ProfilesPage() {
           confirmText="Restart Now"
           cancelText="Cancel"
           onConfirm={handleRestartNow}
-          onCancel={handleKeepConversation}
+          onCancel={handleCancelProfileSwitch}
         />
       )}
 
