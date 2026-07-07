@@ -1782,7 +1782,8 @@ export default function EditProfileModal({
   // Fetch model metadata when model selection changes
   useEffect(() => {
     if (!editModelFilename) return;
-    if (profile?.maxForModel === profile?.model && profile?.maxLayers && profile?.maxContext) {
+    const currentModelPath = `${editModelAuthor}/${editModelFolder}/${editModelFilename}`;
+    if (profile?.maxForModel === currentModelPath && profile?.maxLayers && profile?.maxContext) {
       setModelMeta({ maxLayers: profile.maxLayers, maxContext: profile.maxContext });
       return;
     }
