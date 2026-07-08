@@ -27,6 +27,9 @@
         * Can access previous sessions
     * Allow exporting of sessions as MD
     * Allow easy clearing of sessions
+  ## Error Handling:
+    * Out of context error
+      * Auto trim/continue with warning
 
 # Models:
   * Search
@@ -81,3 +84,6 @@
   * Add file name as top comment to all files
   * Set up Metadata in package.json
   * Update README before 1.0.0
+
+# BUGS
+  * If models do multiple parallel searches, the timing results will move to appear under the last parrallel

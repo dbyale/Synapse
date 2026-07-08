@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, MouseEvent, KeyboardEvent } from 'react';
+import { useState, useEffect, useRef, useCallback, MouseEvent, KeyboardEvent, ClipboardEvent } from 'react';
 import {
   X,
   ChevronLeft,
@@ -444,6 +444,92 @@ function SectionCard({
   );
 }
 
+const SYSTEM_PROMPT_VARIABLES = [
+  { label: '{date}', insert: '{date}', description: 'Current date (YYYY-MM-DD)' },
+  { label: '{time}', insert: '{time}', description: 'Current time (HH:MM AM/PM)' },
+  { label: '{datetime}', insert: '{datetime}', description: 'Current date and time' },
+  { label: '{dayOfWeek}', insert: '{dayOfWeek}', description: 'Current day of the week' },
+  { label: '{timezone}', insert: '{timezone}', description: 'User timezone' },
+  { label: '{profilename}', insert: '{profilename}', description: 'Current profile name' },
+  { label: '{modelname}', insert: '{modelname}', description: 'Current model filename' },
+  { label: '{contextlength}', insert: '{contextlength}', description: 'Context size in tokens' },
+];
+
+function textToHighlightedHtml(text: string): string {
+  const escaped = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+  const withVariables = escaped.replace(
+    /\{(\w+)\}/g,
+    '<span class="epm-var-highlight">{$1}</span>',
+  );
+  return withVariables.replace(/\n/g, '<br>');
+}
+
+function getPlainText(el: HTMLElement): string {
+  let text = '';
+  Array.from(el.childNodes).forEach((node) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      text += node.textContent;
+    } else if (node.nodeName === 'BR') {
+      text += '\n';
+    } else if (node instanceof HTMLElement) {
+      text += getPlainText(node);
+    }
+  });
+  return text;
+}
+
+function saveTextSelection(el: HTMLElement): { start: number; end: number } | null {
+  const sel = window.getSelection();
+  if (!sel || !sel.rangeCount || !el.contains(sel.anchorNode)) return null;
+  const range = sel.getRangeAt(0);
+  const preRange = document.createRange();
+  preRange.selectNodeContents(el);
+  preRange.setEnd(range.startContainer, range.startOffset);
+  const start = preRange.toString().length;
+  const end = start + range.toString().length;
+  return { start, end };
+}
+
+function restoreTextSelection(el: HTMLElement, saved: { start: number; end: number }) {
+  const sel = window.getSelection();
+  if (!sel) return;
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  let currentOffset = 0;
+  let startNode: Text | null = null;
+  let startOffset = 0;
+  let endNode: Text | null = null;
+  let endOffset = 0;
+  while (true) {
+    const node = walker.nextNode() as Text | null;
+    if (!node) break;
+    const len = node.textContent?.length ?? 0;
+    if (!startNode && currentOffset + len >= saved.start) {
+      startNode = node;
+      startOffset = saved.start - currentOffset;
+    }
+    if (!endNode && currentOffset + len >= saved.end) {
+      endNode = node;
+      endOffset = saved.end - currentOffset;
+      break;
+    }
+    currentOffset += len;
+  }
+  if (!startNode) {
+    startNode = walker.lastChild() as Text;
+    startOffset = startNode?.textContent?.length ?? 0;
+  }
+  if (startNode) {
+    const range = document.createRange();
+    range.setStart(startNode, startOffset);
+    range.setEnd(endNode || startNode, endOffset);
+    sel.removeAllRanges();
+    sel.addRange(range);
+  }
+}
+
 function SystemPromptPage({
   value,
   onChange,
@@ -451,24 +537,83 @@ function SystemPromptPage({
   value: string;
   onChange: (v: string) => void;
 }) {
+  const editorRef = useRef<HTMLDivElement>(null);
+  const initializedRef = useRef(false);
+
+  useEffect(() => {
+    if (editorRef.current && !initializedRef.current) {
+      editorRef.current.innerHTML = textToHighlightedHtml(value);
+      initializedRef.current = true;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleInput = () => {
+    if (!editorRef.current) return;
+    const saved = saveTextSelection(editorRef.current);
+    const text = getPlainText(editorRef.current);
+    onChange(text);
+    editorRef.current.innerHTML = textToHighlightedHtml(text);
+    if (saved) restoreTextSelection(editorRef.current, saved);
+  };
+
+  const handleKeyDown = (e: KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      document.execCommand('insertLineBreak');
+      e.preventDefault();
+    }
+  };
+
+  const handlePaste = (e: ClipboardEvent) => {
+    e.preventDefault();
+    const text = e.clipboardData.getData('text/plain');
+    document.execCommand('insertText', false, text);
+  };
+
+  const insertVariable = (variable: string) => {
+    if (!editorRef.current) return;
+    const sel = window.getSelection();
+    if (sel && editorRef.current.contains(sel.anchorNode)) {
+      document.execCommand('insertText', false, variable);
+    } else {
+      const currentText = getPlainText(editorRef.current);
+      onChange(currentText + variable);
+    }
+    editorRef.current.focus();
+    handleInput();
+  };
+
   return (
     <>
-      <p
-        style={{
-          fontSize: '14px',
-          color: 'var(--text-secondary)',
-          margin: '0 0 16px',
-          lineHeight: 1.5,
-        }}
-      >
-        Defines AI behavior and personality. Sent with every message.
-      </p>
-      <textarea
-        className="epm-textarea"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder="Enter your system prompt here..."
-        rows={16}
+      <p className="epm-page-desc">Define how the AI behaves.</p>
+      <div className="epm-variables-section">
+        <span className="epm-variables-section__label">Variables</span>
+        <div className="epm-var-bar">
+          {SYSTEM_PROMPT_VARIABLES.map((v) => (
+            <button
+              key={v.insert}
+              className="epm-var-chip"
+              onClick={() => insertVariable(v.insert)}
+              title={v.description}
+              type="button"
+            >
+              {v.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div
+        ref={editorRef}
+        className="epm-textarea epm-textarea--editor"
+        contentEditable
+        suppressContentEditableWarning
+        role="textbox"
+        aria-multiline="true"
+        tabIndex={0}
+        onInput={handleInput}
+        onKeyDown={handleKeyDown}
+        onPaste={handlePaste}
+        data-placeholder="Enter your system prompt here..."
       />
     </>
   );
@@ -2088,10 +2233,7 @@ export default function EditProfileModal({
 
   const breadcrumb = buildBreadcrumb(currentPage);
 
-  const systemPromptPreview =
-    editSystemPrompt.length > 80
-      ? `${editSystemPrompt.slice(0, 80)}…`
-      : editSystemPrompt || 'Not set';
+  const systemPromptPreview = 'Set the AI\'s behavior and personality';
 
   const activeExtGroups = extensionGroups.filter(({ toolKeys }) =>
     toolKeys.some((tk) => editTools.includes(tk)),

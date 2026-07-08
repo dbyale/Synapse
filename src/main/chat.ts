@@ -244,6 +244,36 @@ function buildChatBody(messages: any[], tools: any[]): Record<string, any> {
   return body;
 }
 
+function substituteSystemPromptVariables(prompt: string): string {
+  const now = new Date();
+  const dateStr = now.toISOString().slice(0, 10);
+  const timeStr = now.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', hour12: true });
+  const datetimeStr = `${dateStr} ${timeStr}`;
+  const dayOfWeek = now.toLocaleDateString(undefined, { weekday: 'long' });
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const profilename = currentProfile?.name ?? '';
+  const modelname = currentProfile?.modelFilename
+    ?? (currentProfile?.model ? path.basename(currentProfile.model) : '');
+  const contextlength = currentContextSize != null ? String(currentContextSize) : '';
+
+  return prompt.replace(
+    /\{(date|time|datetime|dayOfWeek|timezone|profilename|modelname|contextlength)\}/g,
+    (_match, key) => {
+      switch (key) {
+        case 'date': return dateStr;
+        case 'time': return timeStr;
+        case 'datetime': return datetimeStr;
+        case 'dayOfWeek': return dayOfWeek;
+        case 'timezone': return timezone;
+        case 'profilename': return profilename;
+        case 'modelname': return modelname;
+        case 'contextlength': return contextlength;
+        default: return _match;
+      }
+    },
+  );
+}
+
 export async function preloadSystemPrompt(
   systemPrompt: string,
   tools: any[],
@@ -289,7 +319,7 @@ export async function preloadSystemPrompt(
 
   try {
     const body: Record<string, any> = {
-      messages: [{ role: 'system', content: systemPrompt }],
+      messages: [{ role: 'system', content: substituteSystemPromptVariables(systemPrompt) }],
       max_tokens: 1,
       temperature: 0,
       stream: true,
@@ -566,7 +596,8 @@ export async function loadProfile(
         throw new Error('Inference server failed to respond.');
       }
 
-      const systemTokens = (await tokenize(profile.systemPrompt)) ?? 0;
+      const resolvedSystemPrompt = substituteSystemPromptVariables(profile.systemPrompt);
+      const systemTokens = (await tokenize(resolvedSystemPrompt)) ?? 0;
       const toolTokens =
         activeTools.length > 0
           ? ((await tokenize(JSON.stringify(activeTools))) ?? 0)
@@ -575,7 +606,7 @@ export async function loadProfile(
 
       onStatus?.({ phase: 'ready', message: '' });
       currentProfile = profile;
-      messageHistory = [{ role: 'system', content: profile.systemPrompt }];
+      messageHistory = [{ role: 'system', content: resolvedSystemPrompt }];
 
       if (updatedProfile) {
         return { success: true, profile: updatedProfile, backend: backendFolder };

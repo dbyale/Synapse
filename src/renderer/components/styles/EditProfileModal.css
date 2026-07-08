@@ -289,6 +289,7 @@
 
 .epm-textarea {
   width: 100%;
+  max-width: 100%;
   background: var(--bg-input);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
@@ -306,6 +307,73 @@
 
 .epm-textarea:focus {
   border-color: var(--accent);
+}
+
+.epm-textarea--editor {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  overflow-y: auto;
+  cursor: text;
+  min-height: 280px;
+  max-height: 500px;
+  max-width: 100%;
+  resize: none;
+}
+
+.epm-textarea--editor:empty:before {
+  content: attr(data-placeholder);
+  color: var(--text-secondary);
+  pointer-events: none;
+}
+
+.epm-var-highlight {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.epm-variables-section {
+  margin-bottom: 12px;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+.epm-variables-section__label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+
+.epm-var-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+.epm-var-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-family: monospace;
+  color: var(--accent);
+  background: transparent;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+  white-space: nowrap;
+}
+
+.epm-var-chip:hover {
+  background: var(--accent);
+  color: var(--bg-primary);
 }
 
 .epm-number-grid {
@@ -380,6 +448,12 @@
   border-color: var(--accent);
   color: var(--accent);
   background: rgba(37, 99, 235, 0.06);
+}
+
+.epm-page-desc {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin: 0 0 16px;
 }
 
 /* ── Section title on sub-pages ── */
