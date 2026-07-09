@@ -474,6 +474,8 @@ function getPlainText(el: HTMLElement): string {
       text += node.textContent;
     } else if (node.nodeName === 'BR') {
       text += '\n';
+    } else if (node.nodeName === 'DIV') {
+      text += '\n' + getPlainText(node as HTMLElement);
     } else if (node instanceof HTMLElement) {
       text += getPlainText(node);
     }
@@ -481,53 +483,53 @@ function getPlainText(el: HTMLElement): string {
   return text;
 }
 
-function saveTextSelection(el: HTMLElement): { start: number; end: number } | null {
-  const sel = window.getSelection();
-  if (!sel || !sel.rangeCount || !el.contains(sel.anchorNode)) return null;
-  const range = sel.getRangeAt(0);
-  const preRange = document.createRange();
-  preRange.selectNodeContents(el);
-  preRange.setEnd(range.startContainer, range.startOffset);
-  const start = preRange.toString().length;
-  const end = start + range.toString().length;
-  return { start, end };
-}
-
-function restoreTextSelection(el: HTMLElement, saved: { start: number; end: number }) {
-  const sel = window.getSelection();
-  if (!sel) return;
+function highlightTextNodes(el: HTMLElement) {
   const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
-  let currentOffset = 0;
-  let startNode: Text | null = null;
-  let startOffset = 0;
-  let endNode: Text | null = null;
-  let endOffset = 0;
+  const toProcess: Text[] = [];
   while (true) {
     const node = walker.nextNode() as Text | null;
     if (!node) break;
-    const len = node.textContent?.length ?? 0;
-    if (!startNode && currentOffset + len >= saved.start) {
-      startNode = node;
-      startOffset = saved.start - currentOffset;
+    if (/\{\w+\}/.test(node.textContent || '')) {
+      const parent = node.parentNode;
+      if (parent && !(parent instanceof HTMLElement && parent.classList.contains('epm-var-highlight'))) {
+        toProcess.push(node);
+      }
     }
-    if (!endNode && currentOffset + len >= saved.end) {
-      endNode = node;
-      endOffset = saved.end - currentOffset;
-      break;
+  }
+  toProcess.forEach((textNode) => {
+    const parts = (textNode.textContent || '').split(/(\{(\w+)\})/g);
+    const fragment = document.createDocumentFragment();
+    for (let i = 0; i < parts.length; i++) {
+      if (parts[i] === '') continue;
+      if (/^\{\w+\}$/.test(parts[i])) {
+        const span = document.createElement('span');
+        span.className = 'epm-var-highlight';
+        span.textContent = parts[i];
+        fragment.appendChild(span);
+      } else {
+        fragment.appendChild(document.createTextNode(parts[i]));
+      }
     }
-    currentOffset += len;
+    textNode.parentNode?.replaceChild(fragment, textNode);
+  });
+  mergeAdjacentText(el);
+}
+
+function mergeAdjacentText(el: HTMLElement) {
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  let prev: Text | null = null;
+  const toRemove: Text[] = [];
+  while (true) {
+    const node = walker.nextNode() as Text | null;
+    if (!node) break;
+    if (prev && node.parentNode === prev.parentNode) {
+      prev.textContent += node.textContent;
+      toRemove.push(node);
+    } else {
+      prev = node;
+    }
   }
-  if (!startNode) {
-    startNode = walker.lastChild() as Text;
-    startOffset = startNode?.textContent?.length ?? 0;
-  }
-  if (startNode) {
-    const range = document.createRange();
-    range.setStart(startNode, startOffset);
-    range.setEnd(endNode || startNode, endOffset);
-    sel.removeAllRanges();
-    sel.addRange(range);
-  }
+  toRemove.forEach((n) => n.remove());
 }
 
 function SystemPromptPage({
@@ -538,30 +540,27 @@ function SystemPromptPage({
   onChange: (v: string) => void;
 }) {
   const editorRef = useRef<HTMLDivElement>(null);
-  const initializedRef = useRef(false);
+  const mountedRef = useRef(false);
+  const scanningRef = useRef(false);
 
   useEffect(() => {
-    if (editorRef.current && !initializedRef.current) {
+    if (editorRef.current && !mountedRef.current) {
       editorRef.current.innerHTML = textToHighlightedHtml(value);
-      initializedRef.current = true;
+      mountedRef.current = true;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleInput = () => {
-    if (!editorRef.current) return;
-    const saved = saveTextSelection(editorRef.current);
-    const text = getPlainText(editorRef.current);
-    onChange(text);
-    editorRef.current.innerHTML = textToHighlightedHtml(text);
-    if (saved) restoreTextSelection(editorRef.current, saved);
-  };
-
-  const handleKeyDown = (e: KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      document.execCommand('insertLineBreak');
-      e.preventDefault();
-    }
+    if (!editorRef.current || scanningRef.current) return;
+    onChange(getPlainText(editorRef.current));
+    scanningRef.current = true;
+    requestAnimationFrame(() => {
+      if (editorRef.current) {
+        highlightTextNodes(editorRef.current);
+      }
+      scanningRef.current = false;
+    });
   };
 
   const handlePaste = (e: ClipboardEvent) => {
@@ -576,8 +575,7 @@ function SystemPromptPage({
     if (sel && editorRef.current.contains(sel.anchorNode)) {
       document.execCommand('insertText', false, variable);
     } else {
-      const currentText = getPlainText(editorRef.current);
-      onChange(currentText + variable);
+      onChange(getPlainText(editorRef.current) + variable);
     }
     editorRef.current.focus();
     handleInput();
@@ -611,7 +609,6 @@ function SystemPromptPage({
         aria-multiline="true"
         tabIndex={0}
         onInput={handleInput}
-        onKeyDown={handleKeyDown}
         onPaste={handlePaste}
         data-placeholder="Enter your system prompt here..."
       />

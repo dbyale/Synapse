@@ -316,7 +316,6 @@
   overflow-y: auto;
   cursor: text;
   min-height: 280px;
-  max-height: 500px;
   max-width: 100%;
   resize: none;
 }

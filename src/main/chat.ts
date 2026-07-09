@@ -244,16 +244,16 @@ function buildChatBody(messages: any[], tools: any[]): Record<string, any> {
   return body;
 }
 
-function substituteSystemPromptVariables(prompt: string): string {
+function substituteSystemPromptVariables(prompt: string, profile: Profile | null): string {
   const now = new Date();
   const dateStr = now.toISOString().slice(0, 10);
   const timeStr = now.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', hour12: true });
   const datetimeStr = `${dateStr} ${timeStr}`;
   const dayOfWeek = now.toLocaleDateString(undefined, { weekday: 'long' });
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const profilename = currentProfile?.name ?? '';
-  const modelname = currentProfile?.modelFilename
-    ?? (currentProfile?.model ? path.basename(currentProfile.model) : '');
+  const profilename = profile?.name ?? '';
+  const modelname = profile?.modelFilename
+    ?? (profile?.model ? path.basename(profile.model) : '');
   const contextlength = currentContextSize != null ? String(currentContextSize) : '';
 
   return prompt.replace(
@@ -319,7 +319,7 @@ export async function preloadSystemPrompt(
 
   try {
     const body: Record<string, any> = {
-      messages: [{ role: 'system', content: substituteSystemPromptVariables(systemPrompt) }],
+      messages: [{ role: 'system', content: substituteSystemPromptVariables(systemPrompt, currentProfile) }],
       max_tokens: 1,
       temperature: 0,
       stream: true,
@@ -596,7 +596,7 @@ export async function loadProfile(
         throw new Error('Inference server failed to respond.');
       }
 
-      const resolvedSystemPrompt = substituteSystemPromptVariables(profile.systemPrompt);
+      const resolvedSystemPrompt = substituteSystemPromptVariables(profile.systemPrompt, profile);
       const systemTokens = (await tokenize(resolvedSystemPrompt)) ?? 0;
       const toolTokens =
         activeTools.length > 0
