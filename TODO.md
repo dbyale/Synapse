@@ -12,6 +12,7 @@
   * Contain tool calls while thinking within the initial thinking section
   ## Uploads
     * Add text-based filetypes to upload [File->MD](https://github.com/microsoft/markitdown)
+      * Allow processing in background, delay send until finished
     * Official LLama CPP video support rather than frame extractor
       * This seems to currently be broken, even on official WebUI always fails
         * (Maybe missing unknown dependency or user error but either way would be too unreliable)

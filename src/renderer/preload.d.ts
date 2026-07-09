@@ -239,6 +239,12 @@ declare global {
       readFileAsDataUrl: (filePath: string) => Promise<string>;
       readFileAsBuffer: (filePath: string) => Promise<Uint8Array>;
 
+      convertFileWithMarkitdown: (filePath: string) => Promise<{
+        success: boolean;
+        markdown?: string;
+        error?: string;
+      }>;
+
       getModelMetadata: (params: {
         modelAuthor: string;
         modelFolder: string;

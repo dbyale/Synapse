@@ -252,6 +252,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   readFileAsBuffer: (filePath: string): Promise<Uint8Array> =>
     ipcRenderer.invoke('files:readFileAsBuffer', filePath),
 
+  convertFileWithMarkitdown: (filePath: string): Promise<{
+    success: boolean;
+    markdown?: string;
+    error?: string;
+  }> => ipcRenderer.invoke('files:convertWithMarkitdown', filePath),
+
   getModelMetadata: (params: {
     modelAuthor: string;
     modelFolder: string;

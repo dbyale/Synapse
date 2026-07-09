@@ -1341,6 +1341,33 @@
   background: #000;
 }
 
+.chat-media-preview__document {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 64px;
+  min-width: 100px;
+  max-width: 180px;
+  padding: 8px;
+  border-radius: 6px;
+  border: 1.5px solid var(--border);
+  background: var(--surface-secondary);
+  overflow: hidden;
+}
+
+.chat-media-preview__doc-name {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-primary);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.2;
+}
+
 .chat-media-preview__remove {
   position: absolute;
   top: -6px;
@@ -1385,7 +1412,27 @@
   margin-bottom: 4px;
 }
 
+.chat-message__user-document {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  margin-bottom: 4px;
+  border-radius: 6px;
+  border: 1.5px solid var(--border);
+  background: var(--surface-secondary);
+}
 
+.chat-message__user-document-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.2;
+}
 
 /* ============================================================================
    IMAGE ATTACH MODAL
@@ -1505,4 +1552,37 @@
 .image-modal__browse:hover {
   background: var(--bg-hover);
   border-color: var(--accent);
+}
+
+.image-modal--converting {
+  border-color: var(--accent);
+}
+
+.image-modal__converting {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 28px 24px;
+  border: 2px dashed var(--border);
+  border-radius: var(--radius-md);
+  width: 100%;
+  flex: 1;
+  box-sizing: border-box;
+}
+
+.image-modal__spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: image-modal-spin 0.7s linear infinite;
+}
+
+@keyframes image-modal-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }

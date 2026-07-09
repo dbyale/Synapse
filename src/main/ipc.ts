@@ -11,6 +11,7 @@ import {
   AppSettings,
   getModelsDirectory,
 } from './settings';
+import { convertFileToMarkdown } from './functions/markitdown';
 import {
   searchModels,
   listModelFiles,
@@ -734,6 +735,14 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     async (_event, filePath: string) => {
       const buf = await fs.promises.readFile(filePath);
       return buf;
+    },
+  );
+
+  // ── Convert file to markdown via markitdown ──
+  ipcMain.handle(
+    'files:convertWithMarkitdown',
+    async (_event, filePath: string) => {
+      return await convertFileToMarkdown(filePath);
     },
   );
 }

@@ -24,6 +24,8 @@ import {
   Timer,
   Zap,
   ImagePlus,
+  FilePlusCorner,
+  FileText,
   X,
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -47,13 +49,15 @@ interface GenerationStatsData {
 }
 
 interface MediaDisplayItem {
-  type: 'image' | 'video';
-  url: string;
+  type: 'image' | 'video' | 'document';
+  url?: string;
+  name?: string;
 }
 
 type PendingMedia =
   | { id: string; type: 'image'; dataUrl: string; name?: string }
-  | { id: string; type: 'video'; file: File; objectUrl: string };
+  | { id: string; type: 'video'; file: File; objectUrl: string }
+  | { id: string; type: 'document'; name: string; content: string };
 
 interface MessageSegment {
   id: string;
@@ -223,23 +227,63 @@ function ToolCallSegment({
   );
 }
 
+const DOC_EXTENSIONS = ['pdf', 'docx', 'pptx', 'xlsx', 'csv', 'html', 'htm', 'json', 'xml', 'rtf', 'txt', 'md', 'epub'];
+const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp'];
+const VIDEO_EXTENSIONS = ['mp4', 'webm'];
+
+const DOC_EXTENSIONS_SET = new Set(DOC_EXTENSIONS);
+const IMAGE_EXTENSIONS_SET = new Set(IMAGE_EXTENSIONS);
+const VIDEO_EXTENSIONS_SET = new Set(VIDEO_EXTENSIONS);
+
+function getExtension(filePath: string): string {
+  return filePath.split('.').pop()?.toLowerCase() ?? '';
+}
+
 function MediaAttachModal({
   onAttach,
   onAttachVideo,
+  onAttachText,
   onClose,
+  hasProjector,
 }: {
   onAttach: (dataUrl: string, name: string) => void;
   onAttachVideo: (file: File) => void;
+  onAttachText: (name: string, content: string) => void;
   onClose: () => void;
+  hasProjector: boolean;
 }) {
   const [dragging, setDragging] = useState(false);
+  const [converting, setConverting] = useState(false);
 
-  const handleDrop = (e: DragEvent) => {
+  const supportedExtensions = hasProjector
+    ? [...IMAGE_EXTENSIONS, ...VIDEO_EXTENSIONS, ...DOC_EXTENSIONS]
+    : [...DOC_EXTENSIONS];
+
+  const filterName = hasProjector ? 'All supported files' : 'All supported documents';
+
+  async function processDocument(filePath: string, filename: string) {
+    setConverting(true);
+    try {
+      const result = await window.electronAPI.convertFileWithMarkitdown(filePath);
+      if (result.success && result.markdown) {
+        onAttachText(filename, result.markdown);
+      } else {
+        alert(`Failed to convert ${filename}: ${result.error || 'Unknown error'}`);
+      }
+    } catch (err: any) {
+      alert(`Error converting ${filename}: ${err.message}`);
+    } finally {
+      setConverting(false);
+    }
+  }
+
+  const handleDrop = async (e: DragEvent) => {
     e.preventDefault();
     setDragging(false);
     const files = Array.from(e.dataTransfer.files);
     for (const file of files) {
-      if (file.type.startsWith('image/')) {
+      const ext = getExtension(file.name);
+      if (hasProjector && (IMAGE_EXTENSIONS_SET.has(ext) || file.type.startsWith('image/'))) {
         const reader = new FileReader();
         reader.onload = (ev) => {
           const result = ev.target?.result;
@@ -248,37 +292,45 @@ function MediaAttachModal({
           }
         };
         reader.readAsDataURL(file);
-      } else if (file.type.startsWith('video/')) {
+      } else if (hasProjector && (VIDEO_EXTENSIONS_SET.has(ext) || file.type.startsWith('video/'))) {
         onAttachVideo(file);
         onClose();
         return;
+      } else if (DOC_EXTENSIONS_SET.has(ext)) {
+        const filePath = (file as any).path;
+        if (filePath) {
+          await processDocument(filePath, file.name);
+        } else {
+          alert('Cannot convert files dragged from outside the file system.');
+        }
       }
     }
   };
 
   const handleSelectFromDisk = async () => {
     const paths = await window.electronAPI.browseForFiles({
-      title: 'Select Media',
+      title: 'Select files',
       multiSelections: true,
       filters: [
-        { name: 'All supported media', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'mp4', 'webm'] },
+        { name: filterName, extensions: supportedExtensions },
       ],
     });
     if (paths.length === 0) return;
     for (const filePath of paths) {
-      const ext = filePath.toLowerCase();
-      const isVideo = ext.endsWith('.mp4') || ext.endsWith('.webm');
-      const filename = filePath.split(/[/\\]/).pop() || 'media';
-      if (isVideo) {
+      const ext = getExtension(filePath);
+      const filename = filePath.split(/[/\\]/).pop() || 'file';
+      if (hasProjector && VIDEO_EXTENSIONS_SET.has(ext)) {
         const uint8 = await window.electronAPI.readFileAsBuffer(filePath);
-        const mime = ext.endsWith('.webm') ? 'video/webm' : 'video/mp4';
+        const mime = ext === 'webm' ? 'video/webm' : 'video/mp4';
         const blob = new Blob([uint8.buffer as ArrayBuffer], { type: mime });
         const file = new File([blob], filename, { type: mime });
         onAttachVideo(file);
         break;
-      } else {
+      } else if (hasProjector && IMAGE_EXTENSIONS_SET.has(ext)) {
         const dataUrl = await window.electronAPI.readFileAsDataUrl(filePath);
         onAttach(dataUrl, filename);
+      } else if (DOC_EXTENSIONS_SET.has(ext)) {
+        await processDocument(filePath, filename);
       }
     }
     onClose();
@@ -287,7 +339,7 @@ function MediaAttachModal({
   return (
     <div className="image-modal-overlay" onClick={onClose}>
       <div
-        className={`image-modal${dragging ? ' image-modal--dragging' : ''}`}
+        className={`image-modal${dragging ? ' image-modal--dragging' : ''}${converting ? ' image-modal--converting' : ''}`}
         onClick={(e) => e.stopPropagation()}
         onDragOver={(e) => {
           e.preventDefault();
@@ -300,16 +352,33 @@ function MediaAttachModal({
           <X size={18} />
         </button>
         <div className="image-modal__drop-zone">
-          <ImagePlus className="image-modal__icon" size={40} />
-          <p className="image-modal__label">Drop an image or video here</p>
-          <p className="image-modal__sublabel">or</p>
-          <button
-            type="button"
-            className="image-modal__browse"
-            onClick={handleSelectFromDisk}
-          >
-            Select from disk
-          </button>
+          {converting ? (
+            <div className="image-modal__converting">
+              <div className="image-modal__spinner" />
+              <p className="image-modal__label">Converting file...</p>
+            </div>
+          ) : (
+            <>
+              {hasProjector ? (
+                <ImagePlus className="image-modal__icon" size={40} />
+              ) : (
+                <FileText className="image-modal__icon" size={40} />
+              )}
+              <p className="image-modal__label">
+                {hasProjector
+                  ? 'Drop images, videos, or documents here'
+                  : 'Drop documents here'}
+              </p>
+              <p className="image-modal__sublabel">or</p>
+              <button
+                type="button"
+                className="image-modal__browse"
+                onClick={handleSelectFromDisk}
+              >
+                Select from disk
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -480,6 +549,7 @@ export default function ChatPage() {
   const selectedProfile =
     profiles.find((p) => p.id === selectedProfileId) ?? null;
   const profileHasProjector = !!selectedProfile?.projector;
+  const canAttachImages = !!(projectorLoaded || (profileHasProjector && !loadError));
 
   const loadProfilesFromStorage = useCallback(() => {
     const stored = localStorage.getItem('profiles');
@@ -1299,6 +1369,9 @@ export default function ChatPage() {
           URL.revokeObjectURL(item.objectUrl);
           break;
         }
+      } else if (item.type === 'document') {
+        contentParts.push({ kind: 'text', text: `[${item.name}]\n${item.content}` });
+        mediaItems.push({ type: 'document', name: item.name });
       }
     }
 
@@ -1765,26 +1838,34 @@ export default function ChatPage() {
                       <>{msg.content[0]?.text || ''}</>
                     ) : (
                       <>
-                        {msg.content[0]?.mediaItems?.map((item) => {
+                        {msg.content[0]?.mediaItems?.map((item, idx) => {
                           if (item.type === 'image') {
                             return (
                               <img
-                                key={item.url}
+                                key={`img-${idx}`}
                                 src={item.url}
                                 alt="Attached media"
                                 className="chat-message__user-image"
-                                onClick={() => setImageViewerUrl(item.url)}
+                                onClick={() => setImageViewerUrl(item.url!)}
                               />
                             );
                           }
                           if (item.type === 'video') {
                             return (
                               <video
-                                key={item.url}
+                                key={`vid-${idx}`}
                                 src={item.url}
                                 controls
                                 className="chat-message__user-video"
                               />
+                            );
+                          }
+                          if (item.type === 'document') {
+                            return (
+                              <div key={`doc-${idx}`} className="chat-message__user-document">
+                                <FileText size={20} />
+                                <span className="chat-message__user-document-name">{item.name}</span>
+                              </div>
                             );
                           }
                           return null;
@@ -1898,20 +1979,15 @@ export default function ChatPage() {
         <div className="chat-input-row">
           <button
             type="button"
-            className={`chat-attach-button${(projectorLoaded || (profileHasProjector && !loadError)) ? '' : ' chat-attach-button--disabled'}`}
-            onClick={() => {
-              if (projectorLoaded || (profileHasProjector && !loadError))
-                setShowImageModal(true);
-            }}
+            className="chat-attach-button"
+            onClick={() => setShowImageModal(true)}
             title={
-              projectorLoaded
-                ? 'Attach image or video'
-                : profileHasProjector
-                  ? 'Attach media (will be sent once model loads)'
-                  : 'No vision model loaded'
+              canAttachImages
+                ? 'Attach images, videos, or documents'
+                : 'Attach documents'
             }
           >
-            <ImagePlus size={18} />
+            {canAttachImages ? <ImagePlus size={18} /> : <FilePlusCorner size={18} />}
           </button>
 
           <div className="chat-input-inner">
@@ -1924,6 +2000,12 @@ export default function ChatPage() {
                     )}
                     {item.type === 'video' && (
                       <video src={item.objectUrl} controls className="chat-media-preview__video" />
+                    )}
+                    {item.type === 'document' && (
+                      <div className="chat-media-preview__document">
+                        <FileText size={20} />
+                        <span className="chat-media-preview__doc-name">{item.name}</span>
+                      </div>
                     )}
                     <button
                       type="button"
@@ -2027,7 +2109,12 @@ export default function ChatPage() {
             const id = crypto.randomUUID();
             setPendingMedia((prev) => [...prev, { id, type: 'video', file, objectUrl: URL.createObjectURL(file) }]);
           }}
+          onAttachText={(name, content) => {
+            const id = crypto.randomUUID();
+            setPendingMedia((prev) => [...prev, { id, type: 'document', name, content }]);
+          }}
           onClose={() => setShowImageModal(false)}
+          hasProjector={canAttachImages}
         />
       )}
 
