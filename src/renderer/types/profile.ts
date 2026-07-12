@@ -57,6 +57,14 @@ export interface Profile {
     maxWidth?: number;
     unlimitedMaxFrames?: boolean;
   };
+  specType?: string[];
+  draftModelAuthor?: string;
+  draftModelFolder?: string;
+  draftModelFilename?: string;
+  specDraftNMax?: number;
+  specDraftNMin?: number;
+  specDraftPSplit?: number;
+  specDraftPMin?: number;
   order: number;
   createdAt: number;
 }

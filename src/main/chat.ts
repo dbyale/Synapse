@@ -565,6 +565,31 @@ export async function loadProfile(
         currentProjector = null;
       }
 
+      // Draft model (speculative decoding)
+      if (profile.specType && profile.specType.length > 0) {
+        spawnArgs.push('--spec-type', profile.specType.join(','));
+
+        const draftModelPath = profile.draftModelFilename
+          ? path.join(getModelsDirectory(), `${profile.draftModelAuthor}/${profile.draftModelFolder}/${profile.draftModelFilename}`)
+          : undefined;
+        if (draftModelPath && fs.existsSync(draftModelPath) && profile.specType.includes('draft-simple')) {
+          spawnArgs.push('--spec-draft-model', draftModelPath);
+        }
+
+        if (profile.specDraftNMax !== undefined && profile.specDraftNMax !== 3) {
+          spawnArgs.push('--spec-draft-n-max', profile.specDraftNMax.toString());
+        }
+        if (profile.specDraftNMin !== undefined && profile.specDraftNMin !== 0) {
+          spawnArgs.push('--spec-draft-n-min', profile.specDraftNMin.toString());
+        }
+        if (profile.specDraftPSplit !== undefined && profile.specDraftPSplit !== 0.10) {
+          spawnArgs.push('--draft-p-split', profile.specDraftPSplit.toFixed(2));
+        }
+        if (profile.specDraftPMin !== undefined && profile.specDraftPMin !== 0.00) {
+          spawnArgs.push('--draft-p-min', profile.specDraftPMin.toFixed(2));
+        }
+      }
+
       console.log(`NGL=${result.ngl}, Context=${result.ctx}, autoOptimizer=${(profile as any).autoOptimizer}`);
       onStatus?.({ phase: 'starting', message: 'Loading AI Model…' });
 

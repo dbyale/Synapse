@@ -162,3 +162,43 @@ export const MEMORY_ALLOCATOR_TOOLTIP = [
 ];
 
 export const MAX_LABEL_TOOLTIP = 'Recommended ceiling for Synapse allocation. This accounts for other running processes and a safety buffer. Exceeding this may cause system instability.';
+
+// ── Draft Model (Speculative Decoding) ──
+
+export const DRAFT_MODEL_TOOLTIP = [
+  'Speculative decoding uses a smaller "draft" model to generate candidate tokens that the main model verifies in parallel.',
+  'This can significantly speed up generation when the draft model is much faster while maintaining output quality.',
+];
+
+export const SPEC_TYPE_TOOLTIP = [
+  'The speculative decoding strategy to use. Multiple types can be combined.',
+  'draft-simple: Uses an external draft model (GGUF file).',
+  'draft-mtp: Uses the main model\'s internal MTP (Multi-Token Prediction) heads — no external model needed.',
+  'draft-eagle3: Uses the model\'s EAGLE3-style draft heads — no external model needed.',
+  'ngram-simple / ngram-map-k / ngram-map-k4v / ngram-mod / ngram-cache: N-gram based draft strategies that extract candidates from the prompt context — no external model needed.',
+  'Set to "none" to disable speculative decoding.',
+];
+
+export const DRAFT_N_MAX_TOOLTIP = [
+  'Maximum number of tokens the draft model generates per speculative step (--spec-draft-n-max).',
+  'Higher values give more opportunity for speedup but increase verification overhead.',
+  'Range: 1–16. Default: 3.',
+];
+
+export const DRAFT_N_MIN_TOOLTIP = [
+  'Minimum number of draft tokens per step (--spec-draft-n-min).',
+  'Lower values adapt better to uncertain contexts but reduce draft ceiling.',
+  'Range: 0–16. Default: 0.',
+];
+
+export const DRAFT_P_SPLIT_TOOLTIP = [
+  'Probability of splitting to a new draft when the original candidate is rejected (--draft-p-split).',
+  'Higher values produce more new candidates, improving chances of acceptance.',
+  'Range: 0.0–1.0. Default: 0.10.',
+];
+
+export const DRAFT_P_MIN_TOOLTIP = [
+  'Minimum probability for a greedy draft token to be accepted (--draft-p-min).',
+  'Higher values make acceptance stricter, potentially reducing speedup but improving quality.',
+  'Range: 0.0–1.0. Default: 0.00.',
+];

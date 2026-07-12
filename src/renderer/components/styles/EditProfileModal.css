@@ -1165,4 +1165,49 @@
   font-weight: 600;
 }
 
+/* ── Draft Model ── */
+
+.epm-draft-type-group {
+  margin-bottom: 12px;
+}
+
+.epm-draft-type-group-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+  font-weight: 500;
+}
+
+.epm-draft-type-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.epm-draft-type-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-family: inherit;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.epm-draft-type-tag:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.epm-draft-type-tag--active {
+  background: rgba(37, 99, 235, 0.08);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
 

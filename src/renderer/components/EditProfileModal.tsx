@@ -56,6 +56,12 @@ import {
   FILE_BUFFER_TOOLTIP,
   VRAM_LABEL_TOOLTIP,
   RAM_LABEL_TOOLTIP,
+  DRAFT_MODEL_TOOLTIP,
+  SPEC_TYPE_TOOLTIP,
+  DRAFT_N_MAX_TOOLTIP,
+  DRAFT_N_MIN_TOOLTIP,
+  DRAFT_P_SPLIT_TOOLTIP,
+  DRAFT_P_MIN_TOOLTIP,
 } from '../utils/tooltipContent';
 import ModelSelectModal from './ModelSelectModal';
 import ProjectorSelectModal from './ProjectorSelectModal';
@@ -117,6 +123,7 @@ const PAGE_DEPTH: Record<string, number> = {
   performance: 1,
   'cache-options': 2,
   'memory-options': 2,
+  'draft-model': 2,
 };
 
 const BREADCRUMB_MAP: Record<string, { label: string; parent: string | null }> =
@@ -131,6 +138,7 @@ const BREADCRUMB_MAP: Record<string, { label: string; parent: string | null }> =
     performance: { label: 'Performance', parent: 'main' },
     'cache-options': { label: 'Cache Options', parent: 'performance' },
     'memory-options': { label: 'Memory Options', parent: 'performance' },
+    'draft-model': { label: 'Draft Model', parent: 'performance' },
   };
 
 function buildBreadcrumb(page: string): Array<{ key: string; label: string }> {
@@ -777,16 +785,16 @@ function AdvancedPage({
         />
       </div>
 
-      <div style={{ marginTop: '20px' }}>
-        <InfoTooltip content={REPEAT_PENALTY_TOOLTIP} side="right" hideIcon title="Repeat Penalty">
+      <InfoTooltip content={REPEAT_PENALTY_TOOLTIP} side="bottom" hideIcon title="Repeat Penalty">
+        <div style={{ marginTop: '20px' }}>
           <SectionCard
             icon={<Settings size={18} />}
             title="Repeat Penalty"
             preview="Discourages the model from repeating recent tokens"
             onClick={() => onNavigate('repeat-penalty')}
           />
-        </InfoTooltip>
-      </div>
+        </div>
+      </InfoTooltip>
     </>
   );
 }
@@ -815,41 +823,27 @@ function NumberField({
   disabled?: boolean;
 }) {
   const defaultVal = helper?.match(/Default:\s*([\d.]+)/)?.[1];
-  return (
-    <div className="epm-number-field">
-      {tooltip ? (
-        <InfoTooltip content={tooltip} title={tooltipTitle || label} side="right" stretch className="info-tooltip-stretch--col">
-          <label>{label}</label>
-          <input
-            type="number"
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            min={min}
-            max={max}
-            step={step}
-            placeholder={defaultVal}
-            disabled={disabled}
-          />
-          {helper && <div className="epm-number-helper">{helper}</div>}
-        </InfoTooltip>
-      ) : (
-        <>
-          <label>{label}</label>
-          <input
-            type="number"
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            min={min}
-            max={max}
-            step={step}
-            placeholder={defaultVal}
-            disabled={disabled}
-          />
-          {helper && <div className="epm-number-helper">{helper}</div>}
-        </>
-      )}
+  const field = (
+    <div className="epm-number-field" style={{ width: '100%' }}>
+      <label>{label}</label>
+      <input
+        type="number"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        min={min}
+        max={max}
+        step={step}
+        placeholder={defaultVal}
+        disabled={disabled}
+      />
+      {helper && <div className="epm-number-helper">{helper}</div>}
     </div>
   );
+  return tooltip ? (
+    <InfoTooltip content={tooltip} title={tooltipTitle || label} side="bottom" stretch className="info-tooltip-stretch--col">
+      {field}
+    </InfoTooltip>
+  ) : field;
 }
 
 function RepeatPenaltyPage({
@@ -1188,6 +1182,8 @@ function PerformancePage({
   onEstimateMemory,
   initialEstimate,
   onNavigate,
+  editSpecType,
+  editDraftModelFilename,
 }: {
   editAutoOptimizer: 'longest-context' | 'most-gpu' | 'custom' | null;
   editLayers: number | undefined;
@@ -1241,6 +1237,8 @@ function PerformancePage({
     fileBufferRam: number;
   } | null;
   onNavigate: (page: string) => void;
+  editSpecType: string[];
+  editDraftModelFilename: string;
 }) {
   const isAuto =
     editAutoOptimizer !== null &&
@@ -1618,6 +1616,21 @@ function PerformancePage({
             </div>
             <ChevronRight size={16} className="epm-section-card__chevron" />
           </button>
+          <button type="button" className="epm-section-card" onClick={() => onNavigate('draft-model')}>
+            <div className="epm-section-card__icon">
+              <Zap size={18} />
+            </div>
+            <div className="epm-section-card__body">
+              <InfoTooltip content={DRAFT_MODEL_TOOLTIP} title="Draft Model" side="right" hideIcon>
+                <div className="epm-section-card__title">Draft Model</div>
+              </InfoTooltip>
+              <div className="epm-section-card__preview">
+                {editSpecType.length > 0 ? `${editSpecType.join(', ')}` : 'Disabled'}
+                {editDraftModelFilename ? ` — ${editDraftModelFilename}` : ''}
+              </div>
+            </div>
+            <ChevronRight size={16} className="epm-section-card__chevron" />
+          </button>
           <button type="button" className="epm-section-card" onClick={() => onNavigate('memory-options')}>
             <div className="epm-section-card__icon">
               <SlidersHorizontal size={18} />
@@ -1776,6 +1789,199 @@ function MemoryOptionsPage({
   );
 }
 
+// ── Draft Model (Speculative Decoding) subpage ──
+
+const SPEC_TYPE_OPTIONS = [
+  { value: 'draft-mtp', label: 'MTP', group: 'internal', tooltip: 'Uses the model\'s internal MTP (Multi-Token Prediction) heads — no external model needed.' },
+  { value: 'draft-eagle3', label: 'EAGLE3', group: 'internal', tooltip: 'Uses the model\'s EAGLE3-style draft heads — no external model needed.' },
+  { value: 'draft-simple', label: 'Simple', group: 'model', tooltip: 'Uses an external GGUF model as the draft model.' },
+  { value: 'ngram-simple', label: 'N-Gram Simple', group: 'ngram', tooltip: 'Extracts draft candidates from the prompt context using simple n-gram matching.' },
+  { value: 'ngram-map-k', label: 'N-Gram Map K', group: 'ngram', tooltip: 'N-gram based draft using a map indexed by K tokens.' },
+  { value: 'ngram-map-k4v', label: 'N-Gram Map K4V', group: 'ngram', tooltip: 'N-gram based draft using a K-token map with 4-byte values.' },
+  { value: 'ngram-mod', label: 'N-Gram Mod', group: 'ngram', tooltip: 'N-gram based draft using modular matching for candidate selection.' },
+  { value: 'ngram-cache', label: 'N-Gram Cache', group: 'ngram', tooltip: 'N-gram based draft that caches candidates for reuse across steps.' },
+];
+
+const SPEC_TYPE_GROUP_LABELS: Record<string, string> = {
+  internal: 'Internal (no model needed)',
+  model: 'External Model',
+  ngram: 'N-Gram Based',
+};
+
+function DraftModelPage({
+  editSpecType,
+  editDraftModelAuthor,
+  editDraftModelFolder,
+  editDraftModelFilename,
+  editSpecDraftNMax,
+  editSpecDraftNMin,
+  editSpecDraftPSplit,
+  editSpecDraftPMin,
+  selectedDraftModelDisplay,
+  onSetSpecType,
+  onSetDraftModelAuthor,
+  onSetDraftModelFolder,
+  onSetDraftModelFilename,
+  onSetSpecDraftNMax,
+  onSetSpecDraftNMin,
+  onSetSpecDraftPSplit,
+  onSetSpecDraftPMin,
+  onOpenDraftModelModal,
+}: {
+  editSpecType: string[];
+  editDraftModelAuthor: string;
+  editDraftModelFolder: string;
+  editDraftModelFilename: string;
+  editSpecDraftNMax: string;
+  editSpecDraftNMin: string;
+  editSpecDraftPSplit: string;
+  editSpecDraftPMin: string;
+  selectedDraftModelDisplay: { name: string; quantization: string; sizeBytes: number; filename?: string; group?: string } | null;
+  onSetSpecType: (v: string[]) => void;
+  onSetDraftModelAuthor: (v: string) => void;
+  onSetDraftModelFolder: (v: string) => void;
+  onSetDraftModelFilename: (v: string) => void;
+  onSetSpecDraftNMax: (v: string) => void;
+  onSetSpecDraftNMin: (v: string) => void;
+  onSetSpecDraftPSplit: (v: string) => void;
+  onSetSpecDraftPMin: (v: string) => void;
+  onOpenDraftModelModal: () => void;
+}) {
+  const hasSimple = editSpecType.includes('draft-simple');
+  const noSpec = editSpecType.length === 0;
+
+  const handleToggleType = (value: string) => {
+    if (editSpecType.includes(value)) {
+      onSetSpecType(editSpecType.filter((t) => t !== value));
+    } else {
+      onSetSpecType([...editSpecType, value]);
+    }
+  };
+
+  return (
+    <>
+      <h2 className="epm-page-title">Draft Model</h2>
+      <p
+        style={{
+          fontSize: '14px',
+          color: 'var(--text-secondary)',
+          margin: '0 0 20px',
+          lineHeight: 1.5,
+        }}
+      >
+        Configure speculative decoding to speed up generation using a draft model or built-in strategies.
+      </p>
+
+      <div className="epm-section">
+        <div className="epm-section__label">Draft Type</div>
+        {(['internal', 'model', 'ngram'] as const).map((groupKey) => {
+          const groupOptions = SPEC_TYPE_OPTIONS.filter((o) => o.group === groupKey);
+          if (groupOptions.length === 0) return null;
+          return (
+            <div key={groupKey} className="epm-draft-type-group">
+              <div className="epm-draft-type-group-label">{SPEC_TYPE_GROUP_LABELS[groupKey]}</div>
+              <div className="epm-draft-type-tags">
+                {groupOptions.map((opt) => (
+                  <InfoTooltip key={opt.value} content={opt.tooltip} side="right" hideIcon>
+                    <button
+                      type="button"
+                      className={`epm-draft-type-tag${editSpecType.includes(opt.value) ? ' epm-draft-type-tag--active' : ''}`}
+                      onClick={() => handleToggleType(opt.value)}
+                    >
+                      {opt.label}
+                    </button>
+                  </InfoTooltip>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Draft model file selector — only shown when draft-simple is active */}
+      {hasSimple && (
+        <div className="epm-section" style={{ marginTop: '20px' }}>
+          <InfoTooltip content="A smaller GGUF model used as the draft model for speculative decoding." side="right" hideIcon title="External Draft Model">
+            <div className="epm-section__label">External Draft Model</div>
+          </InfoTooltip>
+          <div className="epm-section-card" style={{ marginTop: '10px' }} onClick={onOpenDraftModelModal}>
+            <div className="epm-section-card__icon">
+              <Zap size={18} />
+            </div>
+            <div className="epm-section-card__body">
+              <div className="epm-section-card__title">
+                {selectedDraftModelDisplay
+                  ? (selectedDraftModelDisplay.filename || selectedDraftModelDisplay.name)
+                  : 'Select Draft Model'}
+              </div>
+              <div className="epm-section-card__preview">
+                {selectedDraftModelDisplay
+                  ? `${selectedDraftModelDisplay.filename || selectedDraftModelDisplay.name} — ${formatBytes(selectedDraftModelDisplay.sizeBytes)}`
+                  : 'No draft model selected'}
+              </div>
+            </div>
+            <ChevronRight size={16} className="epm-section-card__chevron" />
+          </div>
+        </div>
+      )}
+
+      {/* Numeric sliders */}
+      <div className="epm-section" style={{ marginTop: '20px' }}>
+        <InfoTooltip content={DRAFT_MODEL_TOOLTIP} side="right" hideIcon title="Draft Parameters">
+          <div className="epm-section__label">Draft Parameters</div>
+        </InfoTooltip>
+        <div className="epm-number-grid">
+
+          <NumberField
+            label="Draft N Max"
+            value={editSpecDraftNMax}
+            onChange={onSetSpecDraftNMax}
+            min="1"
+            max="16"
+            step="1"
+            helper="Default: 3"
+            tooltip={DRAFT_N_MAX_TOOLTIP}
+            tooltipTitle="Draft N Max"
+          />
+          <NumberField
+            label="Draft N Min"
+            value={editSpecDraftNMin}
+            onChange={onSetSpecDraftNMin}
+            min="0"
+            max="16"
+            step="1"
+            helper="Default: 0"
+            tooltip={DRAFT_N_MIN_TOOLTIP}
+            tooltipTitle="Draft N Min"
+          />
+          <NumberField
+            label="Draft P Split"
+            value={editSpecDraftPSplit}
+            onChange={onSetSpecDraftPSplit}
+            min="0"
+            max="1"
+            step="0.01"
+            helper="Default: 0.10"
+            tooltip={DRAFT_P_SPLIT_TOOLTIP}
+            tooltipTitle="Draft P Split"
+          />
+          <NumberField
+            label="Draft P Min"
+            value={editSpecDraftPMin}
+            onChange={onSetSpecDraftPMin}
+            min="0"
+            max="1"
+            step="0.01"
+            helper="Default: 0.00"
+            tooltip={DRAFT_P_MIN_TOOLTIP}
+            tooltipTitle="Draft P Min"
+          />
+        </div>
+      </div>
+    </>
+  );
+}
+
 // ── Main modal component ──
 
 export default function EditProfileModal({
@@ -1883,6 +2089,32 @@ export default function EditProfileModal({
     'longest-context' | 'most-gpu' | null
   >(null);
 
+  // Draft model (speculative decoding) options
+  const [editSpecType, setEditSpecType] = useState<string[]>(
+    profile?.specType ?? [],
+  );
+  const [editDraftModelAuthor, setEditDraftModelAuthor] = useState(
+    profile?.draftModelAuthor ?? '',
+  );
+  const [editDraftModelFolder, setEditDraftModelFolder] = useState(
+    profile?.draftModelFolder ?? '',
+  );
+  const [editDraftModelFilename, setEditDraftModelFilename] = useState(
+    profile?.draftModelFilename ?? '',
+  );
+  const [editSpecDraftNMax, setEditSpecDraftNMax] = useState<string>(
+    String(profile?.specDraftNMax ?? 3),
+  );
+  const [editSpecDraftNMin, setEditSpecDraftNMin] = useState<string>(
+    String(profile?.specDraftNMin ?? 0),
+  );
+  const [editSpecDraftPSplit, setEditSpecDraftPSplit] = useState<string>(
+    String(profile?.specDraftPSplit ?? 0.10),
+  );
+  const [editSpecDraftPMin, setEditSpecDraftPMin] = useState<string>(
+    String(profile?.specDraftPMin ?? 0.00),
+  );
+
   const [editVideoFps, setEditVideoFps] = useState<string>(
     profile?.videoSettings?.fps?.toString() ?? '',
   );
@@ -1954,6 +2186,7 @@ export default function EditProfileModal({
   // Model/Projector modals
   const [showModelModal, setShowModelModal] = useState(false);
   const [showProjectorModal, setShowProjectorModal] = useState(false);
+  const [showDraftModelModal, setShowDraftModelModal] = useState(false);
 
   const navigateTo = (page: string) => {
     if (animating || page === currentPage) return;
@@ -2137,6 +2370,14 @@ export default function EditProfileModal({
           }
         : {}),
       videoSettings: buildVideoSettings(),
+      specType: editSpecType.length > 0 ? editSpecType : undefined,
+      draftModelAuthor: (editSpecType.includes('draft-simple') && editDraftModelAuthor) || undefined,
+      draftModelFolder: (editSpecType.includes('draft-simple') && editDraftModelFolder) || undefined,
+      draftModelFilename: (editSpecType.includes('draft-simple') && editDraftModelFilename) || undefined,
+      specDraftNMax: parseFloat(editSpecDraftNMax),
+      specDraftNMin: parseFloat(editSpecDraftNMin),
+      specDraftPSplit: parseFloat(editSpecDraftPSplit),
+      specDraftPMin: parseFloat(editSpecDraftPMin),
       order: profile?.order ?? now,
       createdAt: profile?.createdAt ?? now,
     };
@@ -2225,6 +2466,28 @@ export default function EditProfileModal({
       filename: editProjectorFilename,
       quantization: extractQuantizationFromFilename(editProjectorFilename),
       sizeBytes: 0,
+    };
+  })();
+
+  const selectedDraftModelDisplay = (() => {
+    if (!editDraftModelFilename) return null;
+    const groupName = editDraftModelAuthor
+      ? `${editDraftModelAuthor}/${editDraftModelFolder}`
+      : editDraftModelFolder;
+    for (const group of modelSelectGroups) {
+      if (group.name !== groupName) continue;
+      const v = group.variants.find(
+        (v) => v.filename === editDraftModelFilename,
+      );
+      if (v) return { ...v, name: groupName, group: groupName };
+      break;
+    }
+    return {
+      filename: editDraftModelFilename,
+      quantization: extractQuantizationFromFilename(editDraftModelFilename),
+      sizeBytes: 0,
+      name: groupName,
+      group: groupName,
     };
   })();
 
@@ -2335,6 +2598,8 @@ export default function EditProfileModal({
             onEstimateMemory={handleEstimateMemory}
             initialEstimate={profile?.estimation ?? lastEstimate}
             onNavigate={navigateTo}
+            editSpecType={editSpecType}
+            editDraftModelFilename={editDraftModelFilename}
           />
         );
       case 'cache-options':
@@ -2356,6 +2621,29 @@ export default function EditProfileModal({
             editMlock={editMlock}
             onSetMmap={setEditMmap}
             onSetMlock={setEditMlock}
+          />
+        );
+      case 'draft-model':
+        return (
+          <DraftModelPage
+            editSpecType={editSpecType}
+            editDraftModelAuthor={editDraftModelAuthor}
+            editDraftModelFolder={editDraftModelFolder}
+            editDraftModelFilename={editDraftModelFilename}
+            editSpecDraftNMax={editSpecDraftNMax}
+            editSpecDraftNMin={editSpecDraftNMin}
+            editSpecDraftPSplit={editSpecDraftPSplit}
+            editSpecDraftPMin={editSpecDraftPMin}
+            selectedDraftModelDisplay={selectedDraftModelDisplay}
+            onSetSpecType={setEditSpecType}
+            onSetDraftModelAuthor={setEditDraftModelAuthor}
+            onSetDraftModelFolder={setEditDraftModelFolder}
+            onSetDraftModelFilename={setEditDraftModelFilename}
+            onSetSpecDraftNMax={setEditSpecDraftNMax}
+            onSetSpecDraftNMin={setEditSpecDraftNMin}
+            onSetSpecDraftPSplit={setEditSpecDraftPSplit}
+            onSetSpecDraftPMin={setEditSpecDraftPMin}
+            onOpenDraftModelModal={() => setShowDraftModelModal(true)}
           />
         );
       case 'repeat-penalty':
@@ -2521,6 +2809,20 @@ export default function EditProfileModal({
             setShowProjectorModal(false);
           }}
           onClose={() => setShowProjectorModal(false)}
+        />
+      )}
+      {showDraftModelModal && (
+        <ModelSelectModal
+          groups={modelSelectGroups}
+          selectedFilename={editDraftModelFilename}
+          onSelect={(f, groupName) => {
+            const parts = groupName.split('/');
+            setEditDraftModelAuthor(parts[0]);
+            setEditDraftModelFolder(parts.length >= 2 ? parts[1] : parts[0]);
+            setEditDraftModelFilename(f);
+            setShowDraftModelModal(false);
+          }}
+          onClose={() => setShowDraftModelModal(false)}
         />
       )}
     </div>
