@@ -15,6 +15,7 @@ import log from 'electron-log';
 import MenuBuilder from './menu';
 import { resolveHtmlPath } from './util';
 import { registerIpcHandlers } from './ipc';
+import { shutdownAllSandboxes } from './functions/sandboxRunner';
 
 // Suppress llhttp parser assertion errors from HTTP connection teardown
 process.on('uncaughtException', (err) => {
@@ -149,6 +150,14 @@ process.on('unhandledRejection', (reason) => {
 /**
  * Add event listeners...
  */
+
+app.on('before-quit', async () => {
+  console.log('[app] Shutting down sandbox environments...');
+  const result = await shutdownAllSandboxes();
+  if (result.errors.length > 0) {
+    console.warn('[app] Sandbox shutdown errors:', result.errors);
+  }
+});
 
 app.on('window-all-closed', () => {
   // Respect the OSX convention of having the application in memory even

@@ -1,0 +1,9 @@
+{
+  "id": "sandbox",
+  "name": "Sandbox",
+  "description": "Isolated virtual environments via Docker containers for secure model operations",
+  "author": "Synapse",
+  "version": "1.0.0",
+  "icon": "Shield",
+  "builtIn": true
+}
