@@ -537,6 +537,8 @@ export default function SettingsPage() {
 
       {tab === 'chat' && (
         <div className="settings-card">
+          <h2 className="settings-card-title">Thinking</h2>
+
           <div className="settings-field">
             <label className="settings-toggle-row">
               <span className="settings-label">Automatically open thinking segments</span>

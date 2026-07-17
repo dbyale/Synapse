@@ -313,7 +313,8 @@
 }
 
 .mem-title-tooltip {
-  width: fit-content;
+  display: block;
+  width: 100%;
 }
 
 
