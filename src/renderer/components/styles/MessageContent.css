@@ -66,6 +66,60 @@
   margin-top: -2px;
 }
 
+.message-segment--thought .message-segment__tools {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.message-segment--thought .message-segment__thought-text + .message-segment__tools,
+.message-segment--thought .message-segment__tools + .message-segment__thought-text {
+  margin-top: 8px;
+}
+
+.message-segment--thought .tool-call-segment {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+/* ── Tool call group (parallel tools side-by-side) ── */
+
+.tool-call-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tool-call-group__tools {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tool-call-group__stats {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 10px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-weight: 500;
+  opacity: 0.7;
+}
+
+.tool-call-group__stats svg {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.tool-call-group__stats .chat-stat-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
 /* ── Comment segment ── */
 
 .message-segment--comment {

@@ -1716,101 +1716,250 @@ export default function ChatPage() {
                       <div className="chat-message__assistant-content">
                         {(() => {
                           const elements: ReactNode[] = [];
-                          let currentTextSegments: MessageSegment[] = [];
+                          let batchSegments: MessageSegment[] = [];
+                          let standaloneToolBuffer: MessageSegment[] = [];
 
-                          // Group tool segments by reprocessStats reference
-                          const statsGroups = new Map<
-                            GenerationStatsData,
-                            MessageSegment[]
-                          >();
-                          msg.content.forEach((seg) => {
-                            if (seg.type === 'tool' && seg.reprocessStats) {
-                              const ref = seg.reprocessStats;
-                              if (!statsGroups.has(ref))
-                                statsGroups.set(ref, []);
-                              statsGroups.get(ref)!.push(seg);
-                            }
-                          });
+                          const buildToolGroups = (
+                            tools: MessageSegment[],
+                          ): {
+                            segments: MessageSegment[];
+                            stats: GenerationStatsData | null;
+                          }[] => {
+                            const groups: {
+                              segments: MessageSegment[];
+                              stats: GenerationStatsData | null;
+                            }[] = [];
+                            let currentGroup: MessageSegment[] = [];
+                            let currentStats: GenerationStatsData | null = null;
 
-                          msg.content.forEach((segment) => {
-                            if (segment.type === 'tool') {
-                              if (currentTextSegments.length > 0) {
-                                elements.push(
-                                  <MessageContent
-                                    key={`text-batch-${elements.length}`}
-                                    segments={currentTextSegments}
-                                    onImageClick={setImageViewerUrl}
-                                  />,
-                                );
-                                currentTextSegments = [];
+                            for (const tool of tools) {
+                              const stats = tool.reprocessStats ?? null;
+                              if (
+                                currentGroup.length > 0 &&
+                                currentStats !== stats
+                              ) {
+                                groups.push({
+                                  segments: currentGroup,
+                                  stats: currentStats,
+                                });
+                                currentGroup = [];
                               }
-                              const group = segment.reprocessStats
-                                ? statsGroups.get(segment.reprocessStats)
-                                : undefined;
-                              const showInline =
-                                !!segment.reprocessStats &&
-                                group !== undefined &&
-                                group.length === 1;
-                              elements.push(
+                              currentGroup.push(tool);
+                              currentStats = stats;
+                            }
+
+                            if (currentGroup.length > 0) {
+                              groups.push({
+                                segments: currentGroup,
+                                stats: currentStats,
+                              });
+                            }
+
+                            return groups;
+                          };
+
+                          const renderToolGroup = (
+                            group: {
+                              segments: MessageSegment[];
+                              stats: GenerationStatsData | null;
+                            },
+                            key: string | number,
+                          ): ReactNode => {
+                            if (group.segments.length === 1) {
+                              return (
                                 <ToolCallSegment
-                                  key={segment.id}
-                                  segment={segment}
-                                  showInlineStats={showInline}
+                                  key={key}
+                                  segment={group.segments[0]}
+                                  showInlineStats={!!group.stats}
+                                />
+                              );
+                            }
+
+                            return (
+                              <div
+                                key={`tool-group-${key}`}
+                                className="tool-call-group"
+                              >
+                                <div className="tool-call-group__tools">
+                                  {group.segments.map((seg) => (
+                                    <ToolCallSegment
+                                      key={seg.id}
+                                      segment={seg}
+                                      showInlineStats={false}
+                                    />
+                                  ))}
+                                </div>
+                                {group.stats && (
+                                  <div className="tool-call-group__stats">
+                                    <div
+                                      className="chat-stat-item"
+                                      title="Prompt tokens"
+                                    >
+                                      <Hash size={12} />
+                                      <span>
+                                        {group.stats.tokens} tokens
+                                      </span>
+                                    </div>
+                                    <div
+                                      className="chat-stat-item"
+                                      title="Prompt processing time"
+                                    >
+                                      <Timer size={12} />
+                                      <span>
+                                        {(group.stats.timeMs / 1000).toFixed(2)}s
+                                      </span>
+                                    </div>
+                                    <div
+                                      className="chat-stat-item"
+                                      title="Prompt processing speed"
+                                    >
+                                      <Zap size={12} />
+                                      <span>
+                                        {group.stats.tokensPerSecond.toFixed(1)} t/s
+                                      </span>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          };
+
+                          const flushStandaloneTools = () => {
+                            if (standaloneToolBuffer.length === 0) return;
+                            const groups = buildToolGroups(standaloneToolBuffer);
+                            for (let i = 0; i < groups.length; i++) {
+                              elements.push(
+                                renderToolGroup(
+                                  groups[i],
+                                  `solo-${elements.length}-${i}`,
+                                ),
+                              );
+                            }
+                            standaloneToolBuffer = [];
+                          };
+
+                          const buildThoughtItems = (
+                            segments: MessageSegment[],
+                          ): {
+                            kind: 'text' | 'tools';
+                            text?: string;
+                            groups?: {
+                              segments: MessageSegment[];
+                              stats: GenerationStatsData | null;
+                            }[];
+                          }[] => {
+                            const items: {
+                              kind: 'text' | 'tools';
+                              text?: string;
+                              groups?: {
+                                segments: MessageSegment[];
+                                stats: GenerationStatsData | null;
+                              }[];
+                            }[] = [];
+                            let textBuffer: string[] = [];
+                            let toolBuffer: MessageSegment[] = [];
+
+                            const flushText = () => {
+                              if (textBuffer.length > 0) {
+                                items.push({
+                                  kind: 'text',
+                                  text: textBuffer.join(''),
+                                });
+                                textBuffer = [];
+                              }
+                            };
+
+                            const flushTools = () => {
+                              if (toolBuffer.length > 0) {
+                                const groups = buildToolGroups(toolBuffer);
+                                items.push({ kind: 'tools', groups });
+                                toolBuffer = [];
+                              }
+                            };
+
+                            for (const seg of segments) {
+                              if (seg.type === 'tool') {
+                                flushText();
+                                toolBuffer.push(seg);
+                              } else {
+                                flushTools();
+                                if (seg.type === 'thought' && seg.text.trim().length > 0) {
+                                  textBuffer.push(seg.text);
+                                }
+                              }
+                            }
+                            flushText();
+                            flushTools();
+
+                            return items;
+                          };
+
+                          const flushBatch = () => {
+                            if (batchSegments.length === 0) return;
+
+                            const hasThought = batchSegments.some(
+                              (s) => s.type === 'thought',
+                            );
+
+                            if (hasThought) {
+                              const items = buildThoughtItems(batchSegments);
+                              elements.push(
+                                <MessageContent
+                                  key={`batch-${elements.length}`}
+                                  segments={[]}
+                                  thoughtItems={items}
+                                  onImageClick={setImageViewerUrl}
+                                  renderTool={(seg, showInline) => (
+                                    <ToolCallSegment
+                                      key={seg.id}
+                                      segment={seg}
+                                      showInlineStats={showInline}
+                                    />
+                                  )}
                                 />,
                               );
                             } else {
-                              currentTextSegments.push(segment);
+                              elements.push(
+                                <MessageContent
+                                  key={`batch-${elements.length}`}
+                                  segments={batchSegments}
+                                  onImageClick={setImageViewerUrl}
+                                />,
+                              );
+                            }
+
+                            batchSegments = [];
+                          };
+
+                          msg.content.forEach((segment) => {
+                            if (segment.type === 'tool') {
+                              const isInThoughtBatch =
+                                batchSegments.length > 0 &&
+                                batchSegments.every(
+                                  (s) =>
+                                    s.type === 'thought' || s.type === 'tool',
+                                );
+
+                              if (isInThoughtBatch) {
+                                batchSegments.push(segment);
+                              } else {
+                                flushBatch();
+                                standaloneToolBuffer.push(segment);
+                              }
+                            } else {
+                              flushStandaloneTools();
+                              if (
+                                batchSegments.length > 0 &&
+                                segment.type !== 'thought'
+                              ) {
+                                flushBatch();
+                              }
+                              batchSegments.push(segment);
                             }
                           });
 
-                          // Add shared stats blocks for groups of 2+
-                          let sharedKey = 0;
-                          for (const [stats, segs] of statsGroups.entries()) {
-                            if (segs.length >= 2) {
-                              elements.push(
-                                <div
-                                  key={`shared-stats-${sharedKey++}`}
-                                  className="chat-message__stats chat-message__stats--tool-shared"
-                                >
-                                  <div
-                                    className="chat-stat-item"
-                                    title="Prompt tokens"
-                                  >
-                                    <Hash size={12} />
-                                    <span>{stats.tokens} tokens</span>
-                                  </div>
-                                  <div
-                                    className="chat-stat-item"
-                                    title="Prompt processing time"
-                                  >
-                                    <Timer size={12} />
-                                    <span>
-                                      {(stats.timeMs / 1000).toFixed(2)}s
-                                    </span>
-                                  </div>
-                                  <div
-                                    className="chat-stat-item"
-                                    title="Prompt processing speed"
-                                  >
-                                    <Zap size={12} />
-                                    <span>
-                                      {stats.tokensPerSecond.toFixed(1)} t/s
-                                    </span>
-                                  </div>
-                                </div>,
-                              );
-                            }
-                          }
-
-                          if (currentTextSegments.length > 0) {
-                            elements.push(
-                              <MessageContent
-                                key={`text-batch-${elements.length}`}
-                                segments={currentTextSegments}
-                                onImageClick={setImageViewerUrl}
-                              />,
-                            );
-                          }
+                          flushStandaloneTools();
+                          flushBatch();
 
                           return elements;
                         })()}
