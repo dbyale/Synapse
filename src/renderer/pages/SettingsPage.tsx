@@ -4,6 +4,8 @@ import {
   AlertTriangle,
   CheckCircle2,
   RefreshCw,
+  SlidersHorizontal,
+  MessageSquare,
 } from 'lucide-react';
 import type { AppSettings, HardwareStats } from '../preload.d';
 import InfoTooltip from '../components/InfoTooltip';
@@ -237,6 +239,7 @@ export default function SettingsPage() {
   const [ramStats, setRamStats] = useState<MemoryStats>(EMPTY_MEMORY);
   const [vramStats, setVramStats] = useState<MemoryStats>(EMPTY_MEMORY);
   const [showRestartDialog, setShowRestartDialog] = useState(false);
+  const [tab, setTab] = useState<'system' | 'chat'>('system');
 
   const savedAllocationsRef = useRef<{
     allocatedRAM?: number;
@@ -449,117 +452,138 @@ export default function SettingsPage() {
         )}
       </div>
 
-      <div className="settings-card">
-        <InfoTooltip content="Configure global application paths and directories." side="right" hideIcon title="Application Setup" className="mem-title-tooltip">
-          <h2 className="settings-card-title">Application Setup</h2>
-        </InfoTooltip>
-
-        <div className="settings-field">
-          <InfoTooltip content={MODELS_DIR_TOOLTIP} side="bottom" hideIcon title="Models Directory" className="models-dir-tooltip">
-            <span className="settings-label">Models Directory</span>
-            <div className="settings-row">
-              <input
-                className="settings-input"
-                value={settings.modelsDirectory}
-                readOnly
-              />
-              <button
-                type="button"
-                className="settings-icon-btn"
-                onClick={handlePickDirectory}
-                title="Browse"
-              >
-                <FolderOpen size={16} />
-              </button>
-            </div>
-          </InfoTooltip>
-        </div>
+      <div className="settings-tabs">
+        <button
+          type="button"
+          className={`settings-tab ${tab === 'system' ? 'settings-tab--active' : ''}`}
+          onClick={() => setTab('system')}
+        >
+          <SlidersHorizontal size={16} /> System
+        </button>
+        <button
+          type="button"
+          className={`settings-tab ${tab === 'chat' ? 'settings-tab--active' : ''}`}
+          onClick={() => setTab('chat')}
+        >
+          <MessageSquare size={16} /> Chat
+        </button>
       </div>
 
-      <div className="settings-card">
-        <h2 className="settings-card-title">Chat</h2>
+      {tab === 'system' && (
+        <>
+          <div className="settings-card">
+            <InfoTooltip content="Configure global application paths and directories." side="right" hideIcon title="Application Setup" className="mem-title-tooltip">
+              <h2 className="settings-card-title">Application Setup</h2>
+            </InfoTooltip>
 
-        <div className="settings-field">
-          <label className="settings-toggle-row">
-            <span className="settings-label">Automatically open thinking segments</span>
-            <div
-              className={`epm-toggle-switch${settings.autoOpenThinking ? ' epm-toggle-switch--on' : ''}`}
-              onClick={() => triggerSave({ autoOpenThinking: !settings.autoOpenThinking })}
-              role="switch"
-              aria-checked={settings.autoOpenThinking}
-              tabIndex={0}
-              onKeyDown={(e) => {
-                if (e.key === ' ' || e.key === 'Enter') {
-                  e.preventDefault();
-                  triggerSave({ autoOpenThinking: !settings.autoOpenThinking });
-                }
-              }}
-            >
-              <div className="epm-toggle-switch__knob" />
+            <div className="settings-field">
+              <InfoTooltip content={MODELS_DIR_TOOLTIP} side="bottom" hideIcon title="Models Directory" className="models-dir-tooltip">
+                <span className="settings-label">Models Directory</span>
+                <div className="settings-row">
+                  <input
+                    className="settings-input"
+                    value={settings.modelsDirectory}
+                    readOnly
+                  />
+                  <button
+                    type="button"
+                    className="settings-icon-btn"
+                    onClick={handlePickDirectory}
+                    title="Browse"
+                  >
+                    <FolderOpen size={16} />
+                  </button>
+                </div>
+              </InfoTooltip>
             </div>
-          </label>
-        </div>
+          </div>
 
-        <div className="settings-field">
-          <label className={`settings-toggle-row${!settings.autoOpenThinking ? ' settings-toggle-row--disabled' : ''}`}>
-            <span className="settings-label">Automatically close thinking segments when finished</span>
-            <div
-              className={`epm-toggle-switch${settings.autoCloseThinkingDone ? ' epm-toggle-switch--on' : ''}${!settings.autoOpenThinking ? ' epm-toggle-switch--disabled' : ''}`}
-              onClick={() => {
-                if (!settings.autoOpenThinking) return;
-                triggerSave({ autoCloseThinkingDone: !settings.autoCloseThinkingDone });
-              }}
-              role="switch"
-              aria-checked={settings.autoCloseThinkingDone}
-              tabIndex={settings.autoOpenThinking ? 0 : -1}
-              onKeyDown={(e) => {
-                if (!settings.autoOpenThinking) return;
-                if (e.key === ' ' || e.key === 'Enter') {
-                  e.preventDefault();
-                  triggerSave({ autoCloseThinkingDone: !settings.autoCloseThinkingDone });
-                }
-              }}
-            >
-              <div className="epm-toggle-switch__knob" />
-            </div>
-          </label>
-        </div>
-      </div>
+          <div className="settings-card">
+            <InfoTooltip content={MEMORY_ALLOCATOR_TOOLTIP} side="right" hideIcon title="System Resource Allocator" className="mem-title-tooltip">
+              <h2 className="settings-card-title">System Resource Allocator</h2>
+            </InfoTooltip>
 
-      <div className="settings-card">
-        <InfoTooltip content={MEMORY_ALLOCATOR_TOOLTIP} side="right" hideIcon title="System Resource Allocator" className="mem-title-tooltip">
-          <h2 className="settings-card-title">System Resource Allocator</h2>
-        </InfoTooltip>
-
-        <MemorySlider
-          title={ramTitle}
-          stats={ramStats}
-          onChange={(newVal) =>
-            setRamStats((prev) => ({ ...prev, appAllocated: newVal }))
-          }
-          onSave={(newVal) => triggerSave({ allocatedRAM: newVal })}
-          onRefresh={fetchHardware}
-          loading={ramLoading}
-          unavailableMessage="RAM information unavailable"
-        />
-
-        {showVramSection ? (
-          <>
-            <div style={{ height: 32 }} />
             <MemorySlider
-              title={vramTitle}
-              stats={vramStats}
+              title={ramTitle}
+              stats={ramStats}
               onChange={(newVal) =>
-                setVramStats((prev) => ({ ...prev, appAllocated: newVal }))
+                setRamStats((prev) => ({ ...prev, appAllocated: newVal }))
               }
-              onSave={(newVal) => triggerSave({ allocatedVRAM: newVal })}
+              onSave={(newVal) => triggerSave({ allocatedRAM: newVal })}
               onRefresh={fetchHardware}
-              loading={gpuLoading}
-              unavailableMessage="GPU memory information unavailable"
+              loading={ramLoading}
+              unavailableMessage="RAM information unavailable"
             />
-          </>
-        ) : null}
-      </div>
+
+            {showVramSection ? (
+              <>
+                <div style={{ height: 32 }} />
+                <MemorySlider
+                  title={vramTitle}
+                  stats={vramStats}
+                  onChange={(newVal) =>
+                    setVramStats((prev) => ({ ...prev, appAllocated: newVal }))
+                  }
+                  onSave={(newVal) => triggerSave({ allocatedVRAM: newVal })}
+                  onRefresh={fetchHardware}
+                  loading={gpuLoading}
+                  unavailableMessage="GPU memory information unavailable"
+                />
+              </>
+            ) : null}
+          </div>
+        </>
+      )}
+
+      {tab === 'chat' && (
+        <div className="settings-card">
+          <div className="settings-field">
+            <label className="settings-toggle-row">
+              <span className="settings-label">Automatically open thinking segments</span>
+              <div
+                className={`epm-toggle-switch${settings.autoOpenThinking ? ' epm-toggle-switch--on' : ''}`}
+                onClick={() => triggerSave({ autoOpenThinking: !settings.autoOpenThinking })}
+                role="switch"
+                aria-checked={settings.autoOpenThinking}
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === ' ' || e.key === 'Enter') {
+                    e.preventDefault();
+                    triggerSave({ autoOpenThinking: !settings.autoOpenThinking });
+                  }
+                }}
+              >
+                <div className="epm-toggle-switch__knob" />
+              </div>
+            </label>
+          </div>
+
+          <div className="settings-field">
+            <label className={`settings-toggle-row${!settings.autoOpenThinking ? ' settings-toggle-row--disabled' : ''}`}>
+              <span className="settings-label">Automatically close thinking segments when finished</span>
+              <div
+                className={`epm-toggle-switch${settings.autoCloseThinkingDone ? ' epm-toggle-switch--on' : ''}${!settings.autoOpenThinking ? ' epm-toggle-switch--disabled' : ''}`}
+                onClick={() => {
+                  if (!settings.autoOpenThinking) return;
+                  triggerSave({ autoCloseThinkingDone: !settings.autoCloseThinkingDone });
+                }}
+                role="switch"
+                aria-checked={settings.autoCloseThinkingDone}
+                tabIndex={settings.autoOpenThinking ? 0 : -1}
+                onKeyDown={(e) => {
+                  if (!settings.autoOpenThinking) return;
+                  if (e.key === ' ' || e.key === 'Enter') {
+                    e.preventDefault();
+                    triggerSave({ autoCloseThinkingDone: !settings.autoCloseThinkingDone });
+                  }
+                }}
+              >
+                <div className="epm-toggle-switch__knob" />
+              </div>
+            </label>
+          </div>
+        </div>
+      )}
 
       {showRestartDialog && (
         <ConfirmDialog

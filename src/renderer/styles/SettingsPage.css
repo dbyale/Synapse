@@ -186,6 +186,32 @@
   margin-bottom: -16px; /* Offset the parent flex gap so it aligns nicely */
 }
 
+.settings-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: -16px;
+}
+
+.settings-tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.settings-tab--active {
+  color: var(--text-primary);
+  border-bottom-color: var(--accent);
+}
+
 .settings-saved-indicator {
   display: flex;
   align-items: center;
