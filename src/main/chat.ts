@@ -558,6 +558,12 @@ export async function loadProfile(
       if (profile.mmap === false) spawnArgs.push('--no-mmap');
       if (profile.mlock === true) spawnArgs.push('--mlock');
 
+      // Mixture of Experts (MoE)
+      if (profile.cpuMoe === true) spawnArgs.push('--cpu-moe');
+      if (profile.nCpuMoe !== undefined && profile.nCpuMoe > 0) {
+        spawnArgs.push('--n-cpu-moe', profile.nCpuMoe.toString());
+      }
+
       if (fullProjectorPath) {
         spawnArgs.push('--mmproj', fullProjectorPath);
         currentProjector = fullProjectorPath;

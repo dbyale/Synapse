@@ -1,4 +1,12 @@
-import { useState, useEffect, useRef, useCallback, MouseEvent, KeyboardEvent, ClipboardEvent } from 'react';
+import {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  MouseEvent,
+  KeyboardEvent,
+  ClipboardEvent,
+} from 'react';
 import {
   X,
   ChevronLeft,
@@ -62,6 +70,8 @@ import {
   DRAFT_N_MIN_TOOLTIP,
   DRAFT_P_SPLIT_TOOLTIP,
   DRAFT_P_MIN_TOOLTIP,
+  CPU_MOE_TOOLTIP,
+  N_CPU_MOE_TOOLTIP,
 } from '../utils/tooltipContent';
 import ModelSelectModal from './ModelSelectModal';
 import ProjectorSelectModal from './ProjectorSelectModal';
@@ -81,8 +91,28 @@ interface GroupData {
 
 interface ExtensionGroup {
   extension: {
-    manifest: { id: string; name: string; description: string; author: string; version: string; icon: string; builtIn: boolean; iconSvgData?: string };
-    tools: Record<string, { meta: { name: string; label: string; description: string; icon: string }; params: Record<string, any> }>;
+    manifest: {
+      id: string;
+      name: string;
+      description: string;
+      author: string;
+      version: string;
+      icon: string;
+      builtIn: boolean;
+      iconSvgData?: string;
+    };
+    tools: Record<
+      string,
+      {
+        meta: {
+          name: string;
+          label: string;
+          description: string;
+          icon: string;
+        };
+        params: Record<string, any>;
+      }
+    >;
     enabled: boolean;
   };
   toolKeys: string[];
@@ -124,6 +154,7 @@ const PAGE_DEPTH: Record<string, number> = {
   'cache-options': 2,
   'memory-options': 2,
   'draft-model': 2,
+  'moe-options': 2,
 };
 
 const BREADCRUMB_MAP: Record<string, { label: string; parent: string | null }> =
@@ -139,6 +170,7 @@ const BREADCRUMB_MAP: Record<string, { label: string; parent: string | null }> =
     'cache-options': { label: 'Cache Options', parent: 'performance' },
     'memory-options': { label: 'Memory Options', parent: 'performance' },
     'draft-model': { label: 'Draft Model', parent: 'performance' },
+    'moe-options': { label: 'Mixture of Experts', parent: 'performance' },
   };
 
 function buildBreadcrumb(page: string): Array<{ key: string; label: string }> {
@@ -189,7 +221,11 @@ function ToolCategoryCard({
       >
         <div className="epm-tool-category__icon-wrap">
           {iconSvgData ? (
-            <img src={iconSvgData} alt="" className="epm-tool-category__svg-icon" />
+            <img
+              src={iconSvgData}
+              alt=""
+              className="epm-tool-category__svg-icon"
+            />
           ) : iconName ? (
             (() => {
               const IconComp = resolveIcon(iconName);
@@ -228,7 +264,11 @@ function ToolCategoryCard({
 // ── Page content components ──
 
 const autoOptimizerLabel = (v: 'longest-context' | 'most-gpu' | 'custom') =>
-  v === 'longest-context' ? 'Longest Context' : v === 'most-gpu' ? 'Most GPU' : 'Custom';
+  v === 'longest-context'
+    ? 'Longest Context'
+    : v === 'most-gpu'
+      ? 'Most GPU'
+      : 'Custom';
 
 function MainPage({
   editName,
@@ -282,7 +322,12 @@ function MainPage({
     <div className="epm-main-grid">
       <div className="epm-main-left">
         <div className="epm-section">
-          <InfoTooltip content={PROFILE_NAME_TOOLTIP} side="right" hideIcon title="Profile Name">
+          <InfoTooltip
+            content={PROFILE_NAME_TOOLTIP}
+            side="right"
+            hideIcon
+            title="Profile Name"
+          >
             <div className="epm-section__label">Profile Name</div>
           </InfoTooltip>
           <input
@@ -295,7 +340,12 @@ function MainPage({
         </div>
 
         <div className="epm-section">
-          <InfoTooltip content={MODEL_TOOLTIP} side="right" hideIcon title="Model">
+          <InfoTooltip
+            content={MODEL_TOOLTIP}
+            side="right"
+            hideIcon
+            title="Model"
+          >
             <div className="epm-section__label">Model</div>
           </InfoTooltip>
           {availableModelsForEdit.length === 0 ? (
@@ -359,7 +409,11 @@ function MainPage({
             icon={<FileText size={20} />}
             title="Projector"
             tooltip={PROJECTOR_TOOLTIP}
-            preview={selectedProjectorDisplay ? selectedProjectorDisplay.filename : 'None'}
+            preview={
+              selectedProjectorDisplay
+                ? selectedProjectorDisplay.filename
+                : 'None'
+            }
             onClick={() => onNavigate('projector')}
           />
         )}
@@ -370,7 +424,9 @@ function MainPage({
             title="Performance"
             tooltip="Configure GPU offloading, context size, cache, and memory options."
             preview={
-              editAutoOptimizer && editLayers !== undefined && editContextSize !== undefined
+              editAutoOptimizer &&
+              editLayers !== undefined &&
+              editContextSize !== undefined
                 ? `${autoOptimizerLabel(editAutoOptimizer)}: ${Math.round((editLayers / modelMaxLayers) * 100)}% Offload, ${Math.round((editContextSize / modelMaxContext) * 100)}% Context`
                 : editAutoOptimizer
                   ? 'Optimizing\u2026'
@@ -453,14 +509,42 @@ function SectionCard({
 }
 
 const SYSTEM_PROMPT_VARIABLES = [
-  { label: '{date}', insert: '{date}', description: 'Current date (YYYY-MM-DD)' },
-  { label: '{time}', insert: '{time}', description: 'Current time (HH:MM AM/PM)' },
-  { label: '{datetime}', insert: '{datetime}', description: 'Current date and time' },
-  { label: '{dayOfWeek}', insert: '{dayOfWeek}', description: 'Current day of the week' },
+  {
+    label: '{date}',
+    insert: '{date}',
+    description: 'Current date (YYYY-MM-DD)',
+  },
+  {
+    label: '{time}',
+    insert: '{time}',
+    description: 'Current time (HH:MM AM/PM)',
+  },
+  {
+    label: '{datetime}',
+    insert: '{datetime}',
+    description: 'Current date and time',
+  },
+  {
+    label: '{dayOfWeek}',
+    insert: '{dayOfWeek}',
+    description: 'Current day of the week',
+  },
   { label: '{timezone}', insert: '{timezone}', description: 'User timezone' },
-  { label: '{profilename}', insert: '{profilename}', description: 'Current profile name' },
-  { label: '{modelname}', insert: '{modelname}', description: 'Current model filename' },
-  { label: '{contextlength}', insert: '{contextlength}', description: 'Context size in tokens' },
+  {
+    label: '{profilename}',
+    insert: '{profilename}',
+    description: 'Current profile name',
+  },
+  {
+    label: '{modelname}',
+    insert: '{modelname}',
+    description: 'Current model filename',
+  },
+  {
+    label: '{contextlength}',
+    insert: '{contextlength}',
+    description: 'Context size in tokens',
+  },
 ];
 
 function textToHighlightedHtml(text: string): string {
@@ -483,7 +567,7 @@ function getPlainText(el: HTMLElement): string {
     } else if (node.nodeName === 'BR') {
       text += '\n';
     } else if (node.nodeName === 'DIV') {
-      text += '\n' + getPlainText(node as HTMLElement);
+      text += `\n${getPlainText(node as HTMLElement)}`;
     } else if (node instanceof HTMLElement) {
       text += getPlainText(node);
     }
@@ -499,7 +583,13 @@ function highlightTextNodes(el: HTMLElement) {
     if (!node) break;
     if (/\{\w+\}/.test(node.textContent || '')) {
       const parent = node.parentNode;
-      if (parent && !(parent instanceof HTMLElement && parent.classList.contains('epm-var-highlight'))) {
+      if (
+        parent &&
+        !(
+          parent instanceof HTMLElement &&
+          parent.classList.contains('epm-var-highlight')
+        )
+      ) {
         toProcess.push(node);
       }
     }
@@ -629,7 +719,18 @@ function ToolsPage({
   editTools,
   onToolToggle,
 }: {
-  extensionGroups: Array<{ extension: { manifest: { id: string; name: string; icon: string; iconSvgData?: string }; tools: Record<string, any> }; toolKeys: string[] }>;
+  extensionGroups: Array<{
+    extension: {
+      manifest: {
+        id: string;
+        name: string;
+        icon: string;
+        iconSvgData?: string;
+      };
+      tools: Record<string, any>;
+    };
+    toolKeys: string[];
+  }>;
   editTools: string[];
   onToolToggle: (key: string) => void;
 }) {
@@ -691,13 +792,18 @@ function ToolsPage({
           title={`${modalExt.name} Tools`}
           description={modalExt.description}
           tools={modalExt.toolKeys
-              .map((tk) => {
-                const meta = getToolMeta(tk);
-                return meta
-                  ? { name: tk, label: meta.label, description: meta.description, descriptionForHuman: meta.descriptionForHuman }
-                  : null;
-              })
-              .filter((t): t is NonNullable<typeof t> => t !== null)}
+            .map((tk) => {
+              const meta = getToolMeta(tk);
+              return meta
+                ? {
+                    name: tk,
+                    label: meta.label,
+                    description: meta.description,
+                    descriptionForHuman: meta.descriptionForHuman,
+                  }
+                : null;
+            })
+            .filter((t): t is NonNullable<typeof t> => t !== null)}
           editTools={editTools}
           onToolToggle={onToolToggle}
           onClose={() => setModalExt(null)}
@@ -785,7 +891,12 @@ function AdvancedPage({
         />
       </div>
 
-      <InfoTooltip content={REPEAT_PENALTY_TOOLTIP} side="bottom" hideIcon title="Repeat Penalty">
+      <InfoTooltip
+        content={REPEAT_PENALTY_TOOLTIP}
+        side="bottom"
+        hideIcon
+        title="Repeat Penalty"
+      >
         <div style={{ marginTop: '20px' }}>
           <SectionCard
             icon={<Settings size={18} />}
@@ -840,10 +951,18 @@ function NumberField({
     </div>
   );
   return tooltip ? (
-    <InfoTooltip content={tooltip} title={tooltipTitle || label} side="bottom" stretch className="info-tooltip-stretch--col">
+    <InfoTooltip
+      content={tooltip}
+      title={tooltipTitle || label}
+      side="bottom"
+      stretch
+      className="info-tooltip-stretch--col"
+    >
       {field}
     </InfoTooltip>
-  ) : field;
+  ) : (
+    field
+  );
 }
 
 function RepeatPenaltyPage({
@@ -888,7 +1007,12 @@ function RepeatPenaltyPage({
           checked={editRpEnabled}
           onChange={(e) => setEditRpEnabled(e.target.checked)}
         />
-        <InfoTooltip content={REPEAT_PENALTY_TOOLTIP} side="right" hideIcon title="Enabled">
+        <InfoTooltip
+          content={REPEAT_PENALTY_TOOLTIP}
+          side="right"
+          hideIcon
+          title="Enabled"
+        >
           <span>Enabled</span>
         </InfoTooltip>
       </label>
@@ -951,9 +1075,27 @@ function extractQuantizationFromFilename(filename: string): string {
   return match ? match[1].toUpperCase() : 'Unknown';
 }
 
-const CACHE_TYPE_OPTIONS: CacheType[] = ['f32', 'bf16', 'f16', 'q8_0', 'q5_1', 'q5_0', 'iq4_nl', 'q4_1', 'q4_0'];
+const CACHE_TYPE_OPTIONS: CacheType[] = [
+  'f32',
+  'bf16',
+  'f16',
+  'q8_0',
+  'q5_1',
+  'q5_0',
+  'iq4_nl',
+  'q4_1',
+  'q4_0',
+];
 
-function CacheTypeSelector({ label, value, onChange }: { label: string; value: CacheType; onChange: (v: CacheType) => void }) {
+function CacheTypeSelector({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: CacheType;
+  onChange: (v: CacheType) => void;
+}) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -985,7 +1127,10 @@ function CacheTypeSelector({ label, value, onChange }: { label: string; value: C
               <button
                 key={t}
                 className={`epm-cache-selector-option${t === value ? ' epm-cache-selector-option--active' : ''}`}
-                onClick={() => { onChange(t); setOpen(false); }}
+                onClick={() => {
+                  onChange(t);
+                  setOpen(false);
+                }}
                 type="button"
               >
                 {t}
@@ -1020,7 +1165,12 @@ function ProjectorPage({
   return (
     <>
       <div className="epm-section">
-        <InfoTooltip content={PROJECTOR_TOOLTIP} side="right" hideIcon title="Projector">
+        <InfoTooltip
+          content={PROJECTOR_TOOLTIP}
+          side="right"
+          hideIcon
+          title="Projector"
+        >
           <div className="epm-section__label">Projector</div>
         </InfoTooltip>
         <button
@@ -1105,7 +1255,15 @@ function VideoSettingsPage({
 }) {
   return (
     <>
-      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', cursor: 'pointer' }}>
+      <label
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          marginBottom: '16px',
+          cursor: 'pointer',
+        }}
+      >
         <input
           type="checkbox"
           checked={editVideoUnlimitedMaxFrames}
@@ -1114,15 +1272,15 @@ function VideoSettingsPage({
         <span>Disable Frame Limit</span>
       </label>
       <div className="epm-number-grid">
-      <NumberField
-        label="Frames Per Second (FPS)"
-        value={editVideoFps}
-        onChange={setEditVideoFps}
-        step="0.5"
-        helper="Default: 1"
-        tooltip="How many video frames to sample per second. Higher values capture more temporal detail but increase token usage and processing time. (default: 1)"
-      />
-      <NumberField
+        <NumberField
+          label="Frames Per Second (FPS)"
+          value={editVideoFps}
+          onChange={setEditVideoFps}
+          step="0.5"
+          helper="Default: 1"
+          tooltip="How many video frames to sample per second. Higher values capture more temporal detail but increase token usage and processing time. (default: 1)"
+        />
+        <NumberField
           label="Max Frames"
           value={editVideoMaxFrames}
           onChange={setEditVideoMaxFrames}
@@ -1131,23 +1289,23 @@ function VideoSettingsPage({
           tooltip="Maximum total frames to extract from a video. Longer videos are truncated at this limit. (default: 15)"
           disabled={editVideoUnlimitedMaxFrames}
         />
-      <NumberField
-        label="JPEG Quality"
-        value={editVideoQuality}
-        onChange={setEditVideoQuality}
-        step="0.1"
-        helper="Default: 0.8"
-        tooltip="Quality of extracted frame images. Higher values preserve more visual detail but produce larger payloads. Range: 0.0–1.0. (default: 0.8)"
-      />
-      <NumberField
-        label="Max Width (px)"
-        value={editVideoWidth}
-        onChange={setEditVideoWidth}
-        step="1"
-        helper="Default: 640"
-        tooltip="Maximum width in pixels for extracted frames. Frames are scaled down to fit while maintaining aspect ratio. (default: 640)"
-      />
-    </div>
+        <NumberField
+          label="JPEG Quality"
+          value={editVideoQuality}
+          onChange={setEditVideoQuality}
+          step="0.1"
+          helper="Default: 0.8"
+          tooltip="Quality of extracted frame images. Higher values preserve more visual detail but produce larger payloads. Range: 0.0–1.0. (default: 0.8)"
+        />
+        <NumberField
+          label="Max Width (px)"
+          value={editVideoWidth}
+          onChange={setEditVideoWidth}
+          step="1"
+          helper="Default: 640"
+          tooltip="Maximum width in pixels for extracted frames. Frames are scaled down to fit while maintaining aspect ratio. (default: 640)"
+        />
+      </div>
     </>
   );
 }
@@ -1184,6 +1342,8 @@ function PerformancePage({
   onNavigate,
   editSpecType,
   editDraftModelFilename,
+  editCpuMoe,
+  editNCpuMoe,
 }: {
   editAutoOptimizer: 'longest-context' | 'most-gpu' | 'custom' | null;
   editLayers: number | undefined;
@@ -1239,13 +1399,21 @@ function PerformancePage({
   onNavigate: (page: string) => void;
   editSpecType: string[];
   editDraftModelFilename: string;
+  editCpuMoe: boolean;
+  editNCpuMoe: string;
 }) {
   const isAuto =
     editAutoOptimizer !== null &&
     editAutoOptimizer !== undefined &&
     editAutoOptimizer !== 'custom';
-  const sliderNgl = editGpuLayersAuto ? (editLayers ?? 0) : (isAuto ? editLayers ?? 0 : (editLayers ?? 0));
-  const sliderCtx = isAuto ? editContextSize ?? 512 : (editContextSize ?? 512);
+  const sliderNgl = editGpuLayersAuto
+    ? (editLayers ?? 0)
+    : isAuto
+      ? (editLayers ?? 0)
+      : (editLayers ?? 0);
+  const sliderCtx = isAuto
+    ? (editContextSize ?? 512)
+    : (editContextSize ?? 512);
 
   const [memory, setMemory] = useState<{
     modelVramUsage: number;
@@ -1257,13 +1425,31 @@ function PerformancePage({
     fileBufferRam: number;
   } | null>(initialEstimate);
   const layersDisabled = isAuto || editGpuLayersAuto;
-  const activeLayers = editGpuLayersAuto ? (editLayers ?? modelMaxLayers) : (isAuto ? (editLayers ?? 0) : sliderNgl);
+  const activeLayers = editGpuLayersAuto
+    ? (editLayers ?? modelMaxLayers)
+    : isAuto
+      ? (editLayers ?? 0)
+      : sliderNgl;
   const activeCtx = isAuto ? (editContextSize ?? 512) : sliderCtx;
 
   const triggerEstimate = useCallback(
-    async (ngl: number, ctx: number, kvOffload?: boolean, mmap?: boolean, cacheTypeK?: CacheType, cacheTypeV?: CacheType) => {
+    async (
+      ngl: number,
+      ctx: number,
+      kvOffload?: boolean,
+      mmap?: boolean,
+      cacheTypeK?: CacheType,
+      cacheTypeV?: CacheType,
+    ) => {
       if (ngl < 0 || ctx < 512) return;
-      const result = await onEstimateMemory(ngl, ctx, kvOffload, mmap, cacheTypeK, cacheTypeV);
+      const result = await onEstimateMemory(
+        ngl,
+        ctx,
+        kvOffload,
+        mmap,
+        cacheTypeK,
+        cacheTypeV,
+      );
       setMemory(result);
     },
     [onEstimateMemory],
@@ -1271,7 +1457,12 @@ function PerformancePage({
 
   const initialLoadDone = useRef(false);
   useEffect(() => {
-    if (!initialLoadDone.current && memory === null && activeLayers >= 0 && activeCtx >= 512) {
+    if (
+      !initialLoadDone.current &&
+      memory === null &&
+      activeLayers >= 0 &&
+      activeCtx >= 512
+    ) {
       initialLoadDone.current = true;
       triggerEstimate(activeLayers, activeCtx);
     }
@@ -1287,15 +1478,28 @@ function PerformancePage({
 
   const toGB = (bytes: number) => (bytes / 1024 ** 3).toFixed(2);
 
-  const vramOverheadPct = totalVRAM > 0 ? (memory?.computeOverheadVram ?? 0) / totalVRAM : 0;
-  const vramModelPct = totalVRAM > 0 ? (memory?.modelVramUsage ?? 0) / totalVRAM : 0;
-  const vramCtxPct = totalVRAM > 0 ? (memory?.contextVramUsage ?? 0) / totalVRAM : 0;
-  const ramOverheadPct = totalRAM > 0 ? (memory?.computeOverheadRam ?? 0) / totalRAM : 0;
-  const ramModelPct = totalRAM > 0 ? (memory?.modelRamUsage ?? 0) / totalRAM : 0;
-  const ramBufferPct = totalRAM > 0 ? (memory?.fileBufferRam ?? 0) / totalRAM : 0;
-  const ramCtxPct = totalRAM > 0 ? (memory?.contextRamUsage ?? 0) / totalRAM : 0;
-  const vramFreePct = Math.max(0, 1 - vramOverheadPct - vramModelPct - vramCtxPct);
-  const ramFreePct = Math.max(0, 1 - ramOverheadPct - ramModelPct - ramBufferPct - ramCtxPct);
+  const vramOverheadPct =
+    totalVRAM > 0 ? (memory?.computeOverheadVram ?? 0) / totalVRAM : 0;
+  const vramModelPct =
+    totalVRAM > 0 ? (memory?.modelVramUsage ?? 0) / totalVRAM : 0;
+  const vramCtxPct =
+    totalVRAM > 0 ? (memory?.contextVramUsage ?? 0) / totalVRAM : 0;
+  const ramOverheadPct =
+    totalRAM > 0 ? (memory?.computeOverheadRam ?? 0) / totalRAM : 0;
+  const ramModelPct =
+    totalRAM > 0 ? (memory?.modelRamUsage ?? 0) / totalRAM : 0;
+  const ramBufferPct =
+    totalRAM > 0 ? (memory?.fileBufferRam ?? 0) / totalRAM : 0;
+  const ramCtxPct =
+    totalRAM > 0 ? (memory?.contextRamUsage ?? 0) / totalRAM : 0;
+  const vramFreePct = Math.max(
+    0,
+    1 - vramOverheadPct - vramModelPct - vramCtxPct,
+  );
+  const ramFreePct = Math.max(
+    0,
+    1 - ramOverheadPct - ramModelPct - ramBufferPct - ramCtxPct,
+  );
 
   return (
     <>
@@ -1314,7 +1518,12 @@ function PerformancePage({
 
       {/* Three toggle buttons */}
       <div className="epm-section">
-        <InfoTooltip content={OPTIMIZATION_MODE_TOOLTIP} side="right" hideIcon title="Optimization Mode">
+        <InfoTooltip
+          content={OPTIMIZATION_MODE_TOOLTIP}
+          side="right"
+          hideIcon
+          title="Optimization Mode"
+        >
           <div className="epm-section__label">Optimization Mode</div>
         </InfoTooltip>
         <div className="epm-perf-three-toggle">
@@ -1332,7 +1541,11 @@ function PerformancePage({
             ) : (
               <FileText size={16} />
             )}
-            <InfoTooltip content={LONGEST_CONTEXT_TOOLTIP} hideIcon title="Longest Context">
+            <InfoTooltip
+              content={LONGEST_CONTEXT_TOOLTIP}
+              hideIcon
+              title="Longest Context"
+            >
               <span>Longest Context</span>
             </InfoTooltip>
           </button>
@@ -1373,25 +1586,61 @@ function PerformancePage({
       </div>
 
       <div className="epm-section" style={{ marginTop: '20px' }}>
-        <InfoTooltip content="Breakdown of how model weights, KV cache, and compute overhead use video memory." side="right" hideIcon title="Estimated Memory Usage">
+        <InfoTooltip
+          content="Breakdown of how model weights, KV cache, and compute overhead use video memory."
+          side="right"
+          hideIcon
+          title="Estimated Memory Usage"
+        >
           <div className="epm-section__label">Estimated Memory Usage</div>
         </InfoTooltip>
 
         <div className="epm-estimate-notice">
           <AlertTriangle size={14} />
-          <InfoTooltip content="The GGUF Parser Go library does not account for all Synapse-specific memory optimizations, so actual usage may differ." side="right" hideIcon title="Memory Estimates">
-            <span>Memory estimates provided by <a href="https://github.com/gpustack/gguf-parser-go" target="_blank" rel="noopener noreferrer">GGUF Parser Go</a>, which does not support all of Synapse's features, leading to inaccurate estimations.</span>
+          <InfoTooltip
+            content="The GGUF Parser Go library does not account for all Synapse-specific memory optimizations, so actual usage may differ."
+            side="right"
+            hideIcon
+            title="Memory Estimates"
+          >
+            <span>
+              Memory estimates provided by{' '}
+              <a
+                href="https://github.com/gpustack/gguf-parser-go"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                GGUF Parser Go
+              </a>
+              , which does not support all of Synapse's features, leading to
+              inaccurate estimations.
+            </span>
           </InfoTooltip>
         </div>
 
         {memory && totalVRAM > 0 ? (
           <>
             <div className="epm-mem-legend">
-              <span className="epm-mem-legend-total"><strong>Total: {toGB(memory.modelVramUsage + memory.contextVramUsage + memory.computeOverheadVram)}GB</strong></span>
+              <span className="epm-mem-legend-total">
+                <strong>
+                  Total:{' '}
+                  {toGB(
+                    memory.modelVramUsage +
+                      memory.contextVramUsage +
+                      memory.computeOverheadVram,
+                  )}
+                  GB
+                </strong>
+              </span>
               {memory.modelVramUsage > 0 && (
                 <span className="epm-mem-legend-item">
                   <span className="epm-mem-dot epm-mem-dot--model" />
-                  <InfoTooltip content={MODEL_WEIGHTS_TOOLTIP} side="right" hideIcon title="Model Weights">
+                  <InfoTooltip
+                    content={MODEL_WEIGHTS_TOOLTIP}
+                    side="right"
+                    hideIcon
+                    title="Model Weights"
+                  >
                     <span>Model Weights ({toGB(memory.modelVramUsage)}GB)</span>
                   </InfoTooltip>
                 </span>
@@ -1399,7 +1648,12 @@ function PerformancePage({
               {memory.contextVramUsage > 0 && (
                 <span className="epm-mem-legend-item">
                   <span className="epm-mem-dot epm-mem-dot--ctx" />
-                  <InfoTooltip content={KV_CACHE_MEM_TOOLTIP} side="right" hideIcon title="KV Cache">
+                  <InfoTooltip
+                    content={KV_CACHE_MEM_TOOLTIP}
+                    side="right"
+                    hideIcon
+                    title="KV Cache"
+                  >
                     <span>KV Cache ({toGB(memory.contextVramUsage)}GB)</span>
                   </InfoTooltip>
                 </span>
@@ -1407,40 +1661,93 @@ function PerformancePage({
               {memory.computeOverheadVram > 0 && (
                 <span className="epm-mem-legend-item">
                   <span className="epm-mem-dot epm-mem-dot--overhead" />
-                  <InfoTooltip content={COMPUTE_OVERHEAD_TOOLTIP} side="right" hideIcon title="Compute Overhead">
-                    <span>Compute Overhead ({toGB(memory.computeOverheadVram)}GB)</span>
+                  <InfoTooltip
+                    content={COMPUTE_OVERHEAD_TOOLTIP}
+                    side="right"
+                    hideIcon
+                    title="Compute Overhead"
+                  >
+                    <span>
+                      Compute Overhead ({toGB(memory.computeOverheadVram)}GB)
+                    </span>
                   </InfoTooltip>
                 </span>
               )}
               <span className="epm-mem-legend-item">
-                <span className="epm-mem-dot epm-mem-dot--free" /> Free ({toGB(Math.max(0, totalVRAM - memory.modelVramUsage - memory.contextVramUsage - memory.computeOverheadVram))}GB)
+                <span className="epm-mem-dot epm-mem-dot--free" /> Free (
+                {toGB(
+                  Math.max(
+                    0,
+                    totalVRAM -
+                      memory.modelVramUsage -
+                      memory.contextVramUsage -
+                      memory.computeOverheadVram,
+                  ),
+                )}
+                GB)
               </span>
             </div>
 
             <div className="epm-mem-bar-wrap">
-              <InfoTooltip content={VRAM_LABEL_TOOLTIP} side="right" hideIcon title="VRAM">
+              <InfoTooltip
+                content={VRAM_LABEL_TOOLTIP}
+                side="right"
+                hideIcon
+                title="VRAM"
+              >
                 <div className="epm-mem-bar-label-inline">VRAM</div>
               </InfoTooltip>
               <div className="epm-mem-bar-track">
-                <InfoTooltip content={`Model Weights: ${toGB(memory.modelVramUsage)}GB`} className="epm-mem-segment epm-mem-segment--model" hideIcon side="top" title="Model Weights" style={{ width: `${vramModelPct * 100}%` }} />
-                <InfoTooltip content={`KV Cache: ${toGB(memory.contextVramUsage)}GB`} className="epm-mem-segment epm-mem-segment--ctx" hideIcon side="top" title="KV Cache" style={{ width: `${vramCtxPct * 100}%` }} />
-                <InfoTooltip content={`Compute Overhead: ${toGB(memory.computeOverheadVram)}GB`} className="epm-mem-segment epm-mem-segment--overhead" hideIcon side="top" title="Compute Overhead" style={{ width: `${vramOverheadPct * 100}%` }} />
-                <InfoTooltip content={`Free: ${toGB(Math.max(0, totalVRAM - memory.modelVramUsage - memory.contextVramUsage - memory.computeOverheadVram))}GB`} className="epm-mem-segment epm-mem-segment--free" hideIcon side="top" title="Free" style={{ width: `${vramFreePct * 100}%` }} />
+                <InfoTooltip
+                  content={`Model Weights: ${toGB(memory.modelVramUsage)}GB`}
+                  className="epm-mem-segment epm-mem-segment--model"
+                  hideIcon
+                  side="top"
+                  title="Model Weights"
+                  style={{ width: `${vramModelPct * 100}%` }}
+                />
+                <InfoTooltip
+                  content={`KV Cache: ${toGB(memory.contextVramUsage)}GB`}
+                  className="epm-mem-segment epm-mem-segment--ctx"
+                  hideIcon
+                  side="top"
+                  title="KV Cache"
+                  style={{ width: `${vramCtxPct * 100}%` }}
+                />
+                <InfoTooltip
+                  content={`Compute Overhead: ${toGB(memory.computeOverheadVram)}GB`}
+                  className="epm-mem-segment epm-mem-segment--overhead"
+                  hideIcon
+                  side="top"
+                  title="Compute Overhead"
+                  style={{ width: `${vramOverheadPct * 100}%` }}
+                />
+                <InfoTooltip
+                  content={`Free: ${toGB(Math.max(0, totalVRAM - memory.modelVramUsage - memory.contextVramUsage - memory.computeOverheadVram))}GB`}
+                  className="epm-mem-segment epm-mem-segment--free"
+                  hideIcon
+                  side="top"
+                  title="Free"
+                  style={{ width: `${vramFreePct * 100}%` }}
+                />
               </div>
-              <div className="epm-mem-bar-total">
-                {toGB(totalVRAM)} GB
-              </div>
+              <div className="epm-mem-bar-total">{toGB(totalVRAM)} GB</div>
             </div>
           </>
         ) : (
           <>
             <div className="epm-mem-legend">
-              <span className="epm-mem-legend-total"><strong>Total: — GB</strong></span>
+              <span className="epm-mem-legend-total">
+                <strong>Total: — GB</strong>
+              </span>
             </div>
             <div className="epm-mem-bar-wrap">
               <div className="epm-mem-bar-label-inline">VRAM</div>
               <div className="epm-mem-bar-track">
-                <div className="epm-mem-segment epm-mem-segment--loading" style={{ width: '100%' }} />
+                <div
+                  className="epm-mem-segment epm-mem-segment--loading"
+                  style={{ width: '100%' }}
+                />
               </div>
               <div className="epm-mem-bar-total">— GB</div>
             </div>
@@ -1450,11 +1757,27 @@ function PerformancePage({
         {memory && totalRAM > 0 ? (
           <>
             <div className="epm-mem-legend" style={{ marginTop: '14px' }}>
-              <span className="epm-mem-legend-total"><strong>Total: {toGB(memory.modelRamUsage + memory.contextRamUsage + memory.fileBufferRam + memory.computeOverheadRam)}GB</strong></span>
+              <span className="epm-mem-legend-total">
+                <strong>
+                  Total:{' '}
+                  {toGB(
+                    memory.modelRamUsage +
+                      memory.contextRamUsage +
+                      memory.fileBufferRam +
+                      memory.computeOverheadRam,
+                  )}
+                  GB
+                </strong>
+              </span>
               {memory.modelRamUsage > 0 && (
                 <span className="epm-mem-legend-item">
                   <span className="epm-mem-dot epm-mem-dot--model" />
-                  <InfoTooltip content={MODEL_WEIGHTS_TOOLTIP} side="right" hideIcon title="Model Weights">
+                  <InfoTooltip
+                    content={MODEL_WEIGHTS_TOOLTIP}
+                    side="right"
+                    hideIcon
+                    title="Model Weights"
+                  >
                     <span>Model Weights ({toGB(memory.modelRamUsage)}GB)</span>
                   </InfoTooltip>
                 </span>
@@ -1462,7 +1785,12 @@ function PerformancePage({
               {memory.contextRamUsage > 0 && (
                 <span className="epm-mem-legend-item">
                   <span className="epm-mem-dot epm-mem-dot--ctx" />
-                  <InfoTooltip content={KV_CACHE_MEM_TOOLTIP} side="right" hideIcon title="KV Cache">
+                  <InfoTooltip
+                    content={KV_CACHE_MEM_TOOLTIP}
+                    side="right"
+                    hideIcon
+                    title="KV Cache"
+                  >
                     <span>KV Cache ({toGB(memory.contextRamUsage)}GB)</span>
                   </InfoTooltip>
                 </span>
@@ -1470,7 +1798,12 @@ function PerformancePage({
               {memory.fileBufferRam > 0 && (
                 <span className="epm-mem-legend-item">
                   <span className="epm-mem-dot epm-mem-dot--buffer" />
-                  <InfoTooltip content={FILE_BUFFER_TOOLTIP} side="right" hideIcon title="File Buffer">
+                  <InfoTooltip
+                    content={FILE_BUFFER_TOOLTIP}
+                    side="right"
+                    hideIcon
+                    title="File Buffer"
+                  >
                     <span>File Buffer ({toGB(memory.fileBufferRam)}GB)</span>
                   </InfoTooltip>
                 </span>
@@ -1478,40 +1811,101 @@ function PerformancePage({
               {memory.computeOverheadRam > 0 && (
                 <span className="epm-mem-legend-item">
                   <span className="epm-mem-dot epm-mem-dot--overhead" />
-                  <InfoTooltip content={COMPUTE_OVERHEAD_TOOLTIP} side="right" hideIcon title="Compute Overhead">
-                    <span>Compute Overhead ({toGB(memory.computeOverheadRam)}GB)</span>
+                  <InfoTooltip
+                    content={COMPUTE_OVERHEAD_TOOLTIP}
+                    side="right"
+                    hideIcon
+                    title="Compute Overhead"
+                  >
+                    <span>
+                      Compute Overhead ({toGB(memory.computeOverheadRam)}GB)
+                    </span>
                   </InfoTooltip>
                 </span>
               )}
               <span className="epm-mem-legend-item">
-                <span className="epm-mem-dot epm-mem-dot--free" /> Free ({toGB(Math.max(0, totalRAM - memory.modelRamUsage - memory.contextRamUsage - memory.fileBufferRam - memory.computeOverheadRam))}GB)
+                <span className="epm-mem-dot epm-mem-dot--free" /> Free (
+                {toGB(
+                  Math.max(
+                    0,
+                    totalRAM -
+                      memory.modelRamUsage -
+                      memory.contextRamUsage -
+                      memory.fileBufferRam -
+                      memory.computeOverheadRam,
+                  ),
+                )}
+                GB)
               </span>
             </div>
             <div className="epm-mem-bar-wrap">
-              <InfoTooltip content={RAM_LABEL_TOOLTIP} side="right" hideIcon title="RAM">
+              <InfoTooltip
+                content={RAM_LABEL_TOOLTIP}
+                side="right"
+                hideIcon
+                title="RAM"
+              >
                 <div className="epm-mem-bar-label-inline">RAM</div>
               </InfoTooltip>
               <div className="epm-mem-bar-track">
-                <InfoTooltip content={`Model Weights: ${toGB(memory.modelRamUsage)}GB`} className="epm-mem-segment epm-mem-segment--model" hideIcon side="top" title="Model Weights" style={{ width: `${ramModelPct * 100}%` }} />
-                <InfoTooltip content={`KV Cache: ${toGB(memory.contextRamUsage)}GB`} className="epm-mem-segment epm-mem-segment--ctx" hideIcon side="top" title="KV Cache" style={{ width: `${ramCtxPct * 100}%` }} />
-                <InfoTooltip content={`File Buffer: ${toGB(memory.fileBufferRam)}GB`} className="epm-mem-segment epm-mem-segment--buffer" hideIcon side="top" title="File Buffer" style={{ width: `${ramBufferPct * 100}%` }} />
-                <InfoTooltip content={`Compute Overhead: ${toGB(memory.computeOverheadRam)}GB`} className="epm-mem-segment epm-mem-segment--overhead" hideIcon side="top" title="Compute Overhead" style={{ width: `${ramOverheadPct * 100}%` }} />
-                <InfoTooltip content={`Free: ${toGB(Math.max(0, totalRAM - memory.modelRamUsage - memory.contextRamUsage - memory.fileBufferRam - memory.computeOverheadRam))}GB`} className="epm-mem-segment epm-mem-segment--free" hideIcon side="top" title="Free" style={{ width: `${ramFreePct * 100}%` }} />
+                <InfoTooltip
+                  content={`Model Weights: ${toGB(memory.modelRamUsage)}GB`}
+                  className="epm-mem-segment epm-mem-segment--model"
+                  hideIcon
+                  side="top"
+                  title="Model Weights"
+                  style={{ width: `${ramModelPct * 100}%` }}
+                />
+                <InfoTooltip
+                  content={`KV Cache: ${toGB(memory.contextRamUsage)}GB`}
+                  className="epm-mem-segment epm-mem-segment--ctx"
+                  hideIcon
+                  side="top"
+                  title="KV Cache"
+                  style={{ width: `${ramCtxPct * 100}%` }}
+                />
+                <InfoTooltip
+                  content={`File Buffer: ${toGB(memory.fileBufferRam)}GB`}
+                  className="epm-mem-segment epm-mem-segment--buffer"
+                  hideIcon
+                  side="top"
+                  title="File Buffer"
+                  style={{ width: `${ramBufferPct * 100}%` }}
+                />
+                <InfoTooltip
+                  content={`Compute Overhead: ${toGB(memory.computeOverheadRam)}GB`}
+                  className="epm-mem-segment epm-mem-segment--overhead"
+                  hideIcon
+                  side="top"
+                  title="Compute Overhead"
+                  style={{ width: `${ramOverheadPct * 100}%` }}
+                />
+                <InfoTooltip
+                  content={`Free: ${toGB(Math.max(0, totalRAM - memory.modelRamUsage - memory.contextRamUsage - memory.fileBufferRam - memory.computeOverheadRam))}GB`}
+                  className="epm-mem-segment epm-mem-segment--free"
+                  hideIcon
+                  side="top"
+                  title="Free"
+                  style={{ width: `${ramFreePct * 100}%` }}
+                />
               </div>
-              <div className="epm-mem-bar-total">
-                {toGB(totalRAM)} GB
-              </div>
+              <div className="epm-mem-bar-total">{toGB(totalRAM)} GB</div>
             </div>
           </>
         ) : (
           <>
             <div className="epm-mem-legend" style={{ marginTop: '14px' }}>
-              <span className="epm-mem-legend-total"><strong>Total: — GB</strong></span>
+              <span className="epm-mem-legend-total">
+                <strong>Total: — GB</strong>
+              </span>
             </div>
             <div className="epm-mem-bar-wrap">
               <div className="epm-mem-bar-label-inline">RAM</div>
               <div className="epm-mem-bar-track">
-                <div className="epm-mem-segment epm-mem-segment--loading" style={{ width: '100%' }} />
+                <div
+                  className="epm-mem-segment epm-mem-segment--loading"
+                  style={{ width: '100%' }}
+                />
               </div>
               <div className="epm-mem-bar-total">— GB</div>
             </div>
@@ -1521,13 +1915,24 @@ function PerformancePage({
 
       {/* Sliders */}
       <div className="epm-section" style={{ marginTop: '16px' }}>
-        <InfoTooltip content="Adjust GPU offloading and context size to balance speed against memory usage." side="right" hideIcon title="Settings">
+        <InfoTooltip
+          content="Adjust GPU offloading and context size to balance speed against memory usage."
+          side="right"
+          hideIcon
+          title="Settings"
+        >
           <div className="epm-section__label">Settings</div>
         </InfoTooltip>
         <div className="epm-perf-sliders">
           <div className="epm-perf-slider-group">
             <label className="epm-perf-toggle-row" style={{ paddingTop: 0 }}>
-              <InfoTooltip content={GPU_LAYERS_AUTO_TOOLTIP} side="right" stretch className="info-tooltip-stretch--row" title="GPU Layers Auto">
+              <InfoTooltip
+                content={GPU_LAYERS_AUTO_TOOLTIP}
+                side="right"
+                stretch
+                className="info-tooltip-stretch--row"
+                title="GPU Layers Auto"
+              >
                 <span className="epm-perf-toggle-label">GPU Layers Auto</span>
                 <div
                   className={`epm-toggle-switch${editGpuLayersAuto ? ' epm-toggle-switch--on' : ''}`}
@@ -1535,15 +1940,27 @@ function PerformancePage({
                   role="switch"
                   aria-checked={editGpuLayersAuto}
                   tabIndex={0}
-                  onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); onSetGpuLayersAuto(!editGpuLayersAuto); } }}
+                  onKeyDown={(e) => {
+                    if (e.key === ' ' || e.key === 'Enter') {
+                      e.preventDefault();
+                      onSetGpuLayersAuto(!editGpuLayersAuto);
+                    }
+                  }}
                 >
                   <div className="epm-toggle-switch__knob" />
                 </div>
               </InfoTooltip>
             </label>
-            <InfoTooltip content={GPU_LAYERS_TOOLTIP} side="bottom" stretch className="info-tooltip-stretch--col" title="GPU Layers (NGL)">
+            <InfoTooltip
+              content={GPU_LAYERS_TOOLTIP}
+              side="bottom"
+              stretch
+              className="info-tooltip-stretch--col"
+              title="GPU Layers (NGL)"
+            >
               <label className="epm-perf-slider-label">
-                GPU Layers (NGL): <strong>{editGpuLayersAuto ? 'Auto' : sliderNgl}</strong>
+                GPU Layers (NGL):{' '}
+                <strong>{editGpuLayersAuto ? 'Auto' : sliderNgl}</strong>
               </label>
               <input
                 type="range"
@@ -1569,7 +1986,13 @@ function PerformancePage({
           </div>
 
           <div className="epm-perf-slider-group" style={{ marginTop: '16px' }}>
-            <InfoTooltip content={CONTEXT_SIZE_TOOLTIP} side="bottom" stretch className="info-tooltip-stretch--col" title="Context Size">
+            <InfoTooltip
+              content={CONTEXT_SIZE_TOOLTIP}
+              side="bottom"
+              stretch
+              className="info-tooltip-stretch--col"
+              title="Context Size"
+            >
               <label className="epm-perf-slider-label">
                 Context Size: <strong>{sliderCtx.toLocaleString()}</strong>
               </label>
@@ -1601,46 +2024,113 @@ function PerformancePage({
       {/* Submenu SectionCards */}
       <div className="epm-section" style={{ marginTop: '20px' }}>
         <div className="epm-section__label">Advanced Options</div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '10px' }}>
-          <button type="button" className="epm-section-card" onClick={() => onNavigate('cache-options')}>
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '8px',
+            marginTop: '10px',
+          }}
+        >
+          <button
+            type="button"
+            className="epm-section-card"
+            onClick={() => onNavigate('cache-options')}
+          >
             <div className="epm-section-card__icon">
               <SlidersHorizontal size={18} />
             </div>
             <div className="epm-section-card__body">
-              <InfoTooltip content="Fine-tune KV cache behaviour and data types for memory and quality tradeoffs." title="Cache Options" side="right" hideIcon>
+              <InfoTooltip
+                content="Fine-tune KV cache behaviour and data types for memory and quality tradeoffs."
+                title="Cache Options"
+                side="right"
+                hideIcon
+              >
                 <div className="epm-section-card__title">Cache Options</div>
               </InfoTooltip>
               <div className="epm-section-card__preview">
-                KV Cache: {editKvOffload ? 'Offloaded' : 'CPU'}, K: {editCacheTypeK.toUpperCase()}, V: {editCacheTypeV.toUpperCase()}
+                KV Cache: {editKvOffload ? 'Offloaded' : 'CPU'}, K:{' '}
+                {editCacheTypeK.toUpperCase()}, V:{' '}
+                {editCacheTypeV.toUpperCase()}
               </div>
             </div>
             <ChevronRight size={16} className="epm-section-card__chevron" />
           </button>
-          <button type="button" className="epm-section-card" onClick={() => onNavigate('draft-model')}>
+          <button
+            type="button"
+            className="epm-section-card"
+            onClick={() => onNavigate('draft-model')}
+          >
             <div className="epm-section-card__icon">
               <Zap size={18} />
             </div>
             <div className="epm-section-card__body">
-              <InfoTooltip content={DRAFT_MODEL_TOOLTIP} title="Draft Model" side="right" hideIcon>
+              <InfoTooltip
+                content={DRAFT_MODEL_TOOLTIP}
+                title="Draft Model"
+                side="right"
+                hideIcon
+              >
                 <div className="epm-section-card__title">Draft Model</div>
               </InfoTooltip>
               <div className="epm-section-card__preview">
-                {editSpecType.length > 0 ? `${editSpecType.join(', ')}` : 'Disabled'}
+                {editSpecType.length > 0
+                  ? `${editSpecType.join(', ')}`
+                  : 'Disabled'}
                 {editDraftModelFilename ? ` — ${editDraftModelFilename}` : ''}
               </div>
             </div>
             <ChevronRight size={16} className="epm-section-card__chevron" />
           </button>
-          <button type="button" className="epm-section-card" onClick={() => onNavigate('memory-options')}>
+          <button
+            type="button"
+            className="epm-section-card"
+            onClick={() => onNavigate('memory-options')}
+          >
             <div className="epm-section-card__icon">
               <SlidersHorizontal size={18} />
             </div>
             <div className="epm-section-card__body">
-              <InfoTooltip content="Control how model weights are loaded into memory." title="Memory Options" side="right" hideIcon>
+              <InfoTooltip
+                content="Control how model weights are loaded into memory."
+                title="Memory Options"
+                side="right"
+                hideIcon
+              >
                 <div className="epm-section-card__title">Memory Options</div>
               </InfoTooltip>
               <div className="epm-section-card__preview">
-                MMAP: {editMmap ? 'On' : 'Off'}, MLock: {editMlock ? 'On' : 'Off'}
+                MMAP: {editMmap ? 'On' : 'Off'}, MLock:{' '}
+                {editMlock ? 'On' : 'Off'}
+              </div>
+            </div>
+            <ChevronRight size={16} className="epm-section-card__chevron" />
+          </button>
+          <button
+            type="button"
+            className="epm-section-card"
+            onClick={() => onNavigate('moe-options')}
+          >
+            <div className="epm-section-card__icon">
+              <Zap size={18} />
+            </div>
+            <div className="epm-section-card__body">
+              <InfoTooltip
+                content="Configure how Mixture of Experts (MoE) weights are distributed between CPU and GPU."
+                title="Mixture of Experts"
+                side="right"
+                hideIcon
+              >
+                <div className="epm-section-card__title">
+                  Mixture of Experts
+                </div>
+              </InfoTooltip>
+              <div className="epm-section-card__preview">
+                CPU MoE: {editCpuMoe ? 'On' : 'Off'}
+                {parseInt(editNCpuMoe || '0', 10) > 0
+                  ? `, N: ${editNCpuMoe}`
+                  : ''}
               </div>
             </div>
             <ChevronRight size={16} className="epm-section-card__chevron" />
@@ -1693,20 +2183,56 @@ function CacheOptionsPage({
       </p>
 
       <div className="epm-section">
-        <InfoTooltip content="Cache Options" side="right" hideIcon title="Cache Options">
+        <InfoTooltip
+          content="Cache Options"
+          side="right"
+          hideIcon
+          title="Cache Options"
+        >
           <div className="epm-section__label">KV Cache</div>
         </InfoTooltip>
         <div className="epm-perf-toggles">
           <label className="epm-perf-toggle-row">
-            <InfoTooltip content={KV_CACHE_OFFLOAD_TOOLTIP} side="right" stretch className="info-tooltip-stretch--row" title="KV Cache Offload">
+            <InfoTooltip
+              content={KV_CACHE_OFFLOAD_TOOLTIP}
+              side="right"
+              stretch
+              className="info-tooltip-stretch--row"
+              title="KV Cache Offload"
+            >
               <span className="epm-perf-toggle-label">KV Cache Offload</span>
               <div
                 className={`epm-toggle-switch${editKvOffload ? ' epm-toggle-switch--on' : ''}`}
-                onClick={() => { const next = !editKvOffload; onSetKvOffload(next); onEstimateMemory(0, 512, next, true, editCacheTypeK, editCacheTypeV); }}
+                onClick={() => {
+                  const next = !editKvOffload;
+                  onSetKvOffload(next);
+                  onEstimateMemory(
+                    0,
+                    512,
+                    next,
+                    true,
+                    editCacheTypeK,
+                    editCacheTypeV,
+                  );
+                }}
                 role="switch"
                 aria-checked={editKvOffload}
                 tabIndex={0}
-                onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); const next = !editKvOffload; onSetKvOffload(next); onEstimateMemory(0, 512, next, true, editCacheTypeK, editCacheTypeV); } }}
+                onKeyDown={(e) => {
+                  if (e.key === ' ' || e.key === 'Enter') {
+                    e.preventDefault();
+                    const next = !editKvOffload;
+                    onSetKvOffload(next);
+                    onEstimateMemory(
+                      0,
+                      512,
+                      next,
+                      true,
+                      editCacheTypeK,
+                      editCacheTypeV,
+                    );
+                  }
+                }}
               >
                 <div className="epm-toggle-switch__knob" />
               </div>
@@ -1714,11 +2240,49 @@ function CacheOptionsPage({
           </label>
         </div>
         <div className="epm-cache-selectors-row">
-          <InfoTooltip content={K_CACHE_TYPE_TOOLTIP} stretch side="right" title="K Cache Type">
-            <CacheTypeSelector label="K Cache Type" value={editCacheTypeK} onChange={(v) => { onSetCacheTypeK(v); onEstimateMemory(0, 512, editKvOffload, true, v, editCacheTypeV); }} />
+          <InfoTooltip
+            content={K_CACHE_TYPE_TOOLTIP}
+            stretch
+            side="right"
+            title="K Cache Type"
+          >
+            <CacheTypeSelector
+              label="K Cache Type"
+              value={editCacheTypeK}
+              onChange={(v) => {
+                onSetCacheTypeK(v);
+                onEstimateMemory(
+                  0,
+                  512,
+                  editKvOffload,
+                  true,
+                  v,
+                  editCacheTypeV,
+                );
+              }}
+            />
           </InfoTooltip>
-          <InfoTooltip content={V_CACHE_TYPE_TOOLTIP} stretch side="left" title="V Cache Type">
-            <CacheTypeSelector label="V Cache Type" value={editCacheTypeV} onChange={(v) => { onSetCacheTypeV(v); onEstimateMemory(0, 512, editKvOffload, true, editCacheTypeK, v); }} />
+          <InfoTooltip
+            content={V_CACHE_TYPE_TOOLTIP}
+            stretch
+            side="left"
+            title="V Cache Type"
+          >
+            <CacheTypeSelector
+              label="V Cache Type"
+              value={editCacheTypeV}
+              onChange={(v) => {
+                onSetCacheTypeV(v);
+                onEstimateMemory(
+                  0,
+                  512,
+                  editKvOffload,
+                  true,
+                  editCacheTypeK,
+                  v,
+                );
+              }}
+            />
           </InfoTooltip>
         </div>
       </div>
@@ -1755,7 +2319,13 @@ function MemoryOptionsPage({
 
       <div className="epm-perf-toggles">
         <label className="epm-perf-toggle-row">
-          <InfoTooltip content={MMAP_TOOLTIP} side="right" stretch className="info-tooltip-stretch--row" title="Memory-Mapped (MMAP)">
+          <InfoTooltip
+            content={MMAP_TOOLTIP}
+            side="right"
+            stretch
+            className="info-tooltip-stretch--row"
+            title="Memory-Mapped (MMAP)"
+          >
             <span className="epm-perf-toggle-label">Memory-Mapped (MMAP)</span>
             <div
               className={`epm-toggle-switch${editMmap ? ' epm-toggle-switch--on' : ''}`}
@@ -1763,14 +2333,25 @@ function MemoryOptionsPage({
               role="switch"
               aria-checked={editMmap}
               tabIndex={0}
-              onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); onSetMmap(!editMmap); } }}
+              onKeyDown={(e) => {
+                if (e.key === ' ' || e.key === 'Enter') {
+                  e.preventDefault();
+                  onSetMmap(!editMmap);
+                }
+              }}
             >
               <div className="epm-toggle-switch__knob" />
             </div>
           </InfoTooltip>
         </label>
         <label className="epm-perf-toggle-row">
-          <InfoTooltip content={MLOCK_TOOLTIP} side="right" stretch className="info-tooltip-stretch--row" title="MLock (Pin RAM)">
+          <InfoTooltip
+            content={MLOCK_TOOLTIP}
+            side="right"
+            stretch
+            className="info-tooltip-stretch--row"
+            title="MLock (Pin RAM)"
+          >
             <span className="epm-perf-toggle-label">MLock (Pin RAM)</span>
             <div
               className={`epm-toggle-switch${editMlock ? ' epm-toggle-switch--on' : ''}`}
@@ -1778,7 +2359,12 @@ function MemoryOptionsPage({
               role="switch"
               aria-checked={editMlock}
               tabIndex={0}
-              onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); onSetMlock(!editMlock); } }}
+              onKeyDown={(e) => {
+                if (e.key === ' ' || e.key === 'Enter') {
+                  e.preventDefault();
+                  onSetMlock(!editMlock);
+                }
+              }}
             >
               <div className="epm-toggle-switch__knob" />
             </div>
@@ -1792,14 +2378,59 @@ function MemoryOptionsPage({
 // ── Draft Model (Speculative Decoding) subpage ──
 
 const SPEC_TYPE_OPTIONS = [
-  { value: 'draft-mtp', label: 'MTP', group: 'internal', tooltip: 'Uses the model\'s internal MTP (Multi-Token Prediction) heads — no external model needed.' },
-  { value: 'draft-eagle3', label: 'EAGLE3', group: 'internal', tooltip: 'Uses the model\'s EAGLE3-style draft heads — no external model needed.' },
-  { value: 'draft-simple', label: 'Simple', group: 'model', tooltip: 'Uses an external GGUF model as the draft model.' },
-  { value: 'ngram-simple', label: 'N-Gram Simple', group: 'ngram', tooltip: 'Extracts draft candidates from the prompt context using simple n-gram matching.' },
-  { value: 'ngram-map-k', label: 'N-Gram Map K', group: 'ngram', tooltip: 'N-gram based draft using a map indexed by K tokens.' },
-  { value: 'ngram-map-k4v', label: 'N-Gram Map K4V', group: 'ngram', tooltip: 'N-gram based draft using a K-token map with 4-byte values.' },
-  { value: 'ngram-mod', label: 'N-Gram Mod', group: 'ngram', tooltip: 'N-gram based draft using modular matching for candidate selection.' },
-  { value: 'ngram-cache', label: 'N-Gram Cache', group: 'ngram', tooltip: 'N-gram based draft that caches candidates for reuse across steps.' },
+  {
+    value: 'draft-mtp',
+    label: 'MTP',
+    group: 'internal',
+    tooltip:
+      "Uses the model's internal MTP (Multi-Token Prediction) heads — no external model needed.",
+  },
+  {
+    value: 'draft-eagle3',
+    label: 'EAGLE3',
+    group: 'internal',
+    tooltip:
+      "Uses the model's EAGLE3-style draft heads — no external model needed.",
+  },
+  {
+    value: 'draft-simple',
+    label: 'Simple',
+    group: 'model',
+    tooltip: 'Uses an external GGUF model as the draft model.',
+  },
+  {
+    value: 'ngram-simple',
+    label: 'N-Gram Simple',
+    group: 'ngram',
+    tooltip:
+      'Extracts draft candidates from the prompt context using simple n-gram matching.',
+  },
+  {
+    value: 'ngram-map-k',
+    label: 'N-Gram Map K',
+    group: 'ngram',
+    tooltip: 'N-gram based draft using a map indexed by K tokens.',
+  },
+  {
+    value: 'ngram-map-k4v',
+    label: 'N-Gram Map K4V',
+    group: 'ngram',
+    tooltip: 'N-gram based draft using a K-token map with 4-byte values.',
+  },
+  {
+    value: 'ngram-mod',
+    label: 'N-Gram Mod',
+    group: 'ngram',
+    tooltip:
+      'N-gram based draft using modular matching for candidate selection.',
+  },
+  {
+    value: 'ngram-cache',
+    label: 'N-Gram Cache',
+    group: 'ngram',
+    tooltip:
+      'N-gram based draft that caches candidates for reuse across steps.',
+  },
 ];
 
 const SPEC_TYPE_GROUP_LABELS: Record<string, string> = {
@@ -1836,7 +2467,13 @@ function DraftModelPage({
   editSpecDraftNMin: string;
   editSpecDraftPSplit: string;
   editSpecDraftPMin: string;
-  selectedDraftModelDisplay: { name: string; quantization: string; sizeBytes: number; filename?: string; group?: string } | null;
+  selectedDraftModelDisplay: {
+    name: string;
+    quantization: string;
+    sizeBytes: number;
+    filename?: string;
+    group?: string;
+  } | null;
   onSetSpecType: (v: string[]) => void;
   onSetDraftModelAuthor: (v: string) => void;
   onSetDraftModelFolder: (v: string) => void;
@@ -1869,20 +2506,30 @@ function DraftModelPage({
           lineHeight: 1.5,
         }}
       >
-        Configure speculative decoding to speed up generation using a draft model or built-in strategies.
+        Configure speculative decoding to speed up generation using a draft
+        model or built-in strategies.
       </p>
 
       <div className="epm-section">
         <div className="epm-section__label">Draft Type</div>
         {(['internal', 'model', 'ngram'] as const).map((groupKey) => {
-          const groupOptions = SPEC_TYPE_OPTIONS.filter((o) => o.group === groupKey);
+          const groupOptions = SPEC_TYPE_OPTIONS.filter(
+            (o) => o.group === groupKey,
+          );
           if (groupOptions.length === 0) return null;
           return (
             <div key={groupKey} className="epm-draft-type-group">
-              <div className="epm-draft-type-group-label">{SPEC_TYPE_GROUP_LABELS[groupKey]}</div>
+              <div className="epm-draft-type-group-label">
+                {SPEC_TYPE_GROUP_LABELS[groupKey]}
+              </div>
               <div className="epm-draft-type-tags">
                 {groupOptions.map((opt) => (
-                  <InfoTooltip key={opt.value} content={opt.tooltip} side="right" hideIcon>
+                  <InfoTooltip
+                    key={opt.value}
+                    content={opt.tooltip}
+                    side="right"
+                    hideIcon
+                  >
                     <button
                       type="button"
                       className={`epm-draft-type-tag${editSpecType.includes(opt.value) ? ' epm-draft-type-tag--active' : ''}`}
@@ -1901,17 +2548,27 @@ function DraftModelPage({
       {/* Draft model file selector — only shown when draft-simple is active */}
       {hasSimple && (
         <div className="epm-section" style={{ marginTop: '20px' }}>
-          <InfoTooltip content="A smaller GGUF model used as the draft model for speculative decoding." side="right" hideIcon title="External Draft Model">
+          <InfoTooltip
+            content="A smaller GGUF model used as the draft model for speculative decoding."
+            side="right"
+            hideIcon
+            title="External Draft Model"
+          >
             <div className="epm-section__label">External Draft Model</div>
           </InfoTooltip>
-          <div className="epm-section-card" style={{ marginTop: '10px' }} onClick={onOpenDraftModelModal}>
+          <div
+            className="epm-section-card"
+            style={{ marginTop: '10px' }}
+            onClick={onOpenDraftModelModal}
+          >
             <div className="epm-section-card__icon">
               <Zap size={18} />
             </div>
             <div className="epm-section-card__body">
               <div className="epm-section-card__title">
                 {selectedDraftModelDisplay
-                  ? (selectedDraftModelDisplay.filename || selectedDraftModelDisplay.name)
+                  ? selectedDraftModelDisplay.filename ||
+                    selectedDraftModelDisplay.name
                   : 'Select Draft Model'}
               </div>
               <div className="epm-section-card__preview">
@@ -1927,11 +2584,15 @@ function DraftModelPage({
 
       {/* Numeric sliders */}
       <div className="epm-section" style={{ marginTop: '20px' }}>
-        <InfoTooltip content={DRAFT_MODEL_TOOLTIP} side="right" hideIcon title="Draft Parameters">
+        <InfoTooltip
+          content={DRAFT_MODEL_TOOLTIP}
+          side="right"
+          hideIcon
+          title="Draft Parameters"
+        >
           <div className="epm-section__label">Draft Parameters</div>
         </InfoTooltip>
         <div className="epm-number-grid">
-
           <NumberField
             label="Draft N Max"
             value={editSpecDraftNMax}
@@ -1975,6 +2636,82 @@ function DraftModelPage({
             helper="Default: 0.00"
             tooltip={DRAFT_P_MIN_TOOLTIP}
             tooltipTitle="Draft P Min"
+          />
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ── Mixture of Experts (MoE) subpage ──
+
+function MoeOptionsPage({
+  editCpuMoe,
+  editNCpuMoe,
+  onSetCpuMoe,
+  onSetNCpuMoe,
+}: {
+  editCpuMoe: boolean;
+  editNCpuMoe: string;
+  onSetCpuMoe: (v: boolean) => void;
+  onSetNCpuMoe: (v: string) => void;
+}) {
+  return (
+    <>
+      <h2 className="epm-page-title">Mixture of Experts</h2>
+      <p
+        style={{
+          fontSize: '14px',
+          color: 'var(--text-secondary)',
+          margin: '0 0 20px',
+          lineHeight: 1.5,
+        }}
+      >
+        Control where Mixture of Experts (MoE) weights are loaded for large
+        MoE-based models.
+      </p>
+
+      <div className="epm-perf-toggles">
+        <label className="epm-perf-toggle-row">
+          <InfoTooltip
+            content={CPU_MOE_TOOLTIP}
+            side="right"
+            stretch
+            className="info-tooltip-stretch--row"
+            title="CPU MoE"
+          >
+            <span className="epm-perf-toggle-label">CPU MoE</span>
+            <div
+              className={`epm-toggle-switch${editCpuMoe ? ' epm-toggle-switch--on' : ''}`}
+              onClick={() => onSetCpuMoe(!editCpuMoe)}
+              role="switch"
+              aria-checked={editCpuMoe}
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === ' ' || e.key === 'Enter') {
+                  e.preventDefault();
+                  onSetCpuMoe(!editCpuMoe);
+                }
+              }}
+            >
+              <div className="epm-toggle-switch__knob" />
+            </div>
+          </InfoTooltip>
+        </label>
+      </div>
+
+      <div className="epm-section" style={{ marginTop: '20px' }}>
+        <div className="epm-number-grid">
+          <NumberField
+            label="N CPU MoE"
+            value={editNCpuMoe}
+            onChange={onSetNCpuMoe}
+            min="0"
+            max="999"
+            step="1"
+            helper="Default: 0"
+            tooltip={N_CPU_MOE_TOOLTIP}
+            tooltipTitle="N CPU MoE"
           />
         </div>
       </div>
@@ -2073,12 +2810,8 @@ export default function EditProfileModal({
   const [editKvOffload, setEditKvOffload] = useState<boolean>(
     profile?.kvOffload ?? true,
   );
-  const [editMmap, setEditMmap] = useState<boolean>(
-    profile?.mmap ?? true,
-  );
-  const [editMlock, setEditMlock] = useState<boolean>(
-    profile?.mlock ?? false,
-  );
+  const [editMmap, setEditMmap] = useState<boolean>(profile?.mmap ?? true);
+  const [editMlock, setEditMlock] = useState<boolean>(profile?.mlock ?? false);
   const [editCacheTypeK, setEditCacheTypeK] = useState<CacheType>(
     profile?.cacheTypeK ?? 'f16',
   );
@@ -2109,10 +2842,18 @@ export default function EditProfileModal({
     String(profile?.specDraftNMin ?? 0),
   );
   const [editSpecDraftPSplit, setEditSpecDraftPSplit] = useState<string>(
-    String(profile?.specDraftPSplit ?? 0.10),
+    String(profile?.specDraftPSplit ?? 0.1),
   );
   const [editSpecDraftPMin, setEditSpecDraftPMin] = useState<string>(
-    String(profile?.specDraftPMin ?? 0.00),
+    String(profile?.specDraftPMin ?? 0.0),
+  );
+
+  // Mixture of Experts (MoE) options
+  const [editCpuMoe, setEditCpuMoe] = useState<boolean>(
+    profile?.cpuMoe ?? false,
+  );
+  const [editNCpuMoe, setEditNCpuMoe] = useState<string>(
+    String(profile?.nCpuMoe ?? 0),
   );
 
   const [editVideoFps, setEditVideoFps] = useState<string>(
@@ -2157,8 +2898,15 @@ export default function EditProfileModal({
   useEffect(() => {
     if (!editModelFilename) return;
     const currentModelPath = `${editModelAuthor}/${editModelFolder}/${editModelFilename}`;
-    if (profile?.maxForModel === currentModelPath && profile?.maxLayers && profile?.maxContext) {
-      setModelMeta({ maxLayers: profile.maxLayers, maxContext: profile.maxContext });
+    if (
+      profile?.maxForModel === currentModelPath &&
+      profile?.maxLayers &&
+      profile?.maxContext
+    ) {
+      setModelMeta({
+        maxLayers: profile.maxLayers,
+        maxContext: profile.maxContext,
+      });
       return;
     }
     window.electronAPI
@@ -2170,7 +2918,12 @@ export default function EditProfileModal({
       })
       .then((meta) => setModelMeta(meta))
       .catch(() => setModelMeta(null));
-  }, [editModelFilename, editProjectorFilename, editModelAuthor, editModelFolder]);
+  }, [
+    editModelFilename,
+    editProjectorFilename,
+    editModelAuthor,
+    editModelFolder,
+  ]);
 
   // Fetch total VRAM/RAM once on mount
   useEffect(() => {
@@ -2340,9 +3093,7 @@ export default function EditProfileModal({
       topP: parseFloat(editTopP),
       minP: parseFloat(editMinP),
       seed: parseInt(editSeed, 10),
-      tools: editTools.filter((t) =>
-        getAvailableToolNames().includes(t),
-      ),
+      tools: editTools.filter((t) => getAvailableToolNames().includes(t)),
       repeatPenalty: buildRepeatPenalty(),
       kvOffload: editKvOffload,
       cacheTypeK: editCacheTypeK,
@@ -2371,13 +3122,21 @@ export default function EditProfileModal({
         : {}),
       videoSettings: buildVideoSettings(),
       specType: editSpecType.length > 0 ? editSpecType : undefined,
-      draftModelAuthor: (editSpecType.includes('draft-simple') && editDraftModelAuthor) || undefined,
-      draftModelFolder: (editSpecType.includes('draft-simple') && editDraftModelFolder) || undefined,
-      draftModelFilename: (editSpecType.includes('draft-simple') && editDraftModelFilename) || undefined,
+      draftModelAuthor:
+        (editSpecType.includes('draft-simple') && editDraftModelAuthor) ||
+        undefined,
+      draftModelFolder:
+        (editSpecType.includes('draft-simple') && editDraftModelFolder) ||
+        undefined,
+      draftModelFilename:
+        (editSpecType.includes('draft-simple') && editDraftModelFilename) ||
+        undefined,
       specDraftNMax: parseFloat(editSpecDraftNMax),
       specDraftNMin: parseFloat(editSpecDraftNMin),
       specDraftPSplit: parseFloat(editSpecDraftPSplit),
       specDraftPMin: parseFloat(editSpecDraftPMin),
+      cpuMoe: editCpuMoe,
+      nCpuMoe: parseInt(editNCpuMoe, 10),
       order: profile?.order ?? now,
       createdAt: profile?.createdAt ?? now,
     };
@@ -2408,9 +3167,7 @@ export default function EditProfileModal({
     const targetName = editModelAuthor
       ? `${editModelAuthor}/${editModelFolder}`
       : editModelFolder;
-    const selectedGroup = groupedLocalModels.find(
-      (g) => g.name === targetName,
-    );
+    const selectedGroup = groupedLocalModels.find((g) => g.name === targetName);
     if (!selectedGroup) return [];
 
     const result: Array<{
@@ -2442,9 +3199,7 @@ export default function EditProfileModal({
       : editModelFolder;
     for (const group of modelSelectGroups) {
       if (group.name !== groupName) continue;
-      const v = group.variants.find(
-        (v) => v.filename === editModelFilename,
-      );
+      const v = group.variants.find((v) => v.filename === editModelFilename);
       if (v) return { groupName, ...v };
       break;
     }
@@ -2493,7 +3248,7 @@ export default function EditProfileModal({
 
   const breadcrumb = buildBreadcrumb(currentPage);
 
-  const systemPromptPreview = 'Set the AI\'s behavior and personality';
+  const systemPromptPreview = "Set the AI's behavior and personality";
 
   const activeExtGroups = extensionGroups.filter(({ toolKeys }) =>
     toolKeys.some((tk) => editTools.includes(tk)),
@@ -2505,14 +3260,19 @@ export default function EditProfileModal({
 
   const advancedPreview = `Temperature: ${editTemperature}, Top K: ${editTopK}, Top P: ${editTopP}`;
 
-  const videoSettingsPreview = [
-    editVideoFps ? `${editVideoFps} FPS` : '',
-    editVideoUnlimitedMaxFrames ? 'Unlimited' : (editVideoMaxFrames ? `Max ${editVideoMaxFrames} frames` : ''),
-    editVideoQuality ? `Quality ${editVideoQuality}` : '',
-    editVideoWidth ? `${editVideoWidth}px` : '',
-  ]
-    .filter(Boolean)
-    .join(', ') || 'Default';
+  const videoSettingsPreview =
+    [
+      editVideoFps ? `${editVideoFps} FPS` : '',
+      editVideoUnlimitedMaxFrames
+        ? 'Unlimited'
+        : editVideoMaxFrames
+          ? `Max ${editVideoMaxFrames} frames`
+          : '',
+      editVideoQuality ? `Quality ${editVideoQuality}` : '',
+      editVideoWidth ? `${editVideoWidth}px` : '',
+    ]
+      .filter(Boolean)
+      .join(', ') || 'Default';
 
   const renderPage = () => {
     switch (currentPage) {
@@ -2600,6 +3360,17 @@ export default function EditProfileModal({
             onNavigate={navigateTo}
             editSpecType={editSpecType}
             editDraftModelFilename={editDraftModelFilename}
+            editCpuMoe={editCpuMoe}
+            editNCpuMoe={editNCpuMoe}
+          />
+        );
+      case 'moe-options':
+        return (
+          <MoeOptionsPage
+            editCpuMoe={editCpuMoe}
+            editNCpuMoe={editNCpuMoe}
+            onSetCpuMoe={setEditCpuMoe}
+            onSetNCpuMoe={setEditNCpuMoe}
           />
         );
       case 'cache-options':

@@ -197,6 +197,21 @@ export const DRAFT_P_SPLIT_TOOLTIP = [
   'Range: 0.0–1.0. Default: 0.10.',
 ];
 
+// ── Mixture of Experts (MoE) ──
+
+export const CPU_MOE_TOOLTIP = [
+  'Keeps all Mixture of Experts (MoE) weights in the CPU memory (--cpu-moe).',
+  'When enabled, only non-MoE layers like attention are offloaded to the GPU.',
+  'Useful for large MoE models when VRAM is limited.',
+];
+
+export const N_CPU_MOE_TOOLTIP = [
+  'Keeps the MoE weights of the first N layers in the CPU (--n-cpu-moe).',
+  'Layers beyond N will have their MoE weights on the GPU.',
+  'Set to 0 to let the server decide or use the --cpu-moe flag for all layers.',
+  'Default: 0.',
+];
+
 export const DRAFT_P_MIN_TOOLTIP = [
   'Minimum probability for a greedy draft token to be accepted (--draft-p-min).',
   'Higher values make acceptance stricter, potentially reducing speedup but improving quality.',
