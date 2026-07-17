@@ -6,6 +6,8 @@ export interface AppSettings {
   modelsDirectory: string;
   allocatedVRAM?: number;
   allocatedRAM?: number;
+  autoOpenThinking?: boolean;
+  autoCloseThinkingDone?: boolean;
 }
 
 const SETTINGS_FILE = path.join(app.getPath('userData'), 'settings.json');
@@ -13,6 +15,8 @@ const DEFAULT_MODELS_DIR = path.join(app.getPath('userData'), 'models');
 
 const DEFAULT_SETTINGS: AppSettings = {
   modelsDirectory: DEFAULT_MODELS_DIR,
+  autoOpenThinking: true,
+  autoCloseThinkingDone: true,
 };
 
 let cachedSettings: AppSettings | null = null;

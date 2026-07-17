@@ -122,6 +122,60 @@
   opacity: 0.9;
 }
 /* ============================================================================
+   TOGGLE SWITCH (reused from EditProfileModal pattern)
+   ============================================================================ */
+
+.settings-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  user-select: none;
+  padding: 8px 0;
+}
+
+.settings-toggle-row--disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.epm-toggle-switch {
+  width: 40px;
+  height: 22px;
+  border-radius: 11px;
+  background: var(--border);
+  position: relative;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.epm-toggle-switch--on {
+  background: var(--accent);
+}
+
+.epm-toggle-switch--disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.epm-toggle-switch__knob {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  transition: transform 0.2s ease;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+
+.epm-toggle-switch--on .epm-toggle-switch__knob {
+  transform: translateX(18px);
+}
+
+/* ============================================================================
    MEMORY BAR ALLOCATOR
    ============================================================================ */
 

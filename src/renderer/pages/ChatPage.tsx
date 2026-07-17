@@ -35,7 +35,7 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import UserInputModal from '../components/UserInputModal';
 import ProfileSelectModal from '../components/ProfileSelectModal';
 import { Profile } from '../types/profile';
-import type { ContentPart } from '../preload.d';
+import type { AppSettings, ContentPart } from '../preload.d';
 import { getToolMeta } from '../utils/extensionData';
 import { resolveIcon } from '../components/workflows/IconPicker';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -475,6 +475,7 @@ export default function ChatPage() {
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [pendingProfileId, setPendingProfileId] = useState<string | null>(null);
+  const [settings, setSettings] = useState<AppSettings | null>(null);
   const [tps, setTps] = useState<number>(0);
   const [cumulativeTokens, setCumulativeTokens] = useState<{
     totalInputTokens: number;
@@ -541,6 +542,10 @@ export default function ChatPage() {
   useEffect(() => {
     refreshCumulativeTokens();
   }, [refreshCumulativeTokens]);
+
+  useEffect(() => {
+    window.electronAPI.loadSettings().then((s) => setSettings(s)).catch(() => {});
+  }, []);
 
   const estimatedCost =
     (cumulativeTokens.totalInputTokens / 1_000_000) * INPUT_PRICE_PER_MILLION +
@@ -1894,21 +1899,28 @@ export default function ChatPage() {
                             return items;
                           };
 
-                          const flushBatch = () => {
+                          const flushBatch = (thinkingDone?: boolean) => {
                             if (batchSegments.length === 0) return;
 
                             const hasThought = batchSegments.some(
                               (s) => s.type === 'thought',
                             );
 
+                            const autoOpen = settings?.autoOpenThinking ?? true;
+                            const autoCloseDone = settings?.autoCloseThinkingDone ?? false;
+                            const thoughtDefaultOpen = autoOpen
+                              ? (!autoCloseDone || !thinkingDone)
+                              : false;
+
                             if (hasThought) {
                               const items = buildThoughtItems(batchSegments);
                               elements.push(
                                 <MessageContent
-                                  key={`batch-${elements.length}`}
+                                  key={`batch-${elements.length}-thought-${!!thinkingDone}`}
                                   segments={[]}
                                   thoughtItems={items}
                                   onImageClick={setImageViewerUrl}
+                                  defaultOpen={thoughtDefaultOpen}
                                   renderTool={(seg, showInline) => (
                                     <ToolCallSegment
                                       key={seg.id}
@@ -1952,7 +1964,7 @@ export default function ChatPage() {
                                 batchSegments.length > 0 &&
                                 segment.type !== 'thought'
                               ) {
-                                flushBatch();
+                                flushBatch(true);
                               }
                               batchSegments.push(segment);
                             }

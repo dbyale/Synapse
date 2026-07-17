@@ -328,6 +328,8 @@ export default function SettingsPage() {
           modelsDirectory: loaded?.modelsDirectory || '',
           allocatedRAM: loaded?.allocatedRAM,
           allocatedVRAM: loaded?.allocatedVRAM,
+          autoOpenThinking: loaded?.autoOpenThinking ?? true,
+          autoCloseThinkingDone: loaded?.autoCloseThinkingDone ?? true,
         };
 
         savedAllocationsRef.current = {
@@ -471,6 +473,56 @@ export default function SettingsPage() {
               </button>
             </div>
           </InfoTooltip>
+        </div>
+      </div>
+
+      <div className="settings-card">
+        <h2 className="settings-card-title">Chat</h2>
+
+        <div className="settings-field">
+          <label className="settings-toggle-row">
+            <span className="settings-label">Automatically open thinking segments</span>
+            <div
+              className={`epm-toggle-switch${settings.autoOpenThinking ? ' epm-toggle-switch--on' : ''}`}
+              onClick={() => triggerSave({ autoOpenThinking: !settings.autoOpenThinking })}
+              role="switch"
+              aria-checked={settings.autoOpenThinking}
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === ' ' || e.key === 'Enter') {
+                  e.preventDefault();
+                  triggerSave({ autoOpenThinking: !settings.autoOpenThinking });
+                }
+              }}
+            >
+              <div className="epm-toggle-switch__knob" />
+            </div>
+          </label>
+        </div>
+
+        <div className="settings-field">
+          <label className={`settings-toggle-row${!settings.autoOpenThinking ? ' settings-toggle-row--disabled' : ''}`}>
+            <span className="settings-label">Automatically close thinking segments when finished</span>
+            <div
+              className={`epm-toggle-switch${settings.autoCloseThinkingDone ? ' epm-toggle-switch--on' : ''}${!settings.autoOpenThinking ? ' epm-toggle-switch--disabled' : ''}`}
+              onClick={() => {
+                if (!settings.autoOpenThinking) return;
+                triggerSave({ autoCloseThinkingDone: !settings.autoCloseThinkingDone });
+              }}
+              role="switch"
+              aria-checked={settings.autoCloseThinkingDone}
+              tabIndex={settings.autoOpenThinking ? 0 : -1}
+              onKeyDown={(e) => {
+                if (!settings.autoOpenThinking) return;
+                if (e.key === ' ' || e.key === 'Enter') {
+                  e.preventDefault();
+                  triggerSave({ autoCloseThinkingDone: !settings.autoCloseThinkingDone });
+                }
+              }}
+            >
+              <div className="epm-toggle-switch__knob" />
+            </div>
+          </label>
         </div>
       </div>
 

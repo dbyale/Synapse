@@ -37,6 +37,7 @@ interface MessageContentProps {
   toolGroups?: ToolGroup[];
   thoughtItems?: ThoughtItem[];
   renderTool?: (segment: MessageSegment, showInlineStats: boolean) => ReactNode;
+  defaultOpen?: boolean;
 }
 
 function renderToolGroup(
@@ -77,12 +78,14 @@ function ThoughtSegment({
   thoughtItems,
   onImageClick,
   renderTool,
+  defaultOpen = true,
 }: {
   thoughtItems: ThoughtItem[];
   onImageClick?: (url: string) => void;
   renderTool?: (segment: MessageSegment, showInlineStats: boolean) => ReactNode;
+  defaultOpen?: boolean;
 }) {
-  const [isOpen, setIsOpen] = useState(true);
+  const [isOpen, setIsOpen] = useState(defaultOpen);
   const toolCount = thoughtItems.reduce(
     (sum, item) => sum + (item.kind === 'tools' ? item.groups!.reduce((s, g) => s + g.segments.length, 0) : 0),
     0,
@@ -131,7 +134,7 @@ function ThoughtSegment({
   );
 }
 
-export default function MessageContent({ segments, onImageClick, toolGroups, thoughtItems, renderTool }: MessageContentProps) {
+export default function MessageContent({ segments, onImageClick, toolGroups, thoughtItems, renderTool, defaultOpen }: MessageContentProps) {
   const filteredSegments = segments.filter((seg) => {
     if (seg.type === 'thought') {
       return seg.text.trim().length > 0;
@@ -147,6 +150,7 @@ export default function MessageContent({ segments, onImageClick, toolGroups, tho
           thoughtItems={thoughtItems}
           onImageClick={onImageClick}
           renderTool={renderTool}
+          defaultOpen={defaultOpen}
         />
       </div>
     );
@@ -161,6 +165,7 @@ export default function MessageContent({ segments, onImageClick, toolGroups, tho
           thoughtItems={[{ kind: 'text', text: combinedText }, { kind: 'tools', groups: toolGroups }]}
           onImageClick={onImageClick}
           renderTool={renderTool}
+          defaultOpen={defaultOpen}
         />
       </div>
     );
@@ -182,7 +187,7 @@ export default function MessageContent({ segments, onImageClick, toolGroups, tho
     <div className="message-content">
       {filteredSegments.map((segment) => {
         if (segment.type === 'thought') {
-          return <ThoughtSegment key={segment.id} thoughtItems={[{ kind: 'text', text: segment.text }]} onImageClick={onImageClick} />;
+          return <ThoughtSegment key={segment.id} thoughtItems={[{ kind: 'text', text: segment.text }]} onImageClick={onImageClick} defaultOpen={defaultOpen} />;
         }
 
         if (segment.type === 'comment') {

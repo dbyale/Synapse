@@ -62,6 +62,8 @@ export interface AppSettings {
   modelsDirectory: string;
   allocatedVRAM?: number;
   allocatedRAM?: number;
+  autoOpenThinking?: boolean;
+  autoCloseThinkingDone?: boolean;
 }
 
 export interface HardwareGpuInfo {
