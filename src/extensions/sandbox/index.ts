@@ -279,7 +279,7 @@ export const tools: Record<string, ExtensionToolDef> = {
         'Read the contents of a file located inside the sandbox container.\n' +
         '\n' +
         'All files are inside the container only — there is no host filesystem access.\n' +
-        'Output is capped at 100 KB.',
+        'If the file exceeds the configured max read size (default 40000 characters), a warning is returned instead of the content. Use the sandbox_run_command tool with head/tail to read smaller sections.',
       icon: 'FileText',
     },
     params: {

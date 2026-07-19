@@ -595,6 +595,12 @@ function execWithStdin(
   });
 }
 
+let maxReadSize = 40000;
+
+export function setSandboxMaxReadSize(size: number): void {
+  maxReadSize = size;
+}
+
 export async function sandboxReadFile(
   filePath: string,
   containerName?: string,
@@ -609,6 +615,9 @@ export async function sandboxReadFile(
     ], { timeout: 10000, maxBuffer: 100 * 1024 });
 
     if (result.stderr && !result.stdout) return { success: false, error: result.stderr };
+    if (result.stdout.length > maxReadSize) {
+      return { success: true, content: `Warning: Operation over ${maxReadSize} characters and may overload context. If reading this file is necessary, use offsets and limits to read smaller sections` };
+    }
     return { success: true, content: result.stdout };
   } catch (err: any) {
     return { success: false, error: err.message || String(err) };

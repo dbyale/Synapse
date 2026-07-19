@@ -22,6 +22,8 @@ export const tools: Record<string, ExtensionToolDef> = {
       name: 'read_text_file',
       label: 'Read Text File',
       description: 'Read text file contents, with optional line limiting',
+      descriptionForModel:
+        'Reads a text file and returns its contents. If the file exceeds the configured max read size (default 40000 characters), a warning is returned instead. Use head/tail params to limit the result, or read in smaller sections.',
       icon: 'FileText',
     },
     params: {
@@ -41,6 +43,8 @@ export const tools: Record<string, ExtensionToolDef> = {
       name: 'read_media_file',
       label: 'Read Media File',
       description: 'Read media files as base64-encoded data with MIME types',
+      descriptionForModel:
+        'Reads a media file and returns it as base64 with MIME type. If the result exceeds the configured max read size (default 40000 characters), a warning is returned instead.',
       icon: 'Image',
     },
     params: {
@@ -58,6 +62,8 @@ export const tools: Record<string, ExtensionToolDef> = {
       name: 'read_multiple_files',
       label: 'Read Multiple Files',
       description: 'Read multiple text files simultaneously',
+      descriptionForModel:
+        'Reads multiple text files in parallel. If any file exceeds the configured max read size (default 40000 characters), that file returns a warning instead of its content.',
       icon: 'Clipboard',
     },
     params: {

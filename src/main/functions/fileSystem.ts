@@ -6,6 +6,7 @@ import { existsSync } from 'fs';
 import { minimatch } from 'minimatch';
 
 let allowedDirectories: string[] = [];
+let maxReadSize = 40000;
 
 export function setAllowedDirectories(dirs: string[]): void {
   allowedDirectories = dirs.map((d) => path.resolve(d));
@@ -13,6 +14,14 @@ export function setAllowedDirectories(dirs: string[]): void {
 
 export function getAllowedDirectories(): string[] {
   return [...allowedDirectories];
+}
+
+export function setMaxReadSize(size: number): void {
+  maxReadSize = size;
+}
+
+export function getMaxReadSize(): number {
+  return maxReadSize;
 }
 
 function sanitizePath(raw: string): string {
@@ -167,7 +176,11 @@ export async function readTextFile(params: {
       lines = lines.slice(0, params.head);
     if (params.tail !== undefined && params.tail > 0)
       lines = lines.slice(-params.tail);
-    return lines.join('\n');
+    const result = lines.join('\n');
+    if (result.length > maxReadSize) {
+      return `Warning: Operation over ${maxReadSize} characters and may overload context. If reading this file is necessary, use offsets and limits to read smaller sections`;
+    }
+    return result;
   } catch (error) {
     return `Error: ${error instanceof Error ? error.message : String(error)}`;
   }
@@ -180,7 +193,11 @@ export async function readMediaFile(params: { path: string }): Promise<string> {
     if (!existsSync(p)) throw new Error(`File not found: ${p}`);
     const data = await fs.readFile(p);
     const result = { mimeType: getMimeType(p), data: data.toString('base64') };
-    return JSON.stringify(result);
+    const json = JSON.stringify(result);
+    if (json.length > maxReadSize) {
+      return `Warning: Operation over ${maxReadSize} characters and may overload context. If reading this file is necessary, use offsets and limits to read smaller sections`;
+    }
+    return json;
   } catch (error) {
     return `Error: ${error instanceof Error ? error.message : String(error)}`;
   }
@@ -197,7 +214,14 @@ export async function readMultipleFiles(params: {
         const p = normalizePath(sanitizePath(filePath));
         validatePath(p);
         const content = await fs.readFile(p, 'utf-8');
-        results.push({ path: p, content });
+        if (content.length > maxReadSize) {
+          results.push({
+            path: p,
+            content: `Warning: Operation over ${maxReadSize} characters and may overload context. If reading this file is necessary, use offsets and limits to read smaller sections`,
+          });
+        } else {
+          results.push({ path: p, content });
+        }
       } catch (error) {
         results.push({
           path: filePath,

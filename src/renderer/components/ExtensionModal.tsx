@@ -1,6 +1,7 @@
 import { useState, MouseEvent, KeyboardEvent } from 'react';
 import { X, Settings, Puzzle } from 'lucide-react';
 import FileSystemSettings from './FileSystemSettings';
+import SandboxSettings from './SandboxSettings';
 import GitHubExtensionSettings from './GitHubExtensionSettings';
 import { resolveIcon } from './workflows/IconPicker';
 import './styles/ExtensionModal.css';
@@ -141,11 +142,15 @@ export default function ExtensionModal({
           {tab === 'settings' && extension.manifest.id === 'filesystem' && (
             <FileSystemSettings />
           )}
+          {tab === 'settings' && extension.manifest.id === 'sandbox' && (
+            <SandboxSettings />
+          )}
           {tab === 'settings' && extension.manifest.id === 'github' && (
             <GitHubExtensionSettings />
           )}
           {tab === 'settings' &&
             extension.manifest.id !== 'filesystem' &&
+            extension.manifest.id !== 'sandbox' &&
             extension.manifest.id !== 'github' && (
               <div className="em-empty">
                 Settings configuration is not available for this extension in

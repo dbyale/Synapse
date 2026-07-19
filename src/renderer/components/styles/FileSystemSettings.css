@@ -100,3 +100,44 @@
 .fss-add-btn {
   align-self: flex-start;
 }
+
+.fss-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
+}
+
+.fss-field-label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.fss-number-input {
+  padding: 7px 10px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 13px;
+  outline: none;
+  width: 100%;
+  box-sizing: border-box;
+  transition: border-color 0.15s ease;
+}
+
+.fss-number-input:focus {
+  border-color: var(--accent);
+}
+
+.fss-field-hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+  opacity: 0.75;
+}

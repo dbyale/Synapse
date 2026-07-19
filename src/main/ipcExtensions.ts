@@ -3,7 +3,8 @@ import { ipcMain, dialog, BrowserWindow, shell, app } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import { getExtensionRegistry } from './extensionRegistry';
-import { setAllowedDirectories } from './functions/fileSystem';
+import { setAllowedDirectories, setMaxReadSize } from './functions/fileSystem';
+import { setSandboxMaxReadSize } from './functions/sandboxRunner';
 
 const EXTENSION_SETTINGS_DIR = path.join(
   app.getPath('userData'),
@@ -107,14 +108,25 @@ export function registerExtensionIpcHandlers(): void {
       saveExtensionSettings(id, settings);
       if (id === 'filesystem') {
         setAllowedDirectories(settings.allowedDirectories || []);
+        if (settings.maxReadSize !== undefined) setMaxReadSize(settings.maxReadSize);
+      }
+      if (id === 'sandbox') {
+        if (settings.maxReadSize !== undefined) setSandboxMaxReadSize(settings.maxReadSize);
       }
       return { success: true };
     },
   );
 
-  // Initialize filesystem extension settings on startup
+  // Initialize extensions settings on startup
   const fsSettings = loadExtensionSettings('filesystem');
   if (fsSettings.allowedDirectories?.length) {
     setAllowedDirectories(fsSettings.allowedDirectories);
+  }
+  if (fsSettings.maxReadSize !== undefined) {
+    setMaxReadSize(fsSettings.maxReadSize);
+  }
+  const sbSettings = loadExtensionSettings('sandbox');
+  if (sbSettings.maxReadSize !== undefined) {
+    setSandboxMaxReadSize(sbSettings.maxReadSize);
   }
 }
