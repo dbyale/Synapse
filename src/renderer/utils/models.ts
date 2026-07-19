@@ -306,9 +306,7 @@ export function downloadModel(
       targetDir = path.join(targetDir, 'projectors');
     }
 
-    // IMPORTANT: The HF `filename` can contain directories (e.g., "folder/model-001.gguf")
-    // We must resolve the absolute directory for the actual file
-    const destPath = path.join(targetDir, filename);
+    const destPath = path.join(targetDir, path.basename(filename));
     const destDir = path.dirname(destPath);
 
     // Create the folders if they don't exist.
