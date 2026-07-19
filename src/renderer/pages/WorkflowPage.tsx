@@ -1855,9 +1855,18 @@ const CATEGORY_ICONS: Record<string, React.ElementType> = {
   Files: FileText,
 };
 
+const CATEGORY_COLORS: Record<string, string> = {
+  Input: 'var(--wf-start)',
+  Models: 'var(--wf-server)',
+  Data: 'var(--wf-profile)',
+  Tools: 'var(--wf-tool)',
+  Files: 'var(--wf-file)',
+};
+
 function NodePalette({ onDragStart }: NodePaletteProps) {
   const [search, setSearch] = useState('');
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
 
   const toggleCategory = (label: string) => {
     setCollapsed((prev) => {
@@ -1868,94 +1877,133 @@ function NodePalette({ onDragStart }: NodePaletteProps) {
     });
   };
 
+  const handleGuideClick = (label: string) => {
+    setSelectedCategory((prev) => (prev === label ? null : label));
+  };
+
   const filteredCategories = useMemo(() => {
-    if (!search.trim()) return PALETTE_CATEGORIES;
-    const q = search.toLowerCase();
-    return PALETTE_CATEGORIES.map((cat) => {
-      if (cat.label.toLowerCase().includes(q)) {
-        return cat;
-      }
-      return {
-        ...cat,
-        types: cat.types.filter((type) => {
-          const meta = NODE_META[type];
-          return (
-            meta.label.toLowerCase().includes(q) ||
-            NODE_HINTS[type].toLowerCase().includes(q)
-          );
-        }),
-      };
-    }).filter((cat) => cat.types.length > 0);
-  }, [search]);
+    let categories = PALETTE_CATEGORIES;
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      categories = categories
+        .map((cat) => {
+          if (cat.label.toLowerCase().includes(q)) return cat;
+          return {
+            ...cat,
+            types: cat.types.filter((type) => {
+              const meta = NODE_META[type];
+              return (
+                meta.label.toLowerCase().includes(q) ||
+                NODE_HINTS[type].toLowerCase().includes(q)
+              );
+            }),
+          };
+        })
+        .filter((cat) => cat.types.length > 0);
+    }
+    if (selectedCategory && !search.trim()) {
+      categories = categories.filter((cat) => cat.label === selectedCategory);
+    }
+    return categories;
+  }, [search, selectedCategory]);
 
   return (
     <div className="wf-palette">
-      <div className="wf-palette__search">
-        <Search size={13} className="wf-palette__search-icon" />
-        <input
-          type="text"
-          placeholder="Search blocks..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="wf-palette__search-input"
-        />
-      </div>
-      {filteredCategories.map((cat) => {
-        const CatIcon = CATEGORY_ICONS[cat.label];
-        const isCollapsed = collapsed.has(cat.label) && !search.trim();
-        return (
-          <div key={cat.label} className="wf-palette__category">
-            <div
-              className="wf-palette__category-label"
-              onClick={() => toggleCategory(cat.label)}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') toggleCategory(cat.label);
-              }}
-            >
-              {CatIcon && (
-                <CatIcon size={12} className="wf-palette__category-icon" />
-              )}
-              <span className="wf-palette__category-name">{cat.label}</span>
-              <ChevronDown
-                size={11}
-                className={`wf-palette__category-chevron ${isCollapsed ? 'wf-palette__category-chevron--collapsed' : ''}`}
-              />
+      <div className="wf-palette__guide">
+        {PALETTE_CATEGORIES.map((cat) => {
+          const CatIcon = CATEGORY_ICONS[cat.label];
+          const isActive = selectedCategory === cat.label;
+          return (
+            <div key={cat.label} className="wf-palette__guide-item">
+              <button
+                className={`wf-palette__guide-btn ${isActive ? 'wf-palette__guide-btn--active' : ''}`}
+                style={
+                  { '--guide-color': CATEGORY_COLORS[cat.label] } as React.CSSProperties
+                }
+                onClick={() => handleGuideClick(cat.label)}
+                type="button"
+              >
+                {CatIcon && <CatIcon size={15} />}
+              </button>
+              <div className="wf-palette__guide-tooltip">{cat.label}</div>
             </div>
-            {!isCollapsed &&
-              cat.types.map((type) => {
-                const meta = NODE_META[type];
-                const Icon = meta.icon;
-                return (
-                  <div
-                    key={type}
-                    className="wf-palette__item"
-                    style={
-                      { '--node-color': meta.colorVar } as React.CSSProperties
-                    }
-                    draggable
-                    onDragStart={(e) => onDragStart(e, type)}
-                  >
-                    <div className="wf-palette__item-icon">
-                      <Icon size={14} />
-                    </div>
-                    <div className="wf-palette__item-text">
-                      <span className="wf-palette__item-label">
-                        {meta.label}
-                      </span>
-                      <span className="wf-palette__item-hint">
-                        {NODE_HINTS[type]}
-                      </span>
-                    </div>
-                  </div>
-                );
-              })}
-          </div>
-        );
-      })}
-      <div className="wf-palette__tip">
-        <Unlink size={11} /> Drag onto canvas
+          );
+        })}
+      </div>
+      <div className="wf-palette__blocks">
+        <div className="wf-palette__search">
+          <Search size={13} className="wf-palette__search-icon" />
+          <input
+            type="text"
+            placeholder="Search blocks..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="wf-palette__search-input"
+          />
+        </div>
+        {filteredCategories.length === 0 ? (
+          <div className="wf-palette__empty">No blocks found</div>
+        ) : (
+          filteredCategories.map((cat) => {
+            const CatIcon = CATEGORY_ICONS[cat.label];
+            const isCollapsed = collapsed.has(cat.label) && !search.trim();
+            return (
+              <div key={cat.label} className="wf-palette__category">
+                <div
+                  className="wf-palette__category-label"
+                  onClick={() => toggleCategory(cat.label)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') toggleCategory(cat.label);
+                  }}
+                >
+                  {CatIcon && (
+                    <CatIcon size={12} className="wf-palette__category-icon" />
+                  )}
+                  <span className="wf-palette__category-name">
+                    {cat.label}
+                  </span>
+                  <ChevronDown
+                    size={11}
+                    className={`wf-palette__category-chevron ${isCollapsed ? 'wf-palette__category-chevron--collapsed' : ''}`}
+                  />
+                </div>
+                {!isCollapsed &&
+                  cat.types.map((type) => {
+                    const meta = NODE_META[type];
+                    const Icon = meta.icon;
+                    return (
+                      <div
+                        key={type}
+                        className="wf-palette__item"
+                        style={
+                          { '--node-color': meta.colorVar } as React.CSSProperties
+                        }
+                        draggable
+                        onDragStart={(e) => onDragStart(e, type)}
+                      >
+                        <div className="wf-palette__item-icon">
+                          <Icon size={14} />
+                        </div>
+                        <div className="wf-palette__item-text">
+                          <span className="wf-palette__item-label">
+                            {meta.label}
+                          </span>
+                          <span className="wf-palette__item-hint">
+                            {NODE_HINTS[type]}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            );
+          })
+        )}
+        <div className="wf-palette__tip">
+          <Unlink size={11} /> Drag onto canvas
+        </div>
       </div>
     </div>
   );

@@ -1471,16 +1471,104 @@
    ============================================================================ */
 
 .wf-palette {
-  width: 186px;
-  min-width: 186px;
+  width: 210px;
+  min-width: 210px;
   background: var(--bg-secondary);
   border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: row;
+  flex-shrink: 0;
+}
+
+.wf-palette__guide {
+  width: 34px;
+  min-width: 34px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 4px;
+  background: var(--bg-primary);
+  border-right: 1px solid var(--border);
+  flex-shrink: 0;
+  overflow: visible;
+  position: relative;
+  z-index: 1;
+}
+
+.wf-palette__guide-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.wf-palette__guide-item:hover {
+  z-index: 10;
+}
+
+.wf-palette__guide-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.12s ease;
+  flex-shrink: 0;
+}
+
+.wf-palette__guide-btn:hover {
+  background: color-mix(in srgb, var(--guide-color) 12%, transparent);
+  color: var(--guide-color);
+  border-color: color-mix(in srgb, var(--guide-color) 30%, transparent);
+}
+
+.wf-palette__guide-btn--active {
+  background: color-mix(in srgb, var(--guide-color) 18%, transparent);
+  color: var(--guide-color);
+  border-color: color-mix(in srgb, var(--guide-color) 50%, transparent);
+}
+
+.wf-palette__guide-tooltip {
+  position: absolute;
+  left: calc(100% + 8px);
+  top: 50%;
+  transform: translateY(-50%) translateX(-4px);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  z-index: 100;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: all 0.15s ease;
+  line-height: 1.4;
+}
+
+.wf-palette__guide-item:hover .wf-palette__guide-tooltip {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(-50%) translateX(0);
+}
+
+.wf-palette__blocks {
+  flex: 1;
   display: flex;
   flex-direction: column;
   gap: 4px;
   padding: 8px;
-  flex-shrink: 0;
   overflow-y: auto;
+  min-width: 0;
 }
 
 .wf-palette__search {
@@ -1519,6 +1607,14 @@
 .wf-palette__search-input::placeholder {
   color: var(--text-secondary);
   opacity: 0.5;
+}
+
+.wf-palette__empty {
+  padding: 24px 8px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-secondary);
+  opacity: 0.6;
 }
 
 .wf-palette__category {
@@ -1914,32 +2010,34 @@
     flex-direction: row;
     flex-wrap: nowrap;
     overflow-x: auto;
-    padding: 8px;
-    gap: 6px;
     max-height: 90px;
   }
 
-  .wf-palette__category {
+  .wf-palette__guide {
+    width: auto;
+    min-width: unset;
     flex-direction: row;
-    align-items: center;
-    gap: 4px;
-    margin: 0;
+    padding: 6px;
+    border-right: none;
+    border-bottom: none;
+    background: transparent;
+    gap: 2px;
+  }
+
+  .wf-palette__guide-item {
     flex-shrink: 0;
   }
 
-  .wf-palette__search {
+  .wf-palette__guide-btn {
+    width: 28px;
+    height: 28px;
+  }
+
+  .wf-palette__guide-tooltip {
     display: none;
   }
-  .wf-palette__category-label {
-    display: none;
-  }
-  .wf-palette__tip {
-    display: none;
-  }
-  .wf-palette__item {
-    flex-shrink: 0;
-  }
-  .wf-palette__item-hint {
+
+  .wf-palette__blocks {
     display: none;
   }
 
