@@ -7,6 +7,7 @@ export interface ExtensionManifest {
   icon: string;
   builtIn: boolean;
   iconSvgData?: string;
+  hasSettings?: boolean;
 }
 
 export interface ExtensionToolMeta {

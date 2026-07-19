@@ -1,5 +1,42 @@
-import { ipcMain, dialog, BrowserWindow, shell } from 'electron';
+/* eslint-disable import/prefer-default-export */
+import { ipcMain, dialog, BrowserWindow, shell, app } from 'electron';
+import path from 'path';
+import fs from 'fs';
 import { getExtensionRegistry } from './extensionRegistry';
+import { setAllowedDirectories } from './functions/fileSystem';
+
+const EXTENSION_SETTINGS_DIR = path.join(
+  app.getPath('userData'),
+  'extension-settings',
+);
+
+function ensureSettingsDir(): void {
+  if (!fs.existsSync(EXTENSION_SETTINGS_DIR)) {
+    fs.mkdirSync(EXTENSION_SETTINGS_DIR, { recursive: true });
+  }
+}
+
+function loadExtensionSettings(id: string): Record<string, any> {
+  ensureSettingsDir();
+  const filePath = path.join(EXTENSION_SETTINGS_DIR, `${id}.json`);
+  try {
+    if (fs.existsSync(filePath)) {
+      return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+    }
+  } catch {
+    // settings file doesn't exist or is invalid
+  }
+  return {};
+}
+
+function saveExtensionSettings(
+  id: string,
+  settings: Record<string, any>,
+): void {
+  ensureSettingsDir();
+  const filePath = path.join(EXTENSION_SETTINGS_DIR, `${id}.json`);
+  fs.writeFileSync(filePath, JSON.stringify(settings, null, 2), 'utf-8');
+}
 
 export function registerExtensionIpcHandlers(): void {
   const registry = getExtensionRegistry();
@@ -37,10 +74,13 @@ export function registerExtensionIpcHandlers(): void {
     return registry.removeExtension(id);
   });
 
-  ipcMain.handle('extensions:toggle', (_event, id: string, enabled: boolean) => {
-    registry.setExtensionEnabled(id, enabled);
-    return { success: true };
-  });
+  ipcMain.handle(
+    'extensions:toggle',
+    (_event, id: string, enabled: boolean) => {
+      registry.setExtensionEnabled(id, enabled);
+      return { success: true };
+    },
+  );
 
   ipcMain.handle('extensions:getAllTools', () => {
     const allTools = registry.getAllTools();
@@ -56,4 +96,25 @@ export function registerExtensionIpcHandlers(): void {
     const userExtDir = registry.getUserExtensionsDir();
     shell.openPath(userExtDir);
   });
+
+  ipcMain.handle('extensions:getSettings', (_event, id: string) => {
+    return loadExtensionSettings(id);
+  });
+
+  ipcMain.handle(
+    'extensions:setSettings',
+    (_event, id: string, settings: any) => {
+      saveExtensionSettings(id, settings);
+      if (id === 'filesystem') {
+        setAllowedDirectories(settings.allowedDirectories || []);
+      }
+      return { success: true };
+    },
+  );
+
+  // Initialize filesystem extension settings on startup
+  const fsSettings = loadExtensionSettings('filesystem');
+  if (fsSettings.allowedDirectories?.length) {
+    setAllowedDirectories(fsSettings.allowedDirectories);
+  }
 }

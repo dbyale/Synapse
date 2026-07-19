@@ -308,6 +308,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('extensions:toggle', id, enabled),
   extensionsGetAllTools: () => ipcRenderer.invoke('extensions:getAllTools'),
   extensionsOpenFolder: () => ipcRenderer.invoke('extensions:openFolder'),
+  extensionsGetSettings: (id: string) =>
+    ipcRenderer.invoke('extensions:getSettings', id),
+  extensionsSetSettings: (id: string, settings: any) =>
+    ipcRenderer.invoke('extensions:setSettings', id, settings),
 
   // ── User Input ──
   onChatUserInput: (

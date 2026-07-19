@@ -16,6 +16,7 @@ type ExtensionInfo = {
     version: string;
     icon: string;
     builtIn: boolean;
+    hasSettings?: boolean;
   };
   tools: Record<string, { meta: ToolMeta; params: Record<string, any> }>;
   enabled: boolean;
@@ -23,7 +24,10 @@ type ExtensionInfo = {
 };
 
 let cachedExtensions: ExtensionInfo[] | null = null;
-let cachedAllTools: Record<string, { meta: ToolMeta; params: Record<string, any> }> | null = null;
+let cachedAllTools: Record<
+  string,
+  { meta: ToolMeta; params: Record<string, any> }
+> | null = null;
 
 export async function fetchExtensionData(): Promise<void> {
   if (!window.electronAPI) return;

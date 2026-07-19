@@ -9,10 +9,14 @@ import {
   Check,
   FolderOpen,
 } from 'lucide-react';
-import { fetchExtensionData, getExtensions, invalidateCache } from '../utils/extensionData';
+import {
+  fetchExtensionData,
+  getExtensions,
+  invalidateCache,
+} from '../utils/extensionData';
 import { resolveIcon } from '../components/workflows/IconPicker';
 import ConfirmDialog from '../components/ConfirmDialog';
-import ToolListModal from '../components/ToolListModal';
+import ExtensionModal from '../components/ExtensionModal';
 import '../styles/ExtensionsPage.css';
 
 type ExtensionInfo = {
@@ -25,8 +29,15 @@ type ExtensionInfo = {
     icon: string;
     builtIn: boolean;
     iconSvgData?: string;
+    hasSettings?: boolean;
   };
-  tools: Record<string, { meta: { name: string; label: string; description: string; icon: string }; params: Record<string, any> }>;
+  tools: Record<
+    string,
+    {
+      meta: { name: string; label: string; description: string; icon: string };
+      params: Record<string, any>;
+    }
+  >;
   enabled: boolean;
   extensionDir?: string;
 };
@@ -185,11 +196,13 @@ export default function ExtensionsPage() {
           <div className="ep-page__empty">
             <Puzzle size={32} />
             <p>No extensions found.</p>
-            <p>Click <strong>Install Extension</strong> to add one.</p>
+            <p>
+              Click <strong>Install Extension</strong> to add one.
+            </p>
           </div>
         ) : (
           <div className="ep-grid">
-             {extensions.map((ext, idx) => {
+            {extensions.map((ext, idx) => {
               const toolCount = Object.keys(ext.tools).length;
               const enabledCount = ext.enabled ? toolCount : 0;
 
@@ -216,7 +229,10 @@ export default function ExtensionsPage() {
                         <button
                           type="button"
                           className="ep-card__action-btn ep-card__action-btn--danger"
-                          onClick={(e) => { e.stopPropagation(); setRemoveId(ext.manifest.id || ext.manifest.name); }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setRemoveId(ext.manifest.id || ext.manifest.name);
+                          }}
                           title="Remove extension"
                         >
                           <Trash2 size={13} />
@@ -253,7 +269,10 @@ export default function ExtensionsPage() {
                     <button
                       type="button"
                       className={`ep-card__toggle-btn${ext.enabled ? ' ep-card__toggle-btn--on' : ''}`}
-                      onClick={(e) => { e.stopPropagation(); handleToggle(ext.manifest.id, !ext.enabled); }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleToggle(ext.manifest.id, !ext.enabled);
+                      }}
                     >
                       {ext.enabled ? (
                         <>
@@ -267,7 +286,9 @@ export default function ExtensionsPage() {
                         </>
                       )}
                     </button>
-                    <span className="ep-card__version">v{ext.manifest.version}</span>
+                    <span className="ep-card__version">
+                      v{ext.manifest.version}
+                    </span>
                   </div>
                 </div>
               );
@@ -288,15 +309,8 @@ export default function ExtensionsPage() {
       )}
 
       {detailExt && (
-        <ToolListModal
-          title={`${detailExt.manifest.name} Tools`}
-          description={detailExt.manifest.description}
-          tools={Object.values(detailExt.tools).map((t) => ({
-            name: t.meta.name,
-            label: t.meta.label,
-            description: t.meta.description,
-            descriptionForHuman: t.meta.descriptionForHuman,
-          }))}
+        <ExtensionModal
+          extension={detailExt}
           onClose={() => setDetailExt(null)}
         />
       )}

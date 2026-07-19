@@ -319,6 +319,8 @@ declare global {
         params: Record<string, any>;
       }>>;
       extensionsOpenFolder: () => Promise<void>;
+      extensionsGetSettings: (id: string) => Promise<Record<string, any>>;
+      extensionsSetSettings: (id: string, settings: Record<string, any>) => Promise<{ success: boolean }>;
 
       onChatUserInput: (callback: (data: {
         requestId: string;
