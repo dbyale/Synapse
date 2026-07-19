@@ -12,6 +12,7 @@ import { tools as shellTools, manifest as shellManifest } from '../extensions/sh
 import { tools as userpromptsTools, manifest as userpromptsManifest } from '../extensions/userprompts';
 import { tools as ddgSearchTools, manifest as ddgSearchManifest } from '../extensions/ddg_search';
 import { tools as sandboxTools, manifest as sandboxManifest } from '../extensions/sandbox';
+import { tools as githubTools, manifest as githubManifest } from '../extensions/github';
 
 const BUILT_IN_EXTENSIONS: Array<{ tools: Record<string, ExtensionToolDef>; manifest: ExtensionManifest }> = [
   { tools: timeTools, manifest: timeManifest as ExtensionManifest },
@@ -23,6 +24,7 @@ const BUILT_IN_EXTENSIONS: Array<{ tools: Record<string, ExtensionToolDef>; mani
   { tools: userpromptsTools, manifest: userpromptsManifest as ExtensionManifest },
   { tools: ddgSearchTools, manifest: ddgSearchManifest as ExtensionManifest },
   { tools: sandboxTools, manifest: sandboxManifest as ExtensionManifest },
+  { tools: githubTools, manifest: githubManifest as ExtensionManifest },
 ];
 
 class ExtensionRegistry {
