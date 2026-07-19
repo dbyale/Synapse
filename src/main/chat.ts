@@ -557,6 +557,8 @@ export async function loadProfile(
       if (profile.kvOffload === false) spawnArgs.push('--no-kv-offload');
       if (profile.mmap === false) spawnArgs.push('--no-mmap');
       if (profile.mlock === true) spawnArgs.push('--mlock');
+      spawnArgs.push('--cache-type-k', (profile as any).cacheTypeK ?? 'f16');
+      spawnArgs.push('--cache-type-v', (profile as any).cacheTypeV ?? 'f16');
 
       // Mixture of Experts (MoE)
       if (profile.cpuMoe === true) spawnArgs.push('--cpu-moe');
