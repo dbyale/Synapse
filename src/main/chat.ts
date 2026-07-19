@@ -626,7 +626,16 @@ export async function loadProfile(
 
       if (!ready) {
         console.error('[llama-server] Startup failed. Logs:\n', serverErrorLog);
-        throw new Error('Inference server failed to respond.');
+        const errorLines = serverErrorLog
+          .split('\n')
+          .filter((l) => /\bE\b/.test(l) || l.includes('error'))
+          .map((l) => l.trim())
+          .filter(Boolean)
+          .slice(0, 10);
+        const detail = errorLines.length > 0
+          ? errorLines.join('\n')
+          : serverErrorLog.trim().slice(0, 2000);
+        throw new Error(`Inference server failed to respond.\n\n${detail}`);
       }
 
       const resolvedSystemPrompt = substituteSystemPromptVariables(profile.systemPrompt, profile);

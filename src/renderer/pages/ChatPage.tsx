@@ -467,6 +467,8 @@ export default function ChatPage() {
   const [processing, setProcessing] = useState(false);
   const [modelLoading, setModelLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [chatError, setChatError] = useState<{ message: string; id: number } | null>(null);
+  const chatErrorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [selectedProfileId, setSelectedProfileId] = useState<string>('');
   const [placeholder, setPlaceholder] = useState('Select a profile first...');
@@ -1176,6 +1178,17 @@ export default function ChatPage() {
       },
     );
 
+    const removeChatErrorListener = window.electronAPI.onChatError(
+      (error) => {
+        if (chatErrorTimer.current) clearTimeout(chatErrorTimer.current);
+        const id = Date.now();
+        setChatError({ message: error, id });
+        chatErrorTimer.current = setTimeout(() => {
+          setChatError((prev) => (prev?.id === id ? null : prev));
+        }, 6000);
+      },
+    );
+
     return () => {
       removeTokenListener();
       removeDoneListener();
@@ -1188,6 +1201,7 @@ export default function ChatPage() {
       removeSystemProgressListener();
       removeSystemStatusListener();
       removeSystemDoneListener();
+      removeChatErrorListener();
     };
   }, [refreshCumulativeTokens]);
 
@@ -1575,11 +1589,24 @@ export default function ChatPage() {
       )}
 
       <div className="chat-messages" ref={messagesContainerRef}>
-        {loadError && !modelLoading && (
+        {loadError && (
           <div className="chat-error">
             <AlertCircle size={32} style={{ marginBottom: 4 }} />
             <span className="chat-error__title">Failed to Load Profile</span>
-            <span className="chat-error__message">{loadError}</span>
+            <span className="chat-error__message">
+              {(() => {
+                const lines = loadError.split('\n').filter(Boolean);
+                if (lines.length <= 1) return loadError;
+                return (
+                  <>
+                    {lines[0]}
+                    <ul className="chat-error__log">
+                      {lines.slice(1).map((l, i) => <li key={i}>{l}</li>)}
+                    </ul>
+                  </>
+                );
+              })()}
+            </span>
             <button
               type="button"
               className="chat-error__retry"
@@ -2284,6 +2311,29 @@ export default function ChatPage() {
           imageUrl={imageViewerUrl}
           onClose={() => setImageViewerUrl(null)}
         />
+      )}
+
+      {chatError && (
+        <div key={chatError.id} className="chat-toast">
+          <X
+            size={14}
+            className="chat-toast__close"
+            onClick={() => setChatError(null)}
+          />
+          <span className="chat-toast__title">Error</span>
+          {(() => {
+            const lines = chatError.message.split('\n').filter(Boolean);
+            if (lines.length <= 1) return <span className="chat-toast__message">{chatError.message}</span>;
+            return (
+              <>
+                <span className="chat-toast__message">{lines[0]}</span>
+                <ul className="chat-error__log">
+                  {lines.slice(1).map((l, i) => <li key={i}>{l}</li>)}
+                </ul>
+              </>
+            );
+          })()}
+        </div>
       )}
     </div>
   );

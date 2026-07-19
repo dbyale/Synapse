@@ -88,3 +88,6 @@
 
 # BUGS
   * If models do multiple parallel searches, the timing results will move to appear under the last parrallel
+
+# LLAMA-CPP Bugs
+  * When not built with all cache quants (like IQ4_NL), it will state flash attention error instead
