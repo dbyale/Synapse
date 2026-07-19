@@ -49,6 +49,20 @@
   color: var(--text-secondary);
 }
 
+.em-header-svg-icon {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.em-header-svg-icon svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
 .em-title {
   margin: 0;
   font-size: 16px;

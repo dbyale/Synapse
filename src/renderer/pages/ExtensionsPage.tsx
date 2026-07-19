@@ -44,11 +44,11 @@ type ExtensionInfo = {
 
 function ExtensionIcon({ manifest }: { manifest: ExtensionInfo['manifest'] }) {
   if (manifest.iconSvgData) {
+    const svgContent = atob(manifest.iconSvgData.split(',')[1]);
     return (
-      <img
-        src={manifest.iconSvgData}
-        alt={`${manifest.name} icon`}
+      <span
         className="ep-card__svg-icon"
+        dangerouslySetInnerHTML={{ __html: svgContent }}
       />
     );
   }

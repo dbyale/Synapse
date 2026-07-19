@@ -49,9 +49,9 @@ export default function ExtensionModal({
     if (e.key === 'Escape') onClose();
   };
 
-  const IconComp = extension.manifest.icon
-    ? resolveIcon(extension.manifest.icon)
-    : Puzzle;
+  const svgContent = extension.manifest.iconSvgData
+    ? atob(extension.manifest.iconSvgData.split(',')[1])
+    : null;
 
   const tools = Object.values(extension.tools);
 
@@ -69,7 +69,19 @@ export default function ExtensionModal({
         <div className="em-header">
           <div className="em-header-left">
             <div className="em-header-icon">
-              <IconComp size={20} />
+              {svgContent ? (
+                <span
+                  className="em-header-svg-icon"
+                  dangerouslySetInnerHTML={{ __html: svgContent }}
+                />
+              ) : (
+                (() => {
+                  const IconComp = extension.manifest.icon
+                    ? resolveIcon(extension.manifest.icon)
+                    : Puzzle;
+                  return <IconComp size={20} />;
+                })()
+              )}
             </div>
             <div>
               <h2 className="em-title">{extension.manifest.name}</h2>

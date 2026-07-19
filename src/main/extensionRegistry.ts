@@ -39,10 +39,15 @@ class ExtensionRegistry {
   }
 
   private registerBuiltIn(): void {
+    const builtInDir = path.join(app.getAppPath(), 'src', 'extensions');
     for (const ext of BUILT_IN_EXTENSIONS) {
       const manifest = ext.manifest;
+      const iconSvgData = this.loadSvgIcon(
+        path.join(builtInDir, manifest.id),
+        manifest.icon,
+      );
       this.extensions.set(manifest.id, {
-        manifest: { ...manifest, builtIn: true },
+        manifest: { ...manifest, builtIn: true, iconSvgData },
         tools: ext.tools,
         enabled: true,
       });

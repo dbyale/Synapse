@@ -4,7 +4,7 @@
   "description": "Manage repositories, create branches, pull requests, issues, and more via the GitHub API",
   "author": "Synapse",
   "version": "1.0.0",
-  "icon": "Github",
+  "icon": "github.svg",
   "builtIn": false,
   "hasSettings": true
 }
