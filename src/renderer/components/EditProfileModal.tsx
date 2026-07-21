@@ -28,6 +28,7 @@ import {
 import { Profile, CacheType } from '../types/profile';
 import type { LocalModel } from '../preload.d';
 import { getToolMeta, getAvailableToolNames } from '../utils/extensionData';
+import { svgToDataUrl } from '../utils/svgToDataUrl';
 import { resolveIcon } from './workflows/IconPicker';
 import ToolListModal from './ToolListModal';
 import { formatBytes } from '../utils/formatters';
@@ -222,7 +223,7 @@ function ToolCategoryCard({
         <div className="epm-tool-category__icon-wrap">
           {iconSvgData ? (
             <img
-              src={iconSvgData}
+              src={svgToDataUrl(iconSvgData)}
               alt=""
               className="epm-tool-category__svg-icon"
             />

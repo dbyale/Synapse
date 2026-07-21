@@ -4,6 +4,7 @@ import FileSystemSettings from './FileSystemSettings';
 import SandboxSettings from './SandboxSettings';
 import GitHubExtensionSettings from './GitHubExtensionSettings';
 import { resolveIcon } from './workflows/IconPicker';
+import { svgToDataUrl } from '../utils/svgToDataUrl';
 import './styles/ExtensionModal.css';
 
 interface ToolInfo {
@@ -50,8 +51,8 @@ export default function ExtensionModal({
     if (e.key === 'Escape') onClose();
   };
 
-  const svgContent = extension.manifest.iconSvgData
-    ? atob(extension.manifest.iconSvgData.split(',')[1])
+  const svgDataUrl = extension.manifest.iconSvgData
+    ? svgToDataUrl(extension.manifest.iconSvgData)
     : null;
 
   const tools = Object.values(extension.tools);
@@ -70,10 +71,11 @@ export default function ExtensionModal({
         <div className="em-header">
           <div className="em-header-left">
             <div className="em-header-icon">
-              {svgContent ? (
-                <span
+              {svgDataUrl ? (
+                <img
+                  src={svgDataUrl}
+                  alt=""
                   className="em-header-svg-icon"
-                  dangerouslySetInnerHTML={{ __html: svgContent }}
                 />
               ) : (
                 (() => {

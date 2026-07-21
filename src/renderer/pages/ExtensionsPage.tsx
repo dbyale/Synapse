@@ -15,6 +15,7 @@ import {
   invalidateCache,
 } from '../utils/extensionData';
 import { resolveIcon } from '../components/workflows/IconPicker';
+import { svgToDataUrl } from '../utils/svgToDataUrl';
 import ConfirmDialog from '../components/ConfirmDialog';
 import ExtensionModal from '../components/ExtensionModal';
 import '../styles/ExtensionsPage.css';
@@ -44,11 +45,11 @@ type ExtensionInfo = {
 
 function ExtensionIcon({ manifest }: { manifest: ExtensionInfo['manifest'] }) {
   if (manifest.iconSvgData) {
-    const svgContent = atob(manifest.iconSvgData.split(',')[1]);
     return (
-      <span
+      <img
+        src={svgToDataUrl(manifest.iconSvgData)}
+        alt=""
         className="ep-card__svg-icon"
-        dangerouslySetInnerHTML={{ __html: svgContent }}
       />
     );
   }
