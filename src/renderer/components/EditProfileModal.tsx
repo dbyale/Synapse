@@ -425,13 +425,9 @@ function MainPage({
             title="Performance"
             tooltip="Configure GPU offloading, context size, cache, and memory options."
             preview={
-              editAutoOptimizer &&
-              editLayers !== undefined &&
-              editContextSize !== undefined
-                ? `${autoOptimizerLabel(editAutoOptimizer)}: ${Math.round((editLayers / modelMaxLayers) * 100)}% Offload, ${Math.round((editContextSize / modelMaxContext) * 100)}% Context`
-                : editAutoOptimizer
-                  ? 'Optimizing\u2026'
-                  : 'Not configured'
+              editAutoOptimizer
+                ? autoOptimizerLabel(editAutoOptimizer)
+                : 'Not configured'
             }
             onClick={() => onNavigate('performance')}
           />
@@ -2803,7 +2799,7 @@ export default function EditProfileModal({
   // Performance options
   const [editAutoOptimizer, setEditAutoOptimizer] = useState<
     'longest-context' | 'most-gpu' | 'custom' | null
-  >(profile?.autoOptimizer ?? null);
+  >(profile?.autoOptimizer ?? 'longest-context');
   const [editLayers, setEditLayers] = useState<number | undefined>(
     profile?.layers,
   );
@@ -3121,11 +3117,9 @@ export default function EditProfileModal({
           }
         : {}),
       estimation: lastEstimate ?? undefined,
-      ...(editAutoOptimizer &&
-      editLayers !== undefined &&
-      editContextSize !== undefined
+      ...(editAutoOptimizer ? { autoOptimizer: editAutoOptimizer } : {}),
+      ...(editLayers !== undefined && editContextSize !== undefined
         ? {
-            autoOptimizer: editAutoOptimizer,
             layers: editLayers,
             contextSize: editContextSize,
             allocatedVRAM: editAllocatedVRAM,
