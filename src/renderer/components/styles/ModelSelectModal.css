@@ -97,7 +97,7 @@
 
 .msm-search__icon {
   position: absolute;
-  left: 28px;
+  left: 32px;
   color: var(--text-tertiary);
   pointer-events: none;
   flex-shrink: 0;
