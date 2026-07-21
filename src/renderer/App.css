@@ -388,6 +388,9 @@ body,
   flex-direction: column;
   align-items: stretch;
 }
+.info-tooltip-stretch--col .info-tooltip-anchor {
+  position: static;
+}
 
 /* ── Cache selector flex layout fix ── */
 .epm-cache-selectors-row > .info-tooltip-wrapper {

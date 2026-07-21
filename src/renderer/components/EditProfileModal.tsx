@@ -1528,61 +1528,72 @@ function PerformancePage({
           <div className="epm-section__label">Optimization Mode</div>
         </InfoTooltip>
         <div className="epm-perf-three-toggle">
-          <button
-            type="button"
-            className={`epm-perf-btn${editAutoOptimizer === 'longest-context' ? ' epm-perf-btn--active' : ''}${optimizerRunning === 'longest-context' ? ' epm-perf-btn--loading' : ''}`}
-            onClick={() => {
-              if (optimizerRunning) return;
-              onRunOptimizer('longest-context');
-            }}
-            disabled={!!optimizerRunning}
+          <InfoTooltip
+            content={LONGEST_CONTEXT_TOOLTIP}
+            hideIcon
+            title="Longest Context"
+            className="epm-perf-btn-wrapper"
           >
-            {optimizerRunning === 'longest-context' ? (
-              <Loader2 size={16} className="epm-perf-spinner" />
-            ) : (
-              <FileText size={16} />
-            )}
-            <InfoTooltip
-              content={LONGEST_CONTEXT_TOOLTIP}
-              hideIcon
-              title="Longest Context"
+            <button
+              type="button"
+              className={`epm-perf-btn${editAutoOptimizer === 'longest-context' ? ' epm-perf-btn--active' : ''}${optimizerRunning === 'longest-context' ? ' epm-perf-btn--loading' : ''}`}
+              onClick={() => {
+                if (optimizerRunning) return;
+                onRunOptimizer('longest-context');
+              }}
+              disabled={!!optimizerRunning}
             >
+              {optimizerRunning === 'longest-context' ? (
+                <Loader2 size={16} className="epm-perf-spinner" />
+              ) : (
+                <FileText size={16} />
+              )}
               <span>Longest Context</span>
-            </InfoTooltip>
-          </button>
-          <button
-            type="button"
-            className={`epm-perf-btn${editAutoOptimizer === 'most-gpu' ? ' epm-perf-btn--active' : ''}${optimizerRunning === 'most-gpu' ? ' epm-perf-btn--loading' : ''}`}
-            onClick={() => {
-              if (optimizerRunning) return;
-              onRunOptimizer('most-gpu');
-            }}
-            disabled={!!optimizerRunning}
+            </button>
+          </InfoTooltip>
+          <InfoTooltip
+            content={MOST_GPU_TOOLTIP}
+            hideIcon
+            title="Most GPU"
+            className="epm-perf-btn-wrapper"
           >
-            {optimizerRunning === 'most-gpu' ? (
-              <Loader2 size={16} className="epm-perf-spinner" />
-            ) : (
-              <Flame size={16} />
-            )}
-            <InfoTooltip content={MOST_GPU_TOOLTIP} hideIcon title="Most GPU">
+            <button
+              type="button"
+              className={`epm-perf-btn${editAutoOptimizer === 'most-gpu' ? ' epm-perf-btn--active' : ''}${optimizerRunning === 'most-gpu' ? ' epm-perf-btn--loading' : ''}`}
+              onClick={() => {
+                if (optimizerRunning) return;
+                onRunOptimizer('most-gpu');
+              }}
+              disabled={!!optimizerRunning}
+            >
+              {optimizerRunning === 'most-gpu' ? (
+                <Loader2 size={16} className="epm-perf-spinner" />
+              ) : (
+                <Flame size={16} />
+              )}
               <span>Most GPU</span>
-            </InfoTooltip>
-          </button>
-          <button
-            type="button"
-            className={`epm-perf-btn${editAutoOptimizer === 'custom' ? ' epm-perf-btn--active' : ''}`}
-            onClick={() => {
-              if (optimizerRunning) return;
-              onSetAutoOptimizer('custom');
-              triggerEstimate(activeLayers, activeCtx);
-            }}
-            disabled={!!optimizerRunning}
+            </button>
+          </InfoTooltip>
+          <InfoTooltip
+            content={CUSTOM_TOOLTIP}
+            hideIcon
+            title="Custom"
+            className="epm-perf-btn-wrapper"
           >
-            <SlidersHorizontal size={16} />
-            <InfoTooltip content={CUSTOM_TOOLTIP} hideIcon title="Custom">
+            <button
+              type="button"
+              className={`epm-perf-btn${editAutoOptimizer === 'custom' ? ' epm-perf-btn--active' : ''}`}
+              onClick={() => {
+                if (optimizerRunning) return;
+                onSetAutoOptimizer('custom');
+                triggerEstimate(activeLayers, activeCtx);
+              }}
+              disabled={!!optimizerRunning}
+            >
+              <SlidersHorizontal size={16} />
               <span>Custom</span>
-            </InfoTooltip>
-          </button>
+            </button>
+          </InfoTooltip>
         </div>
       </div>
 
@@ -1703,7 +1714,7 @@ function PerformancePage({
                   content={`Model Weights: ${toGB(memory.modelVramUsage)}GB`}
                   className="epm-mem-segment epm-mem-segment--model"
                   hideIcon
-                  side="top"
+                  side="bottom"
                   title="Model Weights"
                   style={{ width: `${vramModelPct * 100}%` }}
                 />
@@ -1711,7 +1722,7 @@ function PerformancePage({
                   content={`KV Cache: ${toGB(memory.contextVramUsage)}GB`}
                   className="epm-mem-segment epm-mem-segment--ctx"
                   hideIcon
-                  side="top"
+                  side="bottom"
                   title="KV Cache"
                   style={{ width: `${vramCtxPct * 100}%` }}
                 />
@@ -1719,7 +1730,7 @@ function PerformancePage({
                   content={`Compute Overhead: ${toGB(memory.computeOverheadVram)}GB`}
                   className="epm-mem-segment epm-mem-segment--overhead"
                   hideIcon
-                  side="top"
+                  side="bottom"
                   title="Compute Overhead"
                   style={{ width: `${vramOverheadPct * 100}%` }}
                 />
@@ -1727,7 +1738,7 @@ function PerformancePage({
                   content={`Free: ${toGB(Math.max(0, totalVRAM - memory.modelVramUsage - memory.contextVramUsage - memory.computeOverheadVram))}GB`}
                   className="epm-mem-segment epm-mem-segment--free"
                   hideIcon
-                  side="top"
+                  side="bottom"
                   title="Free"
                   style={{ width: `${vramFreePct * 100}%` }}
                 />
@@ -1853,7 +1864,7 @@ function PerformancePage({
                   content={`Model Weights: ${toGB(memory.modelRamUsage)}GB`}
                   className="epm-mem-segment epm-mem-segment--model"
                   hideIcon
-                  side="top"
+                  side="bottom"
                   title="Model Weights"
                   style={{ width: `${ramModelPct * 100}%` }}
                 />
@@ -1861,7 +1872,7 @@ function PerformancePage({
                   content={`KV Cache: ${toGB(memory.contextRamUsage)}GB`}
                   className="epm-mem-segment epm-mem-segment--ctx"
                   hideIcon
-                  side="top"
+                  side="bottom"
                   title="KV Cache"
                   style={{ width: `${ramCtxPct * 100}%` }}
                 />
@@ -1869,7 +1880,7 @@ function PerformancePage({
                   content={`File Buffer: ${toGB(memory.fileBufferRam)}GB`}
                   className="epm-mem-segment epm-mem-segment--buffer"
                   hideIcon
-                  side="top"
+                  side="bottom"
                   title="File Buffer"
                   style={{ width: `${ramBufferPct * 100}%` }}
                 />
@@ -1877,7 +1888,7 @@ function PerformancePage({
                   content={`Compute Overhead: ${toGB(memory.computeOverheadRam)}GB`}
                   className="epm-mem-segment epm-mem-segment--overhead"
                   hideIcon
-                  side="top"
+                  side="bottom"
                   title="Compute Overhead"
                   style={{ width: `${ramOverheadPct * 100}%` }}
                 />
@@ -1885,7 +1896,7 @@ function PerformancePage({
                   content={`Free: ${toGB(Math.max(0, totalRAM - memory.modelRamUsage - memory.contextRamUsage - memory.fileBufferRam - memory.computeOverheadRam))}GB`}
                   className="epm-mem-segment epm-mem-segment--free"
                   hideIcon
-                  side="top"
+                  side="bottom"
                   title="Free"
                   style={{ width: `${ramFreePct * 100}%` }}
                 />

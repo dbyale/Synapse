@@ -664,11 +664,17 @@
   margin-bottom: 14px;
 }
 
+.epm-perf-btn-wrapper {
+  flex: 1;
+}
+.epm-perf-btn-wrapper .epm-perf-btn {
+  width: 100%;
+}
+
 .epm-perf-btn {
   display: flex;
   align-items: center;
   gap: 5px;
-  flex: 1;
   padding: 8px 10px;
   border-radius: var(--radius-md);
   border: 1px solid var(--border);
