@@ -1322,8 +1322,6 @@ function PerformancePage({
   optimizerRunning,
   modelMaxLayers,
   modelMaxContext,
-  totalVRAM,
-  totalRAM,
   onSetAutoOptimizer,
   onSetGpuLayersAuto,
   onSetLayers,
@@ -1354,8 +1352,6 @@ function PerformancePage({
   optimizerRunning: 'longest-context' | 'most-gpu' | null;
   modelMaxLayers: number;
   modelMaxContext: number;
-  totalVRAM: number;
-  totalRAM: number;
   onSetAutoOptimizer: (
     v: 'longest-context' | 'most-gpu' | 'custom' | null,
   ) => void;
@@ -1421,6 +1417,17 @@ function PerformancePage({
     computeOverheadRam: number;
     fileBufferRam: number;
   } | null>(initialEstimate);
+  const [totalVRAM, setTotalVRAM] = useState(0);
+  const [totalRAM, setTotalRAM] = useState(0);
+  useEffect(() => {
+    window.electronAPI
+      .getVramStats()
+      .then((stats) => {
+        setTotalRAM(stats.ram.total * 1024 * 1024);
+        setTotalVRAM(stats.vram ? stats.vram.total * 1024 * 1024 : 0);
+      })
+      .catch(() => {});
+  }, []);
   const layersDisabled = isAuto || editGpuLayersAuto;
   const activeLayers = editGpuLayersAuto
     ? (editLayers ?? modelMaxLayers)
@@ -2887,10 +2894,6 @@ export default function EditProfileModal({
     maxContext: number;
   } | null>(null);
 
-  // Total system VRAM/RAM for memory bars
-  const [totalVRAM, setTotalVRAM] = useState(0);
-  const [totalRAM, setTotalRAM] = useState(0);
-
   // Cached memory estimate (persisted in profile)
   const [lastEstimate, setLastEstimate] = useState<{
     modelVramUsage: number;
@@ -2932,17 +2935,6 @@ export default function EditProfileModal({
     editModelAuthor,
     editModelFolder,
   ]);
-
-  // Fetch total VRAM/RAM once on mount
-  useEffect(() => {
-    window.electronAPI
-      .getVramStats()
-      .then((stats) => {
-        setTotalRAM(stats.ram.total * 1024 * 1024);
-        setTotalVRAM(stats.vram ? stats.vram.total * 1024 * 1024 : 0);
-      })
-      .catch(() => {});
-  }, []);
 
   // Model/Projector modals
   const [showModelModal, setShowModelModal] = useState(false);
@@ -3349,8 +3341,6 @@ export default function EditProfileModal({
             optimizerRunning={optimizerRunning}
             modelMaxLayers={modelMeta?.maxLayers ?? 200}
             modelMaxContext={modelMeta?.maxContext ?? 131072}
-            totalVRAM={totalVRAM}
-            totalRAM={totalRAM}
             onSetAutoOptimizer={setEditAutoOptimizer}
             onSetGpuLayersAuto={setEditGpuLayersAuto}
             onSetLayers={setEditLayers}
