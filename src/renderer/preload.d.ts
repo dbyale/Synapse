@@ -261,6 +261,7 @@ declare global {
         projectorFilename?: string;
         mode: 'longest-context' | 'most-gpu';
         kvOffload?: boolean;
+        flashAttn?: 'on' | 'off' | 'auto';
         mmap?: boolean;
         cacheTypeK?: string;
         cacheTypeV?: string;
@@ -279,6 +280,7 @@ declare global {
         ngl: number;
         ctx: number;
         kvOffload?: boolean;
+        flashAttn?: 'on' | 'off' | 'auto';
         mmap?: boolean;
         cacheTypeK?: string;
         cacheTypeV?: string;

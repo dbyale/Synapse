@@ -559,6 +559,9 @@ export async function loadProfile(
       if (profile.mlock === true) spawnArgs.push('--mlock');
       spawnArgs.push('--cache-type-k', (profile as any).cacheTypeK ?? 'f16');
       spawnArgs.push('--cache-type-v', (profile as any).cacheTypeV ?? 'f16');
+      if ((profile as any).flashAttn) {
+        spawnArgs.push('--flash-attn', (profile as any).flashAttn);
+      }
 
       // Mixture of Experts (MoE)
       if (profile.cpuMoe === true) spawnArgs.push('--cpu-moe');

@@ -273,6 +273,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     projectorFilename?: string;
     mode: 'longest-context' | 'most-gpu';
     kvOffload?: boolean;
+    flashAttn?: 'on' | 'off' | 'auto';
     mmap?: boolean;
     cacheTypeK?: string;
     cacheTypeV?: string;
@@ -287,6 +288,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ngl: number;
     ctx: number;
     kvOffload?: boolean;
+    flashAttn?: 'on' | 'off' | 'auto';
     mmap?: boolean;
     cacheTypeK?: string;
     cacheTypeV?: string;

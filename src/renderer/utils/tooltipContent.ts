@@ -125,6 +125,13 @@ export const V_CACHE_TYPE_TOOLTIP = [
   'Consider keeping V Cache at f16 and only quantizing K Cache if memory is tight.',
 ];
 
+export const FLASH_ATTENTION_TOOLTIP = [
+  'Uses flash attention to accelerate inference and reduce memory usage.',
+  'On: enables flash attention for supported GPUs.',
+  'Off: disables flash attention.',
+  'Auto: automatically selects the best mode based on your hardware.',
+];
+
 export const MMAP_TOOLTIP = [
   'Memory-maps the model file so the operating system pages it into memory on demand.',
   'Lowers peak RAM usage since only actively used parts need to be loaded.',

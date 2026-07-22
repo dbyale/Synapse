@@ -73,6 +73,7 @@ import {
   DRAFT_P_MIN_TOOLTIP,
   CPU_MOE_TOOLTIP,
   N_CPU_MOE_TOOLTIP,
+  FLASH_ATTENTION_TOOLTIP,
 } from '../utils/tooltipContent';
 import ModelSelectModal from './ModelSelectModal';
 import ProjectorSelectModal from './ProjectorSelectModal';
@@ -1140,6 +1141,61 @@ function CacheTypeSelector({
   );
 }
 
+const FLASH_ATTN_OPTIONS: Array<'on' | 'off' | 'auto'> = ['auto', 'on', 'off'];
+
+function FlashAttnSelector({
+  value,
+  onChange,
+}: {
+  value: 'on' | 'off' | 'auto';
+  onChange: (v: 'on' | 'off' | 'auto') => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClick(e: Event) {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
+  return (
+    <div className="epm-cache-selector" ref={ref} style={{ width: '250px', flex: 'none' }}>
+      <div className="epm-cache-selector-wrap">
+        <button
+          className="epm-cache-selector-trigger"
+          onClick={() => setOpen(!open)}
+          type="button"
+        >
+          {value}
+          <ChevronDown size={13} />
+        </button>
+        {open && (
+          <div className="epm-flash-attn-dropdown">
+            {FLASH_ATTN_OPTIONS.map((t) => (
+              <button
+                key={t}
+                className={`epm-cache-selector-option${t === value ? ' epm-cache-selector-option--active' : ''}`}
+                onClick={() => {
+                  onChange(t);
+                  setOpen(false);
+                }}
+                type="button"
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Projector Page (sub-page) ──
 
 function ProjectorPage({
@@ -2160,17 +2216,21 @@ function PerformancePage({
 
 function CacheOptionsPage({
   editKvOffload,
+  editFlashAttn,
   editCacheTypeK,
   editCacheTypeV,
   onSetKvOffload,
+  onSetFlashAttn,
   onSetCacheTypeK,
   onSetCacheTypeV,
   onEstimateMemory,
 }: {
   editKvOffload: boolean;
+  editFlashAttn: 'on' | 'off' | 'auto';
   editCacheTypeK: CacheType;
   editCacheTypeV: CacheType;
   onSetKvOffload: (v: boolean) => void;
+  onSetFlashAttn: (v: 'on' | 'off' | 'auto') => void;
   onSetCacheTypeK: (v: CacheType) => void;
   onSetCacheTypeV: (v: CacheType) => void;
   onEstimateMemory: (
@@ -2207,6 +2267,23 @@ function CacheOptionsPage({
           <div className="epm-section__label">KV Cache</div>
         </InfoTooltip>
         <div className="epm-perf-toggles">
+          <label className="epm-perf-toggle-row">
+            <InfoTooltip
+              content={FLASH_ATTENTION_TOOLTIP}
+              side="right"
+              stretch
+              className="info-tooltip-stretch--row"
+              title="Flash Attention"
+            >
+              <span className="epm-perf-toggle-label">Flash Attention</span>
+              <FlashAttnSelector
+                value={editFlashAttn}
+                onChange={(v) => {
+                  onSetFlashAttn(v);
+                }}
+              />
+            </InfoTooltip>
+          </label>
           <label className="epm-perf-toggle-row">
             <InfoTooltip
               content={KV_CACHE_OFFLOAD_TOOLTIP}
@@ -2833,6 +2910,9 @@ export default function EditProfileModal({
   const [editCacheTypeV, setEditCacheTypeV] = useState<CacheType>(
     profile?.cacheTypeV ?? 'f16',
   );
+  const [editFlashAttn, setEditFlashAttn] = useState<'on' | 'off' | 'auto'>(
+    profile?.flashAttn ?? 'auto',
+  );
   const [optimizerRunning, setOptimizerRunning] = useState<
     'longest-context' | 'most-gpu' | null
   >(null);
@@ -2967,6 +3047,7 @@ export default function EditProfileModal({
         projectorFilename: editProjectorFilename || undefined,
         mode,
         kvOffload: editKvOffload,
+        flashAttn: editFlashAttn,
         mmap: editMmap,
         cacheTypeK: editCacheTypeK,
         cacheTypeV: editCacheTypeV,
@@ -3009,6 +3090,7 @@ export default function EditProfileModal({
       ngl,
       ctx,
       kvOffload: kvOffload ?? editKvOffload,
+      flashAttn: editFlashAttn,
       mmap: mmap ?? editMmap,
       cacheTypeK: cacheTypeK ?? editCacheTypeK,
       cacheTypeV: cacheTypeV ?? editCacheTypeV,
@@ -3096,6 +3178,7 @@ export default function EditProfileModal({
       tools: editTools.filter((t) => getAvailableToolNames().includes(t)),
       repeatPenalty: buildRepeatPenalty(),
       kvOffload: editKvOffload,
+      flashAttn: editFlashAttn,
       cacheTypeK: editCacheTypeK,
       cacheTypeV: editCacheTypeV,
       mmap: editMmap,
@@ -3373,9 +3456,11 @@ export default function EditProfileModal({
         return (
           <CacheOptionsPage
             editKvOffload={editKvOffload}
+            editFlashAttn={editFlashAttn}
             editCacheTypeK={editCacheTypeK}
             editCacheTypeV={editCacheTypeV}
             onSetKvOffload={setEditKvOffload}
+            onSetFlashAttn={setEditFlashAttn}
             onSetCacheTypeK={setEditCacheTypeK}
             onSetCacheTypeV={setEditCacheTypeV}
             onEstimateMemory={handleEstimateMemory}

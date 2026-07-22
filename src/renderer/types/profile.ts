@@ -32,6 +32,7 @@ export interface Profile {
   contextSize?: number;
   autoOptimizer?: 'longest-context' | 'most-gpu' | 'custom';
   kvOffload?: boolean;
+  flashAttn?: 'on' | 'off' | 'auto';
   cacheTypeK?: CacheType;
   cacheTypeV?: CacheType;
   mmap?: boolean;

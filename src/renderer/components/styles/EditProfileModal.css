@@ -1216,4 +1216,21 @@
   font-weight: 600;
 }
 
+.epm-flash-attn-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  left: auto;
+  width: 250px;
+  z-index: 200;
+  margin-top: 4px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  overflow: hidden;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
 
