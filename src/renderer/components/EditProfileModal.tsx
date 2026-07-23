@@ -24,6 +24,7 @@ import {
   SlidersHorizontal,
   AlertTriangle,
   Puzzle,
+  Server,
 } from 'lucide-react';
 import { Profile, CacheType } from '../types/profile';
 import type { LocalModel } from '../preload.d';
@@ -157,6 +158,7 @@ const PAGE_DEPTH: Record<string, number> = {
   'memory-options': 2,
   'draft-model': 2,
   'moe-options': 2,
+  'server-settings': 1,
 };
 
 const BREADCRUMB_MAP: Record<string, { label: string; parent: string | null }> =
@@ -173,6 +175,7 @@ const BREADCRUMB_MAP: Record<string, { label: string; parent: string | null }> =
     'memory-options': { label: 'Memory Options', parent: 'performance' },
     'draft-model': { label: 'Draft Model', parent: 'performance' },
     'moe-options': { label: 'Mixture of Experts', parent: 'performance' },
+    'server-settings': { label: 'Server Settings', parent: 'main' },
   };
 
 function buildBreadcrumb(page: string): Array<{ key: string; label: string }> {
@@ -289,6 +292,7 @@ function MainPage({
   editContextSize,
   modelMaxLayers,
   modelMaxContext,
+  editParallel,
 }: {
   editName: string;
   setEditName: (v: string) => void;
@@ -319,6 +323,7 @@ function MainPage({
   editContextSize: number | undefined;
   modelMaxLayers: number;
   modelMaxContext: number;
+  editParallel: string;
 }) {
   return (
     <div className="epm-main-grid">
@@ -469,6 +474,13 @@ function MainPage({
           tooltip="Fine-tune generation behavior: temperature, sampling, penalties, and seed."
           preview={advancedPreview}
           onClick={() => onNavigate('advanced')}
+        />
+        <SectionCard
+          icon={<Server size={20} />}
+          title="Server Settings"
+          tooltip="Advanced settings for llama-server."
+          preview="Advanced settings for llama-server"
+          onClick={() => onNavigate('server-settings')}
         />
       </div>
     </div>
@@ -2811,6 +2823,50 @@ function MoeOptionsPage({
   );
 }
 
+function ServerSettingsPage({
+  editParallel,
+  setEditParallel,
+}: {
+  editParallel: string;
+  setEditParallel: (v: string) => void;
+}) {
+  return (
+    <>
+      <h2 className="epm-page-title">Server Settings</h2>
+      <p
+        style={{
+          fontSize: '14px',
+          color: 'var(--text-secondary)',
+          margin: '0 0 20px',
+          lineHeight: 1.5,
+        }}
+      >
+        Advanced settings for llama-server.
+      </p>
+
+      <div className="epm-section" style={{ marginTop: '20px' }}>
+        <div className="epm-number-grid">
+          <NumberField
+            label="Parallel Server Slot Count"
+            value={editParallel}
+            onChange={setEditParallel}
+            min="-1"
+            max="999"
+            step="1"
+            helper="Default: 1 (-1 = auto)"
+            tooltip={[
+              'Controls how many concurrent requests the server can handle at once.',
+              'More slots allow multiple users or simultaneous conversations but use more memory.',
+              'Set to -1 to let the server choose automatically based on available resources.',
+            ]}
+            tooltipTitle="Parallel Server Slots"
+          />
+        </div>
+      </div>
+    </>
+  );
+}
+
 // ── Main modal component ──
 
 export default function EditProfileModal({
@@ -2951,6 +3007,11 @@ export default function EditProfileModal({
     String(profile?.nCpuMoe ?? 0),
   );
 
+  // Server settings
+  const [editParallel, setEditParallel] = useState<string>(
+    String(profile?.parallel ?? 1),
+  );
+
   const [editVideoFps, setEditVideoFps] = useState<string>(
     profile?.videoSettings?.fps?.toString() ?? '',
   );
@@ -2967,6 +3028,9 @@ export default function EditProfileModal({
     useState<boolean>(profile?.videoSettings?.unlimitedMaxFrames ?? false);
 
   const profileSnapshotRef = useRef(profile ? JSON.stringify(profile) : null);
+
+  const parallelValue = parseInt(editParallel, 10);
+  const effectiveParallel = parallelValue === -1 ? 1 : parallelValue;
 
   // Model metadata (max layers/context) — fetched when model changes
   const [modelMeta, setModelMeta] = useState<{
@@ -3006,6 +3070,7 @@ export default function EditProfileModal({
         modelFolder: editModelFolder,
         modelFilename: editModelFilename,
         projectorFilename: editProjectorFilename || undefined,
+        parallel: effectiveParallel,
       })
       .then((meta) => setModelMeta(meta))
       .catch(() => setModelMeta(null));
@@ -3051,6 +3116,7 @@ export default function EditProfileModal({
         mmap: editMmap,
         cacheTypeK: editCacheTypeK,
         cacheTypeV: editCacheTypeV,
+        parallel: effectiveParallel,
       })
       .then((res) => {
         setEditAutoOptimizer(mode);
@@ -3094,6 +3160,7 @@ export default function EditProfileModal({
       mmap: mmap ?? editMmap,
       cacheTypeK: cacheTypeK ?? editCacheTypeK,
       cacheTypeV: cacheTypeV ?? editCacheTypeV,
+      parallel: effectiveParallel,
     });
     setLastEstimate(result);
     return result;
@@ -3218,6 +3285,7 @@ export default function EditProfileModal({
       specDraftPMin: parseFloat(editSpecDraftPMin),
       cpuMoe: editCpuMoe,
       nCpuMoe: parseInt(editNCpuMoe, 10),
+      parallel: parseInt(editParallel, 10),
       order: profile?.order ?? now,
       createdAt: profile?.createdAt ?? now,
     };
@@ -3376,6 +3444,7 @@ export default function EditProfileModal({
             editContextSize={editContextSize}
             modelMaxLayers={modelMeta?.maxLayers ?? 200}
             modelMaxContext={modelMeta?.maxContext ?? 131072}
+            editParallel={editParallel}
           />
         );
       case 'system-prompt':
@@ -3450,6 +3519,13 @@ export default function EditProfileModal({
             editNCpuMoe={editNCpuMoe}
             onSetCpuMoe={setEditCpuMoe}
             onSetNCpuMoe={setEditNCpuMoe}
+          />
+        );
+      case 'server-settings':
+        return (
+          <ServerSettingsPage
+            editParallel={editParallel}
+            setEditParallel={setEditParallel}
           />
         );
       case 'cache-options':

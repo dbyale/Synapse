@@ -610,6 +610,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
         mmap?: boolean;
         cacheTypeK?: string;
         cacheTypeV?: string;
+        parallel?: number;
       },
     ) => {
       const settings = loadSettings();
@@ -631,6 +632,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
         params.mmap ?? true,
         params.cacheTypeK ?? 'f16',
         params.cacheTypeV ?? 'f16',
+        params.parallel,
       );
 
       return {
@@ -651,6 +653,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
         modelFolder: string;
         modelFilename: string;
         projectorFilename?: string;
+        parallel?: number;
       },
     ) => {
       const modelsDir = getModelsDirectory();
@@ -658,7 +661,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
       const projectorPath = params.projectorFilename
         ? path.join(modelsDir, params.modelAuthor, params.modelFolder, 'projectors', params.projectorFilename)
         : undefined;
-      return getModelMetadata(modelPath, projectorPath);
+      return getModelMetadata(modelPath, projectorPath, params.parallel);
     },
   );
 
@@ -677,6 +680,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
         mmap?: boolean;
         cacheTypeK?: string;
         cacheTypeV?: string;
+        parallel?: number;
       },
     ) => {
       const modelsDir = getModelsDirectory();
@@ -693,6 +697,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
         params.mmap ?? true,
         params.cacheTypeK ?? 'f16',
         params.cacheTypeV ?? 'f16',
+        params.parallel,
       );
     },
   );

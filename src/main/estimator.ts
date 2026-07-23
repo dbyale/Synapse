@@ -48,6 +48,7 @@ export async function solveMaxConfig(
   mmap: boolean = true,
   maximizeNGL: boolean = false,
   projectorPath?: string,
+  parallel?: number,
 ): Promise<MemoryEstimation> {
   const vramHardwareMax = vramMB * 1024 * 1024;
   const ramLimitBytes = ramMB * 1024 * 1024;
@@ -71,6 +72,7 @@ export async function solveMaxConfig(
     if (mmap) args.push('--mmap');
     else args.push('--no-mmap');
     if (projectorPath) args.push('--mmproj', projectorPath);
+    if (parallel !== undefined) args.push('--parallel', (parallel === -1 ? 1 : parallel).toString());
 
     try {
       const { stdout } = await execFileAsync(getParserPath(), args);
@@ -202,8 +204,9 @@ Hardware Utilization:
 export async function getModelMetadata(
   modelPath: string,
   projectorPath?: string,
+  parallel?: number,
 ): Promise<{ maxLayers: number; maxContext: number } | null> {
-  const data = await runGGUFParser(modelPath, 0, 512, projectorPath);
+  const data = await runGGUFParser(modelPath, 0, 512, projectorPath, true, true, 'f16', 'f16', parallel);
   if (!data?.architecture) return null;
   return {
     maxLayers: data.architecture.blockCount || 0,
@@ -222,6 +225,7 @@ export async function runGGUFParser(
   mmap: boolean = true,
   cacheTypeK: string = 'f16',
   cacheTypeV: string = 'f16',
+  parallel?: number,
 ): Promise<any> {
   const args = [
     '--path',
@@ -239,6 +243,7 @@ export async function runGGUFParser(
   if (!kvOffload) args.push('--no-kv-offload');
   if (!mmap) args.push('--no-mmap');
   if (projectorPath) args.push('--mmproj', projectorPath);
+  if (parallel !== undefined) args.push('--parallel', (parallel === -1 ? 1 : parallel).toString());
 
   try {
     const { stdout } = await execFileAsync(getParserPath(), args);
@@ -265,6 +270,7 @@ export async function estimateMemoryAtConfig(
   mmap: boolean = true,
   cacheTypeK: string = 'f16',
   cacheTypeV: string = 'f16',
+  parallel?: number,
 ): Promise<{
   modelVramUsage: number;
   contextVramUsage: number;
@@ -275,9 +281,9 @@ export async function estimateMemoryAtConfig(
   fileBufferRam: number;
 }> {
   const [fullData, modelData, baseData] = await Promise.all([
-    runGGUFParser(modelPath, ngl, ctx, projectorPath, true, mmap, cacheTypeK, cacheTypeV),
-    runGGUFParser(modelPath, ngl, 1, projectorPath, true, mmap, cacheTypeK, cacheTypeV),
-    runGGUFParser(modelPath, 0, 1, projectorPath, true, mmap, cacheTypeK, cacheTypeV),
+    runGGUFParser(modelPath, ngl, ctx, projectorPath, true, mmap, cacheTypeK, cacheTypeV, parallel),
+    runGGUFParser(modelPath, ngl, 1, projectorPath, true, mmap, cacheTypeK, cacheTypeV, parallel),
+    runGGUFParser(modelPath, 0, 1, projectorPath, true, mmap, cacheTypeK, cacheTypeV, parallel),
   ]);
   if (!fullData) {
     return {
@@ -337,8 +343,9 @@ function estimateCacheKey(
   mmap: boolean = true,
   cacheTypeK: string = 'f16',
   cacheTypeV: string = 'f16',
+  parallel?: number,
 ): string {
-  return `${modelPath}|${ngl}|${ctx}|${projectorPath ?? ''}|${kvOffload}|${mmap}|${cacheTypeK}|${cacheTypeV}`;
+  return `${modelPath}|${ngl}|${ctx}|${projectorPath ?? ''}|${kvOffload}|${mmap}|${cacheTypeK}|${cacheTypeV}|${parallel ?? ''}`;
 }
 
 export async function getOrEstimateMemory(
@@ -350,12 +357,13 @@ export async function getOrEstimateMemory(
   mmap: boolean = true,
   cacheTypeK: string = 'f16',
   cacheTypeV: string = 'f16',
+  parallel?: number,
 ) {
-  const key = estimateCacheKey(modelPath, ngl, ctx, projectorPath, kvOffload, mmap, cacheTypeK, cacheTypeV);
+  const key = estimateCacheKey(modelPath, ngl, ctx, projectorPath, kvOffload, mmap, cacheTypeK, cacheTypeV, parallel);
   const existing = memoryEstimateCache.get(key);
   if (existing) return existing;
 
-  const promise = estimateMemoryAtConfig(modelPath, ngl, ctx, projectorPath, kvOffload, mmap, cacheTypeK, cacheTypeV);
+  const promise = estimateMemoryAtConfig(modelPath, ngl, ctx, projectorPath, kvOffload, mmap, cacheTypeK, cacheTypeV, parallel);
   memoryEstimateCache.set(key, promise);
   try {
     return await promise;
@@ -379,6 +387,7 @@ export async function getOrRunOptimizer(
   mmap: boolean = true,
   cacheTypeK: string = 'f16',
   cacheTypeV: string = 'f16',
+  parallel?: number,
 ): Promise<MemoryEstimation> {
   const existing = pendingOptimizations.get(modelPath);
   if (existing) return existing;
@@ -394,6 +403,7 @@ export async function getOrRunOptimizer(
     mmap,
     maximizeNGL,
     projectorPath,
+    parallel,
   );
 
   pendingOptimizations.set(modelPath, promise);

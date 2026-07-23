@@ -68,6 +68,7 @@ export interface Profile {
   specDraftPMin?: number;
   cpuMoe?: boolean;
   nCpuMoe?: number;
+  parallel?: number;
   order: number;
   createdAt: number;
 }

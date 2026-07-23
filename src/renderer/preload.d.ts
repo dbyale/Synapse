@@ -252,6 +252,7 @@ declare global {
         modelFolder: string;
         modelFilename: string;
         projectorFilename?: string;
+        parallel?: number;
       }) => Promise<{ maxLayers: number; maxContext: number } | null>;
 
       runProfileOptimizer: (params: {
@@ -265,6 +266,7 @@ declare global {
         mmap?: boolean;
         cacheTypeK?: string;
         cacheTypeV?: string;
+        parallel?: number;
       }) => Promise<{
         ngl: number;
         ctx: number;
@@ -284,6 +286,7 @@ declare global {
         mmap?: boolean;
         cacheTypeK?: string;
         cacheTypeV?: string;
+        parallel?: number;
       }) => Promise<{
         modelVramUsage: number;
         contextVramUsage: number;

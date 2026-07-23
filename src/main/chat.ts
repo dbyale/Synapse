@@ -505,6 +505,7 @@ export async function loadProfile(
           (profile as any).mmap ?? true,
           (profile as any).cacheTypeK ?? 'f16',
           (profile as any).cacheTypeV ?? 'f16',
+          (profile as any).parallel !== undefined && (profile as any).parallel !== -1 ? (profile as any).parallel : 1,
         );
         result = optResult;
         (profile as any).layers = optResult.ngl;
@@ -551,7 +552,7 @@ export async function loadProfile(
         '--host',
         '127.0.0.1',
         '--parallel',
-        '1',
+        ((profile as any).parallel !== undefined && (profile as any).parallel !== -1 ? (profile as any).parallel : 1).toString(),
         '--metrics',
       ];
       if (profile.kvOffload === false) spawnArgs.push('--no-kv-offload');
