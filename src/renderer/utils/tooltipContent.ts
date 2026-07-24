@@ -225,6 +225,21 @@ export const DRAFT_P_MIN_TOOLTIP = [
   'Range: 0.0–1.0. Default: 0.00.',
 ];
 
+// ── Server Host / Port ──
+
+export const HOST_TOOLTIP = [
+  'The host address the inference server binds to (--host).',
+  'Use "127.0.0.1" to listen only on localhost.',
+  'Use "0.0.0.0" to allow connections from any network interface.',
+  'Default: 127.0.0.1',
+];
+
+export const PORT_TOOLTIP = [
+  'The port the inference server listens on (--port).',
+  'Change this if the default port 8080 conflicts with another service.',
+  'Default: 8080',
+];
+
 // ── CORS (Server Settings) ──
 
 export const CORS_ORIGINS_TOOLTIP = [

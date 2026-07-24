@@ -68,6 +68,8 @@ export interface Profile {
   specDraftPMin?: number;
   cpuMoe?: boolean;
   nCpuMoe?: number;
+  host?: string;
+  port?: number;
   parallel?: number;
   corsOrigins?: string;
   corsMethods?: string;

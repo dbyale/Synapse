@@ -8,6 +8,8 @@ export interface AppSettings {
   allocatedRAM?: number;
   autoOpenThinking?: boolean;
   autoCloseThinkingDone?: boolean;
+  host?: string;
+  port?: number;
   corsOrigins?: string;
   corsMethods?: string;
   corsHeaders?: string;
@@ -21,6 +23,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   modelsDirectory: DEFAULT_MODELS_DIR,
   autoOpenThinking: true,
   autoCloseThinkingDone: true,
+  host: '127.0.0.1',
+  port: 8080,
   corsOrigins: 'localhost',
   corsMethods: '',
   corsHeaders: '',

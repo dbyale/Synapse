@@ -152,6 +152,8 @@ export default function ProfilesPage() {
   );
 
   // ── Global defaults (from settings) ──
+  const [defaultHost, setDefaultHost] = useState('127.0.0.1');
+  const [defaultPort, setDefaultPort] = useState(8080);
   const [defaultCorsOrigins, setDefaultCorsOrigins] = useState('localhost');
   const [defaultCorsMethods, setDefaultCorsMethods] = useState('');
   const [defaultCorsHeaders, setDefaultCorsHeaders] = useState('');
@@ -192,6 +194,8 @@ export default function ProfilesPage() {
     const loadSettings = async () => {
       try {
         const s = await window.electronAPI.loadSettings();
+        if (s.host !== undefined) setDefaultHost(s.host);
+        if (s.port !== undefined) setDefaultPort(s.port);
         if (s.corsOrigins !== undefined) setDefaultCorsOrigins(s.corsOrigins);
         if (s.corsMethods !== undefined) setDefaultCorsMethods(s.corsMethods);
         if (s.corsHeaders !== undefined) setDefaultCorsHeaders(s.corsHeaders);
@@ -798,6 +802,8 @@ export default function ProfilesPage() {
           extensionGroups={extensionGroups}
           onSave={handleSaveProfile}
           onClose={handleCancelEdit}
+          defaultHost={defaultHost}
+          defaultPort={defaultPort}
           defaultCorsOrigins={defaultCorsOrigins}
           defaultCorsMethods={defaultCorsMethods}
           defaultCorsHeaders={defaultCorsHeaders}

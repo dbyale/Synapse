@@ -80,6 +80,8 @@ import {
   CORS_METHODS_TOOLTIP,
   CORS_HEADERS_TOOLTIP,
   CORS_CREDENTIALS_TOOLTIP,
+  HOST_TOOLTIP,
+  PORT_TOOLTIP,
 } from '../utils/tooltipContent';
 import ModelSelectModal from './ModelSelectModal';
 import ProjectorSelectModal from './ProjectorSelectModal';
@@ -148,6 +150,8 @@ interface EditProfileModalProps {
   extensionGroups: ExtensionGroup[];
   onSave: (updatedProfiles: Profile[]) => void;
   onClose: () => void;
+  defaultHost?: string;
+  defaultPort?: number;
   defaultCorsOrigins?: string;
   defaultCorsMethods?: string;
   defaultCorsHeaders?: string;
@@ -2835,10 +2839,18 @@ function MoeOptionsPage({
 }
 
 function ServerSettingsPage({
+  editHost,
+  setEditHost,
+  editPort,
+  setEditPort,
   editParallel,
   setEditParallel,
   onNavigate,
 }: {
+  editHost: string;
+  setEditHost: (v: string) => void;
+  editPort: string;
+  setEditPort: (v: string) => void;
   editParallel: string;
   setEditParallel: (v: string) => void;
   onNavigate: (page: string) => void;
@@ -2856,6 +2868,51 @@ function ServerSettingsPage({
       >
         Advanced settings for llama-server.
       </p>
+
+      <div className="epm-section" style={{ marginTop: '20px' }}>
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="epm-section__label">Host</div>
+            <InfoTooltip
+              content={HOST_TOOLTIP}
+              side="bottom"
+              stretch
+              className="info-tooltip-stretch--col"
+              title="Host"
+            >
+              <input
+                type="text"
+                className="epm-input"
+                value={editHost}
+                onChange={(e) => setEditHost(e.target.value)}
+                placeholder="127.0.0.1"
+                style={{ marginTop: '8px' }}
+              />
+            </InfoTooltip>
+          </div>
+          <div style={{ flex: 1, minWidth: 0, maxWidth: '240px' }}>
+            <div className="epm-section__label">Port</div>
+            <InfoTooltip
+              content={PORT_TOOLTIP}
+              side="bottom"
+              stretch
+              className="info-tooltip-stretch--col"
+              title="Port"
+            >
+              <input
+                type="number"
+                className="epm-input"
+                value={editPort}
+                onChange={(e) => setEditPort(e.target.value)}
+                placeholder="8080"
+                min="1"
+                max="65535"
+                style={{ marginTop: '8px' }}
+              />
+            </InfoTooltip>
+          </div>
+        </div>
+      </div>
 
       <div className="epm-section" style={{ marginTop: '20px' }}>
         <div className="epm-number-grid">
@@ -3055,6 +3112,8 @@ export default function EditProfileModal({
   extensionGroups,
   onSave,
   onClose,
+  defaultHost,
+  defaultPort,
   defaultCorsOrigins,
   defaultCorsMethods,
   defaultCorsHeaders,
@@ -3210,6 +3269,17 @@ export default function EditProfileModal({
     profile !== null
       ? (profile.corsCredentials ?? true)
       : (defaultCorsCredentials ?? true),
+  );
+
+  const [editHost, setEditHost] = useState<string>(
+    profile !== null
+      ? (profile.host ?? '127.0.0.1')
+      : (defaultHost ?? '127.0.0.1'),
+  );
+  const [editPort, setEditPort] = useState<string>(
+    profile !== null
+      ? String(profile.port ?? 8080)
+      : String(defaultPort ?? 8080),
   );
 
   const [editVideoFps, setEditVideoFps] = useState<string>(
@@ -3486,6 +3556,8 @@ export default function EditProfileModal({
       cpuMoe: editCpuMoe,
       nCpuMoe: parseInt(editNCpuMoe, 10),
       parallel: parseInt(editParallel, 10),
+      host: editHost || undefined,
+      port: parseInt(editPort, 10) || undefined,
       corsOrigins: editCorsOrigins || undefined,
       corsMethods: editCorsMethods || undefined,
       corsHeaders: editCorsHeaders || undefined,
@@ -3728,6 +3800,10 @@ export default function EditProfileModal({
       case 'server-settings':
         return (
           <ServerSettingsPage
+            editHost={editHost}
+            setEditHost={setEditHost}
+            editPort={editPort}
+            setEditPort={setEditPort}
             editParallel={editParallel}
             setEditParallel={setEditParallel}
             onNavigate={navigateTo}

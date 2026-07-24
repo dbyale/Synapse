@@ -206,6 +206,12 @@ export function setEmitFunctionCallback(cb: any) {
   emitFunctionEvent = cb;
 }
 
+function getServerUrl(path: string = ''): string {
+  const host = currentProfile?.host || '127.0.0.1';
+  const port = currentProfile?.port || 8080;
+  return `http://${host}:${port}${path}`;
+}
+
 // --- Build request body, only including profile fields that are defined ---
 function buildChatBody(messages: any[], tools: any[]): Record<string, any> {
   const p = currentProfile;
@@ -334,7 +340,7 @@ export async function preloadSystemPrompt(
     signal.addEventListener('abort', abortCombined);
     timeout.addEventListener('abort', abortCombined);
 
-    const res = await fetch('http://127.0.0.1:8080/v1/chat/completions', {
+    const res = await fetch(getServerUrl('/v1/chat/completions'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -544,9 +550,9 @@ export async function loadProfile(
         '--ctx-size',
         result.ctx.toString(),
         '--port',
-        '8080',
+        ((profile as any).port ?? 8080).toString(),
         '--host',
-        '127.0.0.1',
+        (profile as any).host ?? '127.0.0.1',
         '--parallel',
         ((profile as any).parallel !== undefined && (profile as any).parallel !== -1 ? (profile as any).parallel : 1).toString(),
         '--metrics',
@@ -627,7 +633,9 @@ export async function loadProfile(
       let ready = false;
       for (let i = 0; i < 45; i++) {
         try {
-          const res = await fetch('http://127.0.0.1:8080/health');
+          const host = (profile as any).host ?? '127.0.0.1';
+          const port = (profile as any).port ?? 8080;
+          const res = await fetch(`http://${host}:${port}/health`);
           if (res.ok) {
             ready = true;
             break;
@@ -712,7 +720,7 @@ export async function sendMessage(
   aborted = false;
 
   const runCompletion = async (): Promise<SendMessageResponse> => {
-    const response = await fetch('http://127.0.0.1:8080/v1/chat/completions', {
+    const response = await fetch(getServerUrl('/v1/chat/completions'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(buildChatBody(messageHistory, activeTools)),
@@ -988,7 +996,7 @@ export function hasProjector() {
 
 export async function tokenize(text: string): Promise<number | null> {
   try {
-    const res = await fetch('http://127.0.0.1:8080/tokenize', {
+    const res = await fetch(getServerUrl('/tokenize'), {
       method: 'POST',
       body: JSON.stringify({ content: text }),
     });

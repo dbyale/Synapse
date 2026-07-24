@@ -64,6 +64,8 @@ export interface AppSettings {
   allocatedRAM?: number;
   autoOpenThinking?: boolean;
   autoCloseThinkingDone?: boolean;
+  host?: string;
+  port?: number;
   corsOrigins?: string;
   corsMethods?: string;
   corsHeaders?: string;
