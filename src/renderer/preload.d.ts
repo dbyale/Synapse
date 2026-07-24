@@ -118,6 +118,8 @@ declare global {
       listModelFiles: (repoId: string) => Promise<RemoteModelFile[]>;
       downloadModel: (repoId: string, filename: string) => Promise<string>;
       cancelDownload: (repoId: string, filename: string) => Promise<boolean>;
+      resumeDownload: (repoId: string, filename: string) => Promise<string>;
+      deletePartFile: (repoId: string, filename: string) => Promise<boolean>;
       listLocalModels: () => Promise<LocalModel[]>;
       deleteModel: (filename: string) => Promise<boolean>;
       onDownloadProgress: (

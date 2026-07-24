@@ -292,24 +292,23 @@ export function downloadModel(
   repoId: string,
   filename: string,
   win: BrowserWindow | null,
+  resume: boolean = false,
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     const modelsDir = getModelsDirectory();
     const isProjector = filename.toLowerCase().includes('mmproj');
 
-    // Split repoId (e.g. "TheBloke/Llama-2") into nested folder paths
     const repoParts = repoId.split('/');
     let targetDir = path.join(modelsDir, ...repoParts);
 
-    // Divert into a 'projectors' subfolder if applicable
     if (isProjector) {
       targetDir = path.join(targetDir, 'projectors');
     }
 
     const destPath = path.join(targetDir, path.basename(filename));
+    const partPath = destPath + '.part';
     const destDir = path.dirname(destPath);
 
-    // Create the folders if they don't exist.
     if (!fs.existsSync(destDir)) {
       try {
         fs.mkdirSync(destDir, { recursive: true });
@@ -326,20 +325,27 @@ export function downloadModel(
       return;
     }
 
-    const url = `https://huggingface.co/${repoId}/resolve/main/${filename}`;
-    const file = fs.createWriteStream(destPath);
+    let startByte = 0;
+    if (resume) {
+      if (fs.existsSync(partPath)) {
+        startByte = fs.statSync(partPath).size;
+      }
+    } else {
+      if (fs.existsSync(partPath)) {
+        try {
+          fs.unlinkSync(partPath);
+        } catch (e) {
+          console.error('Failed to delete old part file:', e);
+        }
+      }
+    }
 
-    const request = (downloadUrl: string) => {
+    const url = `https://huggingface.co/${repoId}/resolve/main/${filename}`;
+    let file = fs.createWriteStream(partPath, { flags: startByte > 0 ? 'a' : 'w' });
+
+    const doRequest = (downloadUrl: string, byteOffset: number) => {
       const cleanupAndReject = (err: Error) => {
         file.close();
-
-        if (fs.existsSync(destPath)) {
-          try {
-            fs.unlinkSync(destPath);
-          } catch (e) {
-            console.error('Failed to clean up incomplete download:', e);
-          }
-        }
 
         const record = activeDownloads.get(repoId + ':' + filename);
         const wasCancelled = record?.cancelled;
@@ -362,7 +368,12 @@ export function downloadModel(
         }
       };
 
-      const req = https.get(downloadUrl, (response) => {
+      const options: https.RequestOptions = {};
+      if (byteOffset > 0) {
+        options.headers = { Range: `bytes=${byteOffset}-` };
+      }
+
+      const req = https.get(downloadUrl, options, (response) => {
         if (
           response.statusCode &&
           response.statusCode >= 300 &&
@@ -370,23 +381,32 @@ export function downloadModel(
           response.headers.location
         ) {
           response.resume();
-          response.on('error', cleanupAndReject);
-          request(response.headers.location);
+          doRequest(response.headers.location, byteOffset);
           return;
         }
 
-        if (response.statusCode !== 200) {
+        if (response.statusCode === 200 && byteOffset > 0) {
+          file.close();
+          try {
+            fs.unlinkSync(partPath);
+          } catch (e) {}
+          file = fs.createWriteStream(partPath);
+          byteOffset = 0;
+        }
+
+        if (response.statusCode !== 200 && response.statusCode !== 206) {
           cleanupAndReject(
             new Error(`Download failed with status ${response.statusCode}`),
           );
           return;
         }
 
-        const totalBytes = parseInt(
+        const contentLength = parseInt(
           response.headers['content-length'] ?? '0',
           10,
         );
-        let downloadedBytes = 0;
+        const totalBytes = byteOffset > 0 ? contentLength + byteOffset : contentLength;
+        let downloadedBytes = byteOffset;
 
         response.on('data', (chunk: Buffer) => {
           downloadedBytes += chunk.length;
@@ -408,8 +428,13 @@ export function downloadModel(
 
         response.on('end', () => {
           file.end();
-      activeDownloads.delete(repoId + ':' + filename);
-      resolve(destPath);
+          try {
+            fs.renameSync(partPath, destPath);
+          } catch (e) {
+            console.error('Failed to rename part file:', e);
+          }
+          activeDownloads.delete(repoId + ':' + filename);
+          resolve(destPath);
         });
 
         response.on('error', cleanupAndReject);
@@ -420,8 +445,53 @@ export function downloadModel(
       activeDownloads.set(repoId + ':' + filename, { req, destPath, win, repoId });
     };
 
-    request(url);
+    doRequest(url, startByte);
   });
+}
+
+export function deletePartFile(repoId: string, filename: string): boolean {
+  const modelsDir = getModelsDirectory();
+  const isProjector = filename.toLowerCase().includes('mmproj');
+  const repoParts = repoId.split('/');
+  let targetDir = path.join(modelsDir, ...repoParts);
+  if (isProjector) {
+    targetDir = path.join(targetDir, 'projectors');
+  }
+  const partPath = path.join(targetDir, path.basename(filename) + '.part');
+  if (fs.existsSync(partPath)) {
+    try {
+      fs.unlinkSync(partPath);
+      return true;
+    } catch (err) {
+      console.error('Failed to delete part file:', err);
+      return false;
+    }
+  }
+  return false;
+}
+
+export function cleanupPartFiles(): void {
+  const modelsDir = getModelsDirectory();
+  if (!fs.existsSync(modelsDir)) return;
+  function walkAndClean(dir: string): void {
+    if (!fs.existsSync(dir)) return;
+    const entries = fs.readdirSync(dir);
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry);
+      const stat = fs.statSync(fullPath);
+      if (stat.isDirectory()) {
+        walkAndClean(fullPath);
+      } else if (fullPath.endsWith('.part')) {
+        try {
+          fs.unlinkSync(fullPath);
+          console.log(`[cleanup] Deleted part file: ${fullPath}`);
+        } catch (err) {
+          console.error(`[cleanup] Failed to delete part file: ${fullPath}`, err);
+        }
+      }
+    }
+  }
+  walkAndClean(modelsDir);
 }
 
 export function cancelDownload(repoId: string, filename: string): boolean {

@@ -46,6 +46,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('models:download', repoId, filename),
   cancelDownload: (repoId: string, filename: string) =>
     ipcRenderer.invoke('models:cancel-download', repoId, filename),
+  resumeDownload: (repoId: string, filename: string) =>
+    ipcRenderer.invoke('models:resume-download', repoId, filename),
+  deletePartFile: (repoId: string, filename: string) =>
+    ipcRenderer.invoke('models:delete-part-file', repoId, filename),
   listLocalModels: () => ipcRenderer.invoke('models:list-local'),
   deleteModel: (filename: string) =>
     ipcRenderer.invoke('models:delete', filename),

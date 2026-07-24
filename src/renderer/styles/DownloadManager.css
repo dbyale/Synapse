@@ -145,6 +145,24 @@
   color: #89b4fa;
 }
 
+.dl-manager__resume-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: all 0.1s ease;
+}
+
+.dl-manager__resume-btn:hover {
+  background: rgba(166, 227, 161, 0.15);
+  color: #a6e3a1;
+}
+
 .dl-manager__cancel-btn {
   display: flex;
   align-items: center;

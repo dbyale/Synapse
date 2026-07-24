@@ -19,6 +19,7 @@ import {
   listLocalModels,
   deleteLocalModel,
   cancelDownload,
+  deletePartFile,
   registerLocalModel,
 } from '../renderer/utils/models';
 import * as chatService from './chat';
@@ -327,6 +328,24 @@ export function registerIpcHandlers(win: BrowserWindow): void {
 
   ipcMain.handle('models:cancel-download', async (_event, repoId: string, filename: string) => {
     return cancelDownload(repoId, filename);
+  });
+
+  ipcMain.handle(
+    'models:resume-download',
+    async (event, repoId: string, filename: string) => {
+      try {
+        const downloadWin = BrowserWindow.fromWebContents(event.sender);
+        if (!downloadWin) throw new Error('No window found');
+        return await downloadModel(repoId, filename, downloadWin, true);
+      } catch (err) {
+        console.error('[models:resume-download]', err);
+        throw err;
+      }
+    },
+  );
+
+  ipcMain.handle('models:delete-part-file', async (_event, repoId: string, filename: string) => {
+    return deletePartFile(repoId, filename);
   });
 
   // ── Models: Local ──

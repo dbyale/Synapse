@@ -16,6 +16,7 @@ import MenuBuilder from './menu';
 import { resolveHtmlPath } from './util';
 import { registerIpcHandlers } from './ipc';
 import { shutdownAllSandboxes } from './functions/sandboxRunner';
+import { cleanupPartFiles } from '../renderer/utils/models';
 
 // Suppress llhttp parser assertion errors from HTTP connection teardown
 process.on('uncaughtException', (err) => {
@@ -152,6 +153,9 @@ process.on('unhandledRejection', (reason) => {
  */
 
 app.on('before-quit', async () => {
+  console.log('[app] Cleaning up failed download part files...');
+  cleanupPartFiles();
+
   console.log('[app] Shutting down sandbox environments...');
   const result = await shutdownAllSandboxes();
   if (result.errors.length > 0) {

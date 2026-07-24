@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Download, RefreshCw, X } from 'lucide-react';
+import { Download, RefreshCw, Play, X } from 'lucide-react';
 import type { DownloadProgress } from '../preload.d';
 import { formatGB, formatSpeed, formatETA } from '../utils/formatters';
 import '../styles/DownloadManager.css';
@@ -157,6 +157,12 @@ export default function DownloadManager() {
 
     // Clear it if it's already done or stopped
     if (isComplete || dl.status === 'cancelled' || dl.status === 'failed') {
+      // Delete the part file for failed/cancelled downloads
+      if (dl.status === 'failed' || dl.status === 'cancelled') {
+        if (window.electronAPI.deletePartFile) {
+          await window.electronAPI.deletePartFile(modelId, filename);
+        }
+      }
       setDownloads((prev) => {
         const next = { ...prev };
         delete next[key];
@@ -168,6 +174,31 @@ export default function DownloadManager() {
     // Call backend to abort HTTP request. (This will trigger the broadcast above)
     if (window.electronAPI.cancelDownload) {
       await window.electronAPI.cancelDownload(modelId, filename);
+    }
+  };
+
+  // ── Handle Resume ──
+  const handleResume = async (modelId: string, filename: string) => {
+    const key = (modelId || '') + ':' + filename;
+    setDownloads((prev) => ({
+      ...prev,
+      [key]: {
+        ...prev[key],
+        percent: 0,
+        downloadedBytes: 0,
+        speed: 0,
+        lastTimestamp: Date.now(),
+        lastBytes: 0,
+        status: 'downloading',
+      },
+    }));
+
+    if (window.electronAPI.resumeDownload) {
+      try {
+        await window.electronAPI.resumeDownload(modelId, filename);
+      } catch {
+        // IPC events will update the status; no extra handling needed
+      }
     }
   };
 
@@ -279,6 +310,16 @@ export default function DownloadManager() {
                           title="Retry Download"
                         >
                           <RefreshCw size={14} />
+                        </button>
+                      )}
+                      {isFailed && dl.modelId && (
+                        <button
+                          type="button"
+                          className="dl-manager__resume-btn"
+                          onClick={() => handleResume(dl.modelId, dl.filename)}
+                          title="Resume Download"
+                        >
+                          <Play size={14} />
                         </button>
                       )}
                       <button
