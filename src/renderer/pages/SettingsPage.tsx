@@ -405,7 +405,7 @@ export default function SettingsPage() {
           await window.electronAPI.saveSettings(payload);
         }
       } else {
-        await window.electronAPI.saveSettings(payload);
+        await window.electronAPI.saveSettingsSilent(payload);
       }
 
       savedAllocationsRef.current = {
