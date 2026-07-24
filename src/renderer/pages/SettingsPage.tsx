@@ -388,12 +388,22 @@ export default function SettingsPage() {
         delete payload.allocatedVRAM;
       }
 
-      const isRunning = await window.electronAPI.chatIsRunning();
-      const hasConv = await window.electronAPI.chatHasConversation();
+      const isMemChange = 'allocatedRAM' in overrides || 'allocatedVRAM' in overrides;
+      let shouldPrompt = false;
+      if (isMemChange) {
+        const currentProfile = await window.electronAPI.chatGetCurrentProfile();
+        shouldPrompt = currentProfile !== null && currentProfile.autoOptimizer !== 'custom';
+      }
 
-      if (isRunning && hasConv) {
-        await window.electronAPI.saveSettingsSilent(payload);
-        setShowRestartDialog(true);
+      if (shouldPrompt) {
+        const isRunning = await window.electronAPI.chatIsRunning();
+        const hasConv = await window.electronAPI.chatHasConversation();
+        if (isRunning && hasConv) {
+          await window.electronAPI.saveSettingsSilent(payload);
+          setShowRestartDialog(true);
+        } else {
+          await window.electronAPI.saveSettings(payload);
+        }
       } else {
         await window.electronAPI.saveSettings(payload);
       }
