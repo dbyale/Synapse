@@ -24,6 +24,8 @@ import {
   CORS_METHODS_TOOLTIP,
   CORS_HEADERS_TOOLTIP,
   CORS_CREDENTIALS_TOOLTIP,
+  HOST_TOOLTIP,
+  PORT_TOOLTIP,
 } from '../utils/tooltipContent';
 import ConfirmDialog from '../components/ConfirmDialog';
 import '../styles/SettingsPage.css';
@@ -342,6 +344,8 @@ export default function SettingsPage() {
           corsMethods: loaded?.corsMethods ?? '',
           corsHeaders: loaded?.corsHeaders ?? '',
           corsCredentials: loaded?.corsCredentials ?? true,
+          host: loaded?.host ?? '127.0.0.1',
+          port: loaded?.port ?? 8080,
         };
 
         savedAllocationsRef.current = {
@@ -610,6 +614,61 @@ export default function SettingsPage() {
             These settings are used as global defaults when creating <strong>new</strong> profiles.
             Existing profiles are not affected.
           </p>
+
+          <div className="settings-field">
+            <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="epm-section__label">Host</div>
+                <InfoTooltip
+                  content={HOST_TOOLTIP}
+                  side="bottom"
+                  stretch
+                  className="info-tooltip-stretch--col"
+                  title="Host"
+                >
+                  <input
+                    type="text"
+                    className="settings-input"
+                    value={settings.host ?? ''}
+                    onChange={(e) =>
+                      setSettings((prev) =>
+                        prev ? { ...prev, host: e.target.value } : prev,
+                      )
+                    }
+                    onBlur={() => triggerSave({ host: settings.host })}
+                    placeholder="127.0.0.1"
+                    style={{ marginTop: '8px' }}
+                  />
+                </InfoTooltip>
+              </div>
+              <div style={{ flex: 1, minWidth: 0, maxWidth: '240px' }}>
+                <div className="epm-section__label">Port</div>
+                <InfoTooltip
+                  content={PORT_TOOLTIP}
+                  side="bottom"
+                  stretch
+                  className="info-tooltip-stretch--col"
+                  title="Port"
+                >
+                  <input
+                    type="number"
+                    className="settings-input"
+                    value={settings.port?.toString() ?? ''}
+                    onChange={(e) =>
+                      setSettings((prev) =>
+                        prev ? { ...prev, port: parseInt(e.target.value, 10) || 8080 } : prev,
+                      )
+                    }
+                    onBlur={() => triggerSave({ port: settings.port })}
+                    placeholder="8080"
+                    min="1"
+                    max="65535"
+                    style={{ marginTop: '8px' }}
+                  />
+                </InfoTooltip>
+              </div>
+            </div>
+          </div>
 
           <div className="settings-field">
             <div className="epm-section__label">CORS Origins</div>
