@@ -3490,7 +3490,7 @@ export default function EditProfileModal({
       corsMethods: editCorsMethods || undefined,
       corsHeaders: editCorsHeaders || undefined,
       corsCredentials: editCorsCredentials,
-      order: profile?.order ?? now,
+      order: profile?.order ?? (profiles.length === 0 ? 0 : Math.min(...profiles.map(p => p.order ?? p.createdAt ?? 0)) - 1),
       createdAt: profile?.createdAt ?? now,
     };
 
