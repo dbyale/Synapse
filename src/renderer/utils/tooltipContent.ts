@@ -224,3 +224,28 @@ export const DRAFT_P_MIN_TOOLTIP = [
   'Higher values make acceptance stricter, potentially reducing speedup but improving quality.',
   'Range: 0.0–1.0. Default: 0.00.',
 ];
+
+// ── CORS (Server Settings) ──
+
+export const CORS_ORIGINS_TOOLTIP = [
+  'Comma-separated list of allowed origins for cross-origin requests (--cors-origins).',
+  'Set to * to allow any origin. Set to "localhost" to reflect the Origin header only if it is localhost.',
+  'Default: *',
+];
+
+export const CORS_METHODS_TOOLTIP = [
+  'Comma-separated list of allowed HTTP methods for CORS preflight requests (--cors-methods).',
+  'Default: GET, POST, DELETE, OPTIONS.',
+];
+
+export const CORS_HEADERS_TOOLTIP = [
+  'Comma-separated list of allowed HTTP headers for CORS requests (--cors-headers).',
+  'Set to * to allow any header.',
+  'Default: *',
+];
+
+export const CORS_CREDENTIALS_TOOLTIP = [
+  'Whether to allow credentials (cookies, authorization headers) in CORS requests (--cors-credentials).',
+  'When enabled and cors-origins is *, the Origin header is echoed back and credentials are always allowed.',
+  'Default: enabled.',
+];

@@ -25,6 +25,7 @@ import {
   AlertTriangle,
   Puzzle,
   Server,
+  Shield,
 } from 'lucide-react';
 import { Profile, CacheType } from '../types/profile';
 import type { LocalModel } from '../preload.d';
@@ -75,6 +76,10 @@ import {
   CPU_MOE_TOOLTIP,
   N_CPU_MOE_TOOLTIP,
   FLASH_ATTENTION_TOOLTIP,
+  CORS_ORIGINS_TOOLTIP,
+  CORS_METHODS_TOOLTIP,
+  CORS_HEADERS_TOOLTIP,
+  CORS_CREDENTIALS_TOOLTIP,
 } from '../utils/tooltipContent';
 import ModelSelectModal from './ModelSelectModal';
 import ProjectorSelectModal from './ProjectorSelectModal';
@@ -159,6 +164,7 @@ const PAGE_DEPTH: Record<string, number> = {
   'draft-model': 2,
   'moe-options': 2,
   'server-settings': 1,
+  'cors-settings': 2,
 };
 
 const BREADCRUMB_MAP: Record<string, { label: string; parent: string | null }> =
@@ -176,6 +182,7 @@ const BREADCRUMB_MAP: Record<string, { label: string; parent: string | null }> =
     'draft-model': { label: 'Draft Model', parent: 'performance' },
     'moe-options': { label: 'Mixture of Experts', parent: 'performance' },
     'server-settings': { label: 'Server Settings', parent: 'main' },
+    'cors-settings': { label: 'CORS', parent: 'server-settings' },
   };
 
 function buildBreadcrumb(page: string): Array<{ key: string; label: string }> {
@@ -2826,9 +2833,11 @@ function MoeOptionsPage({
 function ServerSettingsPage({
   editParallel,
   setEditParallel,
+  onNavigate,
 }: {
   editParallel: string;
   setEditParallel: (v: string) => void;
+  onNavigate: (page: string) => void;
 }) {
   return (
     <>
@@ -2862,6 +2871,169 @@ function ServerSettingsPage({
             tooltipTitle="Parallel Server Slots"
           />
         </div>
+      </div>
+
+      {/* Submenu SectionCards */}
+      <div className="epm-section" style={{ marginTop: '20px' }}>
+        <div className="epm-section__label">Advanced Options</div>
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '8px',
+            marginTop: '10px',
+          }}
+        >
+          <button
+            type="button"
+            className="epm-section-card"
+            onClick={() => onNavigate('cors-settings')}
+          >
+            <div className="epm-section-card__icon">
+              <Shield size={18} />
+            </div>
+            <div className="epm-section-card__body">
+              <InfoTooltip
+                content="Configure CORS (Cross-Origin Resource Sharing) for the llama-server HTTP API."
+                title="CORS"
+                side="right"
+                hideIcon
+              >
+                <div className="epm-section-card__title">CORS</div>
+              </InfoTooltip>
+              <div className="epm-section-card__preview">
+                Origins: localhost (default)
+              </div>
+            </div>
+            <ChevronRight size={16} className="epm-section-card__chevron" />
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function CorsSettingsPage({
+  editCorsOrigins,
+  setEditCorsOrigins,
+  editCorsMethods,
+  setEditCorsMethods,
+  editCorsHeaders,
+  setEditCorsHeaders,
+  editCorsCredentials,
+  setEditCorsCredentials,
+}: {
+  editCorsOrigins: string;
+  setEditCorsOrigins: (v: string) => void;
+  editCorsMethods: string;
+  setEditCorsMethods: (v: string) => void;
+  editCorsHeaders: string;
+  setEditCorsHeaders: (v: string) => void;
+  editCorsCredentials: boolean;
+  setEditCorsCredentials: (v: boolean) => void;
+}) {
+  return (
+    <>
+      <h2 className="epm-page-title">CORS</h2>
+      <p
+        style={{
+          fontSize: '14px',
+          color: 'var(--text-secondary)',
+          margin: '0 0 20px',
+          lineHeight: 1.5,
+        }}
+      >
+        Configure Cross-Origin Resource Sharing (CORS) for the llama-server
+        HTTP API.
+      </p>
+
+      <div className="epm-section" style={{ marginTop: '20px' }}>
+        <div className="epm-section__label">Allowed Origins</div>
+        <InfoTooltip
+          content={CORS_ORIGINS_TOOLTIP}
+          side="bottom"
+          stretch
+          className="info-tooltip-stretch--col"
+          title="CORS Origins"
+        >
+          <input
+            type="text"
+            className="epm-input"
+            value={editCorsOrigins}
+            onChange={(e) => setEditCorsOrigins(e.target.value)}
+            placeholder="*"
+            style={{ marginTop: '8px' }}
+          />
+        </InfoTooltip>
+      </div>
+
+      <div className="epm-section" style={{ marginTop: '20px' }}>
+        <div className="epm-section__label">Allowed Methods</div>
+        <InfoTooltip
+          content={CORS_METHODS_TOOLTIP}
+          side="bottom"
+          stretch
+          className="info-tooltip-stretch--col"
+          title="CORS Methods"
+        >
+          <input
+            type="text"
+            className="epm-input"
+            value={editCorsMethods}
+            onChange={(e) => setEditCorsMethods(e.target.value)}
+            placeholder="GET, POST, DELETE, OPTIONS"
+            style={{ marginTop: '8px' }}
+          />
+        </InfoTooltip>
+      </div>
+
+      <div className="epm-section" style={{ marginTop: '20px' }}>
+        <div className="epm-section__label">Allowed Headers</div>
+        <InfoTooltip
+          content={CORS_HEADERS_TOOLTIP}
+          side="bottom"
+          stretch
+          className="info-tooltip-stretch--col"
+          title="CORS Headers"
+        >
+          <input
+            type="text"
+            className="epm-input"
+            value={editCorsHeaders}
+            onChange={(e) => setEditCorsHeaders(e.target.value)}
+            placeholder="*"
+            style={{ marginTop: '8px' }}
+          />
+        </InfoTooltip>
+      </div>
+
+      <div className="epm-section" style={{ marginTop: '20px' }}>
+        <label className="epm-perf-toggle-row">
+          <InfoTooltip
+            content={CORS_CREDENTIALS_TOOLTIP}
+            side="bottom"
+            stretch
+            className="info-tooltip-stretch--row"
+            title="CORS Credentials"
+          >
+            <span className="epm-perf-toggle-label">Allow Credentials</span>
+            <div
+              className={`epm-toggle-switch${editCorsCredentials ? ' epm-toggle-switch--on' : ''}`}
+              onClick={() => setEditCorsCredentials(!editCorsCredentials)}
+              role="switch"
+              aria-checked={editCorsCredentials}
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === ' ' || e.key === 'Enter') {
+                  e.preventDefault();
+                  setEditCorsCredentials(!editCorsCredentials);
+                }
+              }}
+            >
+              <div className="epm-toggle-switch__knob" />
+            </div>
+          </InfoTooltip>
+        </label>
       </div>
     </>
   );
@@ -3010,6 +3182,18 @@ export default function EditProfileModal({
   // Server settings
   const [editParallel, setEditParallel] = useState<string>(
     String(profile?.parallel ?? 1),
+  );
+  const [editCorsOrigins, setEditCorsOrigins] = useState<string>(
+    profile?.corsOrigins ?? 'localhost',
+  );
+  const [editCorsMethods, setEditCorsMethods] = useState<string>(
+    profile?.corsMethods ?? '',
+  );
+  const [editCorsHeaders, setEditCorsHeaders] = useState<string>(
+    profile?.corsHeaders ?? '',
+  );
+  const [editCorsCredentials, setEditCorsCredentials] = useState<boolean>(
+    profile?.corsCredentials ?? true,
   );
 
   const [editVideoFps, setEditVideoFps] = useState<string>(
@@ -3286,6 +3470,10 @@ export default function EditProfileModal({
       cpuMoe: editCpuMoe,
       nCpuMoe: parseInt(editNCpuMoe, 10),
       parallel: parseInt(editParallel, 10),
+      corsOrigins: editCorsOrigins || undefined,
+      corsMethods: editCorsMethods || undefined,
+      corsHeaders: editCorsHeaders || undefined,
+      corsCredentials: editCorsCredentials,
       order: profile?.order ?? now,
       createdAt: profile?.createdAt ?? now,
     };
@@ -3526,6 +3714,20 @@ export default function EditProfileModal({
           <ServerSettingsPage
             editParallel={editParallel}
             setEditParallel={setEditParallel}
+            onNavigate={navigateTo}
+          />
+        );
+      case 'cors-settings':
+        return (
+          <CorsSettingsPage
+            editCorsOrigins={editCorsOrigins}
+            setEditCorsOrigins={setEditCorsOrigins}
+            editCorsMethods={editCorsMethods}
+            setEditCorsMethods={setEditCorsMethods}
+            editCorsHeaders={editCorsHeaders}
+            setEditCorsHeaders={setEditCorsHeaders}
+            editCorsCredentials={editCorsCredentials}
+            setEditCorsCredentials={setEditCorsCredentials}
           />
         );
       case 'cache-options':

@@ -69,6 +69,10 @@ export interface Profile {
   cpuMoe?: boolean;
   nCpuMoe?: number;
   parallel?: number;
+  corsOrigins?: string;
+  corsMethods?: string;
+  corsHeaders?: string;
+  corsCredentials?: boolean;
   order: number;
   createdAt: number;
 }

@@ -551,6 +551,18 @@ export async function loadProfile(
         ((profile as any).parallel !== undefined && (profile as any).parallel !== -1 ? (profile as any).parallel : 1).toString(),
         '--metrics',
       ];
+      if ((profile as any).corsOrigins && (profile as any).corsOrigins !== '*') {
+        spawnArgs.push('--cors-origins', (profile as any).corsOrigins);
+      }
+      if ((profile as any).corsMethods && (profile as any).corsMethods !== 'GET, POST, DELETE, OPTIONS') {
+        spawnArgs.push('--cors-methods', (profile as any).corsMethods);
+      }
+      if ((profile as any).corsHeaders && (profile as any).corsHeaders !== '*') {
+        spawnArgs.push('--cors-headers', (profile as any).corsHeaders);
+      }
+      if ((profile as any).corsCredentials === false) {
+        spawnArgs.push('--no-cors-credentials');
+      }
       if (profile.kvOffload === false) spawnArgs.push('--no-kv-offload');
       if (profile.mmap === false) spawnArgs.push('--no-mmap');
       if (profile.mlock === true) spawnArgs.push('--mlock');
