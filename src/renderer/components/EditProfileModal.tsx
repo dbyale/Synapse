@@ -2906,7 +2906,7 @@ function ServerSettingsPage({
                 <div className="epm-section-card__title">CORS</div>
               </InfoTooltip>
               <div className="epm-section-card__preview">
-                Origins: localhost (default)
+                Configure cross-origin access for the llama-server API.
               </div>
             </div>
             <ChevronRight size={16} className="epm-section-card__chevron" />
