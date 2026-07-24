@@ -6,6 +6,7 @@ import {
   RefreshCw,
   SlidersHorizontal,
   MessageSquare,
+  Server,
 } from 'lucide-react';
 import type { AppSettings, HardwareStats } from '../preload.d';
 import InfoTooltip from '../components/InfoTooltip';
@@ -19,6 +20,10 @@ import {
   KV_CACHE_MEM_TOOLTIP,
   COMPUTE_OVERHEAD_TOOLTIP,
   FILE_BUFFER_TOOLTIP,
+  CORS_ORIGINS_TOOLTIP,
+  CORS_METHODS_TOOLTIP,
+  CORS_HEADERS_TOOLTIP,
+  CORS_CREDENTIALS_TOOLTIP,
 } from '../utils/tooltipContent';
 import ConfirmDialog from '../components/ConfirmDialog';
 import '../styles/SettingsPage.css';
@@ -239,7 +244,7 @@ export default function SettingsPage() {
   const [ramStats, setRamStats] = useState<MemoryStats>(EMPTY_MEMORY);
   const [vramStats, setVramStats] = useState<MemoryStats>(EMPTY_MEMORY);
   const [showRestartDialog, setShowRestartDialog] = useState(false);
-  const [tab, setTab] = useState<'system' | 'chat'>('system');
+  const [tab, setTab] = useState<'system' | 'chat' | 'server'>('system');
 
   const savedAllocationsRef = useRef<{
     allocatedRAM?: number;
@@ -333,6 +338,10 @@ export default function SettingsPage() {
           allocatedVRAM: loaded?.allocatedVRAM,
           autoOpenThinking: loaded?.autoOpenThinking ?? true,
           autoCloseThinkingDone: loaded?.autoCloseThinkingDone ?? true,
+          corsOrigins: loaded?.corsOrigins ?? 'localhost',
+          corsMethods: loaded?.corsMethods ?? '',
+          corsHeaders: loaded?.corsHeaders ?? '',
+          corsCredentials: loaded?.corsCredentials ?? true,
         };
 
         savedAllocationsRef.current = {
@@ -467,6 +476,13 @@ export default function SettingsPage() {
         >
           <MessageSquare size={16} /> Chat
         </button>
+        <button
+          type="button"
+          className={`settings-tab ${tab === 'server' ? 'settings-tab--active' : ''}`}
+          onClick={() => setTab('server')}
+        >
+          <Server size={16} /> Server
+        </button>
       </div>
 
       {tab === 'system' && (
@@ -577,6 +593,130 @@ export default function SettingsPage() {
                   if (e.key === ' ' || e.key === 'Enter') {
                     e.preventDefault();
                     triggerSave({ autoCloseThinkingDone: !settings.autoCloseThinkingDone });
+                  }
+                }}
+              >
+                <div className="epm-toggle-switch__knob" />
+              </div>
+            </label>
+          </div>
+        </div>
+      )}
+
+      {tab === 'server' && (
+        <div className="settings-card">
+          <h2 className="settings-card-title">Server Defaults</h2>
+          <p style={{ fontSize: '14px', color: 'var(--text-secondary)', marginBottom: '20px', lineHeight: 1.5 }}>
+            These settings are used as global defaults when creating <strong>new</strong> profiles.
+            Existing profiles are not affected.
+          </p>
+
+          <div className="settings-field">
+            <div className="epm-section__label">CORS Origins</div>
+            <InfoTooltip
+              content={CORS_ORIGINS_TOOLTIP}
+              side="bottom"
+              stretch
+              className="info-tooltip-stretch--col"
+              title="CORS Origins"
+            >
+              <input
+                type="text"
+                className="settings-input"
+                value={settings.corsOrigins ?? ''}
+                onChange={(e) =>
+                  setSettings((prev) =>
+                    prev ? { ...prev, corsOrigins: e.target.value } : prev,
+                  )
+                }
+                onBlur={() => triggerSave({ corsOrigins: settings.corsOrigins })}
+                placeholder="*"
+                style={{ marginTop: '8px' }}
+              />
+            </InfoTooltip>
+          </div>
+
+          <div className="settings-field">
+            <div className="epm-section__label">CORS Methods</div>
+            <InfoTooltip
+              content={CORS_METHODS_TOOLTIP}
+              side="bottom"
+              stretch
+              className="info-tooltip-stretch--col"
+              title="CORS Methods"
+            >
+              <input
+                type="text"
+                className="settings-input"
+                value={settings.corsMethods ?? ''}
+                onChange={(e) =>
+                  setSettings((prev) =>
+                    prev ? { ...prev, corsMethods: e.target.value } : prev,
+                  )
+                }
+                onBlur={() => triggerSave({ corsMethods: settings.corsMethods })}
+                placeholder="GET, POST, DELETE, OPTIONS"
+                style={{ marginTop: '8px' }}
+              />
+            </InfoTooltip>
+          </div>
+
+          <div className="settings-field">
+            <div className="epm-section__label">CORS Headers</div>
+            <InfoTooltip
+              content={CORS_HEADERS_TOOLTIP}
+              side="bottom"
+              stretch
+              className="info-tooltip-stretch--col"
+              title="CORS Headers"
+            >
+              <input
+                type="text"
+                className="settings-input"
+                value={settings.corsHeaders ?? ''}
+                onChange={(e) =>
+                  setSettings((prev) =>
+                    prev ? { ...prev, corsHeaders: e.target.value } : prev,
+                  )
+                }
+                onBlur={() => triggerSave({ corsHeaders: settings.corsHeaders })}
+                placeholder="*"
+                style={{ marginTop: '8px' }}
+              />
+            </InfoTooltip>
+          </div>
+
+          <div className="settings-field">
+            <label className="settings-toggle-row">
+              <InfoTooltip
+                content={CORS_CREDENTIALS_TOOLTIP}
+                side="bottom"
+                stretch
+                className="info-tooltip-stretch--row"
+                title="CORS Credentials"
+              >
+                <span className="settings-label">Allow Credentials</span>
+              </InfoTooltip>
+              <div
+                className={`epm-toggle-switch${settings.corsCredentials !== false ? ' epm-toggle-switch--on' : ''}`}
+                onClick={() => {
+                  const next = settings.corsCredentials !== false ? false : true;
+                  setSettings((prev) =>
+                    prev ? { ...prev, corsCredentials: next } : prev,
+                  );
+                  triggerSave({ corsCredentials: next });
+                }}
+                role="switch"
+                aria-checked={settings.corsCredentials !== false}
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === ' ' || e.key === 'Enter') {
+                    e.preventDefault();
+                    const next = settings.corsCredentials !== false ? false : true;
+                    setSettings((prev) =>
+                      prev ? { ...prev, corsCredentials: next } : prev,
+                    );
+                    triggerSave({ corsCredentials: next });
                   }
                 }}
               >

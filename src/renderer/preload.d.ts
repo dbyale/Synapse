@@ -64,6 +64,10 @@ export interface AppSettings {
   allocatedRAM?: number;
   autoOpenThinking?: boolean;
   autoCloseThinkingDone?: boolean;
+  corsOrigins?: string;
+  corsMethods?: string;
+  corsHeaders?: string;
+  corsCredentials?: boolean;
 }
 
 export interface HardwareGpuInfo {

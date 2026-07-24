@@ -148,6 +148,10 @@ interface EditProfileModalProps {
   extensionGroups: ExtensionGroup[];
   onSave: (updatedProfiles: Profile[]) => void;
   onClose: () => void;
+  defaultCorsOrigins?: string;
+  defaultCorsMethods?: string;
+  defaultCorsHeaders?: string;
+  defaultCorsCredentials?: boolean;
 }
 
 const PAGE_DEPTH: Record<string, number> = {
@@ -3051,6 +3055,10 @@ export default function EditProfileModal({
   extensionGroups,
   onSave,
   onClose,
+  defaultCorsOrigins,
+  defaultCorsMethods,
+  defaultCorsHeaders,
+  defaultCorsCredentials,
 }: EditProfileModalProps) {
   const [currentPage, setCurrentPage] = useState('main');
   const [navDirection, setNavDirection] = useState<'forward' | 'backward'>(
@@ -3184,16 +3192,24 @@ export default function EditProfileModal({
     String(profile?.parallel ?? 1),
   );
   const [editCorsOrigins, setEditCorsOrigins] = useState<string>(
-    profile?.corsOrigins ?? 'localhost',
+    profile !== null
+      ? (profile.corsOrigins ?? 'localhost')
+      : (defaultCorsOrigins ?? 'localhost'),
   );
   const [editCorsMethods, setEditCorsMethods] = useState<string>(
-    profile?.corsMethods ?? '',
+    profile !== null
+      ? (profile.corsMethods ?? '')
+      : (defaultCorsMethods ?? ''),
   );
   const [editCorsHeaders, setEditCorsHeaders] = useState<string>(
-    profile?.corsHeaders ?? '',
+    profile !== null
+      ? (profile.corsHeaders ?? '')
+      : (defaultCorsHeaders ?? ''),
   );
   const [editCorsCredentials, setEditCorsCredentials] = useState<boolean>(
-    profile?.corsCredentials ?? true,
+    profile !== null
+      ? (profile.corsCredentials ?? true)
+      : (defaultCorsCredentials ?? true),
   );
 
   const [editVideoFps, setEditVideoFps] = useState<string>(

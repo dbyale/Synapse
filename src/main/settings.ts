@@ -8,6 +8,10 @@ export interface AppSettings {
   allocatedRAM?: number;
   autoOpenThinking?: boolean;
   autoCloseThinkingDone?: boolean;
+  corsOrigins?: string;
+  corsMethods?: string;
+  corsHeaders?: string;
+  corsCredentials?: boolean;
 }
 
 const SETTINGS_FILE = path.join(app.getPath('userData'), 'settings.json');
@@ -17,6 +21,10 @@ const DEFAULT_SETTINGS: AppSettings = {
   modelsDirectory: DEFAULT_MODELS_DIR,
   autoOpenThinking: true,
   autoCloseThinkingDone: true,
+  corsOrigins: 'localhost',
+  corsMethods: '',
+  corsHeaders: '',
+  corsCredentials: true,
 };
 
 let cachedSettings: AppSettings | null = null;

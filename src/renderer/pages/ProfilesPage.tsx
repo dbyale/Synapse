@@ -151,7 +151,13 @@ export default function ProfilesPage() {
     null,
   );
 
-  // ── Load profiles and local models on mount ──
+  // ── Global defaults (from settings) ──
+  const [defaultCorsOrigins, setDefaultCorsOrigins] = useState('localhost');
+  const [defaultCorsMethods, setDefaultCorsMethods] = useState('');
+  const [defaultCorsHeaders, setDefaultCorsHeaders] = useState('');
+  const [defaultCorsCredentials, setDefaultCorsCredentials] = useState(true);
+
+  // ── Load profiles, settings, and local models on mount ──
   useEffect(() => {
     const stored = localStorage.getItem('profiles');
     if (stored) {
@@ -182,6 +188,19 @@ export default function ProfilesPage() {
       }
     };
     loadLocalModels();
+
+    const loadSettings = async () => {
+      try {
+        const s = await window.electronAPI.loadSettings();
+        if (s.corsOrigins !== undefined) setDefaultCorsOrigins(s.corsOrigins);
+        if (s.corsMethods !== undefined) setDefaultCorsMethods(s.corsMethods);
+        if (s.corsHeaders !== undefined) setDefaultCorsHeaders(s.corsHeaders);
+        if (s.corsCredentials !== undefined) setDefaultCorsCredentials(s.corsCredentials);
+      } catch {
+        // Silently fail
+      }
+    };
+    loadSettings();
   }, []);
 
   // ── Persist to localStorage and notify ChatPage ──
@@ -779,6 +798,10 @@ export default function ProfilesPage() {
           extensionGroups={extensionGroups}
           onSave={handleSaveProfile}
           onClose={handleCancelEdit}
+          defaultCorsOrigins={defaultCorsOrigins}
+          defaultCorsMethods={defaultCorsMethods}
+          defaultCorsHeaders={defaultCorsHeaders}
+          defaultCorsCredentials={defaultCorsCredentials}
         />
       )}
     </div>
