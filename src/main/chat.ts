@@ -501,11 +501,7 @@ export async function loadProfile(
           ramMB,
           mode === 'most-gpu',
           fullProjectorPath,
-          (profile as any).kvOffload ?? true,
-          (profile as any).mmap ?? true,
-          (profile as any).cacheTypeK ?? 'f16',
-          (profile as any).cacheTypeV ?? 'f16',
-          (profile as any).parallel !== undefined && (profile as any).parallel !== -1 ? (profile as any).parallel : 1,
+          profile,
         );
         result = optResult;
         (profile as any).layers = optResult.ngl;

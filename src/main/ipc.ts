@@ -25,6 +25,7 @@ import * as chatService from './chat';
 import { getOrRunOptimizer, getOrEstimateMemory, getModelMetadata } from './estimator';
 import { registerExtensionIpcHandlers } from './ipcExtensions';
 import type { SearchFilter } from '../renderer/preload.d';
+import type { CacheType } from '../renderer/types/profile';
 
 const execAsync = util.promisify(exec);
 
@@ -608,8 +609,8 @@ export function registerIpcHandlers(win: BrowserWindow): void {
         mode: 'longest-context' | 'most-gpu';
         kvOffload?: boolean;
         mmap?: boolean;
-        cacheTypeK?: string;
-        cacheTypeV?: string;
+        cacheTypeK?: CacheType;
+        cacheTypeV?: CacheType;
         parallel?: number;
       },
     ) => {
@@ -628,11 +629,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
         ramMB,
         params.mode === 'most-gpu',
         projectorPath,
-        params.kvOffload ?? true,
-        params.mmap ?? true,
-        params.cacheTypeK ?? 'f16',
-        params.cacheTypeV ?? 'f16',
-        params.parallel,
+        params,
       );
 
       return {
@@ -661,7 +658,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
       const projectorPath = params.projectorFilename
         ? path.join(modelsDir, params.modelAuthor, params.modelFolder, 'projectors', params.projectorFilename)
         : undefined;
-      return getModelMetadata(modelPath, projectorPath, params.parallel);
+      return getModelMetadata(modelPath, projectorPath);
     },
   );
 
@@ -678,8 +675,8 @@ export function registerIpcHandlers(win: BrowserWindow): void {
         ctx: number;
         kvOffload?: boolean;
         mmap?: boolean;
-        cacheTypeK?: string;
-        cacheTypeV?: string;
+        cacheTypeK?: CacheType;
+        cacheTypeV?: CacheType;
         parallel?: number;
       },
     ) => {
@@ -693,11 +690,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
         params.ngl,
         params.ctx,
         projectorPath,
-        params.kvOffload ?? true,
-        params.mmap ?? true,
-        params.cacheTypeK ?? 'f16',
-        params.cacheTypeV ?? 'f16',
-        params.parallel,
+        params,
       );
     },
   );
