@@ -55,6 +55,7 @@ import {
   CUSTOM_TOOLTIP,
   GPU_LAYERS_TOOLTIP,
   GPU_LAYERS_AUTO_TOOLTIP,
+  CONTEXT_SHIFT_TOOLTIP,
   CONTEXT_SIZE_TOOLTIP,
   KV_CACHE_OFFLOAD_TOOLTIP,
   K_CACHE_TYPE_TOOLTIP,
@@ -1397,6 +1398,7 @@ function PerformancePage({
   editLayers,
   editContextSize,
   editGpuLayersAuto,
+  editContextShift,
   editKvOffload,
   editCacheTypeK,
   editCacheTypeV,
@@ -1407,6 +1409,7 @@ function PerformancePage({
   modelMaxContext,
   onSetAutoOptimizer,
   onSetGpuLayersAuto,
+  onSetContextShift,
   onSetLayers,
   onSetContextSize,
   onSetKvOffload,
@@ -1427,6 +1430,7 @@ function PerformancePage({
   editLayers: number | undefined;
   editContextSize: number | undefined;
   editGpuLayersAuto: boolean;
+  editContextShift: boolean;
   editKvOffload: boolean;
   editCacheTypeK: CacheType;
   editCacheTypeV: CacheType;
@@ -1439,6 +1443,7 @@ function PerformancePage({
     v: 'longest-context' | 'most-gpu' | 'custom' | null,
   ) => void;
   onSetGpuLayersAuto: (v: boolean) => void;
+  onSetContextShift: (v: boolean) => void;
   onSetLayers: (v: number | undefined) => void;
   onSetContextSize: (v: number | undefined) => void;
   onSetKvOffload: (v: boolean) => void;
@@ -2084,15 +2089,41 @@ function PerformancePage({
           </div>
 
           <div className="epm-perf-slider-group" style={{ marginTop: '16px' }}>
+            <label className="epm-perf-toggle-row" style={{ paddingTop: 0 }}>
+              <InfoTooltip
+                content={CONTEXT_SHIFT_TOOLTIP}
+                side="right"
+                stretch
+                className="info-tooltip-stretch--row"
+                title="Context Shift"
+              >
+                <span className="epm-perf-toggle-label">Context Shift</span>
+                <div
+                  className={`epm-toggle-switch${editContextShift ? ' epm-toggle-switch--on' : ''}`}
+                  onClick={() => onSetContextShift(!editContextShift)}
+                  role="switch"
+                  aria-checked={editContextShift}
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === ' ' || e.key === 'Enter') {
+                      e.preventDefault();
+                      onSetContextShift(!editContextShift);
+                    }
+                  }}
+                >
+                  <div className="epm-toggle-switch__knob" />
+                </div>
+              </InfoTooltip>
+            </label>
             <InfoTooltip
               content={CONTEXT_SIZE_TOOLTIP}
               side="bottom"
               stretch
               className="info-tooltip-stretch--col"
-              title="Context Size"
+              title="Context Length"
             >
               <label className="epm-perf-slider-label">
-                Context Size: <strong>{sliderCtx.toLocaleString()}</strong>
+                Context Length: <strong>{sliderCtx.toLocaleString()}</strong>
               </label>
               <input
                 type="range"
@@ -3194,6 +3225,9 @@ export default function EditProfileModal({
   const [editGpuLayersAuto, setEditGpuLayersAuto] = useState<boolean>(
     profile?.gpuLayersAuto ?? false,
   );
+  const [editContextShift, setEditContextShift] = useState<boolean>(
+    profile?.contextShift ?? true,
+  );
   const [editKvOffload, setEditKvOffload] = useState<boolean>(
     profile?.kvOffload ?? true,
   );
@@ -3521,6 +3555,7 @@ export default function EditProfileModal({
       mmap: editMmap,
       mlock: editMlock,
       gpuLayersAuto: editGpuLayersAuto,
+      contextShift: editContextShift,
       ...(modelMeta
         ? {
             maxForModel: modelRelativePath,
@@ -3761,6 +3796,7 @@ export default function EditProfileModal({
             editLayers={editLayers}
             editContextSize={editContextSize}
             editGpuLayersAuto={editGpuLayersAuto}
+            editContextShift={editContextShift}
             editKvOffload={editKvOffload}
             editCacheTypeK={editCacheTypeK}
             editCacheTypeV={editCacheTypeV}
@@ -3771,6 +3807,7 @@ export default function EditProfileModal({
             modelMaxContext={modelMeta?.maxContext ?? 131072}
             onSetAutoOptimizer={setEditAutoOptimizer}
             onSetGpuLayersAuto={setEditGpuLayersAuto}
+            onSetContextShift={setEditContextShift}
             onSetLayers={setEditLayers}
             onSetContextSize={setEditContextSize}
             onSetKvOffload={setEditKvOffload}

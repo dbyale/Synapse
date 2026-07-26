@@ -572,6 +572,7 @@ export async function loadProfile(
       if (profile.kvOffload === false) spawnArgs.push('--no-kv-offload');
       if (profile.mmap === false) spawnArgs.push('--no-mmap');
       if (profile.mlock === true) spawnArgs.push('--mlock');
+      if ((profile as any).contextShift === true) spawnArgs.push('--context-shift');
       spawnArgs.push('--cache-type-k', (profile as any).cacheTypeK ?? 'f16');
       spawnArgs.push('--cache-type-v', (profile as any).cacheTypeV ?? 'f16');
       if ((profile as any).flashAttn) {

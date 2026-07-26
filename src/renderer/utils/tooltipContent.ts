@@ -104,6 +104,12 @@ export const KV_CACHE_OFFLOAD_TOOLTIP = [
   'System RAM KV cache: saves VRAM but can slow down generation.',
 ];
 
+export const CONTEXT_SHIFT_TOOLTIP = [
+  'Enables --context-shift which allows the model to continue generating beyond the context window.',
+  'When the context is full, older tokens are shifted out to make room for new ones.',
+  'Useful for very long conversations without increasing VRAM usage.',
+];
+
 export const GPU_LAYERS_AUTO_TOOLTIP = [
   'Lets llama-server decide how many layers to offload to the GPU based on available VRAM at startup.',
   'This option may be helpful for systems that frequently change GPUs.',
