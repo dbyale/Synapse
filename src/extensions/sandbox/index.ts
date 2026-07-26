@@ -10,6 +10,7 @@ import {
   sandboxExec,
   sandboxReadFile,
   sandboxWriteFile,
+  sandboxEditFile,
   sandboxListDirectory,
   getSandboxStatus,
 } from '../../main/functions/sandboxRunner';
@@ -326,6 +327,66 @@ export const tools: Record<string, ExtensionToolDef> = {
     },
     async handler(params: { path: string; content: string }) {
       return await sandboxWriteFile(params.path, params.content);
+    },
+  },
+
+  sandbox_edit_file: {
+    meta: {
+      name: 'sandbox_edit_file',
+      label: 'Edit Sandbox File',
+      description: 'Modify a file inside the sandbox container with text replacements, supporting dry-run mode.',
+      descriptionForModel:
+        'Apply a set of text replacements to a file inside the sandbox container. Reads the file, applies each edit (oldText → newText), and writes the result back.\n' +
+        '\n' +
+        'PURPOSE — use this tool to:\n' +
+        '  • Make targeted edits to files in the sandbox without rewriting the entire file\n' +
+        '  • Apply multiple changes in a single operation (edits are applied sequentially)\n' +
+        '  • Preview changes with dryRun=true before writing\n' +
+        '\n' +
+        'HOW IT WORKS:\n' +
+        '  1. Reads the file at the specified path from inside the sandbox\n' +
+        '  2. For each edit in the edits array, finds oldText and replaces it with newText\n' +
+        '  3. If dryRun is true, returns the diff without modifying the file\n' +
+        '  4. If dryRun is false (default), writes the modified content back to the file\n' +
+        '\n' +
+        'NOTES:\n' +
+        '  • Edits are applied sequentially in the order provided\n' +
+        '  • Each oldText must exist exactly once in the current content (or the remaining content after previous edits)\n' +
+        '  • The diff output shows old lines prefixed with "-" and new lines prefixed with "+"\n' +
+        '  • Files are inside the container only — no host filesystem access',
+      icon: 'Edit',
+    },
+    params: {
+      type: 'object',
+      properties: {
+        path: {
+          type: 'string',
+          description: 'Path to the file inside the container to edit (e.g., /workspace/myfile.txt).',
+        },
+        edits: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              oldText: { type: 'string' },
+              newText: { type: 'string' },
+            },
+          },
+          description: 'Array of text replacements to apply (oldText → newText, applied sequentially).',
+        },
+        dryRun: {
+          type: 'boolean',
+          description: 'If true, preview changes without writing (default: false).',
+        },
+      },
+      required: ['path', 'edits'],
+    },
+    async handler(params: { path: string; edits: Array<{ oldText: string; newText: string }>; dryRun?: boolean }) {
+      return await sandboxEditFile({
+        filePath: params.path,
+        edits: params.edits,
+        dryRun: params.dryRun,
+      });
     },
   },
 

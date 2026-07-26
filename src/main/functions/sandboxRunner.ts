@@ -624,6 +624,72 @@ export async function sandboxReadFile(
   }
 }
 
+function generateDiff(oldText: string, newText: string): string {
+  const oldLines = oldText.split('\n');
+  const newLines = newText.split('\n');
+  const diffs: string[] = [];
+  const maxLines = Math.max(oldLines.length, newLines.length);
+  for (let i = 0; i < maxLines; i++) {
+    const oldLine = oldLines[i] ?? '';
+    const newLine = newLines[i] ?? '';
+    if (oldLine !== newLine) {
+      if (oldLine) diffs.push(`- ${oldLine}`);
+      if (newLine) diffs.push(`+ ${newLine}`);
+    }
+  }
+  return diffs.length > 0 ? diffs.join('\n') : '(no changes)';
+}
+
+export interface FileEditResult {
+  success: boolean;
+  diff?: string;
+  message?: string;
+  error?: string;
+}
+
+export async function sandboxEditFile(params: {
+  filePath: string;
+  edits: Array<{ oldText: string; newText: string }>;
+  dryRun?: boolean;
+  containerName?: string;
+}): Promise<FileEditResult> {
+  try {
+    const readResult = await sandboxReadFile(params.filePath, params.containerName);
+    if (!readResult.success || readResult.content === undefined) {
+      return { success: false, error: readResult.error || `File not found: ${params.filePath}` };
+    }
+
+    let content = readResult.content;
+    const originalContent = content;
+
+    for (const edit of params.edits) {
+      if (!content.includes(edit.oldText)) {
+        return { success: false, error: `Old text not found in file: ${edit.oldText}` };
+      }
+      content = content.replace(edit.oldText, edit.newText);
+    }
+
+    const diff = generateDiff(originalContent, content);
+
+    if (!params.dryRun) {
+      const writeResult = await sandboxWriteFile(params.filePath, content, params.containerName);
+      if (!writeResult.success) {
+        return { success: false, error: writeResult.error || 'Failed to write file' };
+      }
+    }
+
+    return {
+      success: true,
+      diff,
+      message: params.dryRun
+        ? 'DRY RUN: Changes not applied'
+        : 'File edited successfully',
+    };
+  } catch (err: any) {
+    return { success: false, error: err.message || String(err) };
+  }
+}
+
 export async function sandboxWriteFile(
   filePath: string,
   content: string,
