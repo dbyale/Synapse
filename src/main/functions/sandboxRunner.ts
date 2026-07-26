@@ -493,6 +493,36 @@ export async function stopSandboxEnvironment(
   }
 }
 
+export async function renameSandboxEnvironment(
+  containerName: string,
+  newNameRaw: string,
+): Promise<{ success: boolean; containerName?: string; error?: string }> {
+  const env = environments.get(containerName);
+  if (!env) {
+    return { success: false, error: `No saved environment with name "${containerName}".` };
+  }
+
+  const newName = newNameRaw.startsWith('synapse-') ? newNameRaw : `synapse-${newNameRaw}`;
+
+  if (environments.has(newName)) {
+    return { success: false, error: `An environment with name "${newName}" already exists.` };
+  }
+
+  const bin = getDockerBin();
+  try {
+    await execFileAsync(bin, ['rename', containerName, newName], { timeout: 15000 });
+
+    environments.delete(containerName);
+    env.containerName = newName;
+    environments.set(newName, env);
+    await saveSandboxState();
+
+    return { success: true, containerName: newName };
+  } catch (err: any) {
+    return { success: false, error: err.message || String(err) };
+  }
+}
+
 // ── Command execution ──────────────────────────────────────────
 
 export async function sandboxExec(
@@ -654,19 +684,61 @@ export async function sandboxEditFile(params: {
   containerName?: string;
 }): Promise<FileEditResult> {
   try {
+    if (!params || typeof params !== 'object') {
+      return { success: false, error: 'sandboxEditFile requires a params object' };
+    }
+    if (typeof params.filePath !== 'string' || params.filePath === '') {
+      return { success: false, error: 'filePath must be a non-empty string' };
+    }
+    if (!Array.isArray(params.edits) || params.edits.length === 0) {
+      return { success: false, error: 'edits must be a non-empty array of { oldText, newText } objects' };
+    }
     const readResult = await sandboxReadFile(params.filePath, params.containerName);
     if (!readResult.success || readResult.content === undefined) {
       return { success: false, error: readResult.error || `File not found: ${params.filePath}` };
     }
 
-    let content = readResult.content;
-    const originalContent = content;
+    const originalContent = readResult.content;
+
+    for (let i = 0; i < params.edits.length; i++) {
+      const edit = params.edits[i];
+      if (typeof edit.oldText !== 'string' || edit.oldText === '') {
+        return { success: false, error: `Edit ${i}: oldText must be a non-empty string` };
+      }
+      if (typeof edit.newText !== 'string') {
+        return { success: false, error: `Edit ${i}: newText must be a string` };
+      }
+      const origMatches = originalContent.split(edit.oldText);
+      const origCount = origMatches.length - 1;
+      if (origCount === 0) {
+        return { success: false, error: `Edit ${i}: oldText not found in file: ${edit.oldText}` };
+      }
+      if (origCount > 1) {
+        return {
+          success: false,
+          error: `Edit ${i}: oldText matches multiple times (${origCount}) in file, model must be more specific: ${edit.oldText}`,
+        };
+      }
+    }
+
+    let content = originalContent;
 
     for (const edit of params.edits) {
-      if (!content.includes(edit.oldText)) {
-        return { success: false, error: `Old text not found in file: ${edit.oldText}` };
+      const matches = content.split(edit.oldText);
+      const matchCount = matches.length - 1;
+      if (matchCount === 0) {
+        return {
+          success: false,
+          error: `Edit failed: oldText no longer exists in file after applying previous edits: ${edit.oldText}`,
+        };
       }
-      content = content.replace(edit.oldText, edit.newText);
+      if (matchCount > 1) {
+        return {
+          success: false,
+          error: `Edit failed: previous edits caused oldText to match multiple times (${matchCount}) in file: ${edit.oldText}`,
+        };
+      }
+      content = matches.join(edit.newText);
     }
 
     const diff = generateDiff(originalContent, content);

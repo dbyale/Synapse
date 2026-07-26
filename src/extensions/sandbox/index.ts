@@ -13,6 +13,7 @@ import {
   sandboxEditFile,
   sandboxListDirectory,
   getSandboxStatus,
+  renameSandboxEnvironment,
 } from '../../main/functions/sandboxRunner';
 import manifest from './manifest.json';
 
@@ -146,6 +147,45 @@ export const tools: Record<string, ExtensionToolDef> = {
     params: { type: 'object', properties: {} },
     async handler() {
       return await destroySandboxEnvironment();
+    },
+  },
+
+  sandbox_environment_rename: {
+    meta: {
+      name: 'sandbox_environment_rename',
+      label: 'Rename Sandbox Environment',
+      description: 'Rename an existing sandbox environment. The "synapse-" prefix is added automatically if missing.',
+      descriptionForModel:
+        'Rename an existing sandbox environment to a more meaningful name.\n' +
+        '\n' +
+        'RENAME BEHAVIOR:\n' +
+        '  • The "synapse-" prefix is automatically prepended to new_name if not already present.\n' +
+        '    For example, "my-box" becomes "synapse-my-box".\n' +
+        '  • If two environments end up with the same name (after prefixing), the tool returns an error.\n' +
+        '  • The Docker container is renamed via "docker rename" and state is persisted.\n' +
+        '  • All files, packages, and state inside the sandbox are preserved.\n' +
+        '\n' +
+        'PURPOSE — use this tool to:\n' +
+        '  • Give sandbox environments descriptive names for easier identification\n' +
+        '  • Organize multiple sandboxes by purpose (e.g., "synapse-frontend-build", "synapse-api-test")',
+      icon: 'Edit',
+    },
+    params: {
+      type: 'object',
+      properties: {
+        container_name: {
+          type: 'string',
+          description: 'Current name of the sandbox container to rename (e.g., "synapse-sandbox-a1b2c3d4").',
+        },
+        new_name: {
+          type: 'string',
+          description: 'Desired new name. The "synapse-" prefix is added automatically if not provided.',
+        },
+      },
+      required: ['container_name', 'new_name'],
+    },
+    async handler(params: { container_name: string; new_name: string }) {
+      return await renameSandboxEnvironment(params.container_name, params.new_name);
     },
   },
 
