@@ -25,6 +25,14 @@ export interface Profile {
     penalty?: number;
     frequencyPenalty?: number;
     presencePenalty?: number;
+    dry?: {
+      enabled?: boolean;
+      multiplier?: number;
+      base?: number;
+      allowedLength?: number;
+      penaltyLastN?: number;
+      sequenceBreakers?: string[];
+    };
   };
   tools?: string[];
   layers?: number;

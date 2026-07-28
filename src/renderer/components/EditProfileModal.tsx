@@ -49,6 +49,11 @@ import {
   REPEAT_PENALTY_VALUE_TOOLTIP,
   FREQUENCY_PENALTY_TOOLTIP,
   PRESENCE_PENALTY_TOOLTIP,
+  DRY_MULTIPLIER_TOOLTIP,
+  DRY_BASE_TOOLTIP,
+  DRY_ALLOWED_LENGTH_TOOLTIP,
+  DRY_PENALTY_LAST_N_TOOLTIP,
+  DRY_SEQUENCE_BREAKERS_TOOLTIP,
   OPTIMIZATION_MODE_TOOLTIP,
   LONGEST_CONTEXT_TOOLTIP,
   MOST_GPU_TOOLTIP,
@@ -83,6 +88,7 @@ import {
   CORS_CREDENTIALS_TOOLTIP,
   HOST_TOOLTIP,
   PORT_TOOLTIP,
+  DRY_PENALTY_ENABLED,
 } from '../utils/tooltipContent';
 import ModelSelectModal from './ModelSelectModal';
 import ProjectorSelectModal from './ProjectorSelectModal';
@@ -1002,6 +1008,18 @@ function RepeatPenaltyPage({
   setEditRpFrequencyPenalty,
   editRpPresencePenalty,
   setEditRpPresencePenalty,
+  editDryEnabled,
+  setEditDryEnabled,
+  editDryMultiplier,
+  setEditDryMultiplier,
+  editDryBase,
+  setEditDryBase,
+  editDryAllowedLength,
+  setEditDryAllowedLength,
+  editDryPenaltyLastN,
+  setEditDryPenaltyLastN,
+  editDrySequenceBreakers,
+  setEditDrySequenceBreakers,
 }: {
   editRpEnabled: boolean;
   setEditRpEnabled: (v: boolean) => void;
@@ -1013,6 +1031,18 @@ function RepeatPenaltyPage({
   setEditRpFrequencyPenalty: (v: string) => void;
   editRpPresencePenalty: string;
   setEditRpPresencePenalty: (v: string) => void;
+  editDryEnabled: boolean;
+  setEditDryEnabled: (v: boolean) => void;
+  editDryMultiplier: string;
+  setEditDryMultiplier: (v: string) => void;
+  editDryBase: string;
+  setEditDryBase: (v: string) => void;
+  editDryAllowedLength: string;
+  setEditDryAllowedLength: (v: string) => void;
+  editDryPenaltyLastN: string;
+  setEditDryPenaltyLastN: (v: string) => void;
+  editDrySequenceBreakers: string;
+  setEditDrySequenceBreakers: (v: string) => void;
 }) {
   return (
     <>
@@ -1087,6 +1117,100 @@ function RepeatPenaltyPage({
             helper="Default: 0.00"
             tooltip={PRESENCE_PENALTY_TOOLTIP}
           />
+        </div>
+      </div>
+
+      <div style={{ marginTop: '24px' }}>
+        <div
+          style={{
+            fontSize: '14px',
+            fontWeight: 600,
+            color: 'var(--text-secondary)',
+            textTransform: 'uppercase',
+            letterSpacing: '0.05em',
+            marginBottom: '12px',
+          }}
+        >
+          DRY SETTINGS
+        </div>
+
+        <label className="epm-rp-enabled-row">
+          <input
+            type="checkbox"
+            checked={editDryEnabled}
+            onChange={(e) => setEditDryEnabled(e.target.checked)}
+          />
+          <InfoTooltip
+            content={DRY_PENALTY_ENABLED}
+            side="right"
+            hideIcon
+            title="Enabled"
+          >
+            <span>Enabled</span>
+          </InfoTooltip>
+        </label>
+
+        <div
+          className={
+            !editDryEnabled ? 'epm-repeat-penalty-fields--disabled' : undefined
+          }
+        >
+          <div className="epm-number-grid">
+            <NumberField
+              label="DRY Multiplier"
+              value={editDryMultiplier}
+              onChange={setEditDryMultiplier}
+              min="0"
+              step="0.01"
+              helper="Default: 0.00"
+              tooltip={DRY_MULTIPLIER_TOOLTIP}
+            />
+            <NumberField
+              label="DRY Base"
+              value={editDryBase}
+              onChange={setEditDryBase}
+              min="0"
+              step="0.01"
+              helper="Default: 1.75"
+              tooltip={DRY_BASE_TOOLTIP}
+            />
+            <NumberField
+              label="DRY Allowed Length"
+              value={editDryAllowedLength}
+              onChange={setEditDryAllowedLength}
+              min="0"
+              step="1"
+              helper="Default: 2"
+              tooltip={DRY_ALLOWED_LENGTH_TOOLTIP}
+            />
+            <NumberField
+              label="DRY Penalty Last N"
+              value={editDryPenaltyLastN}
+              onChange={setEditDryPenaltyLastN}
+              step="1"
+              helper="Default: -1 (context size)"
+              tooltip={DRY_PENALTY_LAST_N_TOOLTIP}
+            />
+          </div>
+          <div className="epm-section" style={{ marginTop: '12px' }}>
+            <InfoTooltip
+              content={DRY_SEQUENCE_BREAKERS_TOOLTIP}
+              side="bottom"
+              stretch
+              className="info-tooltip-stretch--col"
+              title="DRY Sequence Breakers"
+            >
+              <div className="epm-section__label">Sequence Breakers</div>
+              <input
+                type="text"
+                className="epm-input"
+                value={editDrySequenceBreakers}
+                onChange={(e) => setEditDrySequenceBreakers(e.target.value)}
+                placeholder='\n : " *'
+                style={{ marginTop: '8px' }}
+              />
+            </InfoTooltip>
+          </div>
         </div>
       </div>
     </>
@@ -3206,6 +3330,36 @@ export default function EditProfileModal({
       : '0.00',
   );
 
+  // DRY sampling options
+  const [editDryEnabled, setEditDryEnabled] = useState(
+    profile?.repeatPenalty?.dry?.enabled === true,
+  );
+  const [editDryMultiplier, setEditDryMultiplier] = useState(
+    profile?.repeatPenalty?.dry?.multiplier !== undefined
+      ? String(profile.repeatPenalty.dry.multiplier)
+      : '',
+  );
+  const [editDryBase, setEditDryBase] = useState(
+    profile?.repeatPenalty?.dry?.base !== undefined
+      ? String(profile.repeatPenalty.dry.base)
+      : '',
+  );
+  const [editDryAllowedLength, setEditDryAllowedLength] = useState(
+    profile?.repeatPenalty?.dry?.allowedLength !== undefined
+      ? String(profile.repeatPenalty.dry.allowedLength)
+      : '',
+  );
+  const [editDryPenaltyLastN, setEditDryPenaltyLastN] = useState(
+    profile?.repeatPenalty?.dry?.penaltyLastN !== undefined
+      ? String(profile.repeatPenalty.dry.penaltyLastN)
+      : '',
+  );
+  const [editDrySequenceBreakers, setEditDrySequenceBreakers] = useState(
+    profile?.repeatPenalty?.dry?.sequenceBreakers
+      ? profile.repeatPenalty.dry.sequenceBreakers.join(', ')
+      : '',
+  );
+
   // Performance options
   const [editAutoOptimizer, setEditAutoOptimizer] = useState<
     'longest-context' | 'most-gpu' | 'custom' | null
@@ -3518,15 +3672,41 @@ export default function EditProfileModal({
     };
 
     const buildRepeatPenalty = (): Profile['repeatPenalty'] => {
-      if (!editRpEnabled) return { enabled: false };
+      if (!editRpEnabled && !editDryEnabled) return { enabled: false };
       const rp: NonNullable<Profile['repeatPenalty']> = {};
-      if (editRpLastTokens !== '')
-        rp.lastTokens = parseInt(editRpLastTokens, 10);
-      if (editRpPenalty !== '') rp.penalty = parseFloat(editRpPenalty);
-      if (editRpFrequencyPenalty !== '')
-        rp.frequencyPenalty = parseFloat(editRpFrequencyPenalty);
-      if (editRpPresencePenalty !== '')
-        rp.presencePenalty = parseFloat(editRpPresencePenalty);
+      if (editRpEnabled) {
+        if (editRpLastTokens !== '')
+          rp.lastTokens = parseInt(editRpLastTokens, 10);
+        if (editRpPenalty !== '') rp.penalty = parseFloat(editRpPenalty);
+        if (editRpFrequencyPenalty !== '')
+          rp.frequencyPenalty = parseFloat(editRpFrequencyPenalty);
+        if (editRpPresencePenalty !== '')
+          rp.presencePenalty = parseFloat(editRpPresencePenalty);
+      }
+      if (editDryEnabled) {
+        const dry: NonNullable<NonNullable<Profile['repeatPenalty']>['dry']> = {
+          enabled: true,
+        };
+        if (editDryMultiplier !== '')
+          dry.multiplier = parseFloat(editDryMultiplier);
+        if (editDryBase !== '') dry.base = parseFloat(editDryBase);
+        if (editDryAllowedLength !== '')
+          dry.allowedLength = parseInt(editDryAllowedLength, 10);
+        if (editDryPenaltyLastN !== '')
+          dry.penaltyLastN = parseInt(editDryPenaltyLastN, 10);
+        if (editDrySequenceBreakers.trim()) {
+          const raw = editDrySequenceBreakers.trim();
+          if (raw.toLowerCase() === 'none') {
+            dry.sequenceBreakers = [];
+          } else {
+            dry.sequenceBreakers = raw
+              .split(',')
+              .map((s) => s.trim())
+              .filter(Boolean);
+          }
+        }
+        rp.dry = dry;
+      }
       return Object.keys(rp).length > 0 ? rp : undefined;
     };
 
@@ -3918,6 +4098,18 @@ export default function EditProfileModal({
             setEditRpFrequencyPenalty={setEditRpFrequencyPenalty}
             editRpPresencePenalty={editRpPresencePenalty}
             setEditRpPresencePenalty={setEditRpPresencePenalty}
+            editDryEnabled={editDryEnabled}
+            setEditDryEnabled={setEditDryEnabled}
+            editDryMultiplier={editDryMultiplier}
+            setEditDryMultiplier={setEditDryMultiplier}
+            editDryBase={editDryBase}
+            setEditDryBase={setEditDryBase}
+            editDryAllowedLength={editDryAllowedLength}
+            setEditDryAllowedLength={setEditDryAllowedLength}
+            editDryPenaltyLastN={editDryPenaltyLastN}
+            setEditDryPenaltyLastN={setEditDryPenaltyLastN}
+            editDrySequenceBreakers={editDrySequenceBreakers}
+            setEditDrySequenceBreakers={setEditDrySequenceBreakers}
           />
         );
       case 'projector':

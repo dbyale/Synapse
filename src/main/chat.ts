@@ -247,6 +247,16 @@ function buildChatBody(messages: any[], tools: any[]): Record<string, any> {
       body.presence_penalty = rp.presencePenalty;
   }
 
+  // DRY sampling
+  if (p?.repeatPenalty?.dry?.enabled) {
+    const dry = p.repeatPenalty.dry;
+    if (dry.multiplier !== undefined) body.dry_multiplier = dry.multiplier;
+    if (dry.base !== undefined) body.dry_base = dry.base;
+    if (dry.allowedLength !== undefined) body.dry_allowed_length = dry.allowedLength;
+    if (dry.penaltyLastN !== undefined) body.dry_penalty_last_n = dry.penaltyLastN;
+    if (dry.sequenceBreakers !== undefined) body.dry_sequence_breakers = dry.sequenceBreakers;
+  }
+
   return body;
 }
 

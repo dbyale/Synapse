@@ -72,6 +72,44 @@ export const PRESENCE_PENALTY_TOOLTIP = [
   'Range: 0–1. Default: 0.00.',
 ];
 
+// ── DRY Sampling ──
+
+export const DRY_PENALTY_ENABLED = [
+  `DRY (Don't Repeat Yourself) sampling penalizes repeated sequences based on their length, using an exponential formula.`,
+  'When enabled, the model is less likely to repeat the same sentence or phrase.',
+];
+
+export const DRY_MULTIPLIER_TOOLTIP = [
+  'Controls how strongly DRY penalizes repeated sequences.',
+  'Higher values make the penalty stronger. Set to 0.0 to disable DRY sampling.',
+  'Default: 0.00 (disabled).',
+];
+
+export const DRY_BASE_TOOLTIP = [
+  'The base value used to compute the exponential penalty.',
+  'Higher values cause the penalty to grow faster for longer repeats.',
+  'Default: 1.75.',
+];
+
+export const DRY_ALLOWED_LENGTH_TOOLTIP = [
+  'Sets the maximum sequence length that is allowed without penalty.',
+  'Shorter repeated sequences below this length are not penalized.',
+  'Default: 2.',
+];
+
+export const DRY_PENALTY_LAST_N_TOOLTIP = [
+  'How many recent tokens to consider for DRY penalty.',
+  'Set to 0 to disable, or -1 to use the full context size.',
+  'Default: -1 (context size).',
+];
+
+export const DRY_SEQUENCE_BREAKERS_TOOLTIP = [
+  'Characters that break up repeated sequences.',
+  'When a sequence breaker is found, the repeat counter resets.',
+  'Default breakers: newline, colon, double-quote, asterisk.',
+  'Use "none" to disable all sequence breakers.',
+];
+
 // ── Performance / Optimizer ──
 
 export const OPTIMIZATION_MODE_TOOLTIP = [
