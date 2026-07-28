@@ -1,0 +1,9 @@
+{
+  "id": "image_display",
+  "name": "Image Display",
+  "description": "Display local and web images inline in chat responses",
+  "author": "Synapse",
+  "version": "1.0.0",
+  "icon": "Image",
+  "builtIn": true
+}

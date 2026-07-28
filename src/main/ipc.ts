@@ -630,9 +630,11 @@ export function registerIpcHandlers(win: BrowserWindow): void {
       } else if (event === 'call') {
         win.webContents.send('chat-function-call', { name, params: data });
       } else if (event === 'result') {
+        const parsed = JSON.parse(data);
         win.webContents.send('chat-function-result', {
           name,
-          result: data,
+          result: parsed.result,
+          _image: parsed._image,
         });
       } else if (event === 'input-request') {
         win.webContents.send('chat:user-input', JSON.parse(data));

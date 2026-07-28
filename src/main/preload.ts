@@ -241,10 +241,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   onChatFunctionResult: (
-    callback: (data: { name: string; result: string }) => void,
+    callback: (data: {
+      name: string;
+      result: string;
+      _image?: { url: string; altText?: string; width?: number };
+    }) => void,
   ) => {
-    const listener = (_: any, data: { name: string; result: string }) =>
-      callback(data);
+    const listener = (
+      _: any,
+      data: {
+        name: string;
+        result: string;
+        _image?: { url: string; altText?: string; width?: number };
+      },
+    ) => callback(data);
     ipcRenderer.on('chat-function-result', listener);
     return () => ipcRenderer.removeListener('chat-function-result', listener);
   },

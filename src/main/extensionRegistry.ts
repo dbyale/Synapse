@@ -44,6 +44,10 @@ import {
   tools as githubTools,
   manifest as githubManifest,
 } from '../extensions/github';
+import {
+  tools as imageDisplayTools,
+  manifest as imageDisplayManifest,
+} from '../extensions/image_display';
 
 const BUILT_IN_EXTENSIONS: Array<{
   tools: Record<string, ExtensionToolDef>;
@@ -62,6 +66,10 @@ const BUILT_IN_EXTENSIONS: Array<{
   { tools: ddgSearchTools, manifest: ddgSearchManifest as ExtensionManifest },
   { tools: sandboxTools, manifest: sandboxManifest as ExtensionManifest },
   { tools: githubTools, manifest: githubManifest as ExtensionManifest },
+  {
+    tools: imageDisplayTools,
+    manifest: imageDisplayManifest as ExtensionManifest,
+  },
 ];
 
 class ExtensionRegistry {

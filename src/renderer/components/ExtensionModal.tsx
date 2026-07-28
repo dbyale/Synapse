@@ -13,6 +13,7 @@ interface ToolInfo {
   description: string;
   descriptionForHuman?: string;
   icon?: string;
+  displayType?: string;
 }
 
 interface ExtensionInfo {

@@ -243,7 +243,11 @@ declare global {
         callback: (data: { name: string; params: string }) => void,
       ) => () => void;
       onChatFunctionResult: (
-        callback: (data: { name: string; result: string }) => void,
+        callback: (data: {
+          name: string;
+          result: string;
+          _image?: { url: string; altText?: string; width?: number };
+        }) => void,
       ) => () => void;
 
       readFileAsDataUrl: (filePath: string) => Promise<string>;
@@ -328,6 +332,7 @@ declare global {
                 descriptionForHuman?: string;
                 descriptionForModel?: string;
                 icon: string;
+                displayType?: string;
               };
               params: Record<string, any>;
             }
@@ -355,6 +360,7 @@ declare global {
               descriptionForHuman?: string;
               descriptionForModel?: string;
               icon: string;
+              displayType?: string;
             };
             params: Record<string, any>;
           }

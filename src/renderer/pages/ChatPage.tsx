@@ -69,6 +69,11 @@ interface MessageSegment {
   toolResult?: string;
   reprocessStats?: GenerationStatsData;
   mediaItems?: MediaDisplayItem[];
+  displayedImage?: {
+    url: string;
+    altText?: string;
+    width?: number;
+  };
 }
 
 interface Message {
@@ -120,9 +125,11 @@ let pendingSegmentIds: string[] = [];
 function ToolCallSegment({
   segment,
   showInlineStats,
+  onImageClick,
 }: {
   segment: MessageSegment;
   showInlineStats?: boolean;
+  onImageClick?: (url: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const hasContent = !!(segment.toolParams || segment.toolResult);
@@ -135,6 +142,34 @@ function ToolCallSegment({
       return jsonString;
     }
   };
+
+  if (segment.displayedImage) {
+    const meta = segment.toolName ? getToolMeta(segment.toolName) : undefined;
+    if (meta?.displayType === 'image') {
+      const img = segment.displayedImage;
+      let fallbackAlt = '';
+      if (!img.altText && segment.toolParams) {
+        try {
+          const parsed = JSON.parse(segment.toolParams);
+          fallbackAlt = parsed.path ?? parsed.url ?? '';
+        } catch {
+          fallbackAlt = '';
+        }
+      }
+      const altText = img.altText || fallbackAlt;
+      return (
+        <div className="tool-call-segment tool-call-segment--image">
+          <img
+            src={img.url}
+            alt={altText}
+            className="tool-call-segment__image"
+            width={img.width}
+            onClick={() => onImageClick?.(img.url)}
+          />
+        </div>
+      );
+    }
+  }
 
   return (
     <div
@@ -1176,6 +1211,15 @@ export default function ChatPage() {
             if (toolSegment && toolSegment.type === 'tool') {
               toolSegment.toolStatus = 'done';
               toolSegment.toolResult = data.result;
+
+              const imgData = (data as any)._image;
+              if (imgData) {
+                toolSegment.displayedImage = {
+                  url: imgData.url,
+                  altText: imgData.altText,
+                  width: imgData.width,
+                };
+              }
             }
           }
 
@@ -1231,6 +1275,7 @@ export default function ChatPage() {
       unsubscribeFunctionCalling();
       unsubscribeFunctionCall();
       unsubscribeFunctionResult();
+      unsubscribeUserInput();
       unsubscribeUserInput();
       removeSystemProgressListener();
       removeSystemStatusListener();
@@ -1850,6 +1895,7 @@ export default function ChatPage() {
                                   key={key}
                                   segment={group.segments[0]}
                                   showInlineStats={!!group.stats}
+                                  onImageClick={setImageViewerUrl}
                                 />
                               );
                             }
@@ -1865,6 +1911,7 @@ export default function ChatPage() {
                                       key={seg.id}
                                       segment={seg}
                                       showInlineStats={false}
+                                      onImageClick={setImageViewerUrl}
                                     />
                                   ))}
                                 </div>
@@ -2005,6 +2052,7 @@ export default function ChatPage() {
                                       key={seg.id}
                                       segment={seg}
                                       showInlineStats={showInline}
+                                      onImageClick={setImageViewerUrl}
                                     />
                                   )}
                                 />,
@@ -2031,26 +2079,33 @@ export default function ChatPage() {
                                     s.type === 'thought' || s.type === 'tool',
                                 );
 
-                              if (isInThoughtBatch) {
+                              if (isInThoughtBatch && !segment.displayedImage) {
                                 batchSegments.push(segment);
+                              } else if (
+                                segment.displayedImage &&
+                                isInThoughtBatch
+                              ) {
+                                standaloneToolBuffer.push(segment);
                               } else {
                                 flushBatch();
                                 standaloneToolBuffer.push(segment);
                               }
                             } else {
-                              flushStandaloneTools();
-                              if (
+                              const closingBatch =
                                 batchSegments.length > 0 &&
-                                segment.type !== 'thought'
-                              ) {
+                                segment.type !== 'thought';
+                              if (closingBatch) {
                                 flushBatch(true);
+                                flushStandaloneTools();
+                              } else if (batchSegments.length === 0) {
+                                flushStandaloneTools();
                               }
                               batchSegments.push(segment);
                             }
                           });
 
-                          flushStandaloneTools();
                           flushBatch();
+                          flushStandaloneTools();
 
                           return elements;
                         })()}

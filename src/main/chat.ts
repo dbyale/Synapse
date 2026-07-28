@@ -1018,7 +1018,15 @@ export async function sendMessage(
           }
         }
 
-        const resultStr = JSON.stringify(result);
+        // Check for structured response with optional image data
+        let modelContent = result;
+        let imageData: any = null;
+        if (result && typeof result === 'object' && '_response' in result) {
+          modelContent = result._response;
+          imageData = result._image ?? null;
+        }
+
+        const resultStr = JSON.stringify(modelContent);
         if (lastUsage) {
           const resultTokens = (await tokenize(resultStr)) ?? 0;
           totalResultTokens += resultTokens;
@@ -1027,7 +1035,11 @@ export async function sendMessage(
             total: lastUsage.total,
           };
         }
-        if (emitFunctionEvent) emitFunctionEvent('result', tc.name, resultStr);
+        if (emitFunctionEvent) {
+          const payload: any = { result: resultStr };
+          if (imageData) payload._image = imageData;
+          emitFunctionEvent('result', tc.name, JSON.stringify(payload));
+        }
         messageHistory.push({
           role: 'tool',
           tool_call_id: tc.id,

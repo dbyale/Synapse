@@ -17,6 +17,7 @@ export interface ExtensionToolMeta {
   descriptionForHuman?: string;
   descriptionForModel?: string;
   icon: string;
+  displayType?: string;
 }
 
 export interface ExtensionToolDef {

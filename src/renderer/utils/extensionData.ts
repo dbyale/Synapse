@@ -5,6 +5,7 @@ type ToolMeta = {
   descriptionForHuman?: string;
   descriptionForModel?: string;
   icon: string;
+  displayType?: string;
 };
 
 type ExtensionInfo = {
