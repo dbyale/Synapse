@@ -40,29 +40,6 @@ function extractParametersFromName(modelName: string): string | null {
   return null;
 }
 
-function getParameterTooltip(params: string) {
-  const upperParams = params.toUpperCase();
-  const details: string[] = [];
-  const aMatch = upperParams.match(/^([0-9.]+[BM])-A([0-9.]+[BM])$/);
-  const xMatch = upperParams.match(/^([0-9]+)X([0-9.]+[BM])$/);
-  if (aMatch) {
-    details.push('Architecture: Mixture of Experts (MoE)');
-    details.push(`Total Parameters: ${aMatch[1]}`);
-    details.push(`Active Parameters: ${aMatch[2]} (used per token)`);
-  } else if (xMatch) {
-    details.push('Architecture: Mixture of Experts (MoE)');
-    details.push(`Experts: ${xMatch[1]} experts of ${xMatch[2]} each`);
-    details.push('Active Parameters: Fraction used per token');
-  } else {
-    details.push('Architecture: Dense (All parameters active)');
-  }
-  return {
-    title: `Size: ${upperParams}`,
-    details,
-    text: "Represents the neural network's complexity. Higher parameters typically yield better reasoning and accuracy, but require more RAM and processing power to run.",
-  };
-}
-
 export default function ModelSelectModal({
   groups,
   selectedFilename,
@@ -155,7 +132,6 @@ export default function ModelSelectModal({
           ) : (
             filteredGroups.map((group) => {
               const parameters = extractParametersFromName(group.name);
-              const paramTooltip = parameters ? getParameterTooltip(parameters) : null;
               return (
               <div key={group.name} className="msm-group">
                 <button
@@ -169,27 +145,10 @@ export default function ModelSelectModal({
                   }}
                 >
                   <h3>{group.name}</h3>
-                  {parameters && paramTooltip && (
-                    <div className="model-card__meta-tooltip-wrapper">
-                      <span className="model-card__meta-item">
-                        <Cpu size={14} /> {parameters}
-                      </span>
-                      <div className="local-model-card__meta-tooltip">
-                        <div className="model-card__meta-tooltip-title">
-                          {paramTooltip.title}
-                        </div>
-                        {paramTooltip.details.length > 0 && (
-                          <ul className="model-card__dl-tooltip-list">
-                            {paramTooltip.details.map((detail) => (
-                              <li key={detail}>{detail}</li>
-                            ))}
-                          </ul>
-                        )}
-                        <div className="model-card__meta-tooltip-text">
-                          {paramTooltip.text}
-                        </div>
-                      </div>
-                    </div>
+                  {parameters && (
+                    <span className="model-card__meta-item">
+                      <Cpu size={14} /> {parameters}
+                    </span>
                   )}
                 </button>
                 {group.variants.map((variant) => (
