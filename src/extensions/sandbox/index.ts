@@ -22,7 +22,8 @@ export const tools: Record<string, ExtensionToolDef> = {
     meta: {
       name: 'sandbox_environment_create',
       label: 'Create Sandbox Environment',
-      description: 'Create a new Docker-based sandboxed environment for safe code execution.',
+      description:
+        'Create a new Docker-based sandboxed environment for safe code execution.',
       descriptionForModel:
         'Create a new sandboxed virtual environment using Docker. All subsequent commands (shell, file operations, git) run inside this container, completely isolated from the host system.\n' +
         '\n' +
@@ -55,11 +56,13 @@ export const tools: Record<string, ExtensionToolDef> = {
       properties: {
         memory_limit: {
           type: 'string',
-          description: 'Memory limit for the container (e.g., "512m", "1g"). Default: "512m".',
+          description:
+            'Memory limit for the container (e.g., "512m", "1g"). Default: "512m".',
         },
         cpu_limit: {
           type: 'number',
-          description: 'CPU limit for the container (number of CPUs). Default: 2.',
+          description:
+            'CPU limit for the container (number of CPUs). Default: 2.',
         },
       },
     },
@@ -75,7 +78,8 @@ export const tools: Record<string, ExtensionToolDef> = {
     meta: {
       name: 'sandbox_environment_create_networked',
       label: 'Create Networked Sandbox Environment',
-      description: 'Create a sandbox environment with network access for cloning repos, installing packages, etc.',
+      description:
+        'Create a sandbox environment with network access for cloning repos, installing packages, etc.',
       descriptionForModel:
         'Create a sandboxed virtual environment with network access. Unlike sandbox_environment_create (which has --network none), this container can reach the internet.\n' +
         '\n' +
@@ -109,19 +113,26 @@ export const tools: Record<string, ExtensionToolDef> = {
       properties: {
         network: {
           type: 'string',
-          description: 'Docker network to use (optional, default "bridge"). Use "host" for host networking if needed.',
+          description:
+            'Docker network to use (optional, default "bridge"). Use "host" for host networking if needed.',
         },
         memory_limit: {
           type: 'string',
-          description: 'Memory limit for the container (e.g., "512m", "1g"). Default: "512m".',
+          description:
+            'Memory limit for the container (e.g., "512m", "1g"). Default: "512m".',
         },
         cpu_limit: {
           type: 'number',
-          description: 'CPU limit for the container (number of CPUs). Default: 2.',
+          description:
+            'CPU limit for the container (number of CPUs). Default: 2.',
         },
       },
     },
-    async handler(params: { network?: string; memory_limit?: string; cpu_limit?: number }) {
+    async handler(params: {
+      network?: string;
+      memory_limit?: string;
+      cpu_limit?: number;
+    }) {
       return await createNetworkedSandboxEnvironment({
         network: params.network,
         memoryLimit: params.memory_limit,
@@ -134,7 +145,8 @@ export const tools: Record<string, ExtensionToolDef> = {
     meta: {
       name: 'sandbox_environment_destroy',
       label: 'Destroy Sandbox Environment',
-      description: 'Permanently delete the sandbox container and ALL files inside it.',
+      description:
+        'Permanently delete the sandbox container and ALL files inside it.',
       descriptionForModel:
         'DESTROY the currently active sandbox environment. This stops and removes the Docker container, permanently deleting ALL files inside it. There is no host-side copy — everything in the container is gone forever.\n' +
         '\n' +
@@ -154,7 +166,8 @@ export const tools: Record<string, ExtensionToolDef> = {
     meta: {
       name: 'sandbox_environment_rename',
       label: 'Rename Sandbox Environment',
-      description: 'Rename an existing sandbox environment. The "synapse-" prefix is added automatically if missing.',
+      description:
+        'Rename an existing sandbox environment. The "synapse-" prefix is added automatically if missing.',
       descriptionForModel:
         'Rename an existing sandbox environment to a more meaningful name.\n' +
         '\n' +
@@ -175,17 +188,22 @@ export const tools: Record<string, ExtensionToolDef> = {
       properties: {
         container_name: {
           type: 'string',
-          description: 'Current name of the sandbox container to rename (e.g., "synapse-sandbox-a1b2c3d4").',
+          description:
+            'Current name of the sandbox container to rename (e.g., "synapse-sandbox-a1b2c3d4").',
         },
         new_name: {
           type: 'string',
-          description: 'Desired new name. The "synapse-" prefix is added automatically if not provided.',
+          description:
+            'Desired new name. The "synapse-" prefix is added automatically if not provided.',
         },
       },
       required: ['container_name', 'new_name'],
     },
     async handler(params: { container_name: string; new_name: string }) {
-      return await renameSandboxEnvironment(params.container_name, params.new_name);
+      return await renameSandboxEnvironment(
+        params.container_name,
+        params.new_name,
+      );
     },
   },
 
@@ -193,7 +211,8 @@ export const tools: Record<string, ExtensionToolDef> = {
     meta: {
       name: 'sandbox_environment_stop',
       label: 'Stop Sandbox Environment',
-      description: 'Stop the active sandbox container and save its state without deleting it.',
+      description:
+        'Stop the active sandbox container and save its state without deleting it.',
       descriptionForModel:
         'Stop the currently active sandbox environment and save its state. The Docker container is preserved — it will appear in sandbox_environment_list_saved and can be resumed later with sandbox_environment_start.\n' +
         '\n' +
@@ -235,7 +254,8 @@ export const tools: Record<string, ExtensionToolDef> = {
     meta: {
       name: 'sandbox_environment_start',
       label: 'Start Saved Environment',
-      description: 'Start a saved sandbox environment that was previously stopped.',
+      description:
+        'Start a saved sandbox environment that was previously stopped.',
       descriptionForModel:
         'Start a previously created sandbox environment that is currently stopped. Use sandbox_environment_list_saved first to find available environments.\n' +
         '\n' +
@@ -249,7 +269,8 @@ export const tools: Record<string, ExtensionToolDef> = {
       properties: {
         container_name: {
           type: 'string',
-          description: 'Name of the saved container to start (from sandbox_environment_list_saved output).',
+          description:
+            'Name of the saved container to start (from sandbox_environment_list_saved output).',
         },
       },
       required: ['container_name'],
@@ -293,20 +314,27 @@ export const tools: Record<string, ExtensionToolDef> = {
       properties: {
         command: {
           type: 'string',
-          description: 'The shell command to execute inside the sandbox container.',
+          description:
+            'The shell command to execute inside the sandbox container.',
         },
         workdir: {
           type: 'string',
-          description: 'Working directory inside the container (optional, defaults to /workspace).',
+          description:
+            'Working directory inside the container (optional, defaults to /workspace).',
         },
         timeout: {
           type: 'number',
-          description: 'Timeout in milliseconds (optional, default 60000, max 120000).',
+          description:
+            'Timeout in milliseconds (optional, default 60000, max 120000).',
         },
       },
       required: ['command'],
     },
-    async handler(params: { command: string; workdir?: string; timeout?: number }) {
+    async handler(params: {
+      command: string;
+      workdir?: string;
+      timeout?: number;
+    }) {
       return await sandboxExec(params.command, params.workdir, params.timeout);
     },
   },
@@ -328,7 +356,8 @@ export const tools: Record<string, ExtensionToolDef> = {
       properties: {
         path: {
           type: 'string',
-          description: 'Path to the file inside the container (e.g., /workspace/myfile.txt).',
+          description:
+            'Path to the file inside the container (e.g., /workspace/myfile.txt).',
         },
       },
       required: ['path'],
@@ -347,7 +376,7 @@ export const tools: Record<string, ExtensionToolDef> = {
         'Create or overwrite a file inside the sandbox container. Parent directories are created automatically.\n' +
         '\n' +
         'All files stay inside the container only — there is no host filesystem access.\n' +
-        'The container\'s overlay filesystem uses host disk space, but files are invisible from the host.\n' +
+        "The container's overlay filesystem uses host disk space, but files are invisible from the host.\n" +
         'Destroying the container permanently deletes these files.',
       icon: 'Edit',
     },
@@ -356,7 +385,8 @@ export const tools: Record<string, ExtensionToolDef> = {
       properties: {
         path: {
           type: 'string',
-          description: 'Path inside the container where the file will be written (e.g., /workspace/myfile.txt).',
+          description:
+            'Path inside the container where the file will be written (e.g., /workspace/myfile.txt).',
         },
         content: {
           type: 'string',
@@ -374,7 +404,8 @@ export const tools: Record<string, ExtensionToolDef> = {
     meta: {
       name: 'sandbox_edit_file',
       label: 'Edit Sandbox File',
-      description: 'Modify a file inside the sandbox container with text replacements, supporting dry-run mode.',
+      description:
+        'Modify a file inside the sandbox container with text replacements, supporting dry-run mode.',
       descriptionForModel:
         'Apply a set of text replacements to a file inside the sandbox container. Reads the file, applies each edit (oldText → newText), and writes the result back.\n' +
         '\n' +
@@ -401,7 +432,8 @@ export const tools: Record<string, ExtensionToolDef> = {
       properties: {
         path: {
           type: 'string',
-          description: 'Path to the file inside the container to edit (e.g., /workspace/myfile.txt).',
+          description:
+            'Path to the file inside the container to edit (e.g., /workspace/myfile.txt).',
         },
         edits: {
           type: 'array',
@@ -412,16 +444,22 @@ export const tools: Record<string, ExtensionToolDef> = {
               newText: { type: 'string' },
             },
           },
-          description: 'Array of text replacements to apply (oldText → newText, applied sequentially).',
+          description:
+            'Array of text replacements to apply (oldText → newText, applied sequentially).',
         },
         dryRun: {
           type: 'boolean',
-          description: 'If true, preview changes without writing (default: false).',
+          description:
+            'If true, preview changes without writing (default: false).',
         },
       },
       required: ['path', 'edits'],
     },
-    async handler(params: { path: string; edits: Array<{ oldText: string; newText: string }>; dryRun?: boolean }) {
+    async handler(params: {
+      path: string;
+      edits: Array<{ oldText: string; newText: string }>;
+      dryRun?: boolean;
+    }) {
       return await sandboxEditFile({
         filePath: params.path,
         edits: params.edits,
@@ -434,7 +472,8 @@ export const tools: Record<string, ExtensionToolDef> = {
     meta: {
       name: 'sandbox_list_directory',
       label: 'List Sandbox Directory',
-      description: 'List the contents of a directory inside the sandbox container.',
+      description:
+        'List the contents of a directory inside the sandbox container.',
       descriptionForModel:
         'List all files and directories inside a given path in the sandbox container.\n' +
         'Returns one entry per line, including hidden files.',
@@ -459,7 +498,8 @@ export const tools: Record<string, ExtensionToolDef> = {
     meta: {
       name: 'sandbox_environment_status',
       label: 'Sandbox Environment Status',
-      description: 'Check if Docker is available and whether a sandbox environment is active.',
+      description:
+        'Check if Docker is available and whether a sandbox environment is active.',
       descriptionForModel:
         'Check the status of the sandbox system:\n' +
         '  • Whether Docker is available and running\n' +

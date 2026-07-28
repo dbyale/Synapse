@@ -306,44 +306,78 @@ declare global {
       }>;
 
       // ── Extensions API ──
-      extensionsList: () => Promise<Array<{
-        manifest: {
-          id: string;
-          name: string;
-          description: string;
-          author: string;
-          version: string;
-          icon: string;
-          builtIn: boolean;
-          iconSvgData?: string;
-        };
-        tools: Record<string, {
-          meta: { name: string; label: string; description: string; descriptionForHuman?: string; descriptionForModel?: string; icon: string };
-          params: Record<string, any>;
-        }>;
-        enabled: boolean;
-        extensionDir?: string;
-      }>>;
+      extensionsList: () => Promise<
+        Array<{
+          manifest: {
+            id: string;
+            name: string;
+            description: string;
+            author: string;
+            version: string;
+            icon: string;
+            builtIn: boolean;
+            iconSvgData?: string;
+          };
+          tools: Record<
+            string,
+            {
+              meta: {
+                name: string;
+                label: string;
+                description: string;
+                descriptionForHuman?: string;
+                descriptionForModel?: string;
+                icon: string;
+              };
+              params: Record<string, any>;
+            }
+          >;
+          enabled: boolean;
+          extensionDir?: string;
+        }>
+      >;
       extensionsInstall: () => Promise<{ success: boolean; error?: string }>;
-      extensionsRemove: (id: string) => Promise<{ success: boolean; error?: string }>;
-      extensionsToggle: (id: string, enabled: boolean) => Promise<{ success: boolean }>;
-      extensionsGetAllTools: () => Promise<Record<string, {
-        meta: { name: string; label: string; description: string; descriptionForHuman?: string; descriptionForModel?: string; icon: string };
-        params: Record<string, any>;
-      }>>;
+      extensionsRemove: (
+        id: string,
+      ) => Promise<{ success: boolean; error?: string }>;
+      extensionsToggle: (
+        id: string,
+        enabled: boolean,
+      ) => Promise<{ success: boolean }>;
+      extensionsGetAllTools: () => Promise<
+        Record<
+          string,
+          {
+            meta: {
+              name: string;
+              label: string;
+              description: string;
+              descriptionForHuman?: string;
+              descriptionForModel?: string;
+              icon: string;
+            };
+            params: Record<string, any>;
+          }
+        >
+      >;
       extensionsOpenFolder: () => Promise<void>;
       extensionsGetSettings: (id: string) => Promise<Record<string, any>>;
-      extensionsSetSettings: (id: string, settings: Record<string, any>) => Promise<{ success: boolean }>;
+      extensionsSetSettings: (
+        id: string,
+        settings: Record<string, any>,
+      ) => Promise<{ success: boolean }>;
 
-      onChatUserInput: (callback: (data: {
-        requestId: string;
-        type: 'confirm' | 'select' | 'freeform';
-        prompt: string;
-        options?: string[];
-        allowOther?: boolean;
-        toolName: string;
-        toolParams: any;
-      }) => void) => () => void;
+      onChatUserInput: (
+        callback: (data: {
+          requestId: string;
+          type: 'confirm' | 'select' | 'freeform';
+          prompt: string;
+          options?: string[];
+          allowOther?: boolean;
+          toolName: string;
+          toolParams: any;
+        }) => void,
+      ) => () => void;
       respondToUserInput: (response: {
         action: 'confirmed' | 'denied' | 'selected';
         value?: string;

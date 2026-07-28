@@ -2,14 +2,16 @@
 
 export const PROFILE_NAME_TOOLTIP = 'A friendly name to identify this profile.';
 
-export const MODEL_TOOLTIP = 'The local GGUF model file this profile will use. Select a model that best fits your hardware and quality needs.';
+export const MODEL_TOOLTIP =
+  'The local GGUF model file this profile will use. Select a model that best fits your hardware and quality needs.';
 
-export const PROJECTOR_TOOLTIP = 'Optional multimodal projector for vision-language models (e.g., LLaVA). Required only when using a model that includes vision capabilities.';
+export const PROJECTOR_TOOLTIP =
+  'Optional multimodal projector for vision-language models (e.g., LLaVA). Required only when using a model that includes vision capabilities.';
 
 // ── Advanced Generation Parameters ──
 
 export const TEMPERATURE_TOOLTIP = [
-  'Controls the randomness of the model\'s output.',
+  "Controls the randomness of the model's output.",
   'Lower values (e.g., 0.1) make output more deterministic and focused.',
   'Higher values (e.g., 1.5) increase creativity and variety.',
   'Range: 0–2. Default: 0.8.',
@@ -118,11 +120,14 @@ export const OPTIMIZATION_MODE_TOOLTIP = [
   'Custom: allows manual control over GPU layers and context size.',
 ];
 
-export const LONGEST_CONTEXT_TOOLTIP = 'Runs the auto-optimizer to find settings that maximize the context window size while staying within hardware limits.';
+export const LONGEST_CONTEXT_TOOLTIP =
+  'Runs the auto-optimizer to find settings that maximize the context window size while staying within hardware limits.';
 
-export const MOST_GPU_TOOLTIP = 'Runs the auto-optimizer to offload as many layers as possible to the GPU, prioritizing inference speed.';
+export const MOST_GPU_TOOLTIP =
+  'Runs the auto-optimizer to offload as many layers as possible to the GPU, prioritizing inference speed.';
 
-export const CUSTOM_TOOLTIP = 'Switch to manual mode to independently adjust GPU layers and context size.';
+export const CUSTOM_TOOLTIP =
+  'Switch to manual mode to independently adjust GPU layers and context size.';
 
 export const GPU_LAYERS_TOOLTIP = [
   'Number of transformer layers offloaded to the GPU (NGL).',
@@ -190,21 +195,28 @@ export const MLOCK_TOOLTIP = [
 
 // ── Memory Estimation ──
 
-export const MODEL_WEIGHTS_TOOLTIP = 'Memory consumed by the model\'s weight tensors. This is the largest component and scales with model size and quantization.';
+export const MODEL_WEIGHTS_TOOLTIP =
+  "Memory consumed by the model's weight tensors. This is the largest component and scales with model size and quantization.";
 
-export const KV_CACHE_MEM_TOOLTIP = 'Memory used to store past key and value tensors for the attention mechanism. Scales with context size, batch size, and model depth.';
+export const KV_CACHE_MEM_TOOLTIP =
+  'Memory used to store past key and value tensors for the attention mechanism. Scales with context size, batch size, and model depth.';
 
-export const COMPUTE_OVERHEAD_TOOLTIP = 'Scratch memory reserved for intermediate computations during inference, including temporary buffers and attention scoring matrices.';
+export const COMPUTE_OVERHEAD_TOOLTIP =
+  'Scratch memory reserved for intermediate computations during inference, including temporary buffers and attention scoring matrices.';
 
-export const FILE_BUFFER_TOOLTIP = 'Memory reserved for file I/O buffering when loading model weights. Primarily used when MMAP is disabled.';
+export const FILE_BUFFER_TOOLTIP =
+  'Memory reserved for file I/O buffering when loading model weights. Primarily used when MMAP is disabled.';
 
-export const VRAM_LABEL_TOOLTIP = 'Video Memory (GPU) — used when layers are offloaded to the GPU. Running out of VRAM forces CPU fallback and slows inference.';
+export const VRAM_LABEL_TOOLTIP =
+  'Video Memory (GPU) — used when layers are offloaded to the GPU. Running out of VRAM forces CPU fallback and slows inference.';
 
-export const RAM_LABEL_TOOLTIP = 'System Memory (RAM) — used for model layers kept on the CPU, KV cache, and general computation.';
+export const RAM_LABEL_TOOLTIP =
+  'System Memory (RAM) — used for model layers kept on the CPU, KV cache, and general computation.';
 
 // ── Settings Page ──
 
-export const MODELS_DIR_TOOLTIP = 'Directory where model files are stored and downloaded. Models are organized by author and name within this directory.';
+export const MODELS_DIR_TOOLTIP =
+  'Directory where model files are stored and downloaded. Models are organized by author and name within this directory.';
 
 export const MEMORY_ALLOCATOR_TOOLTIP = [
   'Controls how much RAM and VRAM Synapse is allowed to reserve for the inference engine.',
@@ -212,7 +224,8 @@ export const MEMORY_ALLOCATOR_TOOLTIP = [
   'Setting this too low limits the model size and context length you can use.',
 ];
 
-export const MAX_LABEL_TOOLTIP = 'Recommended ceiling for Synapse allocation. This accounts for other running processes and a safety buffer. Exceeding this may cause system instability.';
+export const MAX_LABEL_TOOLTIP =
+  'Recommended ceiling for Synapse allocation. This accounts for other running processes and a safety buffer. Exceeding this may cause system instability.';
 
 // ── Draft Model (Speculative Decoding) ──
 
@@ -224,8 +237,8 @@ export const DRAFT_MODEL_TOOLTIP = [
 export const SPEC_TYPE_TOOLTIP = [
   'The speculative decoding strategy to use. Multiple types can be combined.',
   'draft-simple: Uses an external draft model (GGUF file).',
-  'draft-mtp: Uses the main model\'s internal MTP (Multi-Token Prediction) heads — no external model needed.',
-  'draft-eagle3: Uses the model\'s EAGLE3-style draft heads — no external model needed.',
+  "draft-mtp: Uses the main model's internal MTP (Multi-Token Prediction) heads — no external model needed.",
+  "draft-eagle3: Uses the model's EAGLE3-style draft heads — no external model needed.",
   'ngram-simple / ngram-map-k / ngram-map-k4v / ngram-mod / ngram-cache: N-gram based draft strategies that extract candidates from the prompt context — no external model needed.',
   'Set to "none" to disable speculative decoding.',
 ];

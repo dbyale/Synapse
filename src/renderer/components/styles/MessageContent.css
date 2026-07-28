@@ -73,8 +73,12 @@
   align-items: flex-start;
 }
 
-.message-segment--thought .message-segment__thought-text + .message-segment__tools,
-.message-segment--thought .message-segment__tools + .message-segment__thought-text {
+.message-segment--thought
+  .message-segment__thought-text
+  + .message-segment__tools,
+.message-segment--thought
+  .message-segment__tools
+  + .message-segment__thought-text {
   margin-top: 8px;
 }
 

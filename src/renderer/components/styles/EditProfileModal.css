@@ -20,8 +20,12 @@
 }
 
 @keyframes epm-overlay-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .epm-dialog {
@@ -37,8 +41,14 @@
 }
 
 @keyframes epm-dialog-in {
-  from { opacity: 0; transform: scale(0.93) translateY(8px); }
-  to { opacity: 1; transform: scale(1) translateY(0); }
+  from {
+    opacity: 0;
+    transform: scale(0.93) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }
 
 /* ── Header ── */
@@ -373,7 +383,9 @@
   border: 1px solid var(--accent);
   border-radius: 4px;
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
   white-space: nowrap;
 }
 
@@ -722,8 +734,12 @@
 }
 
 @keyframes epm-spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* ── Sliders ── */
@@ -921,8 +937,13 @@
 }
 
 @keyframes epm-mem-pulse {
-  0%, 100% { opacity: 0.4; }
-  50% { opacity: 0.8; }
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 0.8;
+  }
 }
 
 .epm-mem-bar-total {
@@ -953,7 +974,7 @@
   padding: 10px 0;
 }
 
-.epm-rp-enabled-row input[type="checkbox"] {
+.epm-rp-enabled-row input[type='checkbox'] {
   width: 16px;
   height: 16px;
   accent-color: var(--accent);
@@ -1051,7 +1072,7 @@
   top: 2px;
   left: 2px;
   transition: transform 0.2s ease;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
 .epm-toggle-switch--on .epm-toggle-switch__knob {
@@ -1239,5 +1260,3 @@
   max-height: 280px;
   overflow-y: auto;
 }
-
-

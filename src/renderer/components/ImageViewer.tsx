@@ -32,7 +32,10 @@ export default function ImageViewer({ imageUrl, onClose }: ImageViewerProps) {
       <button
         type="button"
         className="image-viewer-close"
-        onClick={(e) => { e.stopPropagation(); onClose(); }}
+        onClick={(e) => {
+          e.stopPropagation();
+          onClose();
+        }}
         aria-label="Close"
       >
         <X size={18} />

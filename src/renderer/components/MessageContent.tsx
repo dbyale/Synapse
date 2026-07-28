@@ -1,4 +1,11 @@
-import { Brain, MessageSquare, ChevronRight, Hash, Timer, Zap } from 'lucide-react';
+import {
+  Brain,
+  MessageSquare,
+  ChevronRight,
+  Hash,
+  Timer,
+  Zap,
+} from 'lucide-react';
 import { useState, ReactNode } from 'react';
 import MarkdownRenderer from './MarkdownRenderer';
 import './styles/MessageContent.css';
@@ -87,7 +94,11 @@ function ThoughtSegment({
 }) {
   const [isOpen, setIsOpen] = useState(defaultOpen);
   const toolCount = thoughtItems.reduce(
-    (sum, item) => sum + (item.kind === 'tools' ? item.groups!.reduce((s, g) => s + g.segments.length, 0) : 0),
+    (sum, item) =>
+      sum +
+      (item.kind === 'tools'
+        ? item.groups!.reduce((s, g) => s + g.segments.length, 0)
+        : 0),
     0,
   );
   const label =
@@ -115,8 +126,14 @@ function ThoughtSegment({
           {thoughtItems.map((item, i) => {
             if (item.kind === 'text') {
               return (
-                <div key={`text-${i}`} className="message-segment__thought-text">
-                  <MarkdownRenderer content={item.text!} onImageClick={onImageClick} />
+                <div
+                  key={`text-${i}`}
+                  className="message-segment__thought-text"
+                >
+                  <MarkdownRenderer
+                    content={item.text!}
+                    onImageClick={onImageClick}
+                  />
                 </div>
               );
             }
@@ -134,7 +151,14 @@ function ThoughtSegment({
   );
 }
 
-export default function MessageContent({ segments, onImageClick, toolGroups, thoughtItems, renderTool, defaultOpen }: MessageContentProps) {
+export default function MessageContent({
+  segments,
+  onImageClick,
+  toolGroups,
+  thoughtItems,
+  renderTool,
+  defaultOpen,
+}: MessageContentProps) {
   const filteredSegments = segments.filter((seg) => {
     if (seg.type === 'thought') {
       return seg.text.trim().length > 0;
@@ -162,7 +186,10 @@ export default function MessageContent({ segments, onImageClick, toolGroups, tho
     return (
       <div className="message-content">
         <ThoughtSegment
-          thoughtItems={[{ kind: 'text', text: combinedText }, { kind: 'tools', groups: toolGroups }]}
+          thoughtItems={[
+            { kind: 'text', text: combinedText },
+            { kind: 'tools', groups: toolGroups },
+          ]}
           onImageClick={onImageClick}
           renderTool={renderTool}
           defaultOpen={defaultOpen}
@@ -179,7 +206,9 @@ export default function MessageContent({ segments, onImageClick, toolGroups, tho
   // If no special segments, just render all normal content together
   if (!hasSpecialSegments) {
     const combinedText = filteredSegments.map((seg) => seg.text).join('');
-    return <MarkdownRenderer content={combinedText} onImageClick={onImageClick} />;
+    return (
+      <MarkdownRenderer content={combinedText} onImageClick={onImageClick} />
+    );
   }
 
   // Otherwise, render each segment with its appropriate wrapper
@@ -187,7 +216,14 @@ export default function MessageContent({ segments, onImageClick, toolGroups, tho
     <div className="message-content">
       {filteredSegments.map((segment) => {
         if (segment.type === 'thought') {
-          return <ThoughtSegment key={segment.id} thoughtItems={[{ kind: 'text', text: segment.text }]} onImageClick={onImageClick} defaultOpen={defaultOpen} />;
+          return (
+            <ThoughtSegment
+              key={segment.id}
+              thoughtItems={[{ kind: 'text', text: segment.text }]}
+              onImageClick={onImageClick}
+              defaultOpen={defaultOpen}
+            />
+          );
         }
 
         if (segment.type === 'comment') {
@@ -201,7 +237,10 @@ export default function MessageContent({ segments, onImageClick, toolGroups, tho
                 <span>Comment</span>
               </div>
               <div className="message-segment__content">
-                <MarkdownRenderer content={segment.text} onImageClick={onImageClick} />
+                <MarkdownRenderer
+                  content={segment.text}
+                  onImageClick={onImageClick}
+                />
               </div>
             </div>
           );
@@ -213,7 +252,10 @@ export default function MessageContent({ segments, onImageClick, toolGroups, tho
             key={segment.id}
             className="message-segment message-segment--normal"
           >
-            <MarkdownRenderer content={segment.text} onImageClick={onImageClick} />
+            <MarkdownRenderer
+              content={segment.text}
+              onImageClick={onImageClick}
+            />
           </div>
         );
       })}

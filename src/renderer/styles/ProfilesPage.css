@@ -382,7 +382,9 @@
   font-family: inherit;
   outline: none;
   cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
   text-align: left;
 }
 

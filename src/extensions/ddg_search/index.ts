@@ -24,7 +24,12 @@ async function ensureDdgsPackage(): Promise<string | null> {
 }
 
 function escapePyString(s: string): string {
-  return s.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t');
+  return s
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'")
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r')
+    .replace(/\t/g, '\\t');
 }
 
 interface SearchResult {
@@ -89,13 +94,21 @@ async function runSearch(
   const code = buildSearchRunner(ddgsMethod, positionalArgs, keywordArgs);
   const result = await runPython(code);
   if (!result.success) {
-    return { success: false, results: [], error: result.error || result.stderr || 'Unknown error' };
+    return {
+      success: false,
+      results: [],
+      error: result.error || result.stderr || 'Unknown error',
+    };
   }
   try {
     const parsed = JSON.parse(result.stdout);
     return parsed as SearchResult;
   } catch {
-    return { success: false, results: [], error: `Failed to parse search results: ${result.stdout.slice(0, 500)}` };
+    return {
+      success: false,
+      results: [],
+      error: `Failed to parse search results: ${result.stdout.slice(0, 500)}`,
+    };
   }
 }
 
@@ -121,7 +134,9 @@ async function runExtract(url: string): Promise<ExtractResult> {
     if (parsed.error) return { error: parsed.error };
     return { url: parsed.url, content: parsed.content };
   } catch {
-    return { error: `Failed to parse extract result: ${result.stdout.slice(0, 500)}` };
+    return {
+      error: `Failed to parse extract result: ${result.stdout.slice(0, 500)}`,
+    };
   }
 }
 
@@ -130,7 +145,8 @@ export const tools: Record<string, ExtensionToolDef> = {
     meta: {
       name: 'search_web',
       label: 'Web Search',
-      description: 'Search the web using DDGS (Dux Distributed Global Search). Returns title, URL, and snippet for each result.',
+      description:
+        'Search the web using DDGS (Dux Distributed Global Search). Returns title, URL, and snippet for each result.',
       descriptionForModel:
         'Search the web for any topic using DDGS metasearch. Returns a list of results with title, URL, and a brief snippet.\n' +
         'Use this for general-purpose lookups, research, fact-checking, and finding online resources.\n' +
@@ -146,21 +162,47 @@ export const tools: Record<string, ExtensionToolDef> = {
       type: 'object',
       properties: {
         query: { type: 'string', description: 'The search query.' },
-        max_results: { type: 'integer', description: 'Maximum number of results to return (default: 10, max: 50).', default: 10 },
-        region: { type: 'string', description: 'Region code (e.g. us-en, uk-en, ru-ru, de-de). Default: us-en.', default: 'us-en' },
-        safesearch: { type: 'string', description: 'SafeSearch filter: on, moderate, off. Default: moderate.', default: 'moderate' },
-        timelimit: { type: 'string', description: 'Time limit: d (day), w (week), m (month), y (year). Optional.' },
+        max_results: {
+          type: 'integer',
+          description:
+            'Maximum number of results to return (default: 10, max: 50).',
+          default: 10,
+        },
+        region: {
+          type: 'string',
+          description:
+            'Region code (e.g. us-en, uk-en, ru-ru, de-de). Default: us-en.',
+          default: 'us-en',
+        },
+        safesearch: {
+          type: 'string',
+          description:
+            'SafeSearch filter: on, moderate, off. Default: moderate.',
+          default: 'moderate',
+        },
+        timelimit: {
+          type: 'string',
+          description:
+            'Time limit: d (day), w (week), m (month), y (year). Optional.',
+        },
       },
       required: ['query'],
     },
-    async handler(params: { query: string; max_results?: number; region?: string; safesearch?: string; timelimit?: string }) {
+    async handler(params: {
+      query: string;
+      max_results?: number;
+      region?: string;
+      safesearch?: string;
+      timelimit?: string;
+    }) {
       const keywordArgs: Record<string, string> = {
         query: `'${escapePyString(params.query)}'`,
         max_results: String(Math.min(params.max_results ?? 10, 50)),
         region: `'${escapePyString(params.region ?? 'us-en')}'`,
         safesearch: `'${escapePyString(params.safesearch ?? 'moderate')}'`,
       };
-      if (params.timelimit) keywordArgs.timelimit = `'${escapePyString(params.timelimit)}'`;
+      if (params.timelimit)
+        keywordArgs.timelimit = `'${escapePyString(params.timelimit)}'`;
       return await runSearch('text', keywordArgs);
     },
   },
@@ -169,7 +211,8 @@ export const tools: Record<string, ExtensionToolDef> = {
     meta: {
       name: 'search_news',
       label: 'News Search',
-      description: 'Search news articles using DDGS (Dux Distributed Global Search). Returns title, URL, snippet, date, and source.',
+      description:
+        'Search news articles using DDGS (Dux Distributed Global Search). Returns title, URL, snippet, date, and source.',
       descriptionForModel:
         'Search recent news articles using DDGS metasearch. Returns results with title, URL, snippet, publication date, and source.\n' +
         'Parameters:\n' +
@@ -184,21 +227,45 @@ export const tools: Record<string, ExtensionToolDef> = {
       type: 'object',
       properties: {
         query: { type: 'string', description: 'The news search query.' },
-        max_results: { type: 'integer', description: 'Maximum number of results (default: 10, max: 50).', default: 10 },
-        region: { type: 'string', description: 'Region code (e.g. us-en, uk-en, ru-ru). Default: us-en.', default: 'us-en' },
-        safesearch: { type: 'string', description: 'SafeSearch filter: on, moderate, off. Default: moderate.', default: 'moderate' },
-        timelimit: { type: 'string', description: 'Time limit: d (day), w (week), m (month). Optional.' },
+        max_results: {
+          type: 'integer',
+          description: 'Maximum number of results (default: 10, max: 50).',
+          default: 10,
+        },
+        region: {
+          type: 'string',
+          description:
+            'Region code (e.g. us-en, uk-en, ru-ru). Default: us-en.',
+          default: 'us-en',
+        },
+        safesearch: {
+          type: 'string',
+          description:
+            'SafeSearch filter: on, moderate, off. Default: moderate.',
+          default: 'moderate',
+        },
+        timelimit: {
+          type: 'string',
+          description: 'Time limit: d (day), w (week), m (month). Optional.',
+        },
       },
       required: ['query'],
     },
-    async handler(params: { query: string; max_results?: number; region?: string; safesearch?: string; timelimit?: string }) {
+    async handler(params: {
+      query: string;
+      max_results?: number;
+      region?: string;
+      safesearch?: string;
+      timelimit?: string;
+    }) {
       const keywordArgs: Record<string, string> = {
         query: `'${escapePyString(params.query)}'`,
         max_results: String(Math.min(params.max_results ?? 10, 50)),
         region: `'${escapePyString(params.region ?? 'us-en')}'`,
         safesearch: `'${escapePyString(params.safesearch ?? 'moderate')}'`,
       };
-      if (params.timelimit) keywordArgs.timelimit = `'${escapePyString(params.timelimit)}'`;
+      if (params.timelimit)
+        keywordArgs.timelimit = `'${escapePyString(params.timelimit)}'`;
       return await runSearch('news', keywordArgs);
     },
   },
@@ -207,7 +274,8 @@ export const tools: Record<string, ExtensionToolDef> = {
     meta: {
       name: 'search_images',
       label: 'Image Search',
-      description: 'Search images using DDGS (Dux Distributed Global Search). Returns title, URL, thumbnail, and image dimensions.',
+      description:
+        'Search images using DDGS (Dux Distributed Global Search). Returns title, URL, thumbnail, and image dimensions.',
       descriptionForModel:
         'Search for images using DDGS metasearch. Returns results with title, image URL, thumbnail URL, width, height, and source.\n' +
         'Parameters:\n' +
@@ -226,18 +294,58 @@ export const tools: Record<string, ExtensionToolDef> = {
       type: 'object',
       properties: {
         query: { type: 'string', description: 'The image search query.' },
-        max_results: { type: 'integer', description: 'Maximum number of results (default: 10, max: 50).', default: 10 },
-        region: { type: 'string', description: 'Region code (e.g. us-en, uk-en, ru-ru). Default: us-en.', default: 'us-en' },
-        safesearch: { type: 'string', description: 'SafeSearch filter: on, moderate, off. Default: moderate.', default: 'moderate' },
-        size: { type: 'string', description: 'Image size filter: Small, Medium, Large, Wallpaper.' },
-        color: { type: 'string', description: 'Color filter: Monochrome or a specific color name.' },
-        type_image: { type: 'string', description: 'Type filter: photo, clipart, gif, transparent, line.' },
-        layout: { type: 'string', description: 'Layout filter: Square, Tall, Wide.' },
-        license_image: { type: 'string', description: 'License filter: any, Public, Share, ShareCommercially, Modify, ModifyCommercially.' },
+        max_results: {
+          type: 'integer',
+          description: 'Maximum number of results (default: 10, max: 50).',
+          default: 10,
+        },
+        region: {
+          type: 'string',
+          description:
+            'Region code (e.g. us-en, uk-en, ru-ru). Default: us-en.',
+          default: 'us-en',
+        },
+        safesearch: {
+          type: 'string',
+          description:
+            'SafeSearch filter: on, moderate, off. Default: moderate.',
+          default: 'moderate',
+        },
+        size: {
+          type: 'string',
+          description: 'Image size filter: Small, Medium, Large, Wallpaper.',
+        },
+        color: {
+          type: 'string',
+          description: 'Color filter: Monochrome or a specific color name.',
+        },
+        type_image: {
+          type: 'string',
+          description: 'Type filter: photo, clipart, gif, transparent, line.',
+        },
+        layout: {
+          type: 'string',
+          description: 'Layout filter: Square, Tall, Wide.',
+        },
+        license_image: {
+          type: 'string',
+          description:
+            'License filter: any, Public, Share, ShareCommercially, Modify, ModifyCommercially.',
+        },
       },
       required: ['query'],
     },
-    async handler(params: { query: string; max_results?: number; region?: string; safesearch?: string; size?: string; color?: string; type_image?: string; layout?: string; license_image?: string }) {
+    async handler(params: {
+      query: string;
+      max_results?: number;
+      region?: string;
+      safesearch?: string;
+      size?: string;
+      color?: string;
+      type_image?: string;
+      layout?: string;
+      license_image?: string;
+    }) {
       const keywordArgs: Record<string, string> = {
         query: `'${escapePyString(params.query)}'`,
         max_results: String(Math.min(params.max_results ?? 10, 50)),
@@ -246,9 +354,12 @@ export const tools: Record<string, ExtensionToolDef> = {
       };
       if (params.size) keywordArgs.size = `'${escapePyString(params.size)}'`;
       if (params.color) keywordArgs.color = `'${escapePyString(params.color)}'`;
-      if (params.type_image) keywordArgs.type_image = `'${escapePyString(params.type_image)}'`;
-      if (params.layout) keywordArgs.layout = `'${escapePyString(params.layout)}'`;
-      if (params.license_image) keywordArgs.license_image = `'${escapePyString(params.license_image)}'`;
+      if (params.type_image)
+        keywordArgs.type_image = `'${escapePyString(params.type_image)}'`;
+      if (params.layout)
+        keywordArgs.layout = `'${escapePyString(params.layout)}'`;
+      if (params.license_image)
+        keywordArgs.license_image = `'${escapePyString(params.license_image)}'`;
       return await runSearch('images', keywordArgs);
     },
   },
@@ -257,7 +368,8 @@ export const tools: Record<string, ExtensionToolDef> = {
     meta: {
       name: 'search_videos',
       label: 'Video Search',
-      description: 'Search videos using DDGS (Dux Distributed Global Search). Returns title, URL, thumbnail, duration, and upload info.',
+      description:
+        'Search videos using DDGS (Dux Distributed Global Search). Returns title, URL, thumbnail, duration, and upload info.',
       descriptionForModel:
         'Search for videos using DDGS metasearch. Returns results with title, video URL, thumbnail URL, duration, publisher, and upload date.\n' +
         'Parameters:\n' +
@@ -275,27 +387,66 @@ export const tools: Record<string, ExtensionToolDef> = {
       type: 'object',
       properties: {
         query: { type: 'string', description: 'The video search query.' },
-        max_results: { type: 'integer', description: 'Maximum number of results (default: 10, max: 50).', default: 10 },
-        region: { type: 'string', description: 'Region code (e.g. us-en, uk-en, ru-ru). Default: us-en.', default: 'us-en' },
-        safesearch: { type: 'string', description: 'SafeSearch filter: on, moderate, off. Default: moderate.', default: 'moderate' },
-        duration: { type: 'string', description: 'Duration filter: short, medium, long.' },
-        resolution: { type: 'string', description: 'Resolution filter: high, standart.' },
-        license_videos: { type: 'string', description: 'License filter: creativeCommon, youtube.' },
-        timelimit: { type: 'string', description: 'Time limit: d (day), w (week), m (month). Optional.' },
+        max_results: {
+          type: 'integer',
+          description: 'Maximum number of results (default: 10, max: 50).',
+          default: 10,
+        },
+        region: {
+          type: 'string',
+          description:
+            'Region code (e.g. us-en, uk-en, ru-ru). Default: us-en.',
+          default: 'us-en',
+        },
+        safesearch: {
+          type: 'string',
+          description:
+            'SafeSearch filter: on, moderate, off. Default: moderate.',
+          default: 'moderate',
+        },
+        duration: {
+          type: 'string',
+          description: 'Duration filter: short, medium, long.',
+        },
+        resolution: {
+          type: 'string',
+          description: 'Resolution filter: high, standart.',
+        },
+        license_videos: {
+          type: 'string',
+          description: 'License filter: creativeCommon, youtube.',
+        },
+        timelimit: {
+          type: 'string',
+          description: 'Time limit: d (day), w (week), m (month). Optional.',
+        },
       },
       required: ['query'],
     },
-    async handler(params: { query: string; max_results?: number; region?: string; safesearch?: string; duration?: string; resolution?: string; license_videos?: string; timelimit?: string }) {
+    async handler(params: {
+      query: string;
+      max_results?: number;
+      region?: string;
+      safesearch?: string;
+      duration?: string;
+      resolution?: string;
+      license_videos?: string;
+      timelimit?: string;
+    }) {
       const keywordArgs: Record<string, string> = {
         query: `'${escapePyString(params.query)}'`,
         max_results: String(Math.min(params.max_results ?? 10, 50)),
         region: `'${escapePyString(params.region ?? 'us-en')}'`,
         safesearch: `'${escapePyString(params.safesearch ?? 'moderate')}'`,
       };
-      if (params.duration) keywordArgs.duration = `'${escapePyString(params.duration)}'`;
-      if (params.resolution) keywordArgs.resolution = `'${escapePyString(params.resolution)}'`;
-      if (params.license_videos) keywordArgs.license_videos = `'${escapePyString(params.license_videos)}'`;
-      if (params.timelimit) keywordArgs.timelimit = `'${escapePyString(params.timelimit)}'`;
+      if (params.duration)
+        keywordArgs.duration = `'${escapePyString(params.duration)}'`;
+      if (params.resolution)
+        keywordArgs.resolution = `'${escapePyString(params.resolution)}'`;
+      if (params.license_videos)
+        keywordArgs.license_videos = `'${escapePyString(params.license_videos)}'`;
+      if (params.timelimit)
+        keywordArgs.timelimit = `'${escapePyString(params.timelimit)}'`;
       return await runSearch('videos', keywordArgs);
     },
   },
@@ -304,9 +455,10 @@ export const tools: Record<string, ExtensionToolDef> = {
     meta: {
       name: 'search_books',
       label: 'Book Search',
-      description: 'Search for books using DDGS (Dux Distributed Global Search) with Anna\'s Archive backend. Returns title, author, publisher, URL, and thumbnail.',
+      description:
+        "Search for books using DDGS (Dux Distributed Global Search) with Anna's Archive backend. Returns title, author, publisher, URL, and thumbnail.",
       descriptionForModel:
-        'Search for books, authors, and literary topics using DDGS metasearch with the dedicated books backend (Anna\'s Archive).\n' +
+        "Search for books, authors, and literary topics using DDGS metasearch with the dedicated books backend (Anna's Archive).\n" +
         'Returns results with title, author, publisher, info, URL, and thumbnail.\n' +
         'Parameters:\n' +
         '  query (required) — book title, author, topic, or ISBN\n' +
@@ -316,8 +468,15 @@ export const tools: Record<string, ExtensionToolDef> = {
     params: {
       type: 'object',
       properties: {
-        query: { type: 'string', description: 'Book title, author, topic, or ISBN to search for.' },
-        max_results: { type: 'integer', description: 'Maximum number of results (default: 10, max: 50).', default: 10 },
+        query: {
+          type: 'string',
+          description: 'Book title, author, topic, or ISBN to search for.',
+        },
+        max_results: {
+          type: 'integer',
+          description: 'Maximum number of results (default: 10, max: 50).',
+          default: 10,
+        },
       },
       required: ['query'],
     },
@@ -334,7 +493,8 @@ export const tools: Record<string, ExtensionToolDef> = {
     meta: {
       name: 'web_fetch',
       label: 'Web Fetch',
-      description: 'Fetch and extract the content of a webpage as markdown using DDGS.',
+      description:
+        'Fetch and extract the content of a webpage as markdown using DDGS.',
       descriptionForModel:
         'Fetch a URL and extract its content as clean markdown. Useful for reading articles, documentation, and web pages.\n' +
         'Parameters:\n' +
@@ -346,13 +506,29 @@ export const tools: Record<string, ExtensionToolDef> = {
     params: {
       type: 'object',
       properties: {
-        url: { type: 'string', description: 'The URL to fetch and extract content from.' },
-        max_length: { type: 'integer', description: 'Maximum number of characters to return (default: 5000).', default: 5000 },
-        start_index: { type: 'integer', description: 'Start content from this character index (default: 0).', default: 0 },
+        url: {
+          type: 'string',
+          description: 'The URL to fetch and extract content from.',
+        },
+        max_length: {
+          type: 'integer',
+          description:
+            'Maximum number of characters to return (default: 5000).',
+          default: 5000,
+        },
+        start_index: {
+          type: 'integer',
+          description: 'Start content from this character index (default: 0).',
+          default: 0,
+        },
       },
       required: ['url'],
     },
-    async handler(params: { url: string; max_length?: number; start_index?: number }) {
+    async handler(params: {
+      url: string;
+      max_length?: number;
+      start_index?: number;
+    }) {
       const { url, max_length = 5000, start_index = 0 } = params;
       const result = await runExtract(url);
       if (result.error) {

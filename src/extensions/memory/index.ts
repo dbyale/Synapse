@@ -9,9 +9,10 @@ export const tools: Record<string, ExtensionToolDef> = {
     meta: {
       name: 'save_memory',
       label: 'Save Memory',
-      description: 'Save or update a memory as a markdown file in local storage.',
+      description:
+        'Save or update a memory as a markdown file in local storage.',
       descriptionForModel:
-        'Save a new memory or update an existing one. Each memory is stored as a markdown (.md) file in the app\'s local user data directory.\n' +
+        "Save a new memory or update an existing one. Each memory is stored as a markdown (.md) file in the app's local user data directory.\n" +
         'If a memory with the same title already exists, it will be updated (preserving the original creation date, type, and tags unless new values are provided).\n' +
         'Use this to persistently store information about people, projects, concepts, events, or anything else you want the AI to remember across conversations.\n' +
         'Parameters:\n' +
@@ -25,15 +26,40 @@ export const tools: Record<string, ExtensionToolDef> = {
     params: {
       type: 'object',
       properties: {
-        title: { type: 'string', description: 'Unique title for the memory (used as the filename).' },
-        content: { type: 'string', description: 'Markdown body content with observations, notes, and details.' },
-        type: { type: 'string', description: 'Category: person, place, concept, event, project, code, book, etc.' },
-        tags: { type: 'array', items: { type: 'string' }, description: 'Tags for categorization.' },
+        title: {
+          type: 'string',
+          description: 'Unique title for the memory (used as the filename).',
+        },
+        content: {
+          type: 'string',
+          description:
+            'Markdown body content with observations, notes, and details.',
+        },
+        type: {
+          type: 'string',
+          description:
+            'Category: person, place, concept, event, project, code, book, etc.',
+        },
+        tags: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Tags for categorization.',
+        },
       },
       required: ['title', 'content'],
     },
-    async handler(params: { title: string; content: string; type?: string; tags?: string[] }) {
-      return await memory.saveMemory(params.title, params.content, params.type, params.tags);
+    async handler(params: {
+      title: string;
+      content: string;
+      type?: string;
+      tags?: string[];
+    }) {
+      return await memory.saveMemory(
+        params.title,
+        params.content,
+        params.type,
+        params.tags,
+      );
     },
   },
 
@@ -41,7 +67,8 @@ export const tools: Record<string, ExtensionToolDef> = {
     meta: {
       name: 'read_memory',
       label: 'Read Memory',
-      description: 'Read a memory markdown file by title and return its full content with metadata.',
+      description:
+        'Read a memory markdown file by title and return its full content with metadata.',
       descriptionForModel:
         'Read a specific memory by its title. Returns the full markdown content, frontmatter metadata (type, tags, created, modified), and any cross-references found via [[WikiLinks]].\n' +
         'If the memory is not found, use search_memories or list_memories to find available memories.\n' +
@@ -78,8 +105,16 @@ export const tools: Record<string, ExtensionToolDef> = {
     params: {
       type: 'object',
       properties: {
-        query: { type: 'string', description: 'Keyword to search for in titles, content, types, and tags.' },
-        type: { type: 'string', description: 'Filter by exact memory type (person, place, concept, etc.).' },
+        query: {
+          type: 'string',
+          description:
+            'Keyword to search for in titles, content, types, and tags.',
+        },
+        type: {
+          type: 'string',
+          description:
+            'Filter by exact memory type (person, place, concept, etc.).',
+        },
         tag: { type: 'string', description: 'Filter by exact tag name.' },
       },
       required: ['query'],
@@ -116,7 +151,8 @@ export const tools: Record<string, ExtensionToolDef> = {
     meta: {
       name: 'list_memories',
       label: 'List Memories',
-      description: 'List all saved memories, optionally filtered by type or tag.',
+      description:
+        'List all saved memories, optionally filtered by type or tag.',
       descriptionForModel:
         'List all saved memories with their metadata (title, type, tags, created, modified). Results are sorted by modification date (newest first).\n' +
         'You can optionally filter by type or tag to narrow the list.\n' +
@@ -129,7 +165,11 @@ export const tools: Record<string, ExtensionToolDef> = {
     params: {
       type: 'object',
       properties: {
-        type: { type: 'string', description: 'Filter by exact memory type (person, place, concept, etc.).' },
+        type: {
+          type: 'string',
+          description:
+            'Filter by exact memory type (person, place, concept, etc.).',
+        },
         tag: { type: 'string', description: 'Filter by exact tag name.' },
       },
     },

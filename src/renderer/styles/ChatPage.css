@@ -1218,7 +1218,6 @@
   background: var(--text-primary);
 }
 
-
 /* Statistics display underneath assistant bubbles */
 .chat-message__stats {
   display: flex;
@@ -1660,6 +1659,12 @@
 }
 
 @keyframes chat-toast-in {
-  from { opacity: 0; transform: translateX(40px); }
-  to   { opacity: 1; transform: translateX(0); }
+  from {
+    opacity: 0;
+    transform: translateX(40px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }

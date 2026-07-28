@@ -47,30 +47,45 @@ export default function ToolListModal({
       <div className="tlm-dialog">
         <div className="tlm-header">
           <h2 className="tlm-title">{title}</h2>
-          <button type="button" className="tlm-close" onClick={onClose} aria-label="Close">
+          <button
+            type="button"
+            className="tlm-close"
+            onClick={onClose}
+            aria-label="Close"
+          >
             <X size={18} />
           </button>
         </div>
-        {description && (
-          <div className="tlm-description">{description}</div>
-        )}
+        {description && <div className="tlm-description">{description}</div>}
         <div className="tlm-list">
           {tools.length === 0 ? (
             <div className="tlm-empty">No tools in this extension.</div>
           ) : (
             tools.map((tool, idx) => {
-              const isChecked = editTools ? editTools.includes(tool.name) : false;
+              const isChecked = editTools
+                ? editTools.includes(tool.name)
+                : false;
               return (
                 <div
                   key={tool.name || `tool-${idx}`}
                   className={`tlm-tool-row${isChecked ? ' tlm-tool-row--checked' : ''}`}
-                  onClick={() => { if (onToolToggle) onToolToggle(tool.name); }}
+                  onClick={() => {
+                    if (onToolToggle) onToolToggle(tool.name);
+                  }}
                   role="button"
                   tabIndex={0}
-                  onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && onToolToggle) { e.preventDefault(); onToolToggle(tool.name); } }}
+                  onKeyDown={(e) => {
+                    if ((e.key === 'Enter' || e.key === ' ') && onToolToggle) {
+                      e.preventDefault();
+                      onToolToggle(tool.name);
+                    }
+                  }}
                 >
                   {editTools !== undefined && onToolToggle ? (
-                    <label className="tlm-tool-checkbox-label" onClick={(e) => e.stopPropagation()}>
+                    <label
+                      className="tlm-tool-checkbox-label"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       <input
                         type="checkbox"
                         className="tlm-tool-checkbox"
@@ -81,7 +96,9 @@ export default function ToolListModal({
                   ) : null}
                   <div className="tlm-tool-info">
                     <div className="tlm-tool-name">{tool.label}</div>
-                    <div className="tlm-tool-desc">{tool.descriptionForHuman ?? tool.description}</div>
+                    <div className="tlm-tool-desc">
+                      {tool.descriptionForHuman ?? tool.description}
+                    </div>
                   </div>
                 </div>
               );

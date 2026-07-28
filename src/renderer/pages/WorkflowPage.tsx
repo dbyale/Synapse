@@ -1918,7 +1918,9 @@ function NodePalette({ onDragStart }: NodePaletteProps) {
               <button
                 className={`wf-palette__guide-btn ${isActive ? 'wf-palette__guide-btn--active' : ''}`}
                 style={
-                  { '--guide-color': CATEGORY_COLORS[cat.label] } as React.CSSProperties
+                  {
+                    '--guide-color': CATEGORY_COLORS[cat.label],
+                  } as React.CSSProperties
                 }
                 onClick={() => handleGuideClick(cat.label)}
                 type="button"
@@ -1961,9 +1963,7 @@ function NodePalette({ onDragStart }: NodePaletteProps) {
                   {CatIcon && (
                     <CatIcon size={12} className="wf-palette__category-icon" />
                   )}
-                  <span className="wf-palette__category-name">
-                    {cat.label}
-                  </span>
+                  <span className="wf-palette__category-name">{cat.label}</span>
                   <ChevronDown
                     size={11}
                     className={`wf-palette__category-chevron ${isCollapsed ? 'wf-palette__category-chevron--collapsed' : ''}`}
@@ -1978,7 +1978,9 @@ function NodePalette({ onDragStart }: NodePaletteProps) {
                         key={type}
                         className="wf-palette__item"
                         style={
-                          { '--node-color': meta.colorVar } as React.CSSProperties
+                          {
+                            '--node-color': meta.colorVar,
+                          } as React.CSSProperties
                         }
                         draggable
                         onDragStart={(e) => onDragStart(e, type)}

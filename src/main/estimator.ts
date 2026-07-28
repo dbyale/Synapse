@@ -304,7 +304,9 @@ export async function estimateMemoryAtConfig(
     };
   }
   const total = extractTotals(fullData);
-  const withWeights = modelData ? extractTotals(modelData) : { vram: 0, ram: 0 };
+  const withWeights = modelData
+    ? extractTotals(modelData)
+    : { vram: 0, ram: 0 };
   const base = baseData ? extractTotals(baseData) : { vram: 0, ram: 0 };
 
   let coV = base.vram;
@@ -367,7 +369,13 @@ export async function getOrEstimateMemory(
   const existing = memoryEstimateCache.get(key);
   if (existing) return existing;
 
-  const promise = estimateMemoryAtConfig(modelPath, ngl, ctx, projectorPath, profile);
+  const promise = estimateMemoryAtConfig(
+    modelPath,
+    ngl,
+    ctx,
+    projectorPath,
+    profile,
+  );
   memoryEstimateCache.set(key, promise);
   try {
     return await promise;

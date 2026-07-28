@@ -1,5 +1,8 @@
 import type { ExtensionToolDef } from '../types';
-import { getPythonEnvironmentInfo, runPython } from '../../main/functions/pythonRunner';
+import {
+  getPythonEnvironmentInfo,
+  runPython,
+} from '../../main/functions/pythonRunner';
 import manifest from './manifest.json';
 
 export const tools: Record<string, ExtensionToolDef> = {

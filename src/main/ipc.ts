@@ -23,7 +23,11 @@ import {
   registerLocalModel,
 } from '../renderer/utils/models';
 import * as chatService from './chat';
-import { getOrRunOptimizer, getOrEstimateMemory, getModelMetadata } from './estimator';
+import {
+  getOrRunOptimizer,
+  getOrEstimateMemory,
+  getModelMetadata,
+} from './estimator';
 import { registerExtensionIpcHandlers } from './ipcExtensions';
 import type { SearchFilter } from '../renderer/preload.d';
 import type { CacheType } from '../renderer/types/profile';
@@ -32,7 +36,12 @@ const execAsync = util.promisify(exec);
 
 interface VramStatsResult {
   isUnifiedMemory: boolean;
-  ram: { total: number; appCurrentUsage: number; otherUsed: number; maxRecommended: number };
+  ram: {
+    total: number;
+    appCurrentUsage: number;
+    otherUsed: number;
+    maxRecommended: number;
+  };
   vram: { total: number; otherUsed: number; maxRecommended: number } | null;
   gpus: any[];
   selectedGpu: any | null;
@@ -50,7 +59,10 @@ async function readServerProcessMemoryMB(pid: number): Promise<number> {
       const line = stdout.trim();
       if (!line) return 0;
       const parts = line.split('","');
-      const memStr = parts[parts.length - 1]?.replace('"', '').replace(' K', '').replace(/,/g, '');
+      const memStr = parts[parts.length - 1]
+        ?.replace('"', '')
+        .replace(' K', '')
+        .replace(/,/g, '');
       const kb = parseInt(memStr, 10);
       return kb ? Math.round(kb / 1024) : 0;
     } else {
@@ -99,7 +111,10 @@ async function computeVramStats(): Promise<VramStatsResult> {
   if (serverPid) {
     const serverRamMB = await readServerProcessMemoryMB(serverPid);
     if (serverRamMB > 0) {
-      otherRamUsedBytes = Math.max(0, otherRamUsedBytes - serverRamMB * 1024 * 1024);
+      otherRamUsedBytes = Math.max(
+        0,
+        otherRamUsedBytes - serverRamMB * 1024 * 1024,
+      );
     }
   }
 
@@ -131,9 +146,7 @@ async function computeVramStats(): Promise<VramStatsResult> {
     gpuList
       .filter((gpu) => !gpu.vramDynamic && gpu.vram > 0)
       .sort((a, b) => b.vram - a.vram)[0] ||
-    gpuList
-      .filter((gpu) => gpu.vram > 0)
-      .sort((a, b) => b.vram - a.vram)[0] ||
+    gpuList.filter((gpu) => gpu.vram > 0).sort((a, b) => b.vram - a.vram)[0] ||
     null;
 
   let detectedVramTotal = selectedGpu?.vram || 0;
@@ -326,9 +339,12 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     },
   );
 
-  ipcMain.handle('models:cancel-download', async (_event, repoId: string, filename: string) => {
-    return cancelDownload(repoId, filename);
-  });
+  ipcMain.handle(
+    'models:cancel-download',
+    async (_event, repoId: string, filename: string) => {
+      return cancelDownload(repoId, filename);
+    },
+  );
 
   ipcMain.handle(
     'models:resume-download',
@@ -344,9 +360,12 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     },
   );
 
-  ipcMain.handle('models:delete-part-file', async (_event, repoId: string, filename: string) => {
-    return deletePartFile(repoId, filename);
-  });
+  ipcMain.handle(
+    'models:delete-part-file',
+    async (_event, repoId: string, filename: string) => {
+      return deletePartFile(repoId, filename);
+    },
+  );
 
   // ── Models: Local ──
   ipcMain.handle('models:list-local', () => {
@@ -405,7 +424,16 @@ export function registerIpcHandlers(win: BrowserWindow): void {
 
   ipcMain.handle(
     'chat:send',
-    async (event, text: string, contentParts?: { kind: string; url?: string; filePath?: string; text?: string }[]) => {
+    async (
+      event,
+      text: string,
+      contentParts?: {
+        kind: string;
+        url?: string;
+        filePath?: string;
+        text?: string;
+      }[],
+    ) => {
       try {
         const onTokenCallback = (
           token: string,
@@ -589,7 +617,11 @@ export function registerIpcHandlers(win: BrowserWindow): void {
   });
 
   chatService.setEmitFunctionCallback(
-    (event: 'calling' | 'call' | 'result' | 'input-request', name: string, data: string) => {
+    (
+      event: 'calling' | 'call' | 'result' | 'input-request',
+      name: string,
+      data: string,
+    ) => {
       const win = BrowserWindow.getAllWindows()[0];
       if (!win || win.isDestroyed()) return;
 
@@ -637,9 +669,20 @@ export function registerIpcHandlers(win: BrowserWindow): void {
       const vramMB = settings.allocatedVRAM ?? 4096;
       const ramMB = settings.allocatedRAM ?? 8192;
       const modelsDir = getModelsDirectory();
-      const modelPath = path.join(modelsDir, params.modelAuthor, params.modelFolder, params.modelFilename);
+      const modelPath = path.join(
+        modelsDir,
+        params.modelAuthor,
+        params.modelFolder,
+        params.modelFilename,
+      );
       const projectorPath = params.projectorFilename
-        ? path.join(modelsDir, params.modelAuthor, params.modelFolder, 'projectors', params.projectorFilename)
+        ? path.join(
+            modelsDir,
+            params.modelAuthor,
+            params.modelFolder,
+            'projectors',
+            params.projectorFilename,
+          )
         : undefined;
 
       const result = await getOrRunOptimizer(
@@ -673,9 +716,20 @@ export function registerIpcHandlers(win: BrowserWindow): void {
       },
     ) => {
       const modelsDir = getModelsDirectory();
-      const modelPath = path.join(modelsDir, params.modelAuthor, params.modelFolder, params.modelFilename);
+      const modelPath = path.join(
+        modelsDir,
+        params.modelAuthor,
+        params.modelFolder,
+        params.modelFilename,
+      );
       const projectorPath = params.projectorFilename
-        ? path.join(modelsDir, params.modelAuthor, params.modelFolder, 'projectors', params.projectorFilename)
+        ? path.join(
+            modelsDir,
+            params.modelAuthor,
+            params.modelFolder,
+            'projectors',
+            params.projectorFilename,
+          )
         : undefined;
       return getModelMetadata(modelPath, projectorPath);
     },
@@ -700,9 +754,20 @@ export function registerIpcHandlers(win: BrowserWindow): void {
       },
     ) => {
       const modelsDir = getModelsDirectory();
-      const modelPath = path.join(modelsDir, params.modelAuthor, params.modelFolder, params.modelFilename);
+      const modelPath = path.join(
+        modelsDir,
+        params.modelAuthor,
+        params.modelFolder,
+        params.modelFilename,
+      );
       const projectorPath = params.projectorFilename
-        ? path.join(modelsDir, params.modelAuthor, params.modelFolder, 'projectors', params.projectorFilename)
+        ? path.join(
+            modelsDir,
+            params.modelAuthor,
+            params.modelFolder,
+            'projectors',
+            params.projectorFilename,
+          )
         : undefined;
       return getOrEstimateMemory(
         modelPath,
@@ -747,13 +812,10 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     },
   );
 
-  ipcMain.handle(
-    'files:readFileAsBuffer',
-    async (_event, filePath: string) => {
-      const buf = await fs.promises.readFile(filePath);
-      return buf;
-    },
-  );
+  ipcMain.handle('files:readFileAsBuffer', async (_event, filePath: string) => {
+    const buf = await fs.promises.readFile(filePath);
+    return buf;
+  });
 
   // ── Convert file to markdown via markitdown ──
   ipcMain.handle(

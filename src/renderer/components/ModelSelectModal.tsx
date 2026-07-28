@@ -73,7 +73,7 @@ export default function ModelSelectModal({
             (v) =>
               v.filename.toLowerCase().includes(query) ||
               v.quantization.toLowerCase().includes(query) ||
-              group.name.toLowerCase().includes(query)
+              group.name.toLowerCase().includes(query),
           );
           return { ...group, variants: matchingVariants };
         })
@@ -133,50 +133,50 @@ export default function ModelSelectModal({
             filteredGroups.map((group) => {
               const parameters = extractParametersFromName(group.name);
               return (
-              <div key={group.name} className="msm-group">
-                <button
-                  type="button"
-                  className="msm-group-header"
-                  onClick={() => {
-                    if (group.variants.length > 0) {
-                      onSelect(group.variants[0].filename, group.name);
-                      onClose();
-                    }
-                  }}
-                >
-                  <h3>{group.name}</h3>
-                  {parameters && (
-                    <span className="model-card__meta-item">
-                      <Cpu size={14} /> {parameters}
-                    </span>
-                  )}
-                </button>
-                {group.variants.map((variant) => (
+                <div key={group.name} className="msm-group">
                   <button
-                    key={variant.filename}
                     type="button"
-                    className={`msm-variant${selectedFilename === variant.filename ? ' msm-variant--selected' : ''}`}
+                    className="msm-group-header"
                     onClick={() => {
-                      onSelect(variant.filename, group.name);
-                      onClose();
+                      if (group.variants.length > 0) {
+                        onSelect(group.variants[0].filename, group.name);
+                        onClose();
+                      }
                     }}
                   >
-                    <span className="msm-variant__quant">
-                      {variant.quantization.toUpperCase()}
-                    </span>
-                    <span className="msm-variant__size">
-                      {formatBytes(variant.sizeBytes)}
-                    </span>
-                    <span className="msm-variant__filename">
-                      {variant.filename}
-                    </span>
-                    {selectedFilename === variant.filename && (
-                      <Check size={16} className="msm-variant__check" />
+                    <h3>{group.name}</h3>
+                    {parameters && (
+                      <span className="model-card__meta-item">
+                        <Cpu size={14} /> {parameters}
+                      </span>
                     )}
                   </button>
-                ))}
-              </div>
-            );
+                  {group.variants.map((variant) => (
+                    <button
+                      key={variant.filename}
+                      type="button"
+                      className={`msm-variant${selectedFilename === variant.filename ? ' msm-variant--selected' : ''}`}
+                      onClick={() => {
+                        onSelect(variant.filename, group.name);
+                        onClose();
+                      }}
+                    >
+                      <span className="msm-variant__quant">
+                        {variant.quantization.toUpperCase()}
+                      </span>
+                      <span className="msm-variant__size">
+                        {formatBytes(variant.sizeBytes)}
+                      </span>
+                      <span className="msm-variant__filename">
+                        {variant.filename}
+                      </span>
+                      {selectedFilename === variant.filename && (
+                        <Check size={16} className="msm-variant__check" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              );
             })
           )}
         </div>

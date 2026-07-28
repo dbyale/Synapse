@@ -72,11 +72,7 @@ export default function ExtensionModal({
           <div className="em-header-left">
             <div className="em-header-icon">
               {svgDataUrl ? (
-                <img
-                  src={svgDataUrl}
-                  alt=""
-                  className="em-header-svg-icon"
-                />
+                <img src={svgDataUrl} alt="" className="em-header-svg-icon" />
               ) : (
                 (() => {
                   const IconComp = extension.manifest.icon

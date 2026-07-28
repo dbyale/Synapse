@@ -168,7 +168,7 @@
   top: 2px;
   left: 2px;
   transition: transform 0.2s ease;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
 .epm-toggle-switch--on .epm-toggle-switch__knob {
@@ -316,8 +316,6 @@
   display: block;
   width: 100%;
 }
-
-
 
 .models-dir-tooltip {
   width: 100%;

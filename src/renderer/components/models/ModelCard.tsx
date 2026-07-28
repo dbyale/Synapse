@@ -711,7 +711,8 @@ export default function ModelCard({
 
                         const totalProgress = group.parts.reduce(
                           (sum, part) => {
-                            const dl = downloads[model.id + ':' + part.filename];
+                            const dl =
+                              downloads[model.id + ':' + part.filename];
                             if (dl) return sum + dl.percent;
                             return sum + (anyStarted ? 100 : 0);
                           },
@@ -753,8 +754,8 @@ export default function ModelCard({
                         pillState = 'warning';
                       }
 
-                      const allLocal = group.parts.every(
-                        (p) => localModelKeys.has(model.id + ':' + p.filename),
+                      const allLocal = group.parts.every((p) =>
+                        localModelKeys.has(model.id + ':' + p.filename),
                       );
 
                       let activePillClass = '';
@@ -794,7 +795,12 @@ export default function ModelCard({
                             )}
                             <div className="model-card__dl-content">
                               <span className="model-card__dl-quant">
-                                {allLocal && <Check size={12} className="model-card__dl-check" />}
+                                {allLocal && (
+                                  <Check
+                                    size={12}
+                                    className="model-card__dl-check"
+                                  />
+                                )}
                                 {group.displayQuantization}
                               </span>
                               <span className="model-card__dl-size">

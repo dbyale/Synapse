@@ -156,8 +156,7 @@ function ToolCallSegment({
           return <IconComp className="tool-call-segment__icon" size={16} />;
         })()}
         <span className="tool-call-segment__name">
-          {(segment.toolName &&
-            getToolMeta(segment.toolName)?.label) ??
+          {(segment.toolName && getToolMeta(segment.toolName)?.label) ??
             segment.toolName}
         </span>
         {segment.toolStatus === 'calling' ? (
@@ -227,7 +226,21 @@ function ToolCallSegment({
   );
 }
 
-const DOC_EXTENSIONS = ['pdf', 'docx', 'pptx', 'xlsx', 'csv', 'html', 'htm', 'json', 'xml', 'rtf', 'txt', 'md', 'epub'];
+const DOC_EXTENSIONS = [
+  'pdf',
+  'docx',
+  'pptx',
+  'xlsx',
+  'csv',
+  'html',
+  'htm',
+  'json',
+  'xml',
+  'rtf',
+  'txt',
+  'md',
+  'epub',
+];
 const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp'];
 const VIDEO_EXTENSIONS = ['mp4', 'webm'];
 
@@ -259,16 +272,21 @@ function MediaAttachModal({
     ? [...IMAGE_EXTENSIONS, ...VIDEO_EXTENSIONS, ...DOC_EXTENSIONS]
     : [...DOC_EXTENSIONS];
 
-  const filterName = hasProjector ? 'All supported files' : 'All supported documents';
+  const filterName = hasProjector
+    ? 'All supported files'
+    : 'All supported documents';
 
   async function processDocument(filePath: string, filename: string) {
     setConverting(true);
     try {
-      const result = await window.electronAPI.convertFileWithMarkitdown(filePath);
+      const result =
+        await window.electronAPI.convertFileWithMarkitdown(filePath);
       if (result.success && result.markdown) {
         onAttachText(filename, result.markdown);
       } else {
-        alert(`Failed to convert ${filename}: ${result.error || 'Unknown error'}`);
+        alert(
+          `Failed to convert ${filename}: ${result.error || 'Unknown error'}`,
+        );
       }
     } catch (err: any) {
       alert(`Error converting ${filename}: ${err.message}`);
@@ -283,7 +301,10 @@ function MediaAttachModal({
     const files = Array.from(e.dataTransfer.files);
     for (const file of files) {
       const ext = getExtension(file.name);
-      if (hasProjector && (IMAGE_EXTENSIONS_SET.has(ext) || file.type.startsWith('image/'))) {
+      if (
+        hasProjector &&
+        (IMAGE_EXTENSIONS_SET.has(ext) || file.type.startsWith('image/'))
+      ) {
         const reader = new FileReader();
         reader.onload = (ev) => {
           const result = ev.target?.result;
@@ -292,7 +313,10 @@ function MediaAttachModal({
           }
         };
         reader.readAsDataURL(file);
-      } else if (hasProjector && (VIDEO_EXTENSIONS_SET.has(ext) || file.type.startsWith('video/'))) {
+      } else if (
+        hasProjector &&
+        (VIDEO_EXTENSIONS_SET.has(ext) || file.type.startsWith('video/'))
+      ) {
         onAttachVideo(file);
         onClose();
         return;
@@ -311,9 +335,7 @@ function MediaAttachModal({
     const paths = await window.electronAPI.browseForFiles({
       title: 'Select files',
       multiSelections: true,
-      filters: [
-        { name: filterName, extensions: supportedExtensions },
-      ],
+      filters: [{ name: filterName, extensions: supportedExtensions }],
     });
     if (paths.length === 0) return;
     for (const filePath of paths) {
@@ -454,9 +476,8 @@ async function extractVideoFrames(
   URL.revokeObjectURL(url);
   video.remove();
 
-  const achievedFps = actualCount > 0 && lastActualTime > 0
-    ? actualCount / lastActualTime
-    : fps;
+  const achievedFps =
+    actualCount > 0 && lastActualTime > 0 ? actualCount / lastActualTime : fps;
   return { frames, fps: achievedFps };
 }
 
@@ -467,7 +488,10 @@ export default function ChatPage() {
   const [processing, setProcessing] = useState(false);
   const [modelLoading, setModelLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [chatError, setChatError] = useState<{ message: string; id: number } | null>(null);
+  const [chatError, setChatError] = useState<{
+    message: string;
+    id: number;
+  } | null>(null);
   const chatErrorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [selectedProfileId, setSelectedProfileId] = useState<string>('');
@@ -527,7 +551,10 @@ export default function ChatPage() {
     null,
   );
   const systemMessageInsertedRef = useRef(false);
-  const pendingSendRef = useRef<{ text: string; pendingMedia: PendingMedia[] } | null>(null);
+  const pendingSendRef = useRef<{
+    text: string;
+    pendingMedia: PendingMedia[];
+  } | null>(null);
 
   const navigate = useNavigate();
   const location = useLocation();
@@ -546,7 +573,10 @@ export default function ChatPage() {
   }, [refreshCumulativeTokens]);
 
   useEffect(() => {
-    window.electronAPI.loadSettings().then((s) => setSettings(s)).catch(() => {});
+    window.electronAPI
+      .loadSettings()
+      .then((s) => setSettings(s))
+      .catch(() => {});
   }, []);
 
   const estimatedCost =
@@ -556,7 +586,10 @@ export default function ChatPage() {
   const selectedProfile =
     profiles.find((p) => p.id === selectedProfileId) ?? null;
   const profileHasProjector = !!selectedProfile?.projector;
-  const canAttachImages = !!(projectorLoaded || (profileHasProjector && !loadError));
+  const canAttachImages = !!(
+    projectorLoaded ||
+    (profileHasProjector && !loadError)
+  );
 
   const loadProfilesFromStorage = useCallback(() => {
     const stored = localStorage.getItem('profiles');
@@ -784,7 +817,10 @@ export default function ChatPage() {
           if (isRunning) {
             const { contextSize } = await window.electronAPI.chatContextSize();
             if (contextSize !== null && contextSize > 0) {
-              if (!abortController.cancelled && myLoadId === persistentLastLoadId) {
+              if (
+                !abortController.cancelled &&
+                myLoadId === persistentLastLoadId
+              ) {
                 setMaxTokens(contextSize);
                 setLoadError(null);
               }
@@ -816,11 +852,13 @@ export default function ChatPage() {
       }
 
       try {
-        if (abortController.cancelled || myLoadId !== persistentLastLoadId) return;
+        if (abortController.cancelled || myLoadId !== persistentLastLoadId)
+          return;
 
         const res = await window.electronAPI.chatLoadProfile(profile);
 
-        if (abortController.cancelled || myLoadId !== persistentLastLoadId) return;
+        if (abortController.cancelled || myLoadId !== persistentLastLoadId)
+          return;
 
         if (res.success) {
           if ((res as any).backend) {
@@ -1147,11 +1185,9 @@ export default function ChatPage() {
       },
     );
 
-    const unsubscribeUserInput = window.electronAPI.onChatUserInput(
-      (data) => {
-        setUserInputRequest(data);
-      },
-    );
+    const unsubscribeUserInput = window.electronAPI.onChatUserInput((data) => {
+      setUserInputRequest(data);
+    });
 
     const removeSystemProgressListener =
       window.electronAPI.onChatSystemProgress((data) => {
@@ -1178,16 +1214,14 @@ export default function ChatPage() {
       },
     );
 
-    const removeChatErrorListener = window.electronAPI.onChatError(
-      (error) => {
-        if (chatErrorTimer.current) clearTimeout(chatErrorTimer.current);
-        const id = Date.now();
-        setChatError({ message: error, id });
-        chatErrorTimer.current = setTimeout(() => {
-          setChatError((prev) => (prev?.id === id ? null : prev));
-        }, 6000);
-      },
-    );
+    const removeChatErrorListener = window.electronAPI.onChatError((error) => {
+      if (chatErrorTimer.current) clearTimeout(chatErrorTimer.current);
+      const id = Date.now();
+      setChatError({ message: error, id });
+      chatErrorTimer.current = setTimeout(() => {
+        setChatError((prev) => (prev?.id === id ? null : prev));
+      }, 6000);
+    });
 
     return () => {
       removeTokenListener();
@@ -1231,7 +1265,8 @@ export default function ChatPage() {
 
         for (const item of queuedMedia) {
           if (item.type === 'image') {
-            if (item.name) contentParts.push({ kind: 'text', text: `[${item.name}]` });
+            if (item.name)
+              contentParts.push({ kind: 'text', text: `[${item.name}]` });
             contentParts.push({ kind: 'image_url', url: item.dataUrl });
             mediaItems.push({ type: 'image', url: item.dataUrl });
           } else if (item.type === 'video') {
@@ -1253,7 +1288,10 @@ export default function ChatPage() {
                 const secs = i / result.fps;
                 const mins = Math.floor(secs / 60);
                 const secsOnly = Math.floor(secs % 60);
-                contentParts.push({ kind: 'text', text: `[${String(mins).padStart(2, '0')}:${String(secsOnly).padStart(2, '0')}]` });
+                contentParts.push({
+                  kind: 'text',
+                  text: `[${String(mins).padStart(2, '0')}:${String(secsOnly).padStart(2, '0')}]`,
+                });
               });
               mediaItems.push({ type: 'video', url: item.objectUrl });
             } catch {
@@ -1358,7 +1396,8 @@ export default function ChatPage() {
 
     for (const item of pendingMedia) {
       if (item.type === 'image') {
-        if (item.name) contentParts.push({ kind: 'text', text: `[${item.name}]` });
+        if (item.name)
+          contentParts.push({ kind: 'text', text: `[${item.name}]` });
         contentParts.push({ kind: 'image_url', url: item.dataUrl });
         mediaItems.push({ type: 'image', url: item.dataUrl });
       } else if (item.type === 'video') {
@@ -1380,7 +1419,10 @@ export default function ChatPage() {
             const secs = i / result.fps;
             const mins = Math.floor(secs / 60);
             const secsOnly = Math.floor(secs % 60);
-            contentParts.push({ kind: 'text', text: `[${String(mins).padStart(2, '0')}:${String(secsOnly).padStart(2, '0')}]` });
+            contentParts.push({
+              kind: 'text',
+              text: `[${String(mins).padStart(2, '0')}:${String(secsOnly).padStart(2, '0')}]`,
+            });
           });
           mediaItems.push({ type: 'video', url: item.objectUrl });
         } catch (err: any) {
@@ -1389,7 +1431,10 @@ export default function ChatPage() {
           break;
         }
       } else if (item.type === 'document') {
-        contentParts.push({ kind: 'text', text: `[${item.name}]\n${item.content}` });
+        contentParts.push({
+          kind: 'text',
+          text: `[${item.name}]\n${item.content}`,
+        });
         mediaItems.push({ type: 'document', name: item.name });
       }
     }
@@ -1601,7 +1646,9 @@ export default function ChatPage() {
                   <>
                     {lines[0]}
                     <ul className="chat-error__log">
-                      {lines.slice(1).map((l, i) => <li key={i}>{l}</li>)}
+                      {lines.slice(1).map((l, i) => (
+                        <li key={i}>{l}</li>
+                      ))}
                     </ul>
                   </>
                 );
@@ -1828,9 +1875,7 @@ export default function ChatPage() {
                                       title="Prompt tokens"
                                     >
                                       <Hash size={12} />
-                                      <span>
-                                        {group.stats.tokens} tokens
-                                      </span>
+                                      <span>{group.stats.tokens} tokens</span>
                                     </div>
                                     <div
                                       className="chat-stat-item"
@@ -1838,7 +1883,8 @@ export default function ChatPage() {
                                     >
                                       <Timer size={12} />
                                       <span>
-                                        {(group.stats.timeMs / 1000).toFixed(2)}s
+                                        {(group.stats.timeMs / 1000).toFixed(2)}
+                                        s
                                       </span>
                                     </div>
                                     <div
@@ -1847,7 +1893,8 @@ export default function ChatPage() {
                                     >
                                       <Zap size={12} />
                                       <span>
-                                        {group.stats.tokensPerSecond.toFixed(1)} t/s
+                                        {group.stats.tokensPerSecond.toFixed(1)}{' '}
+                                        t/s
                                       </span>
                                     </div>
                                   </div>
@@ -1858,7 +1905,8 @@ export default function ChatPage() {
 
                           const flushStandaloneTools = () => {
                             if (standaloneToolBuffer.length === 0) return;
-                            const groups = buildToolGroups(standaloneToolBuffer);
+                            const groups =
+                              buildToolGroups(standaloneToolBuffer);
                             for (let i = 0; i < groups.length; i++) {
                               elements.push(
                                 renderToolGroup(
@@ -1915,7 +1963,10 @@ export default function ChatPage() {
                                 toolBuffer.push(seg);
                               } else {
                                 flushTools();
-                                if (seg.type === 'thought' && seg.text.trim().length > 0) {
+                                if (
+                                  seg.type === 'thought' &&
+                                  seg.text.trim().length > 0
+                                ) {
                                   textBuffer.push(seg.text);
                                 }
                               }
@@ -1934,9 +1985,10 @@ export default function ChatPage() {
                             );
 
                             const autoOpen = settings?.autoOpenThinking ?? true;
-                            const autoCloseDone = settings?.autoCloseThinkingDone ?? false;
+                            const autoCloseDone =
+                              settings?.autoCloseThinkingDone ?? false;
                             const thoughtDefaultOpen = autoOpen
-                              ? (!autoCloseDone || !thinkingDone)
+                              ? !autoCloseDone || !thinkingDone
                               : false;
 
                             if (hasThought) {
@@ -2050,9 +2102,14 @@ export default function ChatPage() {
                           }
                           if (item.type === 'document') {
                             return (
-                              <div key={`doc-${idx}`} className="chat-message__user-document">
+                              <div
+                                key={`doc-${idx}`}
+                                className="chat-message__user-document"
+                              >
                                 <FileText size={20} />
-                                <span className="chat-message__user-document-name">{item.name}</span>
+                                <span className="chat-message__user-document-name">
+                                  {item.name}
+                                </span>
                               </div>
                             );
                           }
@@ -2175,7 +2232,11 @@ export default function ChatPage() {
                 : 'Attach documents'
             }
           >
-            {canAttachImages ? <ImagePlus size={18} /> : <FilePlusCorner size={18} />}
+            {canAttachImages ? (
+              <ImagePlus size={18} />
+            ) : (
+              <FilePlusCorner size={18} />
+            )}
           </button>
 
           <div className="chat-input-inner">
@@ -2184,15 +2245,25 @@ export default function ChatPage() {
                 {pendingMedia.map((item) => (
                   <div key={item.id} className="chat-media-preview__item">
                     {item.type === 'image' && (
-                      <img src={item.dataUrl} alt="Attached" className="chat-media-preview__image" />
+                      <img
+                        src={item.dataUrl}
+                        alt="Attached"
+                        className="chat-media-preview__image"
+                      />
                     )}
                     {item.type === 'video' && (
-                      <video src={item.objectUrl} controls className="chat-media-preview__video" />
+                      <video
+                        src={item.objectUrl}
+                        controls
+                        className="chat-media-preview__video"
+                      />
                     )}
                     {item.type === 'document' && (
                       <div className="chat-media-preview__document">
                         <FileText size={20} />
-                        <span className="chat-media-preview__doc-name">{item.name}</span>
+                        <span className="chat-media-preview__doc-name">
+                          {item.name}
+                        </span>
                       </div>
                     )}
                     <button
@@ -2202,7 +2273,9 @@ export default function ChatPage() {
                         if (item.type === 'video') {
                           URL.revokeObjectURL(item.objectUrl);
                         }
-                        setPendingMedia((prev) => prev.filter((m) => m.id !== item.id));
+                        setPendingMedia((prev) =>
+                          prev.filter((m) => m.id !== item.id),
+                        );
                       }}
                       title={`Remove ${item.type}`}
                     >
@@ -2291,15 +2364,24 @@ export default function ChatPage() {
         <MediaAttachModal
           onAttach={(dataUrl, name) => {
             const id = crypto.randomUUID();
-            setPendingMedia((prev) => [...prev, { id, type: 'image', dataUrl, name }]);
+            setPendingMedia((prev) => [
+              ...prev,
+              { id, type: 'image', dataUrl, name },
+            ]);
           }}
           onAttachVideo={(file) => {
             const id = crypto.randomUUID();
-            setPendingMedia((prev) => [...prev, { id, type: 'video', file, objectUrl: URL.createObjectURL(file) }]);
+            setPendingMedia((prev) => [
+              ...prev,
+              { id, type: 'video', file, objectUrl: URL.createObjectURL(file) },
+            ]);
           }}
           onAttachText={(name, content) => {
             const id = crypto.randomUUID();
-            setPendingMedia((prev) => [...prev, { id, type: 'document', name, content }]);
+            setPendingMedia((prev) => [
+              ...prev,
+              { id, type: 'document', name, content },
+            ]);
           }}
           onClose={() => setShowImageModal(false)}
           hasProjector={canAttachImages}
@@ -2323,12 +2405,17 @@ export default function ChatPage() {
           <span className="chat-toast__title">Error</span>
           {(() => {
             const lines = chatError.message.split('\n').filter(Boolean);
-            if (lines.length <= 1) return <span className="chat-toast__message">{chatError.message}</span>;
+            if (lines.length <= 1)
+              return (
+                <span className="chat-toast__message">{chatError.message}</span>
+              );
             return (
               <>
                 <span className="chat-toast__message">{lines[0]}</span>
                 <ul className="chat-error__log">
-                  {lines.slice(1).map((l, i) => <li key={i}>{l}</li>)}
+                  {lines.slice(1).map((l, i) => (
+                    <li key={i}>{l}</li>
+                  ))}
                 </ul>
               </>
             );

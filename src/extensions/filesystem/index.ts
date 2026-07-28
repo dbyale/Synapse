@@ -69,7 +69,11 @@ export const tools: Record<string, ExtensionToolDef> = {
     params: {
       type: 'object',
       properties: {
-        paths: { type: 'array', items: { type: 'string' }, description: 'Array of file paths to read' },
+        paths: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Array of file paths to read',
+        },
       },
     },
     async handler(params: { paths: string[] }) {
@@ -86,8 +90,14 @@ export const tools: Record<string, ExtensionToolDef> = {
     params: {
       type: 'object',
       properties: {
-        path: { type: 'string', description: 'Path where the file will be written' },
-        content: { type: 'string', description: 'Content to write to the file' },
+        path: {
+          type: 'string',
+          description: 'Path where the file will be written',
+        },
+        content: {
+          type: 'string',
+          description: 'Content to write to the file',
+        },
       },
     },
     async handler(params: { path: string; content: string }) {
@@ -98,18 +108,37 @@ export const tools: Record<string, ExtensionToolDef> = {
     meta: {
       name: 'edit_file',
       label: 'Edit File',
-      description: 'Modify file content with text replacements, supporting dry-run mode',
+      description:
+        'Modify file content with text replacements, supporting dry-run mode',
       icon: 'Edit',
     },
     params: {
       type: 'object',
       properties: {
         path: { type: 'string', description: 'Path to the file to edit' },
-        edits: { type: 'array', items: { type: 'object', properties: { oldText: { type: 'string' }, newText: { type: 'string' } } }, description: 'Array of text replacements to apply' },
-        dryRun: { type: 'boolean', description: 'If true, preview changes without writing (default: false)' },
+        edits: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              oldText: { type: 'string' },
+              newText: { type: 'string' },
+            },
+          },
+          description: 'Array of text replacements to apply',
+        },
+        dryRun: {
+          type: 'boolean',
+          description:
+            'If true, preview changes without writing (default: false)',
+        },
       },
     },
-    async handler(params: { path: string; edits: Array<{ oldText: string; newText: string }>; dryRun?: boolean }) {
+    async handler(params: {
+      path: string;
+      edits: Array<{ oldText: string; newText: string }>;
+      dryRun?: boolean;
+    }) {
       return await editFile(params);
     },
   },
@@ -117,13 +146,17 @@ export const tools: Record<string, ExtensionToolDef> = {
     meta: {
       name: 'create_directory',
       label: 'Create Directory',
-      description: 'Create a new directory and any necessary parent directories',
+      description:
+        'Create a new directory and any necessary parent directories',
       icon: 'Folder',
     },
     params: {
       type: 'object',
       properties: {
-        path: { type: 'string', description: 'Path of the directory to create' },
+        path: {
+          type: 'string',
+          description: 'Path of the directory to create',
+        },
       },
     },
     async handler(params: { path: string }) {
@@ -151,14 +184,18 @@ export const tools: Record<string, ExtensionToolDef> = {
     meta: {
       name: 'list_directory_with_sizes',
       label: 'List Directory with Sizes',
-      description: 'List directory contents showing file sizes with optional sorting',
+      description:
+        'List directory contents showing file sizes with optional sorting',
       icon: 'Folder',
     },
     params: {
       type: 'object',
       properties: {
         path: { type: 'string', description: 'Path of the directory to list' },
-        sortBy: { type: 'string', description: 'Sort by "name" or "size" (optional)' },
+        sortBy: {
+          type: 'string',
+          description: 'Sort by "name" or "size" (optional)',
+        },
       },
     },
     async handler(params: { path: string; sortBy?: string }) {
@@ -194,11 +231,22 @@ export const tools: Record<string, ExtensionToolDef> = {
       type: 'object',
       properties: {
         path: { type: 'string', description: 'Root directory to search in' },
-        pattern: { type: 'string', description: 'Glob pattern to match (e.g., "*.json", "test-*.ts")' },
-        excludePatterns: { type: 'array', items: { type: 'string' }, description: 'Patterns to exclude from search (optional)' },
+        pattern: {
+          type: 'string',
+          description: 'Glob pattern to match (e.g., "*.json", "test-*.ts")',
+        },
+        excludePatterns: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Patterns to exclude from search (optional)',
+        },
       },
     },
-    async handler(params: { path: string; pattern: string; excludePatterns?: string[] }) {
+    async handler(params: {
+      path: string;
+      pattern: string;
+      excludePatterns?: string[];
+    }) {
       return await searchFiles(params);
     },
   },
@@ -213,7 +261,11 @@ export const tools: Record<string, ExtensionToolDef> = {
       type: 'object',
       properties: {
         path: { type: 'string', description: 'Root directory for the tree' },
-        excludePatterns: { type: 'array', items: { type: 'string' }, description: 'Patterns to exclude from the tree (optional)' },
+        excludePatterns: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Patterns to exclude from the tree (optional)',
+        },
       },
     },
     async handler(params: { path: string; excludePatterns?: string[] }) {
@@ -224,7 +276,8 @@ export const tools: Record<string, ExtensionToolDef> = {
     meta: {
       name: 'get_file_info',
       label: 'Get File Info',
-      description: 'Retrieve detailed file metadata including size, permissions, and timestamps',
+      description:
+        'Retrieve detailed file metadata including size, permissions, and timestamps',
       icon: 'Tag',
     },
     params: {
@@ -241,7 +294,8 @@ export const tools: Record<string, ExtensionToolDef> = {
     meta: {
       name: 'list_allowed_directories',
       label: 'List Allowed Directories',
-      description: 'Show all configured allowed directories for file operations',
+      description:
+        'Show all configured allowed directories for file operations',
       icon: 'Shield',
     },
     params: { type: 'object', properties: {} },

@@ -2,26 +2,63 @@ import path from 'path';
 import fs from 'fs';
 import { app } from 'electron';
 import { createRequire } from 'module';
-import type { Extension, ExtensionManifest, ExtensionToolDef } from '../extensions/types';
-import { tools as timeTools, manifest as timeManifest } from '../extensions/time';
-import { tools as filesystemTools, manifest as filesystemManifest } from '../extensions/filesystem';
+import type {
+  Extension,
+  ExtensionManifest,
+  ExtensionToolDef,
+} from '../extensions/types';
+import {
+  tools as timeTools,
+  manifest as timeManifest,
+} from '../extensions/time';
+import {
+  tools as filesystemTools,
+  manifest as filesystemManifest,
+} from '../extensions/filesystem';
 import { tools as gitTools, manifest as gitManifest } from '../extensions/git';
-import { tools as memoryTools, manifest as memoryManifest } from '../extensions/memory';
-import { tools as pythonTools, manifest as pythonManifest } from '../extensions/python';
-import { tools as shellTools, manifest as shellManifest } from '../extensions/shell';
-import { tools as userpromptsTools, manifest as userpromptsManifest } from '../extensions/userprompts';
-import { tools as ddgSearchTools, manifest as ddgSearchManifest } from '../extensions/ddg_search';
-import { tools as sandboxTools, manifest as sandboxManifest } from '../extensions/sandbox';
-import { tools as githubTools, manifest as githubManifest } from '../extensions/github';
+import {
+  tools as memoryTools,
+  manifest as memoryManifest,
+} from '../extensions/memory';
+import {
+  tools as pythonTools,
+  manifest as pythonManifest,
+} from '../extensions/python';
+import {
+  tools as shellTools,
+  manifest as shellManifest,
+} from '../extensions/shell';
+import {
+  tools as userpromptsTools,
+  manifest as userpromptsManifest,
+} from '../extensions/userprompts';
+import {
+  tools as ddgSearchTools,
+  manifest as ddgSearchManifest,
+} from '../extensions/ddg_search';
+import {
+  tools as sandboxTools,
+  manifest as sandboxManifest,
+} from '../extensions/sandbox';
+import {
+  tools as githubTools,
+  manifest as githubManifest,
+} from '../extensions/github';
 
-const BUILT_IN_EXTENSIONS: Array<{ tools: Record<string, ExtensionToolDef>; manifest: ExtensionManifest }> = [
+const BUILT_IN_EXTENSIONS: Array<{
+  tools: Record<string, ExtensionToolDef>;
+  manifest: ExtensionManifest;
+}> = [
   { tools: timeTools, manifest: timeManifest as ExtensionManifest },
   { tools: filesystemTools, manifest: filesystemManifest as ExtensionManifest },
   { tools: gitTools, manifest: gitManifest as ExtensionManifest },
   { tools: memoryTools, manifest: memoryManifest as ExtensionManifest },
   { tools: pythonTools, manifest: pythonManifest as ExtensionManifest },
   { tools: shellTools, manifest: shellManifest as ExtensionManifest },
-  { tools: userpromptsTools, manifest: userpromptsManifest as ExtensionManifest },
+  {
+    tools: userpromptsTools,
+    manifest: userpromptsManifest as ExtensionManifest,
+  },
   { tools: ddgSearchTools, manifest: ddgSearchManifest as ExtensionManifest },
   { tools: sandboxTools, manifest: sandboxManifest as ExtensionManifest },
   { tools: githubTools, manifest: githubManifest as ExtensionManifest },
@@ -67,10 +104,14 @@ class ExtensionRegistry {
   private loadUserExtensions(): void {
     try {
       if (!fs.existsSync(this.userExtensionsDir)) return;
-      const entries = fs.readdirSync(this.userExtensionsDir, { withFileTypes: true });
+      const entries = fs.readdirSync(this.userExtensionsDir, {
+        withFileTypes: true,
+      });
       for (const entry of entries) {
         if (!entry.isDirectory()) continue;
-        this.loadExtensionFromDir(path.join(this.userExtensionsDir, entry.name));
+        this.loadExtensionFromDir(
+          path.join(this.userExtensionsDir, entry.name),
+        );
       }
     } catch (err) {
       console.error('[Extensions] Failed to load user extensions:', err);
@@ -96,7 +137,9 @@ class ExtensionRegistry {
       const manifestRaw = fs.readFileSync(manifestPath, 'utf-8');
       const manifest: ExtensionManifest = JSON.parse(manifestRaw);
       if (this.extensions.has(manifest.id)) {
-        console.warn(`[Extensions] Extension "${manifest.id}" already registered, skipping`);
+        console.warn(
+          `[Extensions] Extension "${manifest.id}" already registered, skipping`,
+        );
         return;
       }
       const tools: Record<string, ExtensionToolDef> = {};
@@ -105,7 +148,9 @@ class ExtensionRegistry {
         const require = createRequire(indexJsPath);
         const extModule = require(indexJsPath);
         if (extModule.tools) {
-          for (const [name, tool] of Object.entries<ExtensionToolDef>(extModule.tools)) {
+          for (const [name, tool] of Object.entries<ExtensionToolDef>(
+            extModule.tools,
+          )) {
             tools[name] = tool;
           }
         }
@@ -118,7 +163,10 @@ class ExtensionRegistry {
         extensionDir: extDir,
       });
     } catch (err) {
-      console.error(`[Extensions] Failed to load extension from ${extDir}:`, err);
+      console.error(
+        `[Extensions] Failed to load extension from ${extDir}:`,
+        err,
+      );
     }
   }
 
@@ -164,22 +212,34 @@ class ExtensionRegistry {
     try {
       const sourceManifestPath = path.join(sourcePath, 'manifest.json');
       if (!fs.existsSync(sourceManifestPath)) {
-        return { success: false, error: 'No manifest.json found in the extension directory' };
+        return {
+          success: false,
+          error: 'No manifest.json found in the extension directory',
+        };
       }
       const manifestRaw = fs.readFileSync(sourceManifestPath, 'utf-8');
       const manifest: ExtensionManifest = JSON.parse(manifestRaw);
       if (this.extensions.has(manifest.id)) {
-        return { success: false, error: `Extension "${manifest.id}" is already installed` };
+        return {
+          success: false,
+          error: `Extension "${manifest.id}" is already installed`,
+        };
       }
       const destDir = path.join(this.userExtensionsDir, manifest.id);
       if (fs.existsSync(destDir)) {
-        return { success: false, error: `Extension directory already exists at ${destDir}` };
+        return {
+          success: false,
+          error: `Extension directory already exists at ${destDir}`,
+        };
       }
       this.copyDirSync(sourcePath, destDir);
       this.loadExtensionFromDir(destDir);
       return { success: true };
     } catch (err) {
-      return { success: false, error: err instanceof Error ? err.message : String(err) };
+      return {
+        success: false,
+        error: err instanceof Error ? err.message : String(err),
+      };
     }
   }
 
@@ -194,17 +254,23 @@ class ExtensionRegistry {
         }
       }
     }
-    if (!ext) return { success: false, error: `Extension "${idOrName}" not found` };
-    if (ext.manifest.builtIn) return { success: false, error: 'Cannot remove built-in extension' };
+    if (!ext)
+      return { success: false, error: `Extension "${idOrName}" not found` };
+    if (ext.manifest.builtIn)
+      return { success: false, error: 'Cannot remove built-in extension' };
     try {
-      const extDir = ext.extensionDir || path.join(this.userExtensionsDir, ext.manifest.id);
+      const extDir =
+        ext.extensionDir || path.join(this.userExtensionsDir, ext.manifest.id);
       if (fs.existsSync(extDir)) {
         fs.rmSync(extDir, { recursive: true, force: true });
       }
       this.extensions.delete(ext.manifest.id);
       return { success: true };
     } catch (err) {
-      return { success: false, error: err instanceof Error ? err.message : String(err) };
+      return {
+        success: false,
+        error: err instanceof Error ? err.message : String(err),
+      };
     }
   }
 

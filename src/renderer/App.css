@@ -433,11 +433,21 @@ body,
   border-radius: 0 4px 4px 0;
 }
 
-.info-tooltip-wrapper.epm-mem-segment--overhead { background: #6b7280; }
-.info-tooltip-wrapper.epm-mem-segment--model   { background: #5b21b6; }
-.info-tooltip-wrapper.epm-mem-segment--ctx     { background: #3b82f6; }
-.info-tooltip-wrapper.epm-mem-segment--buffer  { background: #f59e0b; }
-.info-tooltip-wrapper.epm-mem-segment--free    { background: transparent; }
+.info-tooltip-wrapper.epm-mem-segment--overhead {
+  background: #6b7280;
+}
+.info-tooltip-wrapper.epm-mem-segment--model {
+  background: #5b21b6;
+}
+.info-tooltip-wrapper.epm-mem-segment--ctx {
+  background: #3b82f6;
+}
+.info-tooltip-wrapper.epm-mem-segment--buffer {
+  background: #f59e0b;
+}
+.info-tooltip-wrapper.epm-mem-segment--free {
+  background: transparent;
+}
 
 /* ── Inner content ── */
 .info-tooltip-title {

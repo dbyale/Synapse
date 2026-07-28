@@ -252,39 +252,60 @@ function buildChatBody(messages: any[], tools: any[]): Record<string, any> {
     const dry = p.repeatPenalty.dry;
     if (dry.multiplier !== undefined) body.dry_multiplier = dry.multiplier;
     if (dry.base !== undefined) body.dry_base = dry.base;
-    if (dry.allowedLength !== undefined) body.dry_allowed_length = dry.allowedLength;
-    if (dry.penaltyLastN !== undefined) body.dry_penalty_last_n = dry.penaltyLastN;
-    if (dry.sequenceBreakers !== undefined) body.dry_sequence_breakers = dry.sequenceBreakers;
+    if (dry.allowedLength !== undefined)
+      body.dry_allowed_length = dry.allowedLength;
+    if (dry.penaltyLastN !== undefined)
+      body.dry_penalty_last_n = dry.penaltyLastN;
+    if (dry.sequenceBreakers !== undefined)
+      body.dry_sequence_breakers = dry.sequenceBreakers;
   }
 
   return body;
 }
 
-function substituteSystemPromptVariables(prompt: string, profile: Profile | null): string {
+function substituteSystemPromptVariables(
+  prompt: string,
+  profile: Profile | null,
+): string {
   const now = new Date();
   const dateStr = now.toISOString().slice(0, 10);
-  const timeStr = now.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', hour12: true });
+  const timeStr = now.toLocaleTimeString(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
   const datetimeStr = `${dateStr} ${timeStr}`;
   const dayOfWeek = now.toLocaleDateString(undefined, { weekday: 'long' });
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const profilename = profile?.name ?? '';
-  const modelname = profile?.modelFilename
-    ?? (profile?.model ? path.basename(profile.model) : '');
-  const contextlength = currentContextSize != null ? String(currentContextSize) : '';
+  const modelname =
+    profile?.modelFilename ??
+    (profile?.model ? path.basename(profile.model) : '');
+  const contextlength =
+    currentContextSize != null ? String(currentContextSize) : '';
 
   return prompt.replace(
     /\{(date|time|datetime|dayOfWeek|timezone|profilename|modelname|contextlength)\}/g,
     (_match, key) => {
       switch (key) {
-        case 'date': return dateStr;
-        case 'time': return timeStr;
-        case 'datetime': return datetimeStr;
-        case 'dayOfWeek': return dayOfWeek;
-        case 'timezone': return timezone;
-        case 'profilename': return profilename;
-        case 'modelname': return modelname;
-        case 'contextlength': return contextlength;
-        default: return _match;
+        case 'date':
+          return dateStr;
+        case 'time':
+          return timeStr;
+        case 'datetime':
+          return datetimeStr;
+        case 'dayOfWeek':
+          return dayOfWeek;
+        case 'timezone':
+          return timezone;
+        case 'profilename':
+          return profilename;
+        case 'modelname':
+          return modelname;
+        case 'contextlength':
+          return contextlength;
+        default:
+          return _match;
       }
     },
   );
@@ -335,7 +356,15 @@ export async function preloadSystemPrompt(
 
   try {
     const body: Record<string, any> = {
-      messages: [{ role: 'system', content: substituteSystemPromptVariables(systemPrompt, currentProfile) }],
+      messages: [
+        {
+          role: 'system',
+          content: substituteSystemPromptVariables(
+            systemPrompt,
+            currentProfile,
+          ),
+        },
+      ],
       max_tokens: 1,
       temperature: 0,
       stream: true,
@@ -424,8 +453,7 @@ export async function preloadSystemPrompt(
               promptStats = pFromUsage;
               if (onDone) onDone(pFromUsage, tools.length);
             }
-          } catch (e) {
-          }
+          } catch (e) {}
         }
       }
       // Fallback: stream ended without [DONE] or explicit stats
@@ -448,7 +476,9 @@ export async function loadProfile(
 ): Promise<{ success: boolean; error?: string; profile?: any }> {
   const prevMutex = loadProfileMutex;
   let releaseMutex: () => void;
-  loadProfileMutex = new Promise<void>((r) => { releaseMutex = r; });
+  loadProfileMutex = new Promise<void>((r) => {
+    releaseMutex = r;
+  });
   await prevMutex;
 
   try {
@@ -474,7 +504,10 @@ export async function loadProfile(
       console.log(`Backend: ${backendFolder}`);
       const serverBin =
         process.platform === 'win32' ? 'llama-server.exe' : 'llama-server';
-      const serverPath = path.join(getAssetPath('bin', backendFolder), serverBin);
+      const serverPath = path.join(
+        getAssetPath('bin', backendFolder),
+        serverBin,
+      );
 
       const vramMB = settings.allocatedVRAM ?? 4096;
       const ramMB = settings.allocatedRAM ?? 8192;
@@ -510,7 +543,10 @@ export async function loadProfile(
           autoOptimizer && autoOptimizer !== 'custom'
             ? autoOptimizer
             : 'longest-context';
-        onStatus?.({ phase: 'solving', message: `Optimizing Profile "${profile.name}"…` });
+        onStatus?.({
+          phase: 'solving',
+          message: `Optimizing Profile "${profile.name}"…`,
+        });
         const optResult = await getOrRunOptimizer(
           fullModelPath,
           vramMB,
@@ -529,15 +565,17 @@ export async function loadProfile(
       }
 
       // Check our Async unloader
-      onStatus?.({ phase: 'unloading', message: 'Unloading Previous Profile…' });
+      onStatus?.({
+        phase: 'unloading',
+        message: 'Unloading Previous Profile…',
+      });
       await unloadPromise;
 
       lastResolvedMemory = result.memory;
       currentContextSize = result.ctx;
 
       onStatus?.({ phase: 'loadprofile', message: `Loading New Profile…` });
-      if (!chatFunctions)
-        chatFunctions = createChatFunctions();
+      if (!chatFunctions) chatFunctions = createChatFunctions();
       activeTools = (profile.tools || [])
         .map((t) => chatFunctions[t])
         .filter(Boolean)
@@ -564,16 +602,29 @@ export async function loadProfile(
         '--host',
         (profile as any).host ?? '127.0.0.1',
         '--parallel',
-        ((profile as any).parallel !== undefined && (profile as any).parallel !== -1 ? (profile as any).parallel : 1).toString(),
+        ((profile as any).parallel !== undefined &&
+        (profile as any).parallel !== -1
+          ? (profile as any).parallel
+          : 1
+        ).toString(),
         '--metrics',
       ];
-      if ((profile as any).corsOrigins && (profile as any).corsOrigins !== '*') {
+      if (
+        (profile as any).corsOrigins &&
+        (profile as any).corsOrigins !== '*'
+      ) {
         spawnArgs.push('--cors-origins', (profile as any).corsOrigins);
       }
-      if ((profile as any).corsMethods && (profile as any).corsMethods !== 'GET, POST, DELETE, OPTIONS') {
+      if (
+        (profile as any).corsMethods &&
+        (profile as any).corsMethods !== 'GET, POST, DELETE, OPTIONS'
+      ) {
         spawnArgs.push('--cors-methods', (profile as any).corsMethods);
       }
-      if ((profile as any).corsHeaders && (profile as any).corsHeaders !== '*') {
+      if (
+        (profile as any).corsHeaders &&
+        (profile as any).corsHeaders !== '*'
+      ) {
         spawnArgs.push('--cors-headers', (profile as any).corsHeaders);
       }
       if ((profile as any).corsCredentials === false) {
@@ -582,7 +633,8 @@ export async function loadProfile(
       if (profile.kvOffload === false) spawnArgs.push('--no-kv-offload');
       if (profile.mmap === false) spawnArgs.push('--no-mmap');
       if (profile.mlock === true) spawnArgs.push('--mlock');
-      if ((profile as any).contextShift === true) spawnArgs.push('--context-shift');
+      if ((profile as any).contextShift === true)
+        spawnArgs.push('--context-shift');
       spawnArgs.push('--cache-type-k', (profile as any).cacheTypeK ?? 'f16');
       spawnArgs.push('--cache-type-v', (profile as any).cacheTypeV ?? 'f16');
       if ((profile as any).flashAttn) {
@@ -607,27 +659,54 @@ export async function loadProfile(
         spawnArgs.push('--spec-type', profile.specType.join(','));
 
         const draftModelPath = profile.draftModelFilename
-          ? path.join(getModelsDirectory(), `${profile.draftModelAuthor}/${profile.draftModelFolder}/${profile.draftModelFilename}`)
+          ? path.join(
+              getModelsDirectory(),
+              `${profile.draftModelAuthor}/${profile.draftModelFolder}/${profile.draftModelFilename}`,
+            )
           : undefined;
-        if (draftModelPath && fs.existsSync(draftModelPath) && profile.specType.includes('draft-simple')) {
+        if (
+          draftModelPath &&
+          fs.existsSync(draftModelPath) &&
+          profile.specType.includes('draft-simple')
+        ) {
           spawnArgs.push('--spec-draft-model', draftModelPath);
         }
 
-        if (profile.specDraftNMax !== undefined && profile.specDraftNMax !== 3) {
-          spawnArgs.push('--spec-draft-n-max', profile.specDraftNMax.toString());
+        if (
+          profile.specDraftNMax !== undefined &&
+          profile.specDraftNMax !== 3
+        ) {
+          spawnArgs.push(
+            '--spec-draft-n-max',
+            profile.specDraftNMax.toString(),
+          );
         }
-        if (profile.specDraftNMin !== undefined && profile.specDraftNMin !== 0) {
-          spawnArgs.push('--spec-draft-n-min', profile.specDraftNMin.toString());
+        if (
+          profile.specDraftNMin !== undefined &&
+          profile.specDraftNMin !== 0
+        ) {
+          spawnArgs.push(
+            '--spec-draft-n-min',
+            profile.specDraftNMin.toString(),
+          );
         }
-        if (profile.specDraftPSplit !== undefined && profile.specDraftPSplit !== 0.10) {
+        if (
+          profile.specDraftPSplit !== undefined &&
+          profile.specDraftPSplit !== 0.1
+        ) {
           spawnArgs.push('--draft-p-split', profile.specDraftPSplit.toFixed(2));
         }
-        if (profile.specDraftPMin !== undefined && profile.specDraftPMin !== 0.00) {
+        if (
+          profile.specDraftPMin !== undefined &&
+          profile.specDraftPMin !== 0.0
+        ) {
           spawnArgs.push('--draft-p-min', profile.specDraftPMin.toFixed(2));
         }
       }
 
-      console.log(`NGL=${result.ngl}, Context=${result.ctx}, autoOptimizer=${(profile as any).autoOptimizer}`);
+      console.log(
+        `NGL=${result.ngl}, Context=${result.ctx}, autoOptimizer=${(profile as any).autoOptimizer}`,
+      );
       onStatus?.({ phase: 'starting', message: 'Loading AI Model…' });
 
       // Defensive kill: ensure no stale server process before spawning
@@ -663,13 +742,17 @@ export async function loadProfile(
           .map((l) => l.trim())
           .filter(Boolean)
           .slice(0, 10);
-        const detail = errorLines.length > 0
-          ? errorLines.join('\n')
-          : serverErrorLog.trim().slice(0, 2000);
+        const detail =
+          errorLines.length > 0
+            ? errorLines.join('\n')
+            : serverErrorLog.trim().slice(0, 2000);
         throw new Error(`Inference server failed to respond.\n\n${detail}`);
       }
 
-      const resolvedSystemPrompt = substituteSystemPromptVariables(profile.systemPrompt, profile);
+      const resolvedSystemPrompt = substituteSystemPromptVariables(
+        profile.systemPrompt,
+        profile,
+      );
       const systemTokens = (await tokenize(resolvedSystemPrompt)) ?? 0;
       const toolTokens =
         activeTools.length > 0
@@ -682,7 +765,11 @@ export async function loadProfile(
       messageHistory = [{ role: 'system', content: resolvedSystemPrompt }];
 
       if (updatedProfile) {
-        return { success: true, profile: updatedProfile, backend: backendFolder };
+        return {
+          success: true,
+          profile: updatedProfile,
+          backend: backendFolder,
+        };
       }
       return { success: true, backend: backendFolder };
     } catch (error: any) {
@@ -697,7 +784,12 @@ export async function loadProfile(
 export async function sendMessage(
   text: string,
   onToken: (t: string, type?: 'thought' | 'comment') => void,
-  contentParts?: { kind: string; url?: string; filePath?: string; text?: string }[],
+  contentParts?: {
+    kind: string;
+    url?: string;
+    filePath?: string;
+    text?: string;
+  }[],
   onProgress?: (data: {
     progress: number;
     promptN: number;
@@ -899,19 +991,30 @@ export async function sendMessage(
             toolName: tc.name,
             toolParams: JSON.parse(tc.args),
           };
-          if (emitFunctionEvent) emitFunctionEvent('input-request', tc.name, JSON.stringify(inputReq));
+          if (emitFunctionEvent)
+            emitFunctionEvent(
+              'input-request',
+              tc.name,
+              JSON.stringify(inputReq),
+            );
           const userResponse = await waitForUserInput();
 
           if (inputReq.type === 'confirm') {
             if (userResponse.action === 'confirmed') {
               // Re-call handler with confirmation
-              result = await handler({ ...JSON.parse(tc.args), _confirmed: true });
+              result = await handler({
+                ...JSON.parse(tc.args),
+                _confirmed: true,
+              });
             } else {
               result = { _denied: true, message: 'User denied this action.' };
             }
           } else {
             // select / freeform: use user's response directly as tool result
-            result = { _userResponse: userResponse.action, value: userResponse.value };
+            result = {
+              _userResponse: userResponse.action,
+              value: userResponse.value,
+            };
           }
         }
 

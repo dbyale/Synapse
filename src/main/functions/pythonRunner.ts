@@ -483,13 +483,20 @@ export async function ensurePackage(
   } catch {
     try {
       const binary = await resolvePythonBinary();
-      await execFileAsync(binary, ['-m', 'pip', 'install', packageName, '--quiet'], {
-        timeout: 120_000,
-      });
+      await execFileAsync(
+        binary,
+        ['-m', 'pip', 'install', packageName, '--quiet'],
+        {
+          timeout: 120_000,
+        },
+      );
       return { success: true };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      return { success: false, error: `Failed to install ${packageName}: ${msg}` };
+      return {
+        success: false,
+        error: `Failed to install ${packageName}: ${msg}`,
+      };
     }
   }
 }

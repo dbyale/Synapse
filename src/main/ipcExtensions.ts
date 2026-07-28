@@ -108,10 +108,12 @@ export function registerExtensionIpcHandlers(): void {
       saveExtensionSettings(id, settings);
       if (id === 'filesystem') {
         setAllowedDirectories(settings.allowedDirectories || []);
-        if (settings.maxReadSize !== undefined) setMaxReadSize(settings.maxReadSize);
+        if (settings.maxReadSize !== undefined)
+          setMaxReadSize(settings.maxReadSize);
       }
       if (id === 'sandbox') {
-        if (settings.maxReadSize !== undefined) setSandboxMaxReadSize(settings.maxReadSize);
+        if (settings.maxReadSize !== undefined)
+          setSandboxMaxReadSize(settings.maxReadSize);
       }
       return { success: true };
     },

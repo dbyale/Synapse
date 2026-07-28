@@ -199,7 +199,8 @@ export default function ProfilesPage() {
         if (s.corsOrigins !== undefined) setDefaultCorsOrigins(s.corsOrigins);
         if (s.corsMethods !== undefined) setDefaultCorsMethods(s.corsMethods);
         if (s.corsHeaders !== undefined) setDefaultCorsHeaders(s.corsHeaders);
-        if (s.corsCredentials !== undefined) setDefaultCorsCredentials(s.corsCredentials);
+        if (s.corsCredentials !== undefined)
+          setDefaultCorsCredentials(s.corsCredentials);
       } catch {
         // Silently fail
       }
@@ -636,44 +637,56 @@ export default function ProfilesPage() {
                         </div>
                         <p className="sp-card__model">
                           <strong>Model:</strong>{' '}
-                           <InfoTooltip content="The GGUF model file assigned to this profile." side="right" hideIcon title="Model">
-                              <span>{profile.model.split(/[/\\]/).pop()}</span>
-                           </InfoTooltip>
+                          <InfoTooltip
+                            content="The GGUF model file assigned to this profile."
+                            side="right"
+                            hideIcon
+                            title="Model"
+                          >
+                            <span>{profile.model.split(/[/\\]/).pop()}</span>
+                          </InfoTooltip>
                         </p>
                         {/* ── Tool badges (grouped by extension) ── */}
                         {profile.tools &&
                           profile.tools.length > 0 &&
                           (() => {
                             const extensions = getExtensions();
-                            const badgeData = extensions.map((ext) => {
-                              const toolKeys = Object.keys(ext.tools);
-                              const total = toolKeys.length;
-                              const enabled = toolKeys.filter(
-                                (tk) => profile.tools?.includes(tk),
-                              ).length;
-                              return { id: ext.manifest.id, name: ext.manifest.name, total, enabled };
-                            }).filter(({ enabled }) => enabled > 0);
+                            const badgeData = extensions
+                              .map((ext) => {
+                                const toolKeys = Object.keys(ext.tools);
+                                const total = toolKeys.length;
+                                const enabled = toolKeys.filter((tk) =>
+                                  profile.tools?.includes(tk),
+                                ).length;
+                                return {
+                                  id: ext.manifest.id,
+                                  name: ext.manifest.name,
+                                  total,
+                                  enabled,
+                                };
+                              })
+                              .filter(({ enabled }) => enabled > 0);
 
                             return (
                               <div className="sp-card__tool-badges">
                                 {badgeData.map(
                                   ({ id, name, total, enabled }) => (
                                     <InfoTooltip
-                                    key={id}
-                                    content={`${enabled} of ${total} tools enabled in ${name}.`}
-                                    side="top"
-                                    hideIcon
-                                    title={name}
-                                  >
-                                    <span className="sp-card__tool-badge">
-                                      {enabled === total ? (
-                                        <PackageCheck size={11} />
-                                      ) : (
-                                        <PackageMinus size={11} />
-                                      )}
-                                      {name}
-                                    </span>
-                                  </InfoTooltip>
+                                      key={id}
+                                      content={`${enabled} of ${total} tools enabled in ${name}.`}
+                                      side="top"
+                                      hideIcon
+                                      title={name}
+                                    >
+                                      <span className="sp-card__tool-badge">
+                                        {enabled === total ? (
+                                          <PackageCheck size={11} />
+                                        ) : (
+                                          <PackageMinus size={11} />
+                                        )}
+                                        {name}
+                                      </span>
+                                    </InfoTooltip>
                                   ),
                                 )}
                               </div>

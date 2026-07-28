@@ -1,4 +1,13 @@
-export type CacheType = 'f32' | 'f16' | 'bf16' | 'q8_0' | 'q4_0' | 'q4_1' | 'iq4_nl' | 'q5_0' | 'q5_1';
+export type CacheType =
+  | 'f32'
+  | 'f16'
+  | 'bf16'
+  | 'q8_0'
+  | 'q4_0'
+  | 'q4_1'
+  | 'iq4_nl'
+  | 'q5_0'
+  | 'q5_1';
 
 export interface Profile {
   id: string;

@@ -286,7 +286,10 @@ export default function DownloadManager() {
                 }
 
                 return (
-                  <div key={dl.modelId + ':' + dl.filename} className="dl-manager__item">
+                  <div
+                    key={dl.modelId + ':' + dl.filename}
+                    className="dl-manager__item"
+                  >
                     <div className="dl-manager__item-header">
                       <div className="dl-manager__item-title">
                         <div

@@ -341,7 +341,9 @@ export function downloadModel(
     }
 
     const url = `https://huggingface.co/${repoId}/resolve/main/${filename}`;
-    let file = fs.createWriteStream(partPath, { flags: startByte > 0 ? 'a' : 'w' });
+    let file = fs.createWriteStream(partPath, {
+      flags: startByte > 0 ? 'a' : 'w',
+    });
 
     const doRequest = (downloadUrl: string, byteOffset: number) => {
       const cleanupAndReject = (err: Error) => {
@@ -405,7 +407,8 @@ export function downloadModel(
           response.headers['content-length'] ?? '0',
           10,
         );
-        const totalBytes = byteOffset > 0 ? contentLength + byteOffset : contentLength;
+        const totalBytes =
+          byteOffset > 0 ? contentLength + byteOffset : contentLength;
         let downloadedBytes = byteOffset;
 
         response.on('data', (chunk: Buffer) => {
@@ -442,7 +445,12 @@ export function downloadModel(
 
       req.on('error', cleanupAndReject);
 
-      activeDownloads.set(repoId + ':' + filename, { req, destPath, win, repoId });
+      activeDownloads.set(repoId + ':' + filename, {
+        req,
+        destPath,
+        win,
+        repoId,
+      });
     };
 
     doRequest(url, startByte);
@@ -486,7 +494,10 @@ export function cleanupPartFiles(): void {
           fs.unlinkSync(fullPath);
           console.log(`[cleanup] Deleted part file: ${fullPath}`);
         } catch (err) {
-          console.error(`[cleanup] Failed to delete part file: ${fullPath}`, err);
+          console.error(
+            `[cleanup] Failed to delete part file: ${fullPath}`,
+            err,
+          );
         }
       }
     }

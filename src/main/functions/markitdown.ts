@@ -29,9 +29,15 @@ async function resolvePythonBinary(): Promise<string> {
 }
 
 let markitdownReady = false;
-let markitdownCheckInProgress: Promise<{ success: boolean; error?: string }> | null = null;
+let markitdownCheckInProgress: Promise<{
+  success: boolean;
+  error?: string;
+}> | null = null;
 
-async function ensureMarkitdown(): Promise<{ success: boolean; error?: string }> {
+async function ensureMarkitdown(): Promise<{
+  success: boolean;
+  error?: string;
+}> {
   if (markitdownReady) return { success: true };
   if (markitdownCheckInProgress) return await markitdownCheckInProgress;
 
@@ -40,7 +46,14 @@ async function ensureMarkitdown(): Promise<{ success: boolean; error?: string }>
       const binary = await resolvePythonBinary();
       await execFileAsync(
         binary,
-        ['-m', 'pip', 'install', 'markitdown[pdf,docx,pptx,xlsx,xls,audio-transcription]', '--quiet', '--upgrade'],
+        [
+          '-m',
+          'pip',
+          'install',
+          'markitdown[pdf,docx,pptx,xlsx,xls,audio-transcription]',
+          '--quiet',
+          '--upgrade',
+        ],
         { timeout: 120_000 },
       );
       markitdownReady = true;

@@ -1316,7 +1316,11 @@ function FlashAttnSelector({
   }, []);
 
   return (
-    <div className="epm-cache-selector" ref={ref} style={{ width: '250px', flex: 'none' }}>
+    <div
+      className="epm-cache-selector"
+      ref={ref}
+      style={{ width: '250px', flex: 'none' }}
+    >
       <div className="epm-cache-selector-wrap">
         <button
           className="epm-cache-selector-trigger"
@@ -3159,8 +3163,8 @@ function CorsSettingsPage({
           lineHeight: 1.5,
         }}
       >
-        Configure Cross-Origin Resource Sharing (CORS) for the llama-server
-        HTTP API.
+        Configure Cross-Origin Resource Sharing (CORS) for the llama-server HTTP
+        API.
       </p>
 
       <div className="epm-section" style={{ marginTop: '20px' }}>
@@ -3444,14 +3448,10 @@ export default function EditProfileModal({
       : (defaultCorsOrigins ?? 'localhost'),
   );
   const [editCorsMethods, setEditCorsMethods] = useState<string>(
-    profile !== null
-      ? (profile.corsMethods ?? '')
-      : (defaultCorsMethods ?? ''),
+    profile !== null ? (profile.corsMethods ?? '') : (defaultCorsMethods ?? ''),
   );
   const [editCorsHeaders, setEditCorsHeaders] = useState<string>(
-    profile !== null
-      ? (profile.corsHeaders ?? '')
-      : (defaultCorsHeaders ?? ''),
+    profile !== null ? (profile.corsHeaders ?? '') : (defaultCorsHeaders ?? ''),
   );
   const [editCorsCredentials, setEditCorsCredentials] = useState<boolean>(
     profile !== null
@@ -3777,7 +3777,11 @@ export default function EditProfileModal({
       corsMethods: editCorsMethods || undefined,
       corsHeaders: editCorsHeaders || undefined,
       corsCredentials: editCorsCredentials,
-      order: profile?.order ?? (profiles.length === 0 ? 0 : Math.min(...profiles.map(p => p.order ?? p.createdAt ?? 0)) - 1),
+      order:
+        profile?.order ??
+        (profiles.length === 0
+          ? 0
+          : Math.min(...profiles.map((p) => p.order ?? p.createdAt ?? 0)) - 1),
       createdAt: profile?.createdAt ?? now,
     };
 

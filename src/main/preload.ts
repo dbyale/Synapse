@@ -75,8 +75,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   chatLoadProfile: (profile: any) =>
     ipcRenderer.invoke('chat:loadProfile', profile),
   chatGetCurrentProfile: () => ipcRenderer.invoke('chat:getCurrentProfile'),
-  chatSend: (text: string, contentParts?: { kind: string; url?: string; filePath?: string; text?: string }[]) =>
-    ipcRenderer.invoke('chat:send', text, contentParts),
+  chatSend: (
+    text: string,
+    contentParts?: {
+      kind: string;
+      url?: string;
+      filePath?: string;
+      text?: string;
+    }[],
+  ) => ipcRenderer.invoke('chat:send', text, contentParts),
 
   onChatToken: (
     callback: (data: {
@@ -256,7 +263,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   readFileAsBuffer: (filePath: string): Promise<Uint8Array> =>
     ipcRenderer.invoke('files:readFileAsBuffer', filePath),
 
-  convertFileWithMarkitdown: (filePath: string): Promise<{
+  convertFileWithMarkitdown: (
+    filePath: string,
+  ): Promise<{
     success: boolean;
     markdown?: string;
     error?: string;

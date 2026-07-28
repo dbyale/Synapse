@@ -98,7 +98,13 @@
   padding: 12px 14px;
   white-space: pre-wrap;
   word-break: break-all;
-  font-family: var(--font-mono, 'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace);
+  font-family: var(
+    --font-mono,
+    'Cascadia Code',
+    'Fira Code',
+    'JetBrains Mono',
+    monospace
+  );
   user-select: text;
 }
 
@@ -130,7 +136,7 @@
   background: rgba(37, 99, 235, 0.08);
 }
 
-.uim-option input[type="radio"] {
+.uim-option input[type='radio'] {
   accent-color: var(--accent);
   flex-shrink: 0;
 }

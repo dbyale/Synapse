@@ -55,8 +55,7 @@ if (isDebug) {
   require('electron-debug').default();
 }
 
-const installExtensions = async () => {
-};
+const installExtensions = async () => {};
 
 const createWindow = async () => {
   if (isDebug) {

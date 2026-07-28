@@ -33,7 +33,9 @@ export default function InfoTooltip({
         className={`info-tooltip-wrapper info-tooltip-wrapper--${side} info-tooltip-wrapper--stretch${className ? ` ${className}` : ''}`}
         style={style}
       >
-        <div className={`info-tooltip-anchor${restChildren.length === 0 ? ' info-tooltip-anchor--fill' : ''}`}>
+        <div
+          className={`info-tooltip-anchor${restChildren.length === 0 ? ' info-tooltip-anchor--fill' : ''}`}
+        >
           {firstChild}
           <div className="info-tooltip">
             {title && <div className="info-tooltip-title">{title}</div>}
@@ -54,7 +56,10 @@ export default function InfoTooltip({
   }
 
   return (
-    <div className={`info-tooltip-wrapper info-tooltip-wrapper--${side}${className ? ` ${className}` : ''}`} style={style}>
+    <div
+      className={`info-tooltip-wrapper info-tooltip-wrapper--${side}${className ? ` ${className}` : ''}`}
+      style={style}
+    >
       {children}
       {!hideIcon && (
         <span className="info-tooltip-trigger">

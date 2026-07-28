@@ -68,7 +68,7 @@ export default function ProfileSelectModal({
     ? profiles.filter(
         (p) =>
           p.name.toLowerCase().includes(query) ||
-          p.model.toLowerCase().includes(query)
+          p.model.toLowerCase().includes(query),
       )
     : profiles;
 
@@ -119,7 +119,9 @@ export default function ProfileSelectModal({
         <div className="psm-list">
           {filteredProfiles.length === 0 ? (
             <div className="psm-empty">
-              {query ? 'No profiles match your search.' : 'No profiles available.'}
+              {query
+                ? 'No profiles match your search.'
+                : 'No profiles available.'}
             </div>
           ) : (
             filteredProfiles.map((profile) => (

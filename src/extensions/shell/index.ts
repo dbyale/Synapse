@@ -1,5 +1,8 @@
 import type { ExtensionToolDef } from '../types';
-import { runShellCommand, getShellEnvironmentInfo } from '../../main/functions/shellRunner';
+import {
+  runShellCommand,
+  getShellEnvironmentInfo,
+} from '../../main/functions/shellRunner';
 import manifest from './manifest.json';
 
 export const tools: Record<string, ExtensionToolDef> = {
@@ -33,12 +36,19 @@ export const tools: Record<string, ExtensionToolDef> = {
         },
         timeout: {
           type: 'number',
-          description: 'Timeout in milliseconds (optional, default 30000, max 60000).',
+          description:
+            'Timeout in milliseconds (optional, default 30000, max 60000).',
         },
       },
       required: ['command'],
     },
-    async handler(params: { command: string; explanation?: string; workdir?: string; timeout?: number; _confirmed?: boolean }) {
+    async handler(params: {
+      command: string;
+      explanation?: string;
+      workdir?: string;
+      timeout?: number;
+      _confirmed?: boolean;
+    }) {
       if (!params._confirmed) {
         return {
           _userInput: {
@@ -57,7 +67,8 @@ export const tools: Record<string, ExtensionToolDef> = {
     meta: {
       name: 'get_shell_info',
       label: 'Shell Environment Info',
-      description: 'Get information about the shell environment (platform, shell path, architecture, hostname).',
+      description:
+        'Get information about the shell environment (platform, shell path, architecture, hostname).',
       icon: 'Info',
     },
     params: { type: 'object', properties: {} },
@@ -80,7 +91,7 @@ export const tools: Record<string, ExtensionToolDef> = {
         '  • Run file operations that require shell features (pipes, redirects, globs)\n' +
         '\n' +
         'CRITICAL RULES:\n' +
-        '  • The command runs on the user\'s real machine with their permissions.\n' +
+        "  • The command runs on the user's real machine with their permissions.\n" +
         '  • NEVER run destructive commands (rm -rf, format, dd, shutdown, etc.).\n' +
         '  • NEVER install or modify system packages without explicit user consent.\n' +
         '  • NEVER read sensitive files (/etc/shadow, .ssh/*, .env with secrets).\n' +
@@ -104,7 +115,7 @@ export const tools: Record<string, ExtensionToolDef> = {
           type: 'string',
           description:
             'The shell command to execute. Can include pipes (|), redirects (>), and multiple commands (&&, ;). ' +
-            'Runs in a real shell on the user\'s machine.',
+            "Runs in a real shell on the user's machine.",
         },
         workdir: {
           type: 'string',
@@ -119,7 +130,11 @@ export const tools: Record<string, ExtensionToolDef> = {
       },
       required: ['command'],
     },
-    async handler(params: { command: string; workdir?: string; timeout?: number }) {
+    async handler(params: {
+      command: string;
+      workdir?: string;
+      timeout?: number;
+    }) {
       const timeout = Math.min(params.timeout ?? 30000, 60000);
       return await runShellCommand(params.command, params.workdir, timeout);
     },

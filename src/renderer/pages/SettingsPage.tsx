@@ -75,11 +75,20 @@ function MemorySlider({
   onSave,
   onRefresh,
 }: MemorySliderProps) {
-  const titleTooltip = title.includes('Video') || title.includes('GPU') ? VRAM_LABEL_TOOLTIP : RAM_LABEL_TOOLTIP;
+  const titleTooltip =
+    title.includes('Video') || title.includes('GPU')
+      ? VRAM_LABEL_TOOLTIP
+      : RAM_LABEL_TOOLTIP;
 
   const TitleNode = (
     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-      <InfoTooltip content={titleTooltip} side="right" hideIcon title={title} className="mem-title-tooltip">
+      <InfoTooltip
+        content={titleTooltip}
+        side="right"
+        hideIcon
+        title={title}
+        className="mem-title-tooltip"
+      >
         <div className="mem-title">{title}</div>
       </InfoTooltip>
       <InfoTooltip content="Refresh memory usage" side="bottom" hideIcon>
@@ -186,7 +195,12 @@ function MemorySlider({
 
         {/* MAX line — fixed at maxRecommended / total */}
         <div className="mem-max-wrapper" style={{ left: `${maxPct}%` }}>
-          <InfoTooltip content={MAX_LABEL_TOOLTIP} side="top" iconSize={10} title="Maximum">
+          <InfoTooltip
+            content={MAX_LABEL_TOOLTIP}
+            side="top"
+            iconSize={10}
+            title="Maximum"
+          >
             <div className="mem-max-label">MAX</div>
           </InfoTooltip>
           <div className="mem-max-line" />
@@ -212,7 +226,12 @@ function MemorySlider({
 
       <div className="mem-legend-row">
         <div className={`mem-legend-box ${isExceeded ? 'exceeded' : ''}`} />
-        <InfoTooltip content={MEMORY_ALLOCATOR_TOOLTIP} side="right" hideIcon title="Synapse Allocation">
+        <InfoTooltip
+          content={MEMORY_ALLOCATOR_TOOLTIP}
+          side="right"
+          hideIcon
+          title="Synapse Allocation"
+        >
           <span>
             Synapse Allocation:{' '}
             <strong className="mem-value-small">{appGB} GB</strong>
@@ -388,11 +407,13 @@ export default function SettingsPage() {
         delete payload.allocatedVRAM;
       }
 
-      const isMemChange = 'allocatedRAM' in overrides || 'allocatedVRAM' in overrides;
+      const isMemChange =
+        'allocatedRAM' in overrides || 'allocatedVRAM' in overrides;
       let shouldPrompt = false;
       if (isMemChange) {
         const currentProfile = await window.electronAPI.chatGetCurrentProfile();
-        shouldPrompt = currentProfile !== null && currentProfile.autoOptimizer !== 'custom';
+        shouldPrompt =
+          currentProfile !== null && currentProfile.autoOptimizer !== 'custom';
       }
 
       if (shouldPrompt) {
@@ -502,12 +523,24 @@ export default function SettingsPage() {
       {tab === 'system' && (
         <>
           <div className="settings-card">
-            <InfoTooltip content="Configure global application paths and directories." side="right" hideIcon title="Application Setup" className="mem-title-tooltip">
+            <InfoTooltip
+              content="Configure global application paths and directories."
+              side="right"
+              hideIcon
+              title="Application Setup"
+              className="mem-title-tooltip"
+            >
               <h2 className="settings-card-title">Application Setup</h2>
             </InfoTooltip>
 
             <div className="settings-field">
-              <InfoTooltip content={MODELS_DIR_TOOLTIP} side="bottom" hideIcon title="Models Directory" className="models-dir-tooltip">
+              <InfoTooltip
+                content={MODELS_DIR_TOOLTIP}
+                side="bottom"
+                hideIcon
+                title="Models Directory"
+                className="models-dir-tooltip"
+              >
                 <span className="settings-label">Models Directory</span>
                 <div className="settings-row">
                   <input
@@ -529,7 +562,13 @@ export default function SettingsPage() {
           </div>
 
           <div className="settings-card">
-            <InfoTooltip content={MEMORY_ALLOCATOR_TOOLTIP} side="right" hideIcon title="System Resource Allocator" className="mem-title-tooltip">
+            <InfoTooltip
+              content={MEMORY_ALLOCATOR_TOOLTIP}
+              side="right"
+              hideIcon
+              title="System Resource Allocator"
+              className="mem-title-tooltip"
+            >
               <h2 className="settings-card-title">System Resource Allocator</h2>
             </InfoTooltip>
 
@@ -571,17 +610,23 @@ export default function SettingsPage() {
 
           <div className="settings-field">
             <label className="settings-toggle-row">
-              <span className="settings-label">Automatically open thinking segments</span>
+              <span className="settings-label">
+                Automatically open thinking segments
+              </span>
               <div
                 className={`epm-toggle-switch${settings.autoOpenThinking ? ' epm-toggle-switch--on' : ''}`}
-                onClick={() => triggerSave({ autoOpenThinking: !settings.autoOpenThinking })}
+                onClick={() =>
+                  triggerSave({ autoOpenThinking: !settings.autoOpenThinking })
+                }
                 role="switch"
                 aria-checked={settings.autoOpenThinking}
                 tabIndex={0}
                 onKeyDown={(e) => {
                   if (e.key === ' ' || e.key === 'Enter') {
                     e.preventDefault();
-                    triggerSave({ autoOpenThinking: !settings.autoOpenThinking });
+                    triggerSave({
+                      autoOpenThinking: !settings.autoOpenThinking,
+                    });
                   }
                 }}
               >
@@ -591,13 +636,19 @@ export default function SettingsPage() {
           </div>
 
           <div className="settings-field">
-            <label className={`settings-toggle-row${!settings.autoOpenThinking ? ' settings-toggle-row--disabled' : ''}`}>
-              <span className="settings-label">Automatically close thinking segments when finished</span>
+            <label
+              className={`settings-toggle-row${!settings.autoOpenThinking ? ' settings-toggle-row--disabled' : ''}`}
+            >
+              <span className="settings-label">
+                Automatically close thinking segments when finished
+              </span>
               <div
                 className={`epm-toggle-switch${settings.autoCloseThinkingDone ? ' epm-toggle-switch--on' : ''}${!settings.autoOpenThinking ? ' epm-toggle-switch--disabled' : ''}`}
                 onClick={() => {
                   if (!settings.autoOpenThinking) return;
-                  triggerSave({ autoCloseThinkingDone: !settings.autoCloseThinkingDone });
+                  triggerSave({
+                    autoCloseThinkingDone: !settings.autoCloseThinkingDone,
+                  });
                 }}
                 role="switch"
                 aria-checked={settings.autoCloseThinkingDone}
@@ -606,7 +657,9 @@ export default function SettingsPage() {
                   if (!settings.autoOpenThinking) return;
                   if (e.key === ' ' || e.key === 'Enter') {
                     e.preventDefault();
-                    triggerSave({ autoCloseThinkingDone: !settings.autoCloseThinkingDone });
+                    triggerSave({
+                      autoCloseThinkingDone: !settings.autoCloseThinkingDone,
+                    });
                   }
                 }}
               >
@@ -620,13 +673,22 @@ export default function SettingsPage() {
       {tab === 'server' && (
         <div className="settings-card">
           <h2 className="settings-card-title">Server Defaults</h2>
-          <p style={{ fontSize: '14px', color: 'var(--text-secondary)', marginBottom: '20px', lineHeight: 1.5 }}>
-            These settings are used as global defaults when creating <strong>new</strong> profiles.
-            Existing profiles are not affected.
+          <p
+            style={{
+              fontSize: '14px',
+              color: 'var(--text-secondary)',
+              marginBottom: '20px',
+              lineHeight: 1.5,
+            }}
+          >
+            These settings are used as global defaults when creating{' '}
+            <strong>new</strong> profiles. Existing profiles are not affected.
           </p>
 
           <div className="settings-field">
-            <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+            <div
+              style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}
+            >
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="epm-section__label">Host</div>
                 <InfoTooltip
@@ -666,7 +728,12 @@ export default function SettingsPage() {
                     value={settings.port?.toString() ?? ''}
                     onChange={(e) =>
                       setSettings((prev) =>
-                        prev ? { ...prev, port: parseInt(e.target.value, 10) || 8080 } : prev,
+                        prev
+                          ? {
+                              ...prev,
+                              port: parseInt(e.target.value, 10) || 8080,
+                            }
+                          : prev,
                       )
                     }
                     onBlur={() => triggerSave({ port: settings.port })}
@@ -698,7 +765,9 @@ export default function SettingsPage() {
                     prev ? { ...prev, corsOrigins: e.target.value } : prev,
                   )
                 }
-                onBlur={() => triggerSave({ corsOrigins: settings.corsOrigins })}
+                onBlur={() =>
+                  triggerSave({ corsOrigins: settings.corsOrigins })
+                }
                 placeholder="*"
                 style={{ marginTop: '8px' }}
               />
@@ -723,7 +792,9 @@ export default function SettingsPage() {
                     prev ? { ...prev, corsMethods: e.target.value } : prev,
                   )
                 }
-                onBlur={() => triggerSave({ corsMethods: settings.corsMethods })}
+                onBlur={() =>
+                  triggerSave({ corsMethods: settings.corsMethods })
+                }
                 placeholder="GET, POST, DELETE, OPTIONS"
                 style={{ marginTop: '8px' }}
               />
@@ -748,7 +819,9 @@ export default function SettingsPage() {
                     prev ? { ...prev, corsHeaders: e.target.value } : prev,
                   )
                 }
-                onBlur={() => triggerSave({ corsHeaders: settings.corsHeaders })}
+                onBlur={() =>
+                  triggerSave({ corsHeaders: settings.corsHeaders })
+                }
                 placeholder="*"
                 style={{ marginTop: '8px' }}
               />
@@ -769,7 +842,8 @@ export default function SettingsPage() {
               <div
                 className={`epm-toggle-switch${settings.corsCredentials !== false ? ' epm-toggle-switch--on' : ''}`}
                 onClick={() => {
-                  const next = settings.corsCredentials !== false ? false : true;
+                  const next =
+                    settings.corsCredentials !== false ? false : true;
                   setSettings((prev) =>
                     prev ? { ...prev, corsCredentials: next } : prev,
                   );
@@ -781,7 +855,8 @@ export default function SettingsPage() {
                 onKeyDown={(e) => {
                   if (e.key === ' ' || e.key === 'Enter') {
                     e.preventDefault();
-                    const next = settings.corsCredentials !== false ? false : true;
+                    const next =
+                      settings.corsCredentials !== false ? false : true;
                     setSettings((prev) =>
                       prev ? { ...prev, corsCredentials: next } : prev,
                     );

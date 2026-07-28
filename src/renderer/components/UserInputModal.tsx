@@ -9,7 +9,10 @@ interface UserInputModalProps {
   allowOther?: boolean;
   toolName: string;
   toolParams: any;
-  onResponse: (response: { action: 'confirmed' | 'denied' | 'selected'; value?: string }) => void;
+  onResponse: (response: {
+    action: 'confirmed' | 'denied' | 'selected';
+    value?: string;
+  }) => void;
 }
 
 export default function UserInputModal({
@@ -35,12 +38,23 @@ export default function UserInputModal({
 
   if (type === 'confirm') {
     return (
-      <div className="uim-overlay" onClick={handleOverlayClick} onKeyDown={handleKeyDown} role="dialog" aria-modal="true">
+      <div
+        className="uim-overlay"
+        onClick={handleOverlayClick}
+        onKeyDown={handleKeyDown}
+        role="dialog"
+        aria-modal="true"
+      >
         <div className="uim-dialog">
           <div className="uim-header">
             <AlertTriangle size={20} className="uim-warning-icon" />
             <h2 className="uim-title">Action Required</h2>
-            <button type="button" className="uim-close" onClick={() => onResponse({ action: 'denied' })} aria-label="Close">
+            <button
+              type="button"
+              className="uim-close"
+              onClick={() => onResponse({ action: 'denied' })}
+              aria-label="Close"
+            >
               <X size={18} />
             </button>
           </div>
@@ -52,10 +66,18 @@ export default function UserInputModal({
             )}
           </div>
           <div className="uim-actions">
-            <button type="button" className="uim-btn uim-btn--deny" onClick={() => onResponse({ action: 'denied' })}>
+            <button
+              type="button"
+              className="uim-btn uim-btn--deny"
+              onClick={() => onResponse({ action: 'denied' })}
+            >
               Deny
             </button>
-            <button type="button" className="uim-btn uim-btn--confirm" onClick={() => onResponse({ action: 'confirmed' })}>
+            <button
+              type="button"
+              className="uim-btn uim-btn--confirm"
+              onClick={() => onResponse({ action: 'confirmed' })}
+            >
               Allow
             </button>
           </div>
@@ -74,12 +96,27 @@ export default function UserInputModal({
     };
 
     return (
-      <div className="uim-overlay" onClick={handleOverlayClick} onKeyDown={handleKeyDown} role="dialog" aria-modal="true">
+      <div
+        className="uim-overlay"
+        onClick={handleOverlayClick}
+        onKeyDown={handleKeyDown}
+        role="dialog"
+        aria-modal="true"
+      >
         <div className="uim-dialog">
           <div className="uim-header">
-            {type === 'select' ? <ListChecks size={20} /> : <HelpCircle size={20} />}
+            {type === 'select' ? (
+              <ListChecks size={20} />
+            ) : (
+              <HelpCircle size={20} />
+            )}
             <h2 className="uim-title">{toolName}</h2>
-            <button type="button" className="uim-close" onClick={() => onResponse({ action: 'denied' })} aria-label="Close">
+            <button
+              type="button"
+              className="uim-close"
+              onClick={() => onResponse({ action: 'denied' })}
+              aria-label="Close"
+            >
               <X size={18} />
             </button>
           </div>
@@ -88,24 +125,35 @@ export default function UserInputModal({
             {options && options.length > 0 && (
               <div className="uim-options">
                 {options.map((opt) => (
-                  <label key={opt} className={`uim-option${selectedOption === opt ? ' uim-option--selected' : ''}`}>
+                  <label
+                    key={opt}
+                    className={`uim-option${selectedOption === opt ? ' uim-option--selected' : ''}`}
+                  >
                     <input
                       type="radio"
                       name="uim-select"
                       value={opt}
                       checked={selectedOption === opt}
-                      onChange={() => { setSelectedOption(opt); setShowCustomInput(false); }}
+                      onChange={() => {
+                        setSelectedOption(opt);
+                        setShowCustomInput(false);
+                      }}
                     />
                     <span>{opt}</span>
                   </label>
                 ))}
                 {allowOther && (
-                  <label className={`uim-option${showCustomInput ? ' uim-option--selected' : ''}`}>
+                  <label
+                    className={`uim-option${showCustomInput ? ' uim-option--selected' : ''}`}
+                  >
                     <input
                       type="radio"
                       name="uim-select"
                       checked={showCustomInput}
-                      onChange={() => { setShowCustomInput(true); setSelectedOption(null); }}
+                      onChange={() => {
+                        setShowCustomInput(true);
+                        setSelectedOption(null);
+                      }}
                     />
                     <span>Other...</span>
                   </label>
@@ -134,14 +182,22 @@ export default function UserInputModal({
             )}
           </div>
           <div className="uim-actions">
-            <button type="button" className="uim-btn uim-btn--deny" onClick={() => onResponse({ action: 'denied' })}>
+            <button
+              type="button"
+              className="uim-btn uim-btn--deny"
+              onClick={() => onResponse({ action: 'denied' })}
+            >
               Skip
             </button>
             <button
               type="button"
               className="uim-btn uim-btn--confirm"
               onClick={handleSubmit}
-              disabled={!selectedOption && !(showCustomInput && customValue.trim()) && !(type === 'freeform' && !options && !customValue.trim())}
+              disabled={
+                !selectedOption &&
+                !(showCustomInput && customValue.trim()) &&
+                !(type === 'freeform' && !options && !customValue.trim())
+              }
             >
               Submit
             </button>
