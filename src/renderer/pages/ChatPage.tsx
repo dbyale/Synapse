@@ -28,7 +28,7 @@ import {
   FileText,
   X,
 } from 'lucide-react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router';
 import MessageContent from '../components/MessageContent';
 import ImageViewer from '../components/ImageViewer';
 import ConfirmDialog from '../components/ConfirmDialog';

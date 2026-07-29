@@ -1,5 +1,5 @@
 import { CSSProperties } from 'react';
-import { Outlet } from 'react-router-dom';
+import { Outlet } from 'react-router';
 import Sidebar from './Sidebar';
 import TopBar from './TopBar';
 

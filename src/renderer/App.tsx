@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import './App.css';
-import { MemoryRouter as Router, Routes, Route } from 'react-router-dom';
+import { MemoryRouter as Router, Routes, Route } from 'react-router';
 import Layout from './components/Layout';
 import ChatPage from './pages/ChatPage';
 import ModelsPage from './pages/ModelsPage';
