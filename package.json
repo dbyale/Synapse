@@ -193,8 +193,8 @@
     "webpack-merge": "^6.0.1"
   },
   "build": {
-    "productName": "ElectronReact",
-    "appId": "org.erb.ElectronReact",
+    "productName": "Synapse",
+    "appId": "com.dbyale.Synapse",
     "asar": true,
     "afterSign": ".erb/scripts/notarize.js",
     "asarUnpack": [
