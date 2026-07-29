@@ -1221,13 +1221,16 @@
 .tool-call-segment--image {
   display: flex;
   margin: 4px 0;
+  border: none;
 }
 
 .tool-call-segment__image {
-  max-width: 100%;
-  max-height: 500px;
-  border-radius: 8px;
-  object-fit: contain;
+  display: block;
+  height: 192px;
+  width: auto;
+  max-width: 360px;
+  object-fit: cover;
+  border-radius: 6px;
   cursor: pointer;
   transition: opacity 0.15s ease;
 }

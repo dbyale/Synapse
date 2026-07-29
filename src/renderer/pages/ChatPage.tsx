@@ -163,7 +163,6 @@ function ToolCallSegment({
             src={img.url}
             alt={altText}
             className="tool-call-segment__image"
-            width={img.width}
             onClick={() => onImageClick?.(img.url)}
           />
         </div>
