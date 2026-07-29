@@ -20,6 +20,17 @@ function bufferToDataUrl(buffer: Buffer, mimeType: string): string {
   return `data:${mimeType};base64,${base64}`;
 }
 
+// Session-scoped store for image search display IDs.
+// Cleared on app restart, persists for the duration of a chat session.
+let displayIdCounter = 0;
+const displayImageStore = new Map<string, string>();
+
+function nextDisplayId(imageUrl: string): string {
+  const id = `display_img_${displayIdCounter++}`;
+  displayImageStore.set(id, imageUrl);
+  return id;
+}
+
 let ddgsReady = false;
 let ddgsCheckInProgress: Promise<boolean> | null = null;
 
@@ -295,7 +306,8 @@ export const tools: Record<string, ExtensionToolDef> = {
       description:
         'Search images using DDGS (Dux Distributed Global Search). Returns title, URL, thumbnail, and image dimensions.',
       descriptionForModel:
-        'Search for images using DDGS metasearch. Returns results with title, image URL, thumbnail URL, width, height, and source.\n' +
+        'Search for images using DDGS metasearch. Returns results with title, image URL, thumbnail URL, width, height, source, and a display_id.\n' +
+        'Use display_image_by_id with the returned display_id to view the image through the projector.\n' +
         'Parameters:\n' +
         '  query (required) — what to search for\n' +
         '  max_results (optional, default 10) — how many results to return (max 50)\n' +
@@ -378,7 +390,15 @@ export const tools: Record<string, ExtensionToolDef> = {
         keywordArgs.layout = `'${escapePyString(params.layout)}'`;
       if (params.license_image)
         keywordArgs.license_image = `'${escapePyString(params.license_image)}'`;
-      return await runSearch('images', keywordArgs);
+      const raw = await runSearch('images', keywordArgs);
+      if (raw.success && Array.isArray(raw.results)) {
+        for (const item of raw.results) {
+          if (item.image) {
+            item.display_id = nextDisplayId(item.image);
+          }
+        }
+      }
+      return raw;
     },
   },
 
@@ -622,6 +642,71 @@ export const tools: Record<string, ExtensionToolDef> = {
         return {
           _response: `Displayed web image: ${url} (${mimeType})`,
           _image: { url: imageUrl, altText: params.alt_text || url },
+        };
+      } catch (err) {
+        return {
+          _response: `Error Failed to fetch image: ${err instanceof Error ? err.message : String(err)}`,
+        };
+      }
+    },
+  },
+  display_image_by_id: {
+    meta: {
+      name: 'display_image_by_id',
+      label: 'Display Image By ID',
+      description:
+        'Display an image from a previous image search using its display ID.',
+      descriptionForHuman:
+        'Requires a vision model (with projector) for image processing.',
+      descriptionForModel:
+        'Displays an image from a previous image search result by referencing its display_id. ' +
+        'The model can see the image through the projector. Use this after search_images to view specific results.',
+      icon: 'Image',
+      displayType: 'projector',
+    },
+    params: {
+      type: 'object',
+      properties: {
+        display_id: {
+          type: 'string',
+          description: 'The display_id from a search_images result.',
+        },
+      },
+      required: ['display_id'],
+    },
+    async handler(params: { display_id: string }) {
+      const imageUrl = displayImageStore.get(params.display_id);
+      if (!imageUrl) {
+        return {
+          _response: `Error Display ID not found: ${params.display_id}`,
+        };
+      }
+      try {
+        const response = await fetch(imageUrl, {
+          headers: { 'User-Agent': 'Synapse/1.0' },
+        });
+        if (!response.ok) {
+          return {
+            _response: `Error HTTP ${response.status}: ${response.statusText}`,
+          };
+        }
+        const contentType = response.headers.get('content-type') ?? '';
+        let mimeType: string | null = null;
+        if (contentType.includes('image/')) {
+          const match = contentType.match(/image\/[a-zA-Z+.-]+/);
+          if (match) [mimeType] = match;
+        }
+        if (!mimeType) {
+          const ext = imageUrl.split('.').pop()?.split('?')[0]?.toLowerCase();
+          if (ext) mimeType = IMAGE_EXTENSIONS[`.${ext}`] ?? null;
+        }
+        if (!mimeType) mimeType = 'image/png';
+        const arrayBuffer = await response.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+        const dataUrl = bufferToDataUrl(buffer, mimeType);
+        return {
+          _response: `Displayed image: ${params.display_id} (${mimeType})`,
+          _image: { url: dataUrl, altText: params.display_id },
         };
       } catch (err) {
         return {
