@@ -1060,7 +1060,7 @@ export async function sendMessage(
         // conversation so the model can process it through the vision encoder
         if (imageData && chatFunctions[tc.name]?.displayType === 'projector') {
           messageHistory.push({
-            role: 'user',
+            role: 'tool',
             content: [
               {
                 type: 'text',
