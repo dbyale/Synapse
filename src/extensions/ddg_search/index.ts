@@ -2,6 +2,24 @@ import type { ExtensionToolDef } from '../types';
 import { runPython, ensurePackage } from '../../main/functions/pythonRunner';
 import manifest from './manifest.json';
 
+const IMAGE_EXTENSIONS: Record<string, string> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.bmp': 'image/bmp',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
+  '.tiff': 'image/tiff',
+  '.tif': 'image/tiff',
+};
+
+function bufferToDataUrl(buffer: Buffer, mimeType: string): string {
+  const base64 = buffer.toString('base64');
+  return `data:${mimeType};base64,${base64}`;
+}
+
 let ddgsReady = false;
 let ddgsCheckInProgress: Promise<boolean> | null = null;
 
@@ -537,6 +555,79 @@ export const tools: Record<string, ExtensionToolDef> = {
       const content = result.content || '';
       const sliced = content.slice(start_index, start_index + max_length);
       return sliced || 'No content found at the specified index.';
+    },
+  },
+  display_web_image: {
+    meta: {
+      name: 'display_web_image',
+      label: 'Display Web Image',
+      description: 'Fetch and display an image from a URL inline in the chat.',
+      descriptionForHuman:
+        'Requires a vision model (with projector) for image processing.',
+      descriptionForModel:
+        'Fetches an image from a URL and displays it inline. The model can see the image through the projector.',
+      icon: 'Image',
+      displayType: 'projector',
+    },
+    params: {
+      type: 'object',
+      properties: {
+        url: {
+          type: 'string',
+          description: 'URL of the image to display (http or https).',
+        },
+        alt_text: {
+          type: 'string',
+          description: 'Optional descriptive text for the image.',
+        },
+      },
+      required: ['url'],
+    },
+    async handler(params: { url: string; alt_text?: string }) {
+      const { url } = params;
+      let parsedUrl: URL;
+      try {
+        parsedUrl = new URL(url);
+      } catch {
+        return { _response: `Error Invalid URL: ${url}` };
+      }
+      if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+        return {
+          _response: `Error Unsupported protocol: ${parsedUrl.protocol}`,
+        };
+      }
+      try {
+        const response = await fetch(parsedUrl.toString(), {
+          headers: { 'User-Agent': 'Synapse/1.0' },
+        });
+        if (!response.ok) {
+          return {
+            _response: `Error HTTP ${response.status}: ${response.statusText}`,
+          };
+        }
+        const contentType = response.headers.get('content-type') ?? '';
+        let mimeType: string | null = null;
+        if (contentType.includes('image/')) {
+          const match = contentType.match(/image\/[a-zA-Z+.-]+/);
+          if (match) [mimeType] = match;
+        }
+        if (!mimeType) {
+          const ext = parsedUrl.pathname.split('.').pop()?.toLowerCase();
+          if (ext) mimeType = IMAGE_EXTENSIONS[`.${ext}`] ?? null;
+        }
+        if (!mimeType) mimeType = 'image/png';
+        const arrayBuffer = await response.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+        const imageUrl = bufferToDataUrl(buffer, mimeType);
+        return {
+          _response: `Displayed web image: ${url} (${mimeType})`,
+          _image: { url: imageUrl, altText: params.alt_text || url },
+        };
+      } catch (err) {
+        return {
+          _response: `Error Failed to fetch image: ${err instanceof Error ? err.message : String(err)}`,
+        };
+      }
     },
   },
 };
