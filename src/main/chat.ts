@@ -590,6 +590,14 @@ export async function loadProfile(
           },
         }));
 
+      // Filter projector tools when the model has no projector loaded
+      if (!fullProjectorPath) {
+        activeTools = activeTools.filter((t) => {
+          const f = chatFunctions[t.function.name];
+          return !f || f.displayType !== 'projector';
+        });
+      }
+
       const spawnArgs = [
         '--model',
         fullModelPath,
@@ -1037,7 +1045,9 @@ export async function sendMessage(
         }
         if (emitFunctionEvent) {
           const payload: any = { result: resultStr };
-          if (imageData) payload._image = imageData;
+          if (imageData && chatFunctions[tc.name]?.displayType !== 'projector') {
+            payload._image = imageData;
+          }
           emitFunctionEvent('result', tc.name, JSON.stringify(payload));
         }
         messageHistory.push({
@@ -1045,6 +1055,21 @@ export async function sendMessage(
           tool_call_id: tc.id,
           content: resultStr,
         });
+
+        // For projector tools with image data, inject the image into the
+        // conversation so the model can process it through the vision encoder
+        if (imageData && chatFunctions[tc.name]?.displayType === 'projector') {
+          messageHistory.push({
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text: `[Image from tool: ${imageData.altText || 'media'}]`,
+              },
+              { type: 'image_url', image_url: { url: imageData.url } },
+            ],
+          });
+        }
       }
       currentNewTokens = toolCallRequestTokens + totalResultTokens;
       return runCompletion();

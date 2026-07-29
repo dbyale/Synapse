@@ -203,6 +203,20 @@ export async function readMediaFile(params: { path: string }): Promise<string> {
   }
 }
 
+export async function readMediaFileAsDataUrl(params: {
+  path: string;
+}): Promise<{ dataUrl: string; mimeType: string }> {
+  const p = normalizePath(sanitizePath(params.path));
+  validatePath(p);
+  if (!existsSync(p)) throw new Error(`File not found: ${p}`);
+  const mimeType = getMimeType(p);
+  const buf = await fs.readFile(p);
+  return {
+    dataUrl: `data:${mimeType};base64,${buf.toString('base64')}`,
+    mimeType,
+  };
+}
+
 export async function readMultipleFiles(params: {
   paths: string[];
 }): Promise<string> {

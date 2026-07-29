@@ -99,6 +99,11 @@ export default function ToolListModal({
                     <div className="tlm-tool-name">{tool.label}</div>
                     <div className="tlm-tool-desc">
                       {tool.descriptionForHuman ?? tool.description}
+                      {tool.displayType === 'projector' && (
+                        <span className="tlm-tool-badge">
+                          Requires vision model
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>

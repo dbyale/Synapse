@@ -1,7 +1,7 @@
 import type { ExtensionToolDef } from '../types';
 import {
   readTextFile,
-  readMediaFile,
+  readMediaFileAsDataUrl,
   readMultipleFiles,
   writeFile,
   editFile,
@@ -43,9 +43,12 @@ export const tools: Record<string, ExtensionToolDef> = {
       name: 'read_media_file',
       label: 'Read Media File',
       description: 'Read media files as base64-encoded data with MIME types',
+      descriptionForHuman:
+        'Requires a vision model (with projector) for image processing.',
       descriptionForModel:
-        'Reads a media file and returns it as base64 with MIME type. If the result exceeds the configured max read size (default 40000 characters), a warning is returned instead.',
+        'Uses the projector to read the image file and return its contents.',
       icon: 'Image',
+      displayType: 'projector',
     },
     params: {
       type: 'object',
@@ -54,7 +57,17 @@ export const tools: Record<string, ExtensionToolDef> = {
       },
     },
     async handler(params: { path: string }) {
-      return await readMediaFile(params);
+      try {
+        const { dataUrl, mimeType } = await readMediaFileAsDataUrl(params);
+        return {
+          _response: `Read file: ${params.path} (${mimeType})`,
+          _image: { url: dataUrl, altText: params.path },
+        };
+      } catch (error) {
+        return {
+          _response: `Error: ${error instanceof Error ? error.message : String(error)}`,
+        };
+      }
     },
   },
   read_multiple_files: {

@@ -5,6 +5,7 @@ type ChatFunctionDef = {
   params: Record<string, any>;
   handler: (params: any) => any;
   name?: string;
+  displayType?: string;
 };
 
 export function createChatFunctions() {
@@ -16,6 +17,7 @@ export function createChatFunctions() {
       description: tool.meta.descriptionForModel ?? tool.meta.description,
       params: tool.params,
       handler: tool.handler,
+      displayType: tool.meta.displayType,
     };
   }
   return result;

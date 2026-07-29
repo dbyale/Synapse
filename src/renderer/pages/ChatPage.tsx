@@ -145,7 +145,7 @@ function ToolCallSegment({
 
   if (segment.displayedImage) {
     const meta = segment.toolName ? getToolMeta(segment.toolName) : undefined;
-    if (meta?.displayType === 'image') {
+    if (meta?.displayType === 'image' || meta?.displayType === 'projector') {
       const img = segment.displayedImage;
       let fallbackAlt = '';
       if (!img.altText && segment.toolParams) {

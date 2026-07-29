@@ -131,6 +131,11 @@ export default function ExtensionModal({
                       <div className="em-tool-name">{tool.meta.label}</div>
                       <div className="em-tool-desc">
                         {tool.meta.descriptionForHuman ?? tool.meta.description}
+                        {tool.meta.displayType === 'projector' && (
+                          <span className="em-tool-badge">
+                            Requires vision model
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
