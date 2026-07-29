@@ -219,7 +219,14 @@
       "hardenedRuntime": true,
       "entitlements": "assets/entitlements.mac.plist",
       "entitlementsInherit": "assets/entitlements.mac.plist",
-      "gatekeeperAssess": false
+      "gatekeeperAssess": false,
+      "extraResources": [
+        "./assets/bin/macos-*/**",
+        "./assets/bin/utils/**",
+        "./assets/icons/**",
+        "./assets/logos/**",
+        "./assets/entitlements.mac.plist"
+      ]
     },
     "dmg": {
       "contents": [
@@ -238,13 +245,25 @@
     "win": {
       "target": [
         "nsis"
+      ],
+      "extraResources": [
+        "./assets/bin/win-*/**",
+        "./assets/bin/utils/**",
+        "./assets/icons/**",
+        "./assets/logos/**"
       ]
     },
     "linux": {
       "target": [
         "AppImage"
       ],
-      "category": "Development"
+      "category": "Development",
+      "extraResources": [
+        "./assets/bin/ubuntu-*/**",
+        "./assets/bin/utils/**",
+        "./assets/icons/**",
+        "./assets/logos/**"
+      ]
     },
     "directories": {
       "app": "release/app",
@@ -252,7 +271,8 @@
       "output": "release/build"
     },
     "extraResources": [
-      "./assets/**"
+      "./assets/icons/**",
+      "./assets/logos/**"
     ],
     "publish": {
       "provider": "github",
