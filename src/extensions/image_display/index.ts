@@ -1,4 +1,3 @@
-import fs from 'fs';
 import path from 'path';
 import type { ExtensionToolDef } from '../types';
 import manifest from './manifest.json';
@@ -16,95 +15,12 @@ const IMAGE_EXTENSIONS: Record<string, string> = {
   '.tif': 'image/tiff',
 };
 
-function getMimeType(filePath: string): string | null {
-  const ext = path.extname(filePath).toLowerCase();
-  return IMAGE_EXTENSIONS[ext] ?? null;
-}
-
 function bufferToDataUrl(buffer: Buffer, mimeType: string): string {
   const base64 = buffer.toString('base64');
   return `data:${mimeType};base64,${base64}`;
 }
 
 export const tools: Record<string, ExtensionToolDef> = {
-  display_local_image: {
-    meta: {
-      name: 'display_local_image',
-      label: 'Display Local Image',
-      description:
-        'Display a local image file in the chat response. The image is shown inline.',
-      descriptionForModel:
-        'Display a local image file inline in the chat.\n' +
-        'Parameters:\n' +
-        '  path (required) — absolute path to the image file\n' +
-        '  alt_text (optional) — descriptive text for the image\n' +
-        '  width (optional) — display width in pixels, height scales proportionally\n' +
-        'Supported formats: PNG, JPG, JPEG, GIF, WebP, BMP, SVG, ICO, TIFF.\n' +
-        'Returns "Success" on success, or "Error [reason]" on failure.',
-      icon: 'Image',
-      displayType: 'image',
-    },
-    params: {
-      type: 'object',
-      properties: {
-        path: {
-          type: 'string',
-          description: 'Absolute path to the local image file.',
-        },
-        alt_text: {
-          type: 'string',
-          description: 'Optional descriptive alt text for the image.',
-        },
-        width: {
-          type: 'integer',
-          description: 'Optional display width in pixels.',
-        },
-      },
-      required: ['path'],
-    },
-    async handler(params: {
-      path: string;
-      alt_text?: string;
-      width?: number;
-    }): Promise<any> {
-      const filePath = params.path;
-
-      if (!path.isAbsolute(filePath)) {
-        return { _response: `Error Path must be absolute, got: ${filePath}` };
-      }
-
-      if (!fs.existsSync(filePath)) {
-        return { _response: `Error File not found: ${filePath}` };
-      }
-
-      const stat = fs.statSync(filePath);
-      if (!stat.isFile()) {
-        return { _response: `Error Path is not a file: ${filePath}` };
-      }
-
-      const mimeType = getMimeType(filePath);
-      if (!mimeType) {
-        const ext = path.extname(filePath).toLowerCase();
-        return { _response: `Error Unsupported image format: ${ext || '(no extension)'}` };
-      }
-
-      try {
-        const buffer = fs.readFileSync(filePath);
-        const imageUrl = bufferToDataUrl(buffer, mimeType);
-        return {
-          _response: 'Success',
-          _image: {
-            url: imageUrl,
-            altText: params.alt_text,
-            width: params.width,
-          },
-        };
-      } catch (err) {
-        return { _response: `Error Failed to read file: ${err instanceof Error ? err.message : String(err)}` };
-      }
-    },
-  },
-
   display_web_image: {
     meta: {
       name: 'display_web_image',

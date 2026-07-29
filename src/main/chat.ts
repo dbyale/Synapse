@@ -1045,7 +1045,7 @@ export async function sendMessage(
         }
         if (emitFunctionEvent) {
           const payload: any = { result: resultStr };
-          if (imageData && chatFunctions[tc.name]?.displayType !== 'projector') {
+          if (imageData && tc.name !== 'read_media_file') {
             payload._image = imageData;
           }
           emitFunctionEvent('result', tc.name, JSON.stringify(payload));

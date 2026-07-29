@@ -316,6 +316,47 @@ export const tools: Record<string, ExtensionToolDef> = {
       return await listAllowedDirectories();
     },
   },
+  display_local_image: {
+    meta: {
+      name: 'display_local_image',
+      label: 'Display Local Image',
+      description:
+        'Display a local image file inline in the chat.',
+      descriptionForHuman:
+        'Requires a vision model (with projector) for image processing.',
+      descriptionForModel:
+        'Reads a local image file and displays it inline. The model can see the image through the projector.',
+      icon: 'Image',
+      displayType: 'projector',
+    },
+    params: {
+      type: 'object',
+      properties: {
+        path: {
+          type: 'string',
+          description: 'Absolute path to the image file.',
+        },
+        alt_text: {
+          type: 'string',
+          description: 'Optional descriptive text for the image.',
+        },
+      },
+      required: ['path'],
+    },
+    async handler(params: { path: string; alt_text?: string }) {
+      try {
+        const { dataUrl, mimeType } = await readMediaFileAsDataUrl(params);
+        return {
+          _response: `Displayed image: ${params.path} (${mimeType})`,
+          _image: { url: dataUrl, altText: params.alt_text || params.path },
+        };
+      } catch (error) {
+        return {
+          _response: `Error: ${error instanceof Error ? error.message : String(error)}`,
+        };
+      }
+    },
+  },
 };
 
 export { manifest };
