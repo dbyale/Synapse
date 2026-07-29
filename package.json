@@ -178,7 +178,7 @@
     "sass": "^1.86.0",
     "sass-loader": "^16.0.5",
     "style-loader": "^4.0.0",
-    "tar": "^7.5.15",
+    "tar": "^7.5.22",
     "terser-webpack-plugin": "^5.3.14",
     "ts-jest": "^29.2.6",
     "ts-loader": "^9.5.2",
