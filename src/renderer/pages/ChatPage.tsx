@@ -29,6 +29,8 @@ import {
   X,
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import MessageContent from '../components/MessageContent';
 import ImageViewer from '../components/ImageViewer';
 import ConfirmDialog from '../components/ConfirmDialog';
@@ -38,8 +40,6 @@ import { Profile } from '../types/profile';
 import type { AppSettings, ContentPart } from '../preload.d';
 import { getToolMeta } from '../utils/extensionData';
 import { resolveIcon } from '../components/workflows/IconPicker';
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import '../styles/ChatPage.css';
 
 interface GenerationStatsData {
@@ -461,7 +461,7 @@ async function extractVideoFrames(
     setTimeout(() => reject(new Error('Video load timed out')), 10000);
   });
 
-  const duration = video.duration;
+  const { duration } = video;
   if (!duration || !isFinite(duration)) {
     URL.revokeObjectURL(url);
     video.remove();
