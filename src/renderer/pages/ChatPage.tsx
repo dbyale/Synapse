@@ -292,14 +292,15 @@ function MediaAttachModal({
   onAttachText,
   onClose,
   hasProjector,
+  dragging,
 }: {
   onAttach: (dataUrl: string, name: string) => void;
   onAttachVideo: (file: File) => void;
   onAttachText: (name: string, content: string) => void;
   onClose: () => void;
   hasProjector: boolean;
+  dragging: boolean;
 }) {
-  const [dragging, setDragging] = useState(false);
   const [converting, setConverting] = useState(false);
 
   const supportedExtensions = hasProjector
@@ -328,52 +329,6 @@ function MediaAttachModal({
       setConverting(false);
     }
   }
-
-  const handleDrop = async (e: DragEvent) => {
-    e.preventDefault();
-    setDragging(false);
-    const files = Array.from(e.dataTransfer.files);
-    for (const file of files) {
-      const ext = getExtension(file.name);
-      if (
-        hasProjector &&
-        (IMAGE_EXTENSIONS_SET.has(ext) || file.type.startsWith('image/'))
-      ) {
-        const reader = new FileReader();
-        reader.onload = (ev) => {
-          const result = ev.target?.result;
-          if (typeof result === 'string') {
-            onAttach(result, file.name);
-          }
-        };
-        reader.readAsDataURL(file);
-      } else if (
-        hasProjector &&
-        (VIDEO_EXTENSIONS_SET.has(ext) || file.type.startsWith('video/'))
-      ) {
-        onAttachVideo(file);
-        onClose();
-        return;
-      } else if (DOC_EXTENSIONS_SET.has(ext)) {
-        const filePath = (file as any).path;
-        if (filePath) {
-          await processDocument(filePath, file.name);
-        } else {
-          const reader = new FileReader();
-          const result = await new Promise<ArrayBuffer>((resolve, reject) => {
-            reader.onload = (ev) => resolve(ev.target!.result as ArrayBuffer);
-            reader.onerror = () => reject(new Error('Failed to read file'));
-            reader.readAsArrayBuffer(file);
-          });
-          const tempPath = await window.electronAPI.saveBufferToTemp(
-            new Uint8Array(result),
-            file.name,
-          );
-          await processDocument(tempPath, file.name);
-        }
-      }
-    }
-  };
 
   const handleSelectFromDisk = async () => {
     const paths = await window.electronAPI.browseForFiles({
@@ -407,12 +362,6 @@ function MediaAttachModal({
       <div
         className={`image-modal${dragging ? ' image-modal--dragging' : ''}${converting ? ' image-modal--converting' : ''}`}
         onClick={(e) => e.stopPropagation()}
-        onDragOver={(e) => {
-          e.preventDefault();
-          setDragging(true);
-        }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={handleDrop}
       >
         <button className="image-modal__close" onClick={onClose} type="button">
           <X size={18} />
@@ -553,6 +502,8 @@ export default function ChatPage() {
   }>({ totalInputTokens: 0, totalOutputTokens: 0 });
   const [projectorLoaded, setProjectorLoaded] = useState(false);
   const [showImageModal, setShowImageModal] = useState(false);
+  const [pageDragging, setPageDragging] = useState(false);
+  const dragOpenedModal = useRef(false);
   const [imageViewerUrl, setImageViewerUrl] = useState<string | null>(null);
   const [pendingMedia, setPendingMedia] = useState<PendingMedia[]>([]);
   const [progressPercent, setProgressPercent] = useState(0);
@@ -1415,6 +1366,113 @@ export default function ChatPage() {
     t.style.height = `${Math.min(t.scrollHeight, 220)}px`;
   };
 
+  const handleDragEnter = (e: DragEvent<HTMLDivElement>) => {
+    if (e.dataTransfer.types?.includes('Files')) {
+      if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+        if (!showImageModal) {
+          dragOpenedModal.current = true;
+          setShowImageModal(true);
+        }
+        setPageDragging(true);
+      }
+    }
+  };
+
+  const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
+    if (e.dataTransfer.types?.includes('Files')) {
+      e.preventDefault();
+    }
+  };
+
+  const handleDragLeave = (e: DragEvent<HTMLDivElement>) => {
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+      if (dragOpenedModal.current) {
+        dragOpenedModal.current = false;
+        setShowImageModal(false);
+      }
+      setPageDragging(false);
+    }
+  };
+
+  const processDroppedDocument = async (filePath: string, filename: string) => {
+    try {
+      const result =
+        await window.electronAPI.convertFileWithMarkitdown(filePath);
+      if (result.success && result.markdown) {
+        const id = crypto.randomUUID();
+        setPendingMedia((prev) => [
+          ...prev,
+          { id, type: 'document', name: filename, content: result.markdown },
+        ]);
+      } else {
+        alert(
+          `Failed to convert ${filename}: ${result.error || 'Unknown error'}`,
+        );
+      }
+    } catch (err: any) {
+      alert(`Error converting ${filename}: ${err.message}`);
+    }
+  };
+
+  const handlePageDrop = async (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    dragOpenedModal.current = false;
+    setPageDragging(false);
+    setShowImageModal(false);
+    const files = Array.from(e.dataTransfer.files);
+    for (const file of files) {
+      const ext = getExtension(file.name);
+      if (
+        canAttachImages &&
+        (IMAGE_EXTENSIONS_SET.has(ext) || file.type.startsWith('image/'))
+      ) {
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          const result = ev.target?.result;
+          if (typeof result === 'string') {
+            const id = crypto.randomUUID();
+            setPendingMedia((prev) => [
+              ...prev,
+              { id, type: 'image', dataUrl: result, name: file.name },
+            ]);
+          }
+        };
+        reader.readAsDataURL(file);
+      } else if (
+        canAttachImages &&
+        (VIDEO_EXTENSIONS_SET.has(ext) || file.type.startsWith('video/'))
+      ) {
+        const id = crypto.randomUUID();
+        setPendingMedia((prev) => [
+          ...prev,
+          {
+            id,
+            type: 'video',
+            file,
+            objectUrl: URL.createObjectURL(file),
+          },
+        ]);
+      } else if (DOC_EXTENSIONS_SET.has(ext)) {
+        const filePath = (file as any).path;
+        if (filePath) {
+          await processDroppedDocument(filePath, file.name);
+        } else {
+          const reader = new FileReader();
+          const result = await new Promise<ArrayBuffer>((resolve, reject) => {
+            reader.onload = (ev) => resolve(ev.target!.result as ArrayBuffer);
+            reader.onerror = () => reject(new Error('Failed to read file'));
+            reader.readAsArrayBuffer(file);
+          });
+          const tempPath = await window.electronAPI.saveBufferToTemp(
+            new Uint8Array(result),
+            file.name,
+          );
+          await processDroppedDocument(tempPath, file.name);
+        }
+      }
+    }
+  };
+
   const handleSend = async () => {
     const text = inputText.trim();
     if (
@@ -1615,7 +1673,13 @@ export default function ChatPage() {
   const pendingProfile = profiles.find((p) => p.id === pendingProfileId);
 
   return (
-    <div className="chat-page">
+    <div
+      className="chat-page"
+      onDragEnter={handleDragEnter}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handlePageDrop}
+    >
       <div className="chat-model-selector">
         <Bot
           size={18}
@@ -2449,6 +2513,7 @@ export default function ChatPage() {
           }}
           onClose={() => setShowImageModal(false)}
           hasProjector={canAttachImages}
+          dragging={pageDragging}
         />
       )}
 
