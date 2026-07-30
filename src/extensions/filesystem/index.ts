@@ -25,6 +25,7 @@ export const tools: Record<string, ExtensionToolDef> = {
       descriptionForModel:
         'Reads a text file and returns its contents. If the file exceeds the configured max read size (default 40000 characters), a warning is returned instead. Use head/tail params to limit the result, or read in smaller sections.',
       icon: 'FileText',
+      tags: ['sources'],
     },
     params: {
       type: 'object',
@@ -49,6 +50,7 @@ export const tools: Record<string, ExtensionToolDef> = {
         'Uses the projector to read the image file and return its contents.',
       icon: 'Image',
       displayType: 'projector',
+      tags: ['sources'],
     },
     params: {
       type: 'object',
@@ -78,6 +80,7 @@ export const tools: Record<string, ExtensionToolDef> = {
       descriptionForModel:
         'Reads multiple text files in parallel. If any file exceeds the configured max read size (default 40000 characters), that file returns a warning instead of its content.',
       icon: 'Clipboard',
+      tags: ['sources'],
     },
     params: {
       type: 'object',

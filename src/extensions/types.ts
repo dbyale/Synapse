@@ -18,6 +18,7 @@ export interface ExtensionToolMeta {
   descriptionForModel?: string;
   icon: string;
   displayType?: string;
+  tags?: string[];
 }
 
 export interface ExtensionToolDef {

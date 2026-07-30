@@ -235,6 +235,8 @@ declare global {
       }) => Promise<{ success: boolean; message?: string }>;
 
       openModelsFolder: () => Promise<void>;
+      openExternal: (url: string) => Promise<void>;
+      openPath: (filePath: string) => Promise<void>;
 
       onChatFunctionCall: (
         callback: (data: { name: string; params: string }) => void,

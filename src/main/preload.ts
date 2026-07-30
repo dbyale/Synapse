@@ -224,6 +224,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('chat:contextSize'),
 
   openModelsFolder: () => ipcRenderer.invoke('open-models-folder'),
+  openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
+  openPath: (filePath: string) => ipcRenderer.invoke('shell:openPath', filePath),
 
   onChatFunctionCall: (
     callback: (data: { name: string; params: string }) => void,

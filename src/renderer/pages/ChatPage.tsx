@@ -27,6 +27,7 @@ import {
   FilePlusCorner,
   FileText,
   X,
+  SquareDashedText,
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -36,9 +37,10 @@ import ImageViewer from '../components/ImageViewer';
 import ConfirmDialog from '../components/ConfirmDialog';
 import UserInputModal from '../components/UserInputModal';
 import ProfileSelectModal from '../components/ProfileSelectModal';
+import { useSourcesContext } from '../context/SourcesContext';
 import { Profile } from '../types/profile';
 import type { AppSettings, ContentPart } from '../preload.d';
-import { getToolMeta } from '../utils/extensionData';
+import { getToolMeta, getAllToolMetas } from '../utils/extensionData';
 import { resolveIcon } from '../components/workflows/IconPicker';
 import '../styles/ChatPage.css';
 
@@ -554,6 +556,34 @@ export default function ChatPage() {
   const navigate = useNavigate();
   const location = useLocation();
 
+  const { addSources, closeSources, toggleSources, isOpen: isSourcesOpen } = useSourcesContext();
+  const lastToolParamsRef = useRef<Record<string, string>>({});
+
+  const [showSourcesButton, setShowSourcesButton] = useState(false);
+
+  useEffect(() => {
+    setShowSourcesButton(false);
+  }, [selectedProfileId]);
+
+  useEffect(() => {
+    if (systemPhase !== 'ready') {
+      return;
+    }
+    const profile = profilesRef.current.find(
+      (p) => p.id === selectedProfileId,
+    );
+    if (!profile?.tools) {
+      setShowSourcesButton(false);
+      return;
+    }
+    const metas = getAllToolMetas();
+    setShowSourcesButton(
+      profile.tools.some(
+        (name) => metas[name]?.tags?.includes('sources'),
+      ),
+    );
+  }, [systemPhase, selectedProfileId]);
+
   const refreshCumulativeTokens = useCallback(async () => {
     try {
       const usage = await window.electronAPI.chatCumulativeTokenUsage();
@@ -976,6 +1006,74 @@ export default function ChatPage() {
     return () => clearInterval(interval);
   }, [selectedProfileId, modelLoading, loading, maxTokens, loadError]);
 
+  function addSourcesFromResult(
+    toolName: string,
+    resultStr: string,
+    paramsStr?: string,
+  ) {
+    const newSources: { title: string; url: string }[] = [];
+
+    try {
+      if (
+        toolName === 'search_web' ||
+        toolName === 'search_news' ||
+        toolName === 'search_videos' ||
+        toolName === 'search_images' ||
+        toolName === 'search_books'
+      ) {
+        const parsed = JSON.parse(resultStr);
+        if (parsed.success && Array.isArray(parsed.results)) {
+          for (const item of parsed.results) {
+            const url = item.href || item.url || item.image;
+            const title =
+              item.title || item.content || item.name || url || 'Untitled';
+            if (url && typeof url === 'string') {
+              newSources.push({ title, url });
+            }
+          }
+        }
+      } else if (toolName === 'web_fetch' && paramsStr) {
+        const params = JSON.parse(paramsStr);
+        if (params.url) {
+          const title = `Web Fetch: ${params.url}`;
+          newSources.push({ title, url: params.url });
+        }
+      } else if (toolName === 'display_web_image' && paramsStr) {
+        const params = JSON.parse(paramsStr);
+        if (params.url) {
+          const title = `Image: ${params.alt_text || params.url}`;
+          newSources.push({ title, url: params.url });
+        }
+      } else if (toolName === 'read_text_file' && paramsStr) {
+        const params = JSON.parse(paramsStr);
+        if (params.path) {
+          const filename = params.path.split(/[/\\]/).pop() || params.path;
+          newSources.push({ title: filename, url: params.path });
+        }
+      } else if (toolName === 'read_media_file' && paramsStr) {
+        const params = JSON.parse(paramsStr);
+        if (params.path) {
+          const filename = params.path.split(/[/\\]/).pop() || params.path;
+          newSources.push({ title: filename, url: params.path });
+        }
+      } else if (toolName === 'read_multiple_files' && paramsStr) {
+        const params = JSON.parse(paramsStr);
+        if (Array.isArray(params.paths)) {
+          for (const filePath of params.paths) {
+            const filename = filePath.split(/[/\\]/).pop() || filePath;
+            newSources.push({ title: filename, url: filePath });
+          }
+        }
+      }
+    } catch {
+      // Silently ignore parse errors
+    }
+
+    if (newSources.length > 0) {
+      addSources(newSources);
+    }
+  }
+
   useEffect(() => {
     const removeTokenListener = window.electronAPI.onChatToken(
       ({ token, segmentType }) => {
@@ -1133,6 +1231,7 @@ export default function ChatPage() {
 
     const unsubscribeFunctionCall = window.electronAPI.onChatFunctionCall(
       (data) => {
+        lastToolParamsRef.current[data.name] = data.params;
         setMessages((prevMessages) => {
           const updatedMessages = [...prevMessages];
           const lastMessage = updatedMessages[updatedMessages.length - 1];
@@ -1157,6 +1256,11 @@ export default function ChatPage() {
     const unsubscribeFunctionResult = window.electronAPI.onChatFunctionResult(
       (data) => {
         isReprocessing = true;
+        addSourcesFromResult(
+          data.name,
+          data.result,
+          lastToolParamsRef.current[data.name],
+        );
         setMessages((prevMessages) => {
           const updatedMessages = [...prevMessages];
           const lastMessage = updatedMessages[updatedMessages.length - 1];
@@ -1679,6 +1783,7 @@ export default function ChatPage() {
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handlePageDrop}
+      onClick={isSourcesOpen ? closeSources : undefined}
     >
       <div className="chat-model-selector">
         <Bot
@@ -1715,6 +1820,20 @@ export default function ChatPage() {
           <SlidersHorizontal size={18} />
         </button>
       </div>
+
+      {showSourcesButton && (
+        <button
+          type="button"
+          className={`chat-sources-button${isSourcesOpen ? ' chat-sources-button--active' : ''}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            toggleSources();
+          }}
+          title="Sources"
+        >
+          <SquareDashedText size={18} />
+        </button>
+      )}
 
       {userInputRequest && (
         <UserInputModal

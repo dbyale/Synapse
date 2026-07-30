@@ -1,37 +1,71 @@
-import { CSSProperties } from 'react';
-import { Outlet } from 'react-router';
+import { CSSProperties, useRef, useEffect } from 'react';
+import { Outlet, useLocation } from 'react-router';
 import Sidebar from './Sidebar';
 import TopBar from './TopBar';
+import SourcesSidebar from './SourcesSidebar';
+import { SourcesProvider, useSourcesContext } from '../context/SourcesContext';
 
-const s: Record<string, CSSProperties> = {
-  wrapper: {
-    display: 'flex',
-    height: '100vh',
-    width: '100vw',
-  },
-  main: {
-    display: 'flex',
-    flexDirection: 'column',
-    flex: 1,
-    minWidth: 0,
-  },
-  content: {
-    flex: 1,
-    overflowY: 'auto',
-    padding: 24,
-  },
-};
+function LayoutInner() {
+  const { isOpen, closeSources, sources } = useSourcesContext();
+  const location = useLocation();
+  const prevPathRef = useRef(location.pathname);
 
-export default function Layout() {
+  useEffect(() => {
+    if (prevPathRef.current !== location.pathname) {
+      closeSources();
+      prevPathRef.current = location.pathname;
+    }
+  }, [location.pathname, closeSources]);
+
+  const s: Record<string, CSSProperties> = {
+    wrapper: {
+      display: 'flex',
+      height: '100vh',
+      width: '100vw',
+    },
+    main: {
+      display: 'flex',
+      flexDirection: 'column',
+      flex: 1,
+      minWidth: 0,
+    },
+    contentRow: {
+      display: 'flex',
+      flex: 1,
+      minHeight: 0,
+    },
+    content: {
+      flex: 1,
+      overflowY: 'auto',
+      padding: 24,
+      minWidth: 0,
+    },
+  };
+
   return (
     <div style={s.wrapper}>
       <Sidebar />
       <div style={s.main}>
         <TopBar />
-        <div style={s.content}>
-          <Outlet />
+        <div style={s.contentRow}>
+          <div style={s.content}>
+            <Outlet />
+          </div>
+          <SourcesSidebar
+            sources={sources}
+            onClose={closeSources}
+            isOpen={isOpen}
+          />
         </div>
       </div>
     </div>
+  );
+}
+
+export default function Layout() {
+  return (
+    <SourcesProvider>
+      <LayoutInner />
+    </SourcesProvider>
   );
 }

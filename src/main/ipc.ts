@@ -616,6 +616,14 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     await shell.openPath(modelsDir);
   });
 
+  ipcMain.handle('shell:openExternal', async (_event, url: string) => {
+    await shell.openExternal(url);
+  });
+
+  ipcMain.handle('shell:openPath', async (_event, filePath: string) => {
+    await shell.openPath(filePath);
+  });
+
   chatService.setEmitFunctionCallback(
     (
       event: 'calling' | 'call' | 'result' | 'input-request',

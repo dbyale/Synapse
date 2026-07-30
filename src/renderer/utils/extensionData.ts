@@ -6,6 +6,7 @@ type ToolMeta = {
   descriptionForModel?: string;
   icon: string;
   displayType?: string;
+  tags?: string[];
 };
 
 type ExtensionInfo = {
@@ -30,6 +31,17 @@ let cachedAllTools: Record<
   { meta: ToolMeta; params: Record<string, any> }
 > | null = null;
 
+const listeners = new Set<() => void>();
+
+function notifyListeners() {
+  listeners.forEach((fn) => fn());
+}
+
+export function subscribeExtensionData(fn: () => void): () => void {
+  listeners.add(fn);
+  return () => listeners.delete(fn);
+}
+
 export async function fetchExtensionData(): Promise<void> {
   if (!window.electronAPI) return;
   try {
@@ -43,6 +55,7 @@ export async function fetchExtensionData(): Promise<void> {
     cachedExtensions = [];
     cachedAllTools = {};
   }
+  notifyListeners();
 }
 
 export function getExtensions(): ExtensionInfo[] {
