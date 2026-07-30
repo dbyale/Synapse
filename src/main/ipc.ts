@@ -826,4 +826,17 @@ export function registerIpcHandlers(win: BrowserWindow): void {
       return await convertFileToMarkdown(filePath);
     },
   );
+
+  // ── Save a buffer to a temp file and return the path ──
+  ipcMain.handle(
+    'files:saveBufferToTemp',
+    async (_event, buffer: Uint8Array, filename: string) => {
+      const dir = path.join(os.tmpdir(), 'synapse-dragdrop');
+      await fs.promises.mkdir(dir, { recursive: true });
+      const safeName = `${crypto.randomUUID()}-${filename}`;
+      const filePath = path.join(dir, safeName);
+      await fs.promises.writeFile(filePath, Buffer.from(buffer));
+      return filePath;
+    },
+  );
 }

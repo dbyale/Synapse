@@ -259,6 +259,11 @@ declare global {
         error?: string;
       }>;
 
+      saveBufferToTemp: (
+        buffer: Uint8Array,
+        filename: string,
+      ) => Promise<string>;
+
       getModelMetadata: (params: {
         modelAuthor: string;
         modelFolder: string;

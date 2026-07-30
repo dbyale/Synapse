@@ -281,6 +281,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     error?: string;
   }> => ipcRenderer.invoke('files:convertWithMarkitdown', filePath),
 
+  saveBufferToTemp: (
+    buffer: Uint8Array,
+    filename: string,
+  ): Promise<string> => ipcRenderer.invoke('files:saveBufferToTemp', buffer, filename),
+
   getModelMetadata: (params: {
     modelAuthor: string;
     modelFolder: string;

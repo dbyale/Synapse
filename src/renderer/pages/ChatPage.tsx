@@ -359,7 +359,17 @@ function MediaAttachModal({
         if (filePath) {
           await processDocument(filePath, file.name);
         } else {
-          alert('Cannot convert files dragged from outside the file system.');
+          const reader = new FileReader();
+          const result = await new Promise<ArrayBuffer>((resolve, reject) => {
+            reader.onload = (ev) => resolve(ev.target!.result as ArrayBuffer);
+            reader.onerror = () => reject(new Error('Failed to read file'));
+            reader.readAsArrayBuffer(file);
+          });
+          const tempPath = await window.electronAPI.saveBufferToTemp(
+            new Uint8Array(result),
+            file.name,
+          );
+          await processDocument(tempPath, file.name);
         }
       }
     }
