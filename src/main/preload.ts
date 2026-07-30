@@ -246,7 +246,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     callback: (data: {
       name: string;
       result: string;
-      _image?: { url: string; altText?: string; width?: number };
+      _image?: { url: string; altText?: string };
     }) => void,
   ) => {
     const listener = (
@@ -254,7 +254,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       data: {
         name: string;
         result: string;
-        _image?: { url: string; altText?: string; width?: number };
+        _image?: { url: string; altText?: string };
       },
     ) => callback(data);
     ipcRenderer.on('chat-function-result', listener);

@@ -74,7 +74,6 @@ interface MessageSegment {
   displayedImage?: {
     url: string;
     altText?: string;
-    width?: number;
   };
 }
 
@@ -1281,7 +1280,6 @@ export default function ChatPage() {
                 toolSegment.displayedImage = {
                   url: imgData.url,
                   altText: imgData.altText,
-                  width: imgData.width,
                 };
               }
             }

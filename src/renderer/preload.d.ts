@@ -248,7 +248,7 @@ declare global {
         callback: (data: {
           name: string;
           result: string;
-          _image?: { url: string; altText?: string; width?: number };
+          _image?: { url: string; altText?: string };
         }) => void,
       ) => () => void;
 
