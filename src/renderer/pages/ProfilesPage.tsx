@@ -26,6 +26,7 @@ import {
   getToolMeta,
   getAvailableToolNames,
   getCategorizedExtensions,
+  subscribeExtensionData,
 } from '../utils/extensionData';
 import InfoTooltip from '../components/InfoTooltip';
 import EditProfileModal from '../components/EditProfileModal';
@@ -529,9 +530,17 @@ export default function ProfilesPage() {
       .filter((g): g is NonNullable<typeof g> => g !== null);
   }, [groupedLocalModels]);
 
-  const extensionGroups = useMemo(() => {
-    return getCategorizedExtensions();
-  }, []);
+  const [extensionGroups, setExtensionGroups] = useState(() =>
+    getCategorizedExtensions(),
+  );
+
+  useEffect(
+    () =>
+      subscribeExtensionData(() =>
+        setExtensionGroups(getCategorizedExtensions()),
+      ),
+    [],
+  );
 
   const displayProfiles =
     draggedId && previewOrder.length > 0 ? previewOrder : profiles;

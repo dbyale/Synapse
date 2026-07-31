@@ -170,16 +170,49 @@
   line-height: 1.4;
 }
 
+.em-tool-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
 .em-tool-badge {
   display: inline-block;
-  margin-top: 6px;
   padding: 2px 8px;
   font-size: 10px;
   font-weight: 600;
-  color: #f9e2af;
-  background: rgba(249, 226, 175, 0.1);
-  border: 1px solid rgba(249, 226, 175, 0.25);
   border-radius: 4px;
   text-transform: uppercase;
   letter-spacing: 0.3px;
+}
+
+.em-tool-tags-row {
+  flex: 0 0 100%;
+  display: flex;
+  gap: 4px;
+}
+
+.em-tool-badge--vision {
+  color: #f9e2af;
+  background: rgba(249, 226, 175, 0.1);
+  border: 1px solid rgba(249, 226, 175, 0.25);
+}
+
+.em-tool-badge--input {
+  color: #cba6f7;
+  background: rgba(203, 166, 247, 0.1);
+  border: 1px solid rgba(203, 166, 247, 0.25);
+}
+
+.em-tool-badge--image {
+  color: #a6e3a1;
+  background: rgba(166, 227, 161, 0.1);
+  border: 1px solid rgba(166, 227, 161, 0.25);
+}
+
+.em-tool-badge--sources {
+  color: #94e2d5;
+  background: rgba(148, 226, 213, 0.1);
+  border: 1px solid rgba(148, 226, 213, 0.25);
 }

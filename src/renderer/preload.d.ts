@@ -340,6 +340,7 @@ declare global {
                 descriptionForModel?: string;
                 icon: string;
                 displayType?: string;
+                tags?: string[];
               };
               params: Record<string, any>;
             }
@@ -368,6 +369,7 @@ declare global {
               descriptionForModel?: string;
               icon: string;
               displayType?: string;
+              tags?: string[];
             };
             params: Record<string, any>;
           }

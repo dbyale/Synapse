@@ -18,6 +18,7 @@ export const tools: Record<string, ExtensionToolDef> = {
         'The user will see the command and can choose Allow or Deny. ' +
         'Always explain why you need to run the command before calling this tool.',
       icon: 'Shield',
+      tags: ['input'],
     },
     params: {
       type: 'object',

@@ -9,6 +9,7 @@ interface ToolInfo {
   descriptionForHuman?: string;
   icon?: string;
   displayType?: string;
+  tags?: string[];
 }
 
 interface ToolListModalProps {
@@ -99,12 +100,37 @@ export default function ToolListModal({
                     <div className="tlm-tool-name">{tool.label}</div>
                     <div className="tlm-tool-desc">
                       {tool.descriptionForHuman ?? tool.description}
-                      {tool.displayType === 'projector' && (
-                        <span className="tlm-tool-badge">
-                          Requires vision model
-                        </span>
-                      )}
                     </div>
+                    {(tool.displayType === 'projector' ||
+                      tool.displayType === 'image' ||
+                      tool.tags?.includes('input') ||
+                      tool.tags?.includes('sources')) && (
+                      <div className="tlm-tool-tags">
+                        {tool.tags?.includes('input') && (
+                          <span className="tlm-tool-badge tlm-tool-badge--input">
+                            Requires User Input
+                          </span>
+                        )}
+                        {(tool.displayType === 'projector' ||
+                          tool.displayType === 'image') && (
+                          <span className="tlm-tool-badge tlm-tool-badge--image">
+                            Displays Image
+                          </span>
+                        )}
+                        {tool.tags?.includes('sources') && (
+                          <span className="tlm-tool-badge tlm-tool-badge--sources">
+                            Adds Sources
+                          </span>
+                        )}
+                        {tool.displayType === 'projector' && (
+                          <div className="tlm-tool-tags-row">
+                            <span className="tlm-tool-badge tlm-tool-badge--vision">
+                              Requires vision model
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               );

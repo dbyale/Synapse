@@ -832,6 +832,9 @@ function ToolsPage({
                     label: meta.label,
                     description: meta.description,
                     descriptionForHuman: meta.descriptionForHuman,
+                    icon: meta.icon,
+                    displayType: meta.displayType,
+                    tags: meta.tags,
                   }
                 : null;
             })

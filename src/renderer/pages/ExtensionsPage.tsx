@@ -120,9 +120,7 @@ export default function ExtensionsPage() {
     try {
       await window.electronAPI.extensionsToggle(id, enabled);
       invalidateCache();
-      setExtensions((prev) =>
-        prev.map((e) => (e.manifest.id === id ? { ...e, enabled } : e)),
-      );
+      await loadExtensions();
     } catch {
       setError('Failed to toggle extension');
     }

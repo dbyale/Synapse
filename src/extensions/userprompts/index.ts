@@ -28,6 +28,7 @@ export const tools: Record<string, ExtensionToolDef> = {
         'The user will see the question and options in a popup dialog. Their selection ' +
         'or typed response will be returned as the tool result.',
       icon: 'HelpCircle',
+      tags: ['input'],
     },
     params: {
       type: 'object',

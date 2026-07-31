@@ -14,6 +14,7 @@ interface ToolInfo {
   descriptionForHuman?: string;
   icon?: string;
   displayType?: string;
+  tags?: string[];
 }
 
 interface ExtensionInfo {
@@ -131,12 +132,37 @@ export default function ExtensionModal({
                       <div className="em-tool-name">{tool.meta.label}</div>
                       <div className="em-tool-desc">
                         {tool.meta.descriptionForHuman ?? tool.meta.description}
-                        {tool.meta.displayType === 'projector' && (
-                          <span className="em-tool-badge">
-                            Requires vision model
-                          </span>
-                        )}
                       </div>
+                      {(tool.meta.displayType === 'projector' ||
+                        tool.meta.displayType === 'image' ||
+                        tool.meta.tags?.includes('input') ||
+                        tool.meta.tags?.includes('sources')) && (
+                        <div className="em-tool-tags">
+                          {tool.meta.tags?.includes('input') && (
+                            <span className="em-tool-badge em-tool-badge--input">
+                              Requires User Input
+                            </span>
+                          )}
+                          {(tool.meta.displayType === 'projector' ||
+                            tool.meta.displayType === 'image') && (
+                            <span className="em-tool-badge em-tool-badge--image">
+                              Displays Image
+                            </span>
+                          )}
+                          {tool.meta.tags?.includes('sources') && (
+                            <span className="em-tool-badge em-tool-badge--sources">
+                              Adds Sources
+                            </span>
+                          )}
+                          {tool.meta.displayType === 'projector' && (
+                            <div className="em-tool-tags-row">
+                              <span className="em-tool-badge em-tool-badge--vision">
+                                Requires vision model
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))
