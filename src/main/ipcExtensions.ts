@@ -3,7 +3,12 @@ import { ipcMain, dialog, BrowserWindow, shell, app } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import { getExtensionRegistry } from './extensionRegistry';
-import { setAllowedDirectories, setMaxReadSize } from './functions/fileSystem';
+import {
+  setAllowedDirectories,
+  setHostDirectory,
+  setMaxReadSize,
+  getDefaultHostDirectory,
+} from './functions/fileSystem';
 import { setSandboxMaxReadSize } from './functions/sandboxRunner';
 
 const EXTENSION_SETTINGS_DIR = path.join(
@@ -99,7 +104,11 @@ export function registerExtensionIpcHandlers(): void {
   });
 
   ipcMain.handle('extensions:getSettings', (_event, id: string) => {
-    return loadExtensionSettings(id);
+    const settings = loadExtensionSettings(id);
+    if (id === 'filesystem') {
+      settings.defaultHostDirectory = getDefaultHostDirectory();
+    }
+    return settings;
   });
 
   ipcMain.handle(
@@ -110,6 +119,7 @@ export function registerExtensionIpcHandlers(): void {
         setAllowedDirectories(settings.allowedDirectories || []);
         if (settings.maxReadSize !== undefined)
           setMaxReadSize(settings.maxReadSize);
+        if (settings.hostDirectory) setHostDirectory(settings.hostDirectory);
       }
       if (id === 'sandbox') {
         if (settings.maxReadSize !== undefined)
@@ -126,6 +136,9 @@ export function registerExtensionIpcHandlers(): void {
   }
   if (fsSettings.maxReadSize !== undefined) {
     setMaxReadSize(fsSettings.maxReadSize);
+  }
+  if (fsSettings.hostDirectory) {
+    setHostDirectory(fsSettings.hostDirectory);
   }
   const sbSettings = loadExtensionSettings('sandbox');
   if (sbSettings.maxReadSize !== undefined) {

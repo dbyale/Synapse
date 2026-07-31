@@ -3,10 +3,25 @@ import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
 import { existsSync } from 'fs';
+import { app } from 'electron';
 import { minimatch } from 'minimatch';
 
 let allowedDirectories: string[] = [];
 let maxReadSize = 40000;
+
+export function getDefaultHostDirectory(): string {
+  return path.parse(app.getAppPath()).root;
+}
+
+let hostDirectory = getDefaultHostDirectory();
+
+export function setHostDirectory(dir: string): void {
+  hostDirectory = path.resolve(dir);
+}
+
+export function getHostDirectory(): string {
+  return hostDirectory;
+}
 
 export function setAllowedDirectories(dirs: string[]): void {
   allowedDirectories = dirs.map((d) => path.resolve(d));
@@ -36,9 +51,9 @@ function normalizePath(inputPath: string): string {
   const placeholderMap: Record<string, string> = {
     root: os.homedir(),
     '~': os.homedir(),
-    '.': process.cwd(),
+    '.': hostDirectory,
     home: os.homedir(),
-    cwd: process.cwd(),
+    cwd: hostDirectory,
     desktop: path.join(os.homedir(), 'Desktop'),
     documents: path.join(os.homedir(), 'Documents'),
     downloads: path.join(os.homedir(), 'Downloads'),
@@ -51,6 +66,10 @@ function normalizePath(inputPath: string): string {
 
   if (inputPath.startsWith('~')) {
     return path.join(os.homedir(), inputPath.slice(1));
+  }
+
+  if (!path.isAbsolute(inputPath)) {
+    return path.resolve(hostDirectory, inputPath);
   }
 
   return inputPath;

@@ -5,6 +5,8 @@ import './styles/FileSystemSettings.css';
 export default function FileSystemSettings() {
   const [directories, setDirectories] = useState<string[]>([]);
   const [readSize, setReadSize] = useState(40000);
+  const [hostDirectory, setHostDirectory] = useState('');
+  const [defaultHostDirectory, setDefaultHostDirectory] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -17,6 +19,10 @@ export default function FileSystemSettings() {
         await window.electronAPI.extensionsGetSettings('filesystem');
       setDirectories(settings.allowedDirectories || []);
       if (settings.maxReadSize !== undefined) setReadSize(settings.maxReadSize);
+      setDefaultHostDirectory(settings.defaultHostDirectory || '');
+      setHostDirectory(
+        settings.hostDirectory || settings.defaultHostDirectory || '',
+      );
     } catch {
       setError('Failed to load settings');
     } finally {
@@ -28,21 +34,34 @@ export default function FileSystemSettings() {
     loadDirectories();
   }, []);
 
-  async function saveDirectories(dirs: string[]) {
+  async function saveDirectories(dirs: string[], host?: string) {
     setSaving(true);
     setError(null);
     try {
       await window.electronAPI.extensionsSetSettings('filesystem', {
         allowedDirectories: dirs,
         maxReadSize: readSize,
+        hostDirectory: host ?? hostDirectory,
       });
       setDirectories(dirs);
+      if (host) setHostDirectory(host);
       setReadSizeDirty(false);
     } catch {
       setError('Failed to save settings');
     } finally {
       setSaving(false);
     }
+  }
+
+  async function handleChangeHostDirectory() {
+    const result = await window.electronAPI.pickDirectory();
+    if (result && result !== hostDirectory) {
+      await saveDirectories(directories, result);
+    }
+  }
+
+  function handleResetHostDirectory() {
+    saveDirectories(directories, defaultHostDirectory);
   }
 
   async function handleAddDirectory() {
@@ -75,6 +94,41 @@ export default function FileSystemSettings() {
           <span>{error}</span>
         </div>
       )}
+
+      <div className="fss-host">
+        <div className="fss-host-info">
+          <span className="fss-host-label">Host directory</span>
+          <span className="fss-host-path" title={hostDirectory}>
+            {hostDirectory}
+          </span>
+          <p className="fss-field-hint">
+            Relative paths in filesystem calls are resolved from this directory.
+          </p>
+        </div>
+        <div className="fss-host-actions">
+          <button
+            type="button"
+            className="btn-secondary fss-host-btn"
+            onClick={handleChangeHostDirectory}
+            disabled={saving}
+          >
+            <FolderOpen size={14} />
+            Change
+          </button>
+          {hostDirectory !== defaultHostDirectory && (
+            <button
+              type="button"
+              className="btn-secondary fss-host-btn"
+              onClick={handleResetHostDirectory}
+              disabled={saving}
+            >
+              Reset to default
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="fss-divider" />
 
       <div className="fss-list">
         {directories.length === 0 ? (
