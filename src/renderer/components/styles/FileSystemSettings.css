@@ -128,6 +128,13 @@
   width: 100%;
   box-sizing: border-box;
   transition: border-color 0.15s ease;
+  -moz-appearance: textfield;
+}
+
+.fss-number-input::-webkit-outer-spin-button,
+.fss-number-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 
 .fss-number-input:focus {
