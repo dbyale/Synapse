@@ -437,7 +437,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
       try {
         const onTokenCallback = (
           token: string,
-          segmentType?: 'thought' | 'comment',
+          segmentType?: 'thought' | 'comment' | 'tool',
         ) => {
           if (!event.sender.isDestroyed()) {
             event.sender.send('chat:token', { token, segmentType });

@@ -521,6 +521,10 @@ export default function ChatPage() {
     pendingMedia: PendingMedia[];
   } | null>(null);
   const [backend, setBackend] = useState<string | null>(persistentBackend);
+  const [streamingTool, setStreamingTool] = useState<{
+    name: string;
+    text: string;
+  } | null>(null);
   const [userInputRequest, setUserInputRequest] = useState<{
     requestId: string;
     type: 'confirm' | 'select' | 'freeform';
@@ -813,6 +817,7 @@ export default function ChatPage() {
 
   const startNewChatWithProfile = async (profileId: string | null) => {
     setMessages([]);
+    setStreamingTool(null);
     persistentMessages = [];
     messageCounter.current = 0;
     persistentMessageCounter = 0;
@@ -923,6 +928,7 @@ export default function ChatPage() {
       setUsedTokens(0);
       setMaxTokens(null);
       setMessages([]);
+      setStreamingTool(null);
       setBackend(null);
       persistentMessages = [];
       systemMessageInsertedRef.current = false;
@@ -1138,6 +1144,14 @@ export default function ChatPage() {
   useEffect(() => {
     const removeTokenListener = window.electronAPI.onChatToken(
       ({ token, segmentType }) => {
+        if (segmentType === 'tool') {
+          setStreamingTool((prev) => ({
+            name: prev?.name ?? 'tool',
+            text: (prev?.text ?? '') + token,
+          }));
+          return;
+        }
+
         setProcessing(false);
         setMessages((prev) => {
           const last = prev[prev.length - 1];
@@ -1285,6 +1299,10 @@ export default function ChatPage() {
 
           activeToolSegmentId.current = toolSegment.id;
           setProcessing(true);
+          setStreamingTool((prev) => ({
+            name: data.name,
+            text: prev?.text ?? '',
+          }));
           return updatedMessages;
         });
       },
@@ -1293,6 +1311,7 @@ export default function ChatPage() {
     const unsubscribeFunctionCall = window.electronAPI.onChatFunctionCall(
       (data) => {
         lastToolParamsRef.current[data.name] = data.params;
+        setStreamingTool(null);
         setMessages((prevMessages) => {
           const updatedMessages = [...prevMessages];
           const lastMessage = updatedMessages[updatedMessages.length - 1];
@@ -1669,6 +1688,7 @@ export default function ChatPage() {
 
     setLoading(true);
     setProcessing(true);
+    setStreamingTool(null);
 
     for (const item of pendingMedia) {
       if (item.type === 'image') {
@@ -2361,6 +2381,70 @@ export default function ChatPage() {
 
                           return elements;
                         })()}
+                        {streamingTool &&
+                          msg === messages[messages.length - 1] &&
+                          msg.role === 'assistant' && (
+                            <div className="tool-call-stream">
+                              <div className="tool-call-stream__header">
+                                {(() => {
+                                  const meta = streamingTool.name
+                                    ? getToolMeta(streamingTool.name)
+                                    : undefined;
+                                  const IconComp = meta?.icon
+                                    ? resolveIcon(meta.icon)
+                                    : Wrench;
+                                  return (
+                                    <IconComp
+                                      className="tool-call-stream__icon"
+                                      size={16}
+                                    />
+                                  );
+                                })()}
+                                <span className="tool-call-stream__name">
+                                  {(streamingTool.name &&
+                                    getToolMeta(streamingTool.name)?.label) ??
+                                    streamingTool.name}
+                                </span>
+                                <div className="tool-call-stream__spinner" />
+                              </div>
+                              {(() => {
+                                let displayText = streamingTool.text;
+                                try {
+                                  displayText = JSON.stringify(
+                                    JSON.parse(streamingTool.text),
+                                    null,
+                                    2,
+                                  );
+                                } catch {
+                                  displayText = streamingTool.text;
+                                }
+                                displayText = displayText
+                                  .replace(/\\r\\n/g, '\r\n')
+                                  .replace(/\\n/g, '\n');
+                                return (
+                                  <SyntaxHighlighter
+                                    language="json"
+                                    style={oneDark}
+                                    customStyle={{
+                                      margin: 0,
+                                      borderTop: '1px solid var(--border)',
+                                      borderRadius: 0,
+                                      fontSize: 11,
+                                      lineHeight: 1.4,
+                                      maxHeight: 240,
+                                      overflow: 'auto',
+                                      background: 'transparent',
+                                    }}
+                                    codeTagProps={{
+                                      style: { fontFamily: 'inherit' },
+                                    }}
+                                  >
+                                    {displayText}
+                                  </SyntaxHighlighter>
+                                );
+                              })()}
+                            </div>
+                          )}
                         {loading &&
                           msg === messages[messages.length - 1] &&
                           msg.role === 'assistant' &&

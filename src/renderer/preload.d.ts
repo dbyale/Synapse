@@ -158,7 +158,7 @@ declare global {
       onChatToken: (
         callback: (data: {
           token: string;
-          segmentType?: 'thought' | 'comment';
+          segmentType?: 'thought' | 'comment' | 'tool';
         }) => void,
       ) => () => void;
       onChatDone: (

@@ -88,12 +88,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onChatToken: (
     callback: (data: {
       token: string;
-      segmentType?: 'thought' | 'comment';
+      segmentType?: 'thought' | 'comment' | 'tool';
     }) => void,
   ) => {
     const listener = (
       _: any,
-      data: { token: string; segmentType?: 'thought' | 'comment' },
+      data: { token: string; segmentType?: 'thought' | 'comment' | 'tool' },
     ) => callback(data);
     ipcRenderer.on('chat:token', listener);
     return () => ipcRenderer.removeListener('chat:token', listener);

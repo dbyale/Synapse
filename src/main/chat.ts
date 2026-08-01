@@ -791,7 +791,7 @@ export async function loadProfile(
 
 export async function sendMessage(
   text: string,
-  onToken: (t: string, type?: 'thought' | 'comment') => void,
+  onToken: (t: string, type?: 'thought' | 'comment' | 'tool') => void,
   contentParts?: {
     kind: string;
     url?: string;
@@ -846,6 +846,7 @@ export async function sendMessage(
     const toolCalls: any[] = [];
     let stats: GenerationStats | undefined;
     let promptStats: GenerationStats | undefined;
+    const emitFn = emitFunctionEvent;
 
     try {
       while (true) {
@@ -949,10 +950,14 @@ export async function sendMessage(
               delta.tool_calls.forEach((tc: any) => {
                 if (!toolCalls[tc.index])
                   toolCalls[tc.index] = { id: tc.id, name: '', args: '' };
-                if (tc.function?.name)
+                if (tc.function?.name) {
                   toolCalls[tc.index].name = tc.function.name;
-                if (tc.function?.arguments)
+                  if (emitFn) emitFn('calling', tc.function.name, '');
+                }
+                if (tc.function?.arguments) {
                   toolCalls[tc.index].args += tc.function.arguments;
+                  if (onToken) onToken(tc.function.arguments, 'tool');
+                }
               });
             }
 
@@ -984,7 +989,6 @@ export async function sendMessage(
       });
       for (const tc of toolCalls) {
         const handler = chatFunctions[tc.name]?.handler;
-        if (emitFunctionEvent) emitFunctionEvent('calling', tc.name, '');
         if (emitFunctionEvent) emitFunctionEvent('call', tc.name, tc.args);
         let result = await handler(JSON.parse(tc.args));
 

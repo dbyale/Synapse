@@ -1525,6 +1525,70 @@
   opacity: 0.9;
 }
 
+/* ============================================================================
+   Live Tool Call Stream (shown while the model is still writing a tool call)
+   ============================================================================ */
+
+.tool-call-stream {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  box-sizing: border-box;
+  min-width: 0;
+  background-color: var(--bg-secondary);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  font-size: 12px;
+  font-family:
+    system-ui,
+    -apple-system,
+    sans-serif;
+  margin-top: 8px;
+  margin-bottom: 8px;
+}
+
+.tool-call-stream__header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background-color: var(--bg-secondary);
+  user-select: none;
+}
+
+.tool-call-stream__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  color: var(--text-secondary);
+}
+
+.tool-call-stream__name {
+  flex: 1;
+  color: var(--text-primary);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tool-call-stream__spinner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: tool-spin 0.75s linear infinite;
+}
+
 /* Statistics display underneath assistant bubbles */
 .chat-message__stats {
   display: flex;
