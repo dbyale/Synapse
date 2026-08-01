@@ -501,7 +501,6 @@ export default function ChatPage() {
     totalInputTokens: number;
     totalOutputTokens: number;
   }>({ totalInputTokens: 0, totalOutputTokens: 0 });
-  const [projectorLoaded, setProjectorLoaded] = useState(false);
   const [showImageModal, setShowImageModal] = useState(false);
   const [pageDragging, setPageDragging] = useState(false);
   const dragOpenedModal = useRef(false);
@@ -555,10 +554,25 @@ export default function ChatPage() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const { addSources, closeSources, toggleSources, isOpen: isSourcesOpen } = useSourcesContext();
+  const {
+    addSources,
+    closeSources,
+    toggleSources,
+    isOpen: isSourcesOpen,
+  } = useSourcesContext();
   const lastToolParamsRef = useRef<Record<string, string>>({});
 
   const [showSourcesButton, setShowSourcesButton] = useState(false);
+  const [projectorLoaded, setProjectorLoaded] = useState(false);
+  const [projectorChecked, setProjectorChecked] = useState(false);
+  const [projectorWarning, setProjectorWarning] = useState<{
+    tools: string[];
+    id: number;
+  } | null>(null);
+  const [projectorWarningClosing, setProjectorWarningClosing] = useState(false);
+  const projectorWarningExitTimer = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
 
   useEffect(() => {
     setShowSourcesButton(false);
@@ -568,20 +582,60 @@ export default function ChatPage() {
     if (systemPhase !== 'ready') {
       return;
     }
-    const profile = profilesRef.current.find(
-      (p) => p.id === selectedProfileId,
-    );
+    const profile = profilesRef.current.find((p) => p.id === selectedProfileId);
     if (!profile?.tools) {
       setShowSourcesButton(false);
       return;
     }
     const metas = getAllToolMetas();
     setShowSourcesButton(
-      profile.tools.some(
-        (name) => metas[name]?.tags?.includes('sources'),
-      ),
+      profile.tools.some((name) => metas[name]?.tags?.includes('sources')),
     );
   }, [systemPhase, selectedProfileId]);
+
+  const PROJECTOR_WARNING_EXIT_MS = 200;
+
+  const hideProjectorWarning = useCallback(() => {
+    setProjectorWarningClosing(true);
+    if (projectorWarningExitTimer.current)
+      clearTimeout(projectorWarningExitTimer.current);
+    projectorWarningExitTimer.current = setTimeout(() => {
+      setProjectorWarning(null);
+      setProjectorWarningClosing(false);
+      projectorWarningExitTimer.current = null;
+    }, PROJECTOR_WARNING_EXIT_MS);
+  }, []);
+
+  useEffect(() => {
+    if (systemPhase !== 'ready' || modelLoading) return;
+    const profile = profilesRef.current.find((p) => p.id === selectedProfileId);
+    if (!profile?.tools) {
+      hideProjectorWarning();
+      return;
+    }
+    const metas = getAllToolMetas();
+    const projectorTools = profile.tools.filter(
+      (name) => metas[name]?.displayType === 'projector',
+    );
+    if (projectorTools.length > 0 && projectorChecked && !projectorLoaded) {
+      if (projectorWarningExitTimer.current) {
+        clearTimeout(projectorWarningExitTimer.current);
+        projectorWarningExitTimer.current = null;
+      }
+      setProjectorWarningClosing(false);
+      const id = Date.now();
+      setProjectorWarning({ tools: projectorTools, id });
+    } else {
+      hideProjectorWarning();
+    }
+  }, [
+    systemPhase,
+    selectedProfileId,
+    projectorChecked,
+    projectorLoaded,
+    modelLoading,
+    hideProjectorWarning,
+  ]);
 
   const refreshCumulativeTokens = useCallback(async () => {
     try {
@@ -642,12 +696,20 @@ export default function ChatPage() {
   useEffect(() => {
     if (!selectedProfileId || modelLoading || loadError) {
       setProjectorLoaded(false);
+      setProjectorChecked(false);
       return;
     }
+    setProjectorChecked(false);
     window.electronAPI
       .chatHasProjector()
-      .then(setProjectorLoaded)
-      .catch(() => setProjectorLoaded(false));
+      .then((v) => {
+        setProjectorLoaded(v);
+        setProjectorChecked(true);
+      })
+      .catch(() => {
+        setProjectorLoaded(false);
+        setProjectorChecked(true);
+      });
   }, [selectedProfileId, modelLoading, loadError]);
 
   const unloadModel = async (): Promise<void> => {
@@ -2462,6 +2524,32 @@ export default function ChatPage() {
               />
             </div>
           )}
+        </div>
+      )}
+
+      {projectorWarning && (
+        <div
+          className={`chat-projector-warning${projectorWarningClosing ? ' chat-projector-warning--closing' : ''}`}
+          role="alert"
+        >
+          <AlertCircle size={15} className="chat-projector-warning__icon" />
+          <span className="chat-projector-warning__text">
+            The following tools could not be loaded:{' '}
+            {projectorWarning.tools
+              .map((name) => `"${getAllToolMetas()[name]?.label ?? name}"`)
+              .join(', ')}
+            <br />
+            These tools require a vision model projector. Please add a projector
+            to the profile to use them.
+          </span>
+          <button
+            type="button"
+            className="chat-projector-warning__close"
+            onClick={hideProjectorWarning}
+            aria-label="Dismiss warning"
+          >
+            <X size={14} />
+          </button>
         </div>
       )}
 
