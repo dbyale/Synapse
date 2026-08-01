@@ -2,8 +2,37 @@ import type { ExtensionToolDef } from '../types';
 import {
   getPythonEnvironmentInfo,
   runPython,
+  runPythonWithImages,
+  ensurePackage,
 } from '../../main/functions/pythonRunner';
 import manifest from './manifest.json';
+
+// Optional graph-layout dependency (drawn through matplotlib).
+// Installed lazily and cached for the session; the diagram tool still
+// works for non-graph diagrams even if this installation fails.
+let networkxReady = false;
+let networkxCheckInProgress: Promise<boolean> | null = null;
+
+async function ensureNetworkxPackage(): Promise<void> {
+  if (networkxReady) return;
+  if (networkxCheckInProgress) {
+    await networkxCheckInProgress;
+    return;
+  }
+  networkxCheckInProgress = (async () => {
+    const result = await ensurePackage('networkx');
+    if (result.success) networkxReady = true;
+    return result.success;
+  })();
+  await networkxCheckInProgress;
+}
+
+function trimForModel(s: string | null | undefined, max: number): string {
+  if (!s) return '';
+  const trimmed = s.trim();
+  if (trimmed.length <= max) return trimmed;
+  return `... [truncated]\n${trimmed.slice(-max)}`;
+}
 
 export const tools: Record<string, ExtensionToolDef> = {
   python_environment_info: {
@@ -15,7 +44,7 @@ export const tools: Record<string, ExtensionToolDef> = {
     },
     params: { type: 'object', properties: {} },
     async handler() {
-      return await getPythonEnvironmentInfo();
+      return getPythonEnvironmentInfo();
     },
   },
   run_python: {
@@ -107,6 +136,124 @@ export const tools: Record<string, ExtensionToolDef> = {
         timed_out: false,
         execution_time_ms: result.executionTimeMs,
         run_id: result.runId,
+      };
+    },
+  },
+  create_diagram: {
+    meta: {
+      name: 'create_diagram',
+      label: 'Create Diagram',
+      description:
+        'Draw any diagram or infographic with matplotlib and display it as an image.',
+      descriptionForHuman:
+        'Renders a diagram as an image. Requires a vision model (with projector) for the model to see it.',
+      descriptionForModel:
+        'Draw ANY kind of diagram or infographic with matplotlib and return it as a rendered image. The image is shown to the user AND you can see it yourself through the vision projector to verify quality.\n' +
+        '\n' +
+        'SUPPORTED DIAGRAM KINDS (any of these, or anything similar):\n' +
+        '  • Flowcharts / process pipelines / decision trees / state machines\n' +
+        '  • Infographics: posters, cards, stat tiles, comparison panels, timelines\n' +
+        '  • Organizational charts, hierarchy trees, mind maps\n' +
+        '  • ER diagrams, class-diagram-style boxes, architecture/network diagrams\n' +
+        '  • Precise technical drawings at exact coordinates (panels, grids, layouts)\n' +
+        '  • Charts: bar, line, pie, Sankey, radar, gauge, custom composites\n' +
+        '  • Network/graph diagrams (networkx is auto-installed; draw via matplotlib)\n' +
+        '\n' +
+        'OUTPUT MECHANISM — CRITICAL:\n' +
+        '  • Your code runs in a sandbox; the working directory is captured afterwards.\n' +
+        "  • You MUST save the final figure: plt.savefig('diagram.png') or fig.savefig('diagram.png').\n" +
+        '  • Do NOT call plt.show() — there is no display (the backend is Agg).\n' +
+        '  • If you save several files, only the first (alphabetically) is returned — save exactly one, named diagram.png.\n' +
+        '  • The user cannot see your code or raw stdout — interpret and describe the diagram in your reply.\n' +
+        '\n' +
+        'RECOMMENDED TEMPLATE:\n' +
+        '  import matplotlib.pyplot as plt\n' +
+        '  from matplotlib.patches import FancyBboxPatch, FancyArrowPatch, Rectangle\n' +
+        '  fig, ax = plt.subplots(figsize=(10, 6))\n' +
+        "  ax.axis('off')\n" +
+        '  ax.set_xlim(0, 10); ax.set_ylim(0, 6)\n' +
+        '  # boxes:   ax.add_patch(FancyBboxPatch((x, y), w, h, boxstyle="round,pad=0.1", fc=..., ec=...))\n' +
+        '  # arrows:  ax.annotate("", xy=(x2, y2), xytext=(x1, y1), arrowprops=dict(arrowstyle="-|>", color=..., lw=2))\n' +
+        "  # text:    ax.text(x, y, 'label', ha='center', va='center', fontsize=10, fontweight='bold')\n" +
+        "  fig.savefig('diagram.png', dpi=150, bbox_inches='tight', facecolor='white')\n" +
+        '\n' +
+        'PRECISION DRAWING GUIDANCE (important for anything technical):\n' +
+        '  • matplotlib places everything EXACTLY where your coordinates say — compute them deliberately.\n' +
+        '  • Use a generous coordinate range and fixed xlim/ylim so nothing is clipped.\n' +
+        '  • Lines: ax.plot([x1,x2],[y1,y2], color=..., lw=...); polylines for custom shapes.\n' +
+        '  • Edge labels: ax.text at the midpoint of the edge, with bbox=dict(boxstyle="round", fc="white") for readability.\n' +
+        '  • For graph layouts: import networkx as nx; pos = nx.spring_layout(G); nx.draw(G, pos, ax=ax, with_labels=True).\n' +
+        '  • Set fig.patch.set_facecolor("white") or pass facecolor="white" to savefig so the image is not transparent.\n' +
+        '\n' +
+        'COMMON PITFALLS:\n' +
+        '  • No image returned = you forgot savefig, or saved to an absolute path outside the sandbox dir.\n' +
+        '  • Overlapping text: size boxes to their labels, use bbox on text, keep fontsize modest.\n' +
+        '  • If the run errors, read stderr, fix the code, and retry — you may iterate.\n' +
+        '\n' +
+        'AVAILABLE LIBRARIES:\n' +
+        '  matplotlib (pyplot, patches, figure, axes), numpy, pandas, scipy, networkx, PIL, math, random,\n' +
+        '  statistics, json, re, collections, itertools, functools, datetime, and more.\n' +
+        '\n' +
+        'RESTRICTIONS — these will raise a sandbox error:\n' +
+        '  Blocked modules: os, sys, subprocess, socket, pathlib, shutil,\n' +
+        '                   threading, multiprocessing, asyncio, ctypes, pickle,\n' +
+        '                   importlib, builtins\n' +
+        '  Blocked built-ins: open(), exec(), eval(), compile(), input(), breakpoint()\n' +
+        '  LIMITS: 15-second timeout. stdout/stderr capped at 100 KB. ' +
+        'Images capped at 8 MB each (5 files max, only the first is returned).',
+      icon: 'Image',
+      displayType: 'projector',
+      tags: ['diagram'],
+    },
+    params: {
+      type: 'object',
+      properties: {
+        code: {
+          type: 'string',
+          description:
+            'A self-contained Python snippet (ideally under 50 lines) that draws a diagram with matplotlib ' +
+            "and saves it to the working directory, e.g. fig.savefig('diagram.png'). " +
+            'No file I/O, no user input, no plt.show(). Every coordinate is your responsibility — place ' +
+            'elements exactly where you want them.',
+        },
+        alt_text: {
+          type: 'string',
+          description:
+            'Optional short description of the diagram (used as the image alt text and summary).',
+        },
+      },
+      required: ['code'],
+    },
+    async handler(params: { code: string; alt_text?: string }) {
+      await ensureNetworkxPackage();
+      const result = await runPythonWithImages(params.code);
+      if (!result.success) {
+        const stderrTail = trimForModel(result.stderr, 4000);
+        return {
+          _response: `Error creating diagram: ${result.error ?? 'Unknown error'}${
+            stderrTail ? `\nstderr:\n${stderrTail}` : ''
+          }`,
+        };
+      }
+      if (result.images.length === 0) {
+        const stdoutTail = trimForModel(result.stdout, 4000);
+        return {
+          _response:
+            "Error: the code ran successfully but no image was produced. You must save the figure to the sandbox working directory, e.g. fig.savefig('diagram.png') (relative path only). Do not call plt.show()." +
+            `${stdoutTail ? `\nstdout:\n${stdoutTail}` : ''}`,
+        };
+      }
+      const primary = result.images[0];
+      const extra =
+        result.images.length > 1
+          ? ` (${result.images.length - 1} additional image file(s) ignored — save only diagram.png)`
+          : '';
+      return {
+        _response: `Created diagram: ${primary.filename} (${Math.round(primary.sizeBytes / 1024)} KB)${extra}`,
+        _image: {
+          url: primary.dataUrl,
+          altText: params.alt_text ?? 'Diagram created with matplotlib',
+        },
       };
     },
   },

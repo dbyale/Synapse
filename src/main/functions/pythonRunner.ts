@@ -1,6 +1,6 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { writeFile, rm, mkdir } from 'fs/promises';
+import { writeFile, rm, mkdir, readFile, readdir } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { randomUUID } from 'crypto';
@@ -17,6 +17,8 @@ const SANDBOX_CONFIG = {
   maxCodeLength: 50_000,
   memoryLimitMb: 256,
   recursionLimit: 200,
+  maxImageBytes: 8_000_000,
+  maxImageCount: 5,
   allowedModules: new Set([
     // Web search
     'ddgs',
@@ -27,6 +29,8 @@ const SANDBOX_CONFIG = {
     'sklearn',
     'statsmodels',
     'sympy',
+    // Graph / network (optional — auto-installed on demand; drawn via matplotlib)
+    'networkx',
     // Plotting
     'matplotlib',
     'matplotlib.pyplot',
@@ -100,6 +104,30 @@ const SANDBOX_CONFIG = {
   ]),
 } as const;
 
+// Raster image formats captured from the sandbox working directory.
+// (SVG is intentionally excluded — the vision projector needs raster data.)
+const IMAGE_EXTENSIONS: Record<string, string> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.bmp': 'image/bmp',
+  '.tiff': 'image/tiff',
+  '.tif': 'image/tiff',
+};
+
+// Injected BEFORE user code when the run is expected to produce images.
+// Forces a headless matplotlib backend so savefig() works without a
+// display and plt.show() can never block the process until timeout.
+const HEADLESS_PREAMBLE = `
+# ── Headless rendering preamble (diagram runs) ──────────────────
+import matplotlib as _matplotlib
+_matplotlib.use('Agg')
+import matplotlib.pyplot as _plt
+_plt.ioff()
+`;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 2. TYPES
 // ─────────────────────────────────────────────────────────────────────────────
@@ -121,11 +149,27 @@ export interface PythonEnvironmentInfo {
   error?: string;
 }
 
+export interface PythonImageInfo {
+  filename: string;
+  mimeType: string;
+  dataUrl: string;
+  sizeBytes: number;
+}
+
+export interface PythonImageRunResult extends PythonRunResult {
+  images: PythonImageInfo[];
+}
+
 interface SpawnResult {
   stdout: string;
   stderr: string;
   exitCode: number | null;
   timedOut: boolean;
+}
+
+interface RunOptions {
+  extraPreamble?: string;
+  skipCleanup?: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -207,10 +251,9 @@ function validatePythonCode(code: string): void {
       `Code exceeds the maximum allowed length of ${SANDBOX_CONFIG.maxCodeLength} characters.`,
     );
   }
-  for (const [pattern, reason] of BLOCKED_PATTERNS) {
-    if (pattern.test(code)) {
-      throw new Error(`Security violation — ${reason}.`);
-    }
+  const violation = BLOCKED_PATTERNS.find(([pattern]) => pattern.test(code));
+  if (violation) {
+    throw new Error(`Security violation — ${violation[1]}.`);
   }
 }
 
@@ -224,14 +267,18 @@ async function resolvePythonBinary(): Promise<string> {
   if (resolvedBinary !== null) return resolvedBinary;
 
   const candidates = ['python3', 'python', 'py'];
-  for (const bin of candidates) {
-    try {
-      await execFileAsync(bin, ['--version']);
-      resolvedBinary = bin;
-      return bin;
-    } catch {
-      // Try next candidate
-    }
+  const found = (
+    await Promise.all(
+      candidates.map((bin) =>
+        execFileAsync(bin, ['--version'])
+          .then(() => bin)
+          .catch(() => null),
+      ),
+    )
+  ).find((bin): bin is string => bin !== null);
+  if (found) {
+    resolvedBinary = found;
+    return found;
   }
   throw new Error(
     'No Python binary found on this system. ' +
@@ -300,13 +347,18 @@ del _sys, _builtins_dict, _REMOVE, _name, _ALLOWED, _original_import
 // 6. TEMP FILE HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function writeTempCodeFile(code: string, runId: string): Promise<string> {
+async function writeTempCodeFile(
+  code: string,
+  runId: string,
+  extraPreamble?: string,
+): Promise<string> {
   const dir = join(tmpdir(), `py-sandbox-${runId}`);
   await mkdir(dir, { recursive: true });
 
   const filePath = join(dir, 'code.py');
   const preamble = buildPreamble(SANDBOX_CONFIG.allowedModules);
-  await writeFile(filePath, preamble + code, 'utf8');
+  const body = extraPreamble ? `${extraPreamble}\n${code}` : code;
+  await writeFile(filePath, preamble + body, 'utf8');
 
   return filePath;
 }
@@ -333,6 +385,7 @@ function spawnWithTimeout(
   binary: string,
   codePath: string,
   timeoutMs: number,
+  cwd?: string,
 ): Promise<SpawnResult> {
   return new Promise((resolve) => {
     let stdout = '';
@@ -346,6 +399,10 @@ function spawnWithTimeout(
       maxBuffer: SANDBOX_CONFIG.maxOutputBytes * 2,
       // Force UTF-8 decoding to handle Unicode/emoji in output (e.g. DDGS book results)
       encoding: 'utf8',
+      // Sandbox runs in an ephemeral temp dir — files saved by the code
+      // (e.g. fig.savefig('diagram.png')) land there and are captured
+      // by runPythonWithImages before cleanup
+      cwd,
       // Force Python to use UTF-8 for stdout/stderr (fixes 'charmap' codec errors on Windows)
       env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
     });
@@ -393,17 +450,10 @@ function spawnWithTimeout(
 // 8. PUBLIC API
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Run a string of AI-generated Python code in a sandboxed subprocess.
- *
- * Security layers applied in order:
- *   1. Node.js-side static analysis (regex blocklist)
- *   2. Python-side preamble (builtin deletion + import allowlist hook)
- *   3. Hard timeout → SIGKILL
- *   4. Output truncation
- *   5. Ephemeral temp file deleted in finally
- */
-export async function runPython(code: string): Promise<PythonRunResult> {
+async function runPythonInternal(
+  code: string,
+  options: RunOptions = {},
+): Promise<PythonRunResult> {
   const runId = randomUUID();
   const startTime = Date.now();
   let codePath: string | null = null;
@@ -416,13 +466,17 @@ export async function runPython(code: string): Promise<PythonRunResult> {
     const binary = await resolvePythonBinary();
 
     // ── Step 3: Write preamble + user code to temp file ───────
-    codePath = await writeTempCodeFile(code, runId);
+    codePath = await writeTempCodeFile(code, runId, options.extraPreamble);
 
     // ── Step 4: Spawn with timeout ─────────────────────────────
+    // The working directory is the sandbox's own ephemeral temp dir
+    // (which Step 3 just created), so files saved by the code land
+    // there and can be captured by runPythonWithImages.
     const raw = await spawnWithTimeout(
       binary,
       codePath,
       SANDBOX_CONFIG.timeoutMs,
+      join(tmpdir(), `py-sandbox-${runId}`),
     );
     const executionTimeMs = Date.now() - startTime;
 
@@ -439,6 +493,15 @@ export async function runPython(code: string): Promise<PythonRunResult> {
     }
 
     const success = raw.exitCode === 0;
+    let error: string | undefined;
+    if (!success) {
+      // A null exit code means the process never started (e.g. missing
+      // binary) — surface the raw spawn error instead of a generic message.
+      error =
+        raw.exitCode === null
+          ? raw.stderr
+          : `Process exited with code ${raw.exitCode}.`;
+    }
     return {
       success,
       stdout: raw.stdout,
@@ -446,9 +509,7 @@ export async function runPython(code: string): Promise<PythonRunResult> {
       runId,
       executionTimeMs,
       timedOut: false,
-      ...(success
-        ? {}
-        : { error: `Process exited with code ${raw.exitCode}.` }),
+      ...(error ? { error } : {}),
     };
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
@@ -463,8 +524,110 @@ export async function runPython(code: string): Promise<PythonRunResult> {
     };
   } finally {
     // ── Always clean up — never skipped ───────────────────────
-    await cleanupTempDir(runId);
+    // (unless the caller takes ownership, e.g. runPythonWithImages,
+    //  which must read captured files before deletion)
+    if (!options.skipCleanup) {
+      await cleanupTempDir(runId);
+    }
   }
+}
+
+/**
+ * Run a string of AI-generated Python code in a sandboxed subprocess.
+ *
+ * Security layers applied in order:
+ *   1. Node.js-side static analysis (regex blocklist)
+ *   2. Python-side preamble (builtin deletion + import allowlist hook)
+ *   3. Hard timeout → SIGKILL
+ *   4. Output truncation
+ *   5. Ephemeral temp file deleted in finally
+ */
+export async function runPython(code: string): Promise<PythonRunResult> {
+  return runPythonInternal(code);
+}
+
+function extensionOf(filename: string): string {
+  const idx = filename.lastIndexOf('.');
+  return idx === -1 ? '' : filename.slice(idx).toLowerCase();
+}
+
+/**
+ * Run a string of AI-generated Python code in the sandbox and capture any
+ * raster image files the code saved to its working directory (e.g.
+ * `fig.savefig('diagram.png')`). Images are returned as base64 data URLs.
+ *
+ * A headless preamble is injected that forces matplotlib onto the 'Agg'
+ * backend so rendering works without a display and `plt.show()` never
+ * blocks the process. The subprocess runs with its working directory set
+ * to the ephemeral temp dir, so relative save paths are captured and
+ * cleaned up automatically.
+ */
+export async function runPythonWithImages(
+  code: string,
+  options?: { maxImageBytes?: number },
+): Promise<PythonImageRunResult> {
+  const maxImageBytes = options?.maxImageBytes ?? SANDBOX_CONFIG.maxImageBytes;
+
+  let result: PythonRunResult;
+  try {
+    result = await runPythonInternal(code, {
+      extraPreamble: HEADLESS_PREAMBLE,
+      skipCleanup: true,
+    });
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    return {
+      success: false,
+      stdout: '',
+      stderr: '',
+      runId: '',
+      executionTimeMs: 0,
+      timedOut: false,
+      error: errorMessage,
+      images: [],
+    };
+  }
+
+  const images: PythonImageInfo[] = [];
+  if (result.success) {
+    try {
+      const dir = join(tmpdir(), `py-sandbox-${result.runId}`);
+      const files = await readdir(dir);
+      const imageFiles = files
+        .filter((f) => IMAGE_EXTENSIONS[extensionOf(f)] !== undefined)
+        .sort()
+        .slice(0, SANDBOX_CONFIG.maxImageCount);
+      const loaded = await Promise.all(
+        imageFiles.map(async (filename): Promise<PythonImageInfo | null> => {
+          try {
+            const buf = await readFile(join(dir, filename));
+            if (buf.length > maxImageBytes) return null;
+            const mimeType = IMAGE_EXTENSIONS[extensionOf(filename)];
+            return {
+              filename,
+              mimeType,
+              dataUrl: `data:${mimeType};base64,${buf.toString('base64')}`,
+              sizeBytes: buf.length,
+            };
+          } catch {
+            // Unreadable/corrupt file — skip it
+            return null;
+          }
+        }),
+      );
+      images.push(...loaded.filter((i): i is PythonImageInfo => i !== null));
+    } catch {
+      // No files in the working directory — no images captured
+    }
+  }
+
+  try {
+    await cleanupTempDir(result.runId);
+  } catch {
+    // Best-effort cleanup
+  }
+
+  return { ...result, images };
 }
 
 /**

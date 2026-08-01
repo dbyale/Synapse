@@ -1,7 +1,7 @@
 {
   "id": "python",
   "name": "Python",
-  "description": "Python environment checking and sandboxed script execution tools",
+  "description": "Python environment checking, sandboxed script execution, and matplotlib diagram creation tools",
   "author": "Synapse",
   "version": "1.0.0",
   "icon": "Terminal",
