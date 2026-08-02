@@ -12,7 +12,7 @@ import path from 'path';
 import { app, BrowserWindow, shell, ipcMain } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import log from 'electron-log';
-import MenuBuilder from './menu';
+import MenuBuilder, { MenuEditState } from './menu';
 import { resolveHtmlPath } from './util';
 import { registerIpcHandlers } from './ipc';
 import { shutdownAllSandboxes } from './functions/sandboxRunner';
@@ -75,6 +75,7 @@ const createWindow = async () => {
     width: 1024,
     height: 728,
     icon: getAssetPath('icon.png'),
+    autoHideMenuBar: true,
     webPreferences: {
       preload: app.isPackaged
         ? path.join(__dirname, 'preload.js')
@@ -101,6 +102,10 @@ const createWindow = async () => {
 
   const menuBuilder = new MenuBuilder(mainWindow);
   menuBuilder.buildMenu();
+
+  ipcMain.on('menu:edit-state', (_event, state: MenuEditState) => {
+    menuBuilder.updateEditItemState(state);
+  });
 
   // Open urls in the user's browser
   mainWindow.webContents.setWindowOpenHandler((edata) => {

@@ -1,5 +1,5 @@
 import { CSSProperties, useRef, useEffect } from 'react';
-import { Outlet, useLocation } from 'react-router';
+import { Outlet, useLocation, useNavigate } from 'react-router';
 import Sidebar from './Sidebar';
 import TopBar from './TopBar';
 import SourcesSidebar from './SourcesSidebar';
@@ -8,7 +8,16 @@ import { SourcesProvider, useSourcesContext } from '../context/SourcesContext';
 function LayoutInner() {
   const { isOpen, closeSources, sources } = useSourcesContext();
   const location = useLocation();
+  const navigate = useNavigate();
   const prevPathRef = useRef(location.pathname);
+
+  useEffect(() => {
+    const unsubscribe = window.electronAPI.onMenuNavigate((path) => {
+      navigate(path);
+    });
+
+    return unsubscribe;
+  }, [navigate]);
 
   useEffect(() => {
     if (prevPathRef.current !== location.pathname) {

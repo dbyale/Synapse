@@ -126,6 +126,13 @@ declare global {
         callback: (progress: DownloadProgress) => void,
       ) => () => void;
       removeDownloadProgressListener: () => void;
+      onMenuNavigate: (callback: (path: string) => void) => () => void;
+      notifyMenuEditState: (state: {
+        canCopy: boolean;
+        canCut: boolean;
+        canPaste: boolean;
+        canDelete: boolean;
+      }) => void;
 
       // Settings & Hardware
       getMemoryStats: () => Promise<SystemMemStats>;

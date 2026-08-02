@@ -65,6 +65,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.removeListener('download-progress', subscription);
     };
   },
+  onMenuNavigate: (callback: (path: string) => void) => {
+    const subscription = (_event: IpcRendererEvent, path: string) =>
+      callback(path);
+
+    ipcRenderer.on('menu:navigate', subscription);
+
+    return () => {
+      ipcRenderer.removeListener('menu:navigate', subscription);
+    };
+  },
+  notifyMenuEditState: (state: {
+    canCopy: boolean;
+    canCut: boolean;
+    canPaste: boolean;
+    canDelete: boolean;
+  }) => ipcRenderer.send('menu:edit-state', state),
   removeDownloadProgressListener: () => {
     ipcRenderer.removeAllListeners('download-progress');
   },
