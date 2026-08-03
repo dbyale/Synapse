@@ -544,7 +544,7 @@ export default function ChatPage() {
   });
   const unloadInProgress = useRef(false);
   const profilesRef = useRef<Profile[]>([]);
-  const activeToolSegmentId = useRef<string | null>(null);
+  const toolSegmentQueue = useRef<string[]>([]);
   const generationBaselineTokens = useRef<number | null>(null);
   const lastTokenSnapshot = useRef<{ tokens: number; time: number } | null>(
     null,
@@ -1297,11 +1297,11 @@ export default function ChatPage() {
             updatedMessages.push(assistantMessage);
           }
 
-          activeToolSegmentId.current = toolSegment.id;
+          toolSegmentQueue.current.push(toolSegment.id);
           setProcessing(true);
           setStreamingTool((prev) => ({
             name: data.name,
-            text: prev?.text ?? '',
+            text: prev?.name === data.name ? (prev?.text ?? '') : '',
           }));
           return updatedMessages;
         });
@@ -1318,10 +1318,10 @@ export default function ChatPage() {
 
           if (
             lastMessage?.role === 'assistant' &&
-            activeToolSegmentId.current
+            toolSegmentQueue.current[0]
           ) {
             const toolSegment = lastMessage.content.find(
-              (seg) => seg.id === activeToolSegmentId.current,
+              (seg) => seg.id === toolSegmentQueue.current[0],
             );
             if (toolSegment && toolSegment.type === 'tool') {
               toolSegment.toolParams = data.params;
@@ -1347,10 +1347,10 @@ export default function ChatPage() {
 
           if (
             lastMessage?.role === 'assistant' &&
-            activeToolSegmentId.current
+            toolSegmentQueue.current[0]
           ) {
             const toolSegment = lastMessage.content.find(
-              (seg) => seg.id === activeToolSegmentId.current,
+              (seg) => seg.id === toolSegmentQueue.current[0],
             );
             if (toolSegment && toolSegment.type === 'tool') {
               toolSegment.toolStatus = 'done';
@@ -1366,7 +1366,7 @@ export default function ChatPage() {
             }
           }
 
-          activeToolSegmentId.current = null;
+          toolSegmentQueue.current.shift();
           return updatedMessages;
         });
       },
