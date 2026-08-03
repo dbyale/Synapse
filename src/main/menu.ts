@@ -20,6 +20,7 @@ export interface MenuEditState {
 
 export default class MenuBuilder {
   mainWindow: BrowserWindow;
+
   menu: Menu | null = null;
 
   constructor(mainWindow: BrowserWindow) {
@@ -47,7 +48,7 @@ export default class MenuBuilder {
   }
 
   updateEditItemState(state: MenuEditState): void {
-    const menu = this.menu;
+    const { menu } = this;
     if (!menu) return;
 
     const set = (id: string, enabled: boolean) => {
