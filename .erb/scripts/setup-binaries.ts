@@ -35,6 +35,15 @@ const CUDA_RUNTIMES: [string, string][] = [
   [`cudart-llama-bin-win-cuda-13.3-x64.zip`, 'win-cuda-13.3-x64'],
 ];
 
+const PARSER_TARGETS = [
+  'gguf-parser-windows-arm64.exe',
+  'gguf-parser-windows-amd64.exe',
+  'gguf-parser-darwin-arm64',
+  'gguf-parser-darwin-amd64',
+  'gguf-parser-linux-arm64',
+  'gguf-parser-linux-amd64',
+];
+
 async function downloadAndExtract(url: string, targetFolder: string) {
   const targetDir = path.join(ASSETS_BIN, targetFolder);
   if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
@@ -68,18 +77,16 @@ async function downloadAndExtract(url: string, targetFolder: string) {
     fs.unlinkSync(tempTar);
   } else {
     // Handling raw binary files from gguf-parser releases (no extension)
-    const isWin = url.includes('windows') || url.endsWith('.exe');
-    const fileName = isWin ? 'gguf-parser.exe' : 'gguf-parser';
+    const fileName = path.basename(url);
     const filePath = path.join(targetDir, fileName);
     fs.writeFileSync(filePath, buffer);
+    if (process.platform !== 'win32') fs.chmodSync(filePath, '755');
   }
 
   // Set executable permissions for Unix
   if (process.platform !== 'win32') {
     const binPath = path.join(targetDir, 'llama-server');
-    const parserPath = path.join(targetDir, 'gguf-parser');
     if (fs.existsSync(binPath)) fs.chmodSync(binPath, '755');
-    if (fs.existsSync(parserPath)) fs.chmodSync(parserPath, '755');
   }
 }
 
@@ -102,27 +109,10 @@ async function run() {
     await downloadAndExtract(`${llamaBase}/${file}`, folder);
   }
 
-  // 3. Download Parser (Detect OS and Arch)
-  let parserFile = '';
-  if (process.platform === 'win32') {
-    parserFile =
-      process.arch === 'arm64'
-        ? 'gguf-parser-windows-arm64.exe'
-        : 'gguf-parser-windows-amd64.exe';
-  } else if (process.platform === 'darwin') {
-    parserFile =
-      process.arch === 'arm64'
-        ? 'gguf-parser-darwin-arm64'
-        : 'gguf-parser-darwin-amd64';
-  } else {
-    parserFile =
-      process.arch === 'arm64'
-        ? 'gguf-parser-linux-arm64'
-        : 'gguf-parser-linux-amd64';
+  // 3. Download All GGUF Parser Variants
+  for (const file of PARSER_TARGETS) {
+    await downloadAndExtract(`${parserBase}/${file}`, 'utils');
   }
-
-  // Save parser in a central 'utils' folder
-  await downloadAndExtract(`${parserBase}/${parserFile}`, 'utils');
 
   console.log('--- All binaries set up successfully ---');
 }

@@ -19,8 +19,21 @@ export interface MemoryEstimation {
 
 function getParserPath(): string {
   const isProd = app.isPackaged;
-  const binName =
-    process.platform === 'win32' ? 'gguf-parser.exe' : 'gguf-parser';
+  const { platform, arch } = process;
+  let binName: string;
+  if (platform === 'win32') {
+    binName =
+      arch === 'arm64'
+        ? 'gguf-parser-windows-arm64.exe'
+        : 'gguf-parser-windows-amd64.exe';
+  } else if (platform === 'darwin') {
+    binName =
+      arch === 'arm64'
+        ? 'gguf-parser-darwin-arm64'
+        : 'gguf-parser-darwin-amd64';
+  } else {
+    binName = arch === 'arm64' ? 'gguf-parser-linux-arm64' : 'gguf-parser-linux-amd64';
+  }
   const base = isProd
     ? path.join(process.resourcesPath, 'assets', 'bin', 'utils')
     : path.join(__dirname, '../../assets/bin', 'utils');
