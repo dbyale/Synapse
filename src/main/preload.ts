@@ -91,6 +91,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   chatLoadProfile: (profile: any) =>
     ipcRenderer.invoke('chat:loadProfile', profile),
   chatGetCurrentProfile: () => ipcRenderer.invoke('chat:getCurrentProfile'),
+  chatSetThinkingTokens: (tokens: number) =>
+    ipcRenderer.invoke('chat:setThinkingTokens', tokens),
   chatSend: (
     text: string,
     contentParts?: {

@@ -157,6 +157,7 @@ declare global {
         backend?: string;
       }>;
       chatGetCurrentProfile: () => Promise<Profile | null>;
+      chatSetThinkingTokens: (tokens: number) => Promise<{ success: boolean }>;
       chatHasProjector: () => Promise<boolean>;
       chatSend: (
         text: string,

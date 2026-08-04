@@ -37,6 +37,7 @@ import ImageViewer from '../components/ImageViewer';
 import ConfirmDialog from '../components/ConfirmDialog';
 import UserInputModal from '../components/UserInputModal';
 import ProfileSelectModal from '../components/ProfileSelectModal';
+import ThinkingDropdown from '../components/ThinkingDropdown';
 import { useSourcesContext } from '../context/SourcesContext';
 import { Profile } from '../types/profile';
 import type { AppSettings, ContentPart } from '../preload.d';
@@ -640,6 +641,27 @@ export default function ChatPage() {
     modelLoading,
     hideProjectorWarning,
   ]);
+
+  const handleThinkingTokensChange = useCallback(
+    (tokens: number) => {
+      if (!selectedProfileId) return;
+      try {
+        const stored = localStorage.getItem('profiles');
+        if (stored) {
+          const parsed: Profile[] = JSON.parse(stored);
+          const idx = parsed.findIndex((p) => p.id === selectedProfileId);
+          if (idx >= 0) {
+            parsed[idx] = { ...parsed[idx], thinkingTokens: tokens };
+            localStorage.setItem('profiles', JSON.stringify(parsed));
+          }
+        }
+      } catch {
+        // Ignore storage errors
+      }
+      window.electronAPI.chatSetThinkingTokens(tokens).catch(() => {});
+    },
+    [selectedProfileId],
+  );
 
   const refreshCumulativeTokens = useCallback(async () => {
     try {
@@ -2741,6 +2763,10 @@ export default function ChatPage() {
         </div>
 
         <div className={tokenCounterClass}>
+          <ThinkingDropdown
+            profileId={selectedProfileId || null}
+            onTokensChange={handleThinkingTokensChange}
+          />
           <span className="chat-backend-indicator">
             {backend ? formatBackend(backend) : ''}
           </span>

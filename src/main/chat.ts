@@ -260,6 +260,22 @@ function buildChatBody(messages: any[], tools: any[]): Record<string, any> {
       body.dry_sequence_breakers = dry.sequenceBreakers;
   }
 
+  // Thinking / reasoning budget
+  // Mirrors the llama.cpp webui (tools/ui/src/lib/services/chat.service.ts): thinking is
+  // toggled via chat_template_kwargs.enable_thinking, budgeted per-request via
+  // thinking_budget_tokens, and reasoning is parsed into reasoning_content via reasoning_format.
+  // Off (0) and Max (-1) omit the budget so the server default (no cap) applies.
+  const thinkingTokens = p?.thinkingTokens ?? 8192;
+  body.reasoning_format = 'auto';
+  if (thinkingTokens > 0) {
+    body.thinking_budget_tokens = thinkingTokens;
+  }
+  body.chat_template_kwargs = {
+    ...(body.chat_template_kwargs ?? {}),
+    enable_thinking: thinkingTokens !== 0,
+  };
+  body.reasoning_control = true;
+
   return body;
 }
 
@@ -1141,6 +1157,12 @@ export function getModelMemoryUsage() {
 }
 export function getCurrentProfile() {
   return currentProfile;
+}
+
+export function setThinkingTokens(tokens: number) {
+  if (currentProfile) {
+    currentProfile.thinkingTokens = tokens;
+  }
 }
 export function getActiveTools(): any[] {
   return activeTools;

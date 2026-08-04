@@ -422,6 +422,11 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     return chatService.getCurrentProfile();
   });
 
+  ipcMain.handle('chat:setThinkingTokens', (_event, tokens: number) => {
+    chatService.setThinkingTokens(tokens);
+    return { success: true };
+  });
+
   ipcMain.handle(
     'chat:send',
     async (

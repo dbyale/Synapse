@@ -93,6 +93,7 @@ export interface Profile {
   corsMethods?: string;
   corsHeaders?: string;
   corsCredentials?: boolean;
+  thinkingTokens?: number;
   order: number;
   createdAt: number;
 }
