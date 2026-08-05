@@ -247,16 +247,17 @@ declare global {
       openPath: (filePath: string) => Promise<void>;
 
       onChatFunctionCall: (
-        callback: (data: { name: string; params: string }) => void,
+        callback: (data: { name: string; params: string; tags?: string[] }) => void,
       ) => () => void;
       onChatFunctionCalling: (
-        callback: (data: { name: string; params: string }) => void,
+        callback: (data: { name: string; tags?: string[] }) => void,
       ) => () => void;
       onChatFunctionResult: (
         callback: (data: {
           name: string;
           result: string;
           _image?: { url: string; altText?: string };
+          tags?: string[];
         }) => void,
       ) => () => void;
 

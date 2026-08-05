@@ -968,7 +968,7 @@ export async function sendMessage(
                   toolCalls[tc.index] = { id: tc.id, name: '', args: '' };
                 if (tc.function?.name) {
                   toolCalls[tc.index].name = tc.function.name;
-                  if (emitFn) emitFn('calling', tc.function.name, '');
+                  if (emitFn) emitFn('calling', tc.function.name, '', chatFunctions[tc.function.name]?.tags);
                 }
                 if (tc.function?.arguments) {
                   toolCalls[tc.index].args += tc.function.arguments;
@@ -1005,7 +1005,7 @@ export async function sendMessage(
       });
       for (const tc of toolCalls) {
         const handler = chatFunctions[tc.name]?.handler;
-        if (emitFunctionEvent) emitFunctionEvent('call', tc.name, tc.args);
+        if (emitFunctionEvent) emitFunctionEvent('call', tc.name, tc.args, chatFunctions[tc.name]?.tags);
         let result = await handler(JSON.parse(tc.args));
 
         // Check if tool requests user input
@@ -1068,7 +1068,7 @@ export async function sendMessage(
           if (imageData && tc.name !== 'read_media_file') {
             payload._image = imageData;
           }
-          emitFunctionEvent('result', tc.name, JSON.stringify(payload));
+          emitFunctionEvent('result', tc.name, JSON.stringify(payload), chatFunctions[tc.name]?.tags);
         }
         messageHistory.push({
           role: 'tool',

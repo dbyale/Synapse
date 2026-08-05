@@ -634,20 +634,22 @@ export function registerIpcHandlers(win: BrowserWindow): void {
       event: 'calling' | 'call' | 'result' | 'input-request',
       name: string,
       data: string,
+      tags?: string[],
     ) => {
       const win = BrowserWindow.getAllWindows()[0];
       if (!win || win.isDestroyed()) return;
 
       if (event === 'calling') {
-        win.webContents.send('chat-function-calling', { name });
+        win.webContents.send('chat-function-calling', { name, tags });
       } else if (event === 'call') {
-        win.webContents.send('chat-function-call', { name, params: data });
+        win.webContents.send('chat-function-call', { name, params: data, tags });
       } else if (event === 'result') {
         const parsed = JSON.parse(data);
         win.webContents.send('chat-function-result', {
           name,
           result: parsed.result,
           _image: parsed._image,
+          tags,
         });
       } else if (event === 'input-request') {
         win.webContents.send('chat:user-input', JSON.parse(data));

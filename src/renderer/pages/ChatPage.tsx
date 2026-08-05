@@ -123,6 +123,7 @@ let persistentModelLoading = false;
 let persistentLastLoadId = 0;
 let isReprocessing = false;
 let pendingSegmentIds: string[] = [];
+let totalSearches: number = parseInt(localStorage.getItem('totalSearches') || '0', 10);
 
 function ToolCallSegment({
   segment,
@@ -686,6 +687,7 @@ export default function ChatPage() {
   const estimatedCost =
     (cumulativeTokens.totalInputTokens / 1_000_000) * INPUT_PRICE_PER_MILLION +
     (cumulativeTokens.totalOutputTokens / 1_000_000) * OUTPUT_PRICE_PER_MILLION;
+    (totalSearches * 0.10);
 
   const selectedProfile =
     profiles.find((p) => p.id === selectedProfileId) ?? null;
@@ -1317,6 +1319,11 @@ export default function ChatPage() {
             };
             messageCounter.current += 1;
             updatedMessages.push(assistantMessage);
+          }
+
+          if (data.tags?.includes('web_search')) {
+            totalSearches++;
+            localStorage.setItem('totalSearches', String(totalSearches));
           }
 
           toolSegmentQueue.current.push(toolSegment.id);

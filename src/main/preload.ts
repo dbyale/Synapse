@@ -246,16 +246,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openPath: (filePath: string) => ipcRenderer.invoke('shell:openPath', filePath),
 
   onChatFunctionCall: (
-    callback: (data: { name: string; params: string }) => void,
+    callback: (data: { name: string; params: string; tags?: string[] }) => void,
   ) => {
-    const listener = (_: any, data: { name: string; params: string }) =>
+    const listener = (_: any, data: { name: string; params: string; tags?: string[] }) =>
       callback(data);
     ipcRenderer.on('chat-function-call', listener);
     return () => ipcRenderer.removeListener('chat-function-call', listener);
   },
 
-  onChatFunctionCalling: (callback: (data: { name: string }) => void) => {
-    const listener = (_: any, data: { name: string }) => callback(data);
+  onChatFunctionCalling: (callback: (data: { name: string; tags?: string[] }) => void) => {
+    const listener = (_: any, data: { name: string; tags?: string[] }) => callback(data);
     ipcRenderer.on('chat-function-calling', listener);
     return () => ipcRenderer.removeListener('chat-function-calling', listener);
   },
@@ -265,6 +265,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       name: string;
       result: string;
       _image?: { url: string; altText?: string };
+      tags?: string[];
     }) => void,
   ) => {
     const listener = (
@@ -272,6 +273,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
       data: {
         name: string;
         result: string;
+        _image?: { url: string; altText?: string };
+        tags?: string[];
+      },
         _image?: { url: string; altText?: string };
       },
     ) => callback(data);

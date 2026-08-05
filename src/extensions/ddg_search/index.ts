@@ -186,7 +186,7 @@ export const tools: Record<string, ExtensionToolDef> = {
         '  safesearch (optional) — "on", "moderate", or "off" (default "moderate")\n' +
         '  timelimit (optional) — "d" (past day), "w" (past week), "m" (past month), "y" (past year)',
       icon: 'Search',
-      tags: ['sources'],
+      tags: ['sources', 'web_search'],
     },
     params: {
       type: 'object',
@@ -252,7 +252,7 @@ export const tools: Record<string, ExtensionToolDef> = {
         '  safesearch (optional) — "on", "moderate", or "off" (default "moderate")\n' +
         '  timelimit (optional) — "d" (past day), "w" (past week), "m" (past month)',
       icon: 'Newspaper',
-      tags: ['sources'],
+      tags: ['sources', 'web_search'],
     },
     params: {
       type: 'object',
@@ -321,7 +321,7 @@ export const tools: Record<string, ExtensionToolDef> = {
         '  layout (optional) — filter: Square, Tall, Wide\n' +
         '  license_image (optional) — filter: any (Creative Commons), Public, Share, ShareCommercially, Modify, ModifyCommercially',
       icon: 'Image',
-      tags: ['sources'],
+      tags: ['sources', 'web_search'],
     },
     params: {
       type: 'object',
@@ -423,7 +423,7 @@ export const tools: Record<string, ExtensionToolDef> = {
         '  license_videos (optional) — filter: creativeCommon, youtube\n' +
         '  timelimit (optional) — "d" (past day), "w" (past week), "m" (past month)',
       icon: 'Video',
-      tags: ['sources'],
+      tags: ['sources', 'web_search'],
     },
     params: {
       type: 'object',
@@ -506,7 +506,7 @@ export const tools: Record<string, ExtensionToolDef> = {
         '  query (required) — book title, author, topic, or ISBN\n' +
         '  max_results (optional, default 10) — how many results to return (max 50)',
       icon: 'BookOpen',
-      tags: ['sources'],
+      tags: ['sources', 'web_search'],
     },
     params: {
       type: 'object',

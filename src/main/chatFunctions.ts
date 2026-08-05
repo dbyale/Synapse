@@ -6,6 +6,7 @@ type ChatFunctionDef = {
   handler: (params: any) => any;
   name?: string;
   displayType?: string;
+  tags?: string[];
 };
 
 export function createChatFunctions() {
@@ -18,6 +19,7 @@ export function createChatFunctions() {
       params: tool.params,
       handler: tool.handler,
       displayType: tool.meta.displayType,
+      tags: tool.meta.tags,
     };
   }
   return result;
