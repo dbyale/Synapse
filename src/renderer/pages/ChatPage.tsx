@@ -87,8 +87,8 @@ interface Message {
   promptStats?: GenerationStatsData;
 }
 
-const INPUT_PRICE_PER_MILLION = 150.0;
-const OUTPUT_PRICE_PER_MILLION = 600.0;
+const INPUT_PRICE_PER_MILLION = 10.0;
+const OUTPUT_PRICE_PER_MILLION = 50.0;
 
 function formatBackend(backend: string): string {
   const platformMap: Record<string, string> = {
