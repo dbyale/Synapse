@@ -1653,8 +1653,19 @@
   margin-top: -8px;
   margin-bottom: -20px;
   padding: 0;
+  background: transparent;
+  border: none;
+  font-family: inherit;
   user-select: none;
-  pointer-events: none;
+  cursor: pointer;
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+
+.chat-cost-display:hover {
+  opacity: 1;
+  color: var(--text-primary);
+  text-decoration: underline;
 }
 
 /* ============================================================================

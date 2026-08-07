@@ -12,6 +12,12 @@ import {
 import type { Profile } from '../renderer/types/profile';
 import { createChatFunctions } from './chatFunctions';
 import { solveMaxConfig, getOrRunOptimizer } from './estimator';
+import {
+  addTokenUsage,
+  addWebSearch,
+  getUsage,
+} from './usage';
+import type { UsageStore } from '../renderer/utils/usage';
 
 export interface GenerationStats {
   tokens: number;
@@ -23,11 +29,6 @@ export interface SendMessageResponse {
   content: string;
   stats?: GenerationStats;
   promptStats?: GenerationStats;
-}
-
-interface TokenUsageStore {
-  totalInputTokens: number;
-  totalOutputTokens: number;
 }
 
 // --- State ---
@@ -94,36 +95,8 @@ let lastResolvedMemory: any = null;
 let currentContextSize: number | null = null;
 let lastUsage: { used: number; total: number } | null = null;
 
-function getTokenUsagePath(): string {
-  return path.join(app.getPath('userData'), 'tokenUsage.json');
-}
-
-function loadTokenUsage(): TokenUsageStore {
-  try {
-    return JSON.parse(fs.readFileSync(getTokenUsagePath(), 'utf-8'));
-  } catch {
-    return { totalInputTokens: 0, totalOutputTokens: 0 };
-  }
-}
-
-function saveTokenUsage(store: TokenUsageStore): void {
-  try {
-    fs.writeFileSync(getTokenUsagePath(), JSON.stringify(store), 'utf-8');
-  } catch (e) {
-    console.error('[chat] Failed to save token usage:', e);
-  }
-}
-
-function addTokenUsage(inputTokens: number, outputTokens: number): void {
-  const current = loadTokenUsage();
-  saveTokenUsage({
-    totalInputTokens: current.totalInputTokens + inputTokens,
-    totalOutputTokens: current.totalOutputTokens + outputTokens,
-  });
-}
-
-export function getCumulativeTokenUsage(): TokenUsageStore {
-  return loadTokenUsage();
+export function getCumulativeTokenUsage(): UsageStore {
+  return getUsage();
 }
 
 const execAsync = util.promisify(exec);
@@ -1005,6 +978,7 @@ export async function sendMessage(
       });
       for (const tc of toolCalls) {
         const handler = chatFunctions[tc.name]?.handler;
+        if (chatFunctions[tc.name]?.tags?.includes('web_search')) addWebSearch();
         if (emitFunctionEvent) emitFunctionEvent('call', tc.name, tc.args, chatFunctions[tc.name]?.tags);
         let result = await handler(JSON.parse(tc.args));
 

@@ -38,11 +38,20 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import UserInputModal from '../components/UserInputModal';
 import ProfileSelectModal from '../components/ProfileSelectModal';
 import ThinkingDropdown from '../components/ThinkingDropdown';
+import SavingsModal from '../components/SavingsModal';
 import { useSourcesContext } from '../context/SourcesContext';
 import { Profile } from '../types/profile';
 import type { AppSettings, ContentPart } from '../preload.d';
 import { getToolMeta, getAllToolMetas } from '../utils/extensionData';
 import { resolveIcon } from '../components/workflows/IconPicker';
+import {
+  getMonthId,
+  getLastNonZeroMonthId,
+  totalSavings,
+  formatMoney,
+  EMPTY_USAGE,
+} from '../utils/usage';
+import type { UsageStore } from '../utils/usage';
 import '../styles/ChatPage.css';
 
 interface GenerationStatsData {
@@ -87,9 +96,6 @@ interface Message {
   promptStats?: GenerationStatsData;
 }
 
-const INPUT_PRICE_PER_MILLION = 10.0;
-const OUTPUT_PRICE_PER_MILLION = 50.0;
-
 function formatBackend(backend: string): string {
   const platformMap: Record<string, string> = {
     win: 'Win',
@@ -123,7 +129,6 @@ let persistentModelLoading = false;
 let persistentLastLoadId = 0;
 let isReprocessing = false;
 let pendingSegmentIds: string[] = [];
-let totalSearches: number = parseInt(localStorage.getItem('totalSearches') || '0', 10);
 
 function ToolCallSegment({
   segment,
@@ -499,10 +504,17 @@ export default function ChatPage() {
   const [pendingProfileId, setPendingProfileId] = useState<string | null>(null);
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [tps, setTps] = useState<number>(0);
-  const [cumulativeTokens, setCumulativeTokens] = useState<{
-    totalInputTokens: number;
-    totalOutputTokens: number;
-  }>({ totalInputTokens: 0, totalOutputTokens: 0 });
+  const [usageSummary, setUsageSummary] = useState<UsageStore>(EMPTY_USAGE);
+  const [showSavingsModal, setShowSavingsModal] = useState(false);
+  const [savingsModalBasis, setSavingsModalBasis] = useState<
+    'monthly' | 'total'
+  >('monthly');
+  const [savingsModalTitle, setSavingsModalTitle] =
+    useState('Estimated savings');
+  const [savingsModalMonthId, setSavingsModalMonthId] = useState(getMonthId());
+  const [savingsModalMonthLabel, setSavingsModalMonthLabel] = useState<
+    'This month' | 'Last month'
+  >('This month');
   const [showImageModal, setShowImageModal] = useState(false);
   const [pageDragging, setPageDragging] = useState(false);
   const dragOpenedModal = useRef(false);
@@ -556,6 +568,7 @@ export default function ChatPage() {
     text: string;
     pendingMedia: PendingMedia[];
   } | null>(null);
+  const autoSavingsShownRef = useRef(false);
 
   const navigate = useNavigate();
   const location = useLocation();
@@ -666,8 +679,8 @@ export default function ChatPage() {
 
   const refreshCumulativeTokens = useCallback(async () => {
     try {
-      const usage = await window.electronAPI.chatCumulativeTokenUsage();
-      setCumulativeTokens(usage);
+      const nextUsage = await window.electronAPI.chatCumulativeTokenUsage();
+      setUsageSummary(nextUsage);
     } catch {
       // Silently fail
     }
@@ -684,10 +697,42 @@ export default function ChatPage() {
       .catch(() => {});
   }, []);
 
-  const estimatedCost =
-    (cumulativeTokens.totalInputTokens / 1_000_000) * INPUT_PRICE_PER_MILLION +
-    (cumulativeTokens.totalOutputTokens / 1_000_000) * OUTPUT_PRICE_PER_MILLION;
-    (totalSearches * 0.10);
+  const estimatedCost = totalSavings(usageSummary);
+
+  const openSavingsModal = useCallback(
+    (basis: 'monthly' | 'total', title: string) => {
+      const currentMonthId = getMonthId();
+      const effectiveMonthId =
+        usageSummary.lastAutoOpenedMonthId !== currentMonthId
+          ? (getLastNonZeroMonthId(usageSummary) ?? currentMonthId)
+          : currentMonthId;
+      setSavingsModalBasis(basis);
+      setSavingsModalTitle(title);
+      setSavingsModalMonthId(effectiveMonthId);
+      setSavingsModalMonthLabel(
+        effectiveMonthId === currentMonthId ? 'This month' : 'Last month',
+      );
+      setShowSavingsModal(true);
+    },
+    [usageSummary],
+  );
+
+  useEffect(() => {
+    if (!modelLoading || loadError || autoSavingsShownRef.current) return;
+    const currentMonthId = getMonthId();
+    if (usageSummary.lastAutoOpenedMonthId !== currentMonthId) {
+      autoSavingsShownRef.current = true;
+      openSavingsModal('monthly', 'While your model loads...');
+      window.electronAPI
+        .usageSetLastOpenedMonth(currentMonthId)
+        .catch(() => {});
+    }
+  }, [
+    modelLoading,
+    loadError,
+    usageSummary.lastAutoOpenedMonthId,
+    openSavingsModal,
+  ]);
 
   const selectedProfile =
     profiles.find((p) => p.id === selectedProfileId) ?? null;
@@ -1319,11 +1364,6 @@ export default function ChatPage() {
             };
             messageCounter.current += 1;
             updatedMessages.push(assistantMessage);
-          }
-
-          if (data.tags?.includes('web_search')) {
-            totalSearches++;
-            localStorage.setItem('totalSearches', String(totalSearches));
           }
 
           toolSegmentQueue.current.push(toolSegment.id);
@@ -2805,9 +2845,14 @@ export default function ChatPage() {
       </div>
 
       {estimatedCost > 0 && (
-        <div className="chat-cost-display">
-          {`Estimated savings: $${estimatedCost.toFixed(2)}`}
-        </div>
+        <button
+          type="button"
+          className="chat-cost-display"
+          onClick={() => openSavingsModal('total', 'Estimated savings')}
+          title="Estimated savings"
+        >
+          {`Estimated savings: ${formatMoney(estimatedCost)}`}
+        </button>
       )}
 
       {showImageModal && (
@@ -2843,6 +2888,17 @@ export default function ChatPage() {
         <ImageViewer
           imageUrl={imageViewerUrl}
           onClose={() => setImageViewerUrl(null)}
+        />
+      )}
+
+      {showSavingsModal && (
+        <SavingsModal
+          usage={usageSummary}
+          currentMonthId={savingsModalMonthId}
+          monthLabel={savingsModalMonthLabel}
+          title={savingsModalTitle}
+          tipBasis={savingsModalBasis}
+          onClose={() => setShowSavingsModal(false)}
         />
       )}
 

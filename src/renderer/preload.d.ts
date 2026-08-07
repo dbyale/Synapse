@@ -227,7 +227,18 @@ declare global {
       chatCumulativeTokenUsage: () => Promise<{
         totalInputTokens: number;
         totalOutputTokens: number;
+        totalWebSearches: number;
+        lastAutoOpenedMonthId: string | null;
+        monthly: Record<
+          string,
+          {
+            totalInputTokens: number;
+            totalOutputTokens: number;
+            totalWebSearches: number;
+          }
+        >;
       }>;
+      usageSetLastOpenedMonth: (monthId: string | null) => Promise<void>;
 
       browseForFiles: (options: {
         title: string;

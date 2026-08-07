@@ -276,8 +276,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
         _image?: { url: string; altText?: string };
         tags?: string[];
       },
-        _image?: { url: string; altText?: string };
-      },
     ) => callback(data);
     ipcRenderer.on('chat-function-result', listener);
     return () => ipcRenderer.removeListener('chat-function-result', listener);
@@ -286,7 +284,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
   chatCumulativeTokenUsage: (): Promise<{
     totalInputTokens: number;
     totalOutputTokens: number;
+    totalWebSearches: number;
+    lastAutoOpenedMonthId: string | null;
+    monthly: Record<
+      string,
+      {
+        totalInputTokens: number;
+        totalOutputTokens: number;
+        totalWebSearches: number;
+      }
+    >;
   }> => ipcRenderer.invoke('chat:cumulativeTokenUsage'),
+
+  usageSetLastOpenedMonth: (monthId: string | null): Promise<void> =>
+    ipcRenderer.invoke('usage:setLastOpenedMonth', monthId),
 
   chatHasProjector: (): Promise<boolean> =>
     ipcRenderer.invoke('chat:hasProjector'),

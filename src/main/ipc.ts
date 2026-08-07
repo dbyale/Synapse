@@ -23,6 +23,7 @@ import {
   registerLocalModel,
 } from '../renderer/utils/models';
 import * as chatService from './chat';
+import * as usageService from './usage';
 import {
   getOrRunOptimizer,
   getOrEstimateMemory,
@@ -659,6 +660,10 @@ export function registerIpcHandlers(win: BrowserWindow): void {
 
   ipcMain.handle('chat:cumulativeTokenUsage', () => {
     return chatService.getCumulativeTokenUsage();
+  });
+
+  ipcMain.handle('usage:setLastOpenedMonth', (_event, monthId) => {
+    return usageService.setLastAutoOpenedMonth(monthId);
   });
 
   ipcMain.handle('chat:hasProjector', () => {
