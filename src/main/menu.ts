@@ -28,12 +28,7 @@ export default class MenuBuilder {
   }
 
   buildMenu(): Menu {
-    if (
-      process.env.NODE_ENV === 'development' ||
-      process.env.DEBUG_PROD === 'true'
-    ) {
-      this.setupDevelopmentEnvironment();
-    }
+    this.setupContextMenu();
 
     const template =
       process.platform === 'darwin'
@@ -64,18 +59,51 @@ export default class MenuBuilder {
     set('edit-delete', state.canDelete);
   }
 
-  setupDevelopmentEnvironment(): void {
-    this.mainWindow.webContents.on('context-menu', (_, props) => {
-      const { x, y } = props;
+  setupContextMenu(): void {
+    const isDev =
+      process.env.NODE_ENV === 'development' ||
+      process.env.DEBUG_PROD === 'true';
 
-      Menu.buildFromTemplate([
+    this.mainWindow.webContents.on('context-menu', (_, props) => {
+      const { x, y, editFlags } = props;
+
+      const template: MenuItemConstructorOptions[] = [
         {
-          label: 'Inspect element',
+          label: 'Copy',
+          enabled: editFlags.canCopy,
           click: () => {
-            this.mainWindow.webContents.inspectElement(x, y);
+            this.mainWindow.webContents.copy();
           },
         },
-      ]).popup({ window: this.mainWindow });
+        {
+          label: 'Cut',
+          enabled: editFlags.canCut,
+          click: () => {
+            this.mainWindow.webContents.cut();
+          },
+        },
+        {
+          label: 'Paste',
+          enabled: editFlags.canPaste,
+          click: () => {
+            this.mainWindow.webContents.paste();
+          },
+        },
+      ];
+
+      if (isDev) {
+        template.push(
+          { type: 'separator' },
+          {
+            label: 'Inspect element',
+            click: () => {
+              this.mainWindow.webContents.inspectElement(x, y);
+            },
+          },
+        );
+      }
+
+      Menu.buildFromTemplate(template).popup({ window: this.mainWindow });
     });
   }
 
