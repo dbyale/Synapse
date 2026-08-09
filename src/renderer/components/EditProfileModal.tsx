@@ -306,9 +306,6 @@ function MainPage({
   availableModelsForEdit,
   onOpenModelModal,
   onNavigate,
-  systemPromptPreview,
-  toolsPreview,
-  advancedPreview,
   editAutoOptimizer,
   editLayers,
   editContextSize,
@@ -337,9 +334,6 @@ function MainPage({
   }>;
   onOpenModelModal: () => void;
   onNavigate: (page: string) => void;
-  systemPromptPreview: string;
-  toolsPreview: string;
-  advancedPreview: string;
   editAutoOptimizer: 'longest-context' | 'most-gpu' | 'custom' | null;
   editLayers: number | undefined;
   editContextSize: number | undefined;
@@ -437,7 +431,6 @@ function MainPage({
           <SectionCard
             icon={<FileText size={20} />}
             title="Projector"
-            tooltip={PROJECTOR_TOOLTIP}
             preview={
               selectedProjectorDisplay
                 ? selectedProjectorDisplay.filename
@@ -451,7 +444,6 @@ function MainPage({
           <SectionCard
             icon={<Zap size={20} />}
             title="Performance"
-            tooltip="Configure GPU offloading, context size, cache, and memory options."
             preview={
               editAutoOptimizer
                 ? autoOptimizerLabel(editAutoOptimizer)
@@ -479,28 +471,24 @@ function MainPage({
         <SectionCard
           icon={<MessageSquare size={20} />}
           title="System Prompt"
-          tooltip="Define the AI's base instructions and personality. Sent with every message."
-          preview={systemPromptPreview}
+          preview="Set the AI's behavior and personality."
           onClick={() => onNavigate('system-prompt')}
         />
         <SectionCard
           icon={<Wrench size={20} />}
           title="Tools"
-          tooltip="Enable built-in capabilities like file I/O and web search that the AI can use."
-          preview={toolsPreview}
+          preview="Enable AI tools like file I/O and web search."
           onClick={() => onNavigate('tools')}
         />
         <SectionCard
           icon={<Settings size={20} />}
           title="Advanced Parameters"
-          tooltip="Fine-tune generation behavior: temperature, sampling, penalties, and seed."
-          preview={advancedPreview}
+          preview="Fine-tune how the AI generates responses."
           onClick={() => onNavigate('advanced')}
         />
         <SectionCard
           icon={<Server size={20} />}
           title="Server Settings"
-          tooltip="Advanced settings for llama-server."
           preview="Advanced settings for llama-server"
           onClick={() => onNavigate('server-settings')}
         />
@@ -514,25 +502,17 @@ function SectionCard({
   title,
   preview,
   onClick,
-  tooltip,
 }: {
   icon: React.ReactNode;
   title: string;
   preview: string;
   onClick: () => void;
-  tooltip?: string | string[];
 }) {
   return (
     <button type="button" className="epm-section-card" onClick={onClick}>
       <div className="epm-section-card__icon">{icon}</div>
       <div className="epm-section-card__body">
-        {tooltip ? (
-          <InfoTooltip content={tooltip} title={title} side="right" hideIcon>
-            <div className="epm-section-card__title">{title}</div>
-          </InfoTooltip>
-        ) : (
-          <div className="epm-section-card__title">{title}</div>
-        )}
+        <div className="epm-section-card__title">{title}</div>
         <div className="epm-section-card__preview">{preview}</div>
       </div>
       <ChevronRight size={16} className="epm-section-card__chevron" />
@@ -926,21 +906,14 @@ function AdvancedPage({
         />
       </div>
 
-      <InfoTooltip
-        content={REPEAT_PENALTY_TOOLTIP}
-        side="bottom"
-        hideIcon
-        title="Repeat Penalty"
-      >
-        <div style={{ marginTop: '20px' }}>
-          <SectionCard
-            icon={<Settings size={18} />}
-            title="Repeat Penalty"
-            preview="Discourages the model from repeating recent tokens"
-            onClick={() => onNavigate('repeat-penalty')}
-          />
-        </div>
-      </InfoTooltip>
+      <div style={{ marginTop: '20px' }}>
+        <SectionCard
+          icon={<Settings size={18} />}
+          title="Repeat Penalty"
+          preview="Discourages the model from repeating recent tokens"
+          onClick={() => onNavigate('repeat-penalty')}
+        />
+      </div>
     </>
   );
 }
@@ -1366,7 +1339,6 @@ function ProjectorPage({
   onOpenProjectorModal,
   editProjector,
   onNavigate,
-  videoSettingsPreview,
 }: {
   selectedProjectorDisplay: {
     filename: string;
@@ -1376,7 +1348,6 @@ function ProjectorPage({
   onOpenProjectorModal: () => void;
   editProjector: string;
   onNavigate: (page: string) => void;
-  videoSettingsPreview: string;
 }) {
   return (
     <>
@@ -1434,8 +1405,7 @@ function ProjectorPage({
           <SectionCard
             icon={<SlidersHorizontal size={18} />}
             title="Video Settings"
-            tooltip="Configure how video frames are extracted before being sent to the vision model."
-            preview={videoSettingsPreview}
+            preview="Configure how video frames are extracted."
             onClick={() => onNavigate('video-settings')}
           />
         </div>
@@ -1534,11 +1504,6 @@ function PerformancePage({
   editContextSize,
   editGpuLayersAuto,
   editContextShift,
-  editKvOffload,
-  editCacheTypeK,
-  editCacheTypeV,
-  editMmap,
-  editMlock,
   optimizerRunning,
   modelMaxLayers,
   modelMaxContext,
@@ -1547,30 +1512,18 @@ function PerformancePage({
   onSetContextShift,
   onSetLayers,
   onSetContextSize,
-  onSetKvOffload,
-  onSetCacheTypeK,
-  onSetCacheTypeV,
-  onSetMmap,
-  onSetMlock,
   onRunOptimizer,
   onEstimateMemory,
   initialEstimate,
   onNavigate,
   editSpecType,
   editDraftModelFilename,
-  editCpuMoe,
-  editNCpuMoe,
 }: {
   editAutoOptimizer: 'longest-context' | 'most-gpu' | 'custom' | null;
   editLayers: number | undefined;
   editContextSize: number | undefined;
   editGpuLayersAuto: boolean;
   editContextShift: boolean;
-  editKvOffload: boolean;
-  editCacheTypeK: CacheType;
-  editCacheTypeV: CacheType;
-  editMmap: boolean;
-  editMlock: boolean;
   optimizerRunning: 'longest-context' | 'most-gpu' | null;
   modelMaxLayers: number;
   modelMaxContext: number;
@@ -1581,11 +1534,6 @@ function PerformancePage({
   onSetContextShift: (v: boolean) => void;
   onSetLayers: (v: number | undefined) => void;
   onSetContextSize: (v: number | undefined) => void;
-  onSetKvOffload: (v: boolean) => void;
-  onSetCacheTypeK: (v: CacheType) => void;
-  onSetCacheTypeV: (v: CacheType) => void;
-  onSetMmap: (v: boolean) => void;
-  onSetMlock: (v: boolean) => void;
   onRunOptimizer: (mode: 'longest-context' | 'most-gpu') => void;
   onEstimateMemory: (
     ngl: number,
@@ -1615,8 +1563,6 @@ function PerformancePage({
   onNavigate: (page: string) => void;
   editSpecType: string[];
   editDraftModelFilename: string;
-  editCpuMoe: boolean;
-  editNCpuMoe: string;
 }) {
   const isAuto =
     editAutoOptimizer !== null &&
@@ -2305,18 +2251,9 @@ function PerformancePage({
               <SlidersHorizontal size={18} />
             </div>
             <div className="epm-section-card__body">
-              <InfoTooltip
-                content="Fine-tune KV cache behaviour and data types for memory and quality tradeoffs."
-                title="Cache Options"
-                side="right"
-                hideIcon
-              >
-                <div className="epm-section-card__title">Cache Options</div>
-              </InfoTooltip>
+              <div className="epm-section-card__title">Cache Options</div>
               <div className="epm-section-card__preview">
-                KV Cache: {editKvOffload ? 'Offloaded' : 'CPU'}, K:{' '}
-                {editCacheTypeK.toUpperCase()}, V:{' '}
-                {editCacheTypeV.toUpperCase()}
+                Fine-tune KV cache behaviour and data types.
               </div>
             </div>
             <ChevronRight size={16} className="epm-section-card__chevron" />
@@ -2330,14 +2267,7 @@ function PerformancePage({
               <Zap size={18} />
             </div>
             <div className="epm-section-card__body">
-              <InfoTooltip
-                content={DRAFT_MODEL_TOOLTIP}
-                title="Draft Model"
-                side="right"
-                hideIcon
-              >
-                <div className="epm-section-card__title">Draft Model</div>
-              </InfoTooltip>
+              <div className="epm-section-card__title">Draft Model</div>
               <div className="epm-section-card__preview">
                 {editSpecType.length > 0
                   ? `${editSpecType.join(', ')}`
@@ -2356,17 +2286,9 @@ function PerformancePage({
               <SlidersHorizontal size={18} />
             </div>
             <div className="epm-section-card__body">
-              <InfoTooltip
-                content="Control how model weights are loaded into memory."
-                title="Memory Options"
-                side="right"
-                hideIcon
-              >
-                <div className="epm-section-card__title">Memory Options</div>
-              </InfoTooltip>
+              <div className="epm-section-card__title">Memory Options</div>
               <div className="epm-section-card__preview">
-                MMAP: {editMmap ? 'On' : 'Off'}, MLock:{' '}
-                {editMlock ? 'On' : 'Off'}
+                Control how model weights are loaded into memory.
               </div>
             </div>
             <ChevronRight size={16} className="epm-section-card__chevron" />
@@ -2380,21 +2302,11 @@ function PerformancePage({
               <Zap size={18} />
             </div>
             <div className="epm-section-card__body">
-              <InfoTooltip
-                content="Configure how Mixture of Experts (MoE) weights are distributed between CPU and GPU."
-                title="Mixture of Experts"
-                side="right"
-                hideIcon
-              >
-                <div className="epm-section-card__title">
-                  Mixture of Experts
-                </div>
-              </InfoTooltip>
+              <div className="epm-section-card__title">
+                Mixture of Experts
+              </div>
               <div className="epm-section-card__preview">
-                CPU MoE: {editCpuMoe ? 'On' : 'Off'}
-                {parseInt(editNCpuMoe || '0', 10) > 0
-                  ? `, N: ${editNCpuMoe}`
-                  : ''}
+                Control where MoE weights are loaded.
               </div>
             </div>
             <ChevronRight size={16} className="epm-section-card__chevron" />
@@ -3120,14 +3032,7 @@ function ServerSettingsPage({
               <Shield size={18} />
             </div>
             <div className="epm-section-card__body">
-              <InfoTooltip
-                content="Configure CORS (Cross-Origin Resource Sharing) for the llama-server HTTP API."
-                title="CORS"
-                side="right"
-                hideIcon
-              >
-                <div className="epm-section-card__title">CORS</div>
-              </InfoTooltip>
+              <div className="epm-section-card__title">CORS</div>
               <div className="epm-section-card__preview">
                 Configure cross-origin access for the llama-server API.
               </div>
@@ -3899,32 +3804,6 @@ export default function EditProfileModal({
 
   const breadcrumb = buildBreadcrumb(currentPage);
 
-  const systemPromptPreview = "Set the AI's behavior and personality";
-
-  const activeExtGroups = extensionGroups.filter(({ toolKeys }) =>
-    toolKeys.some((tk) => editTools.includes(tk)),
-  );
-  const toolsPreview =
-    activeExtGroups.length > 0
-      ? `${activeExtGroups.length} of ${extensionGroups.length} extensions enabled`
-      : 'None enabled';
-
-  const advancedPreview = `Temperature: ${editTemperature}, Top K: ${editTopK}, Top P: ${editTopP}`;
-
-  const videoSettingsPreview =
-    [
-      editVideoFps ? `${editVideoFps} FPS` : '',
-      editVideoUnlimitedMaxFrames
-        ? 'Unlimited'
-        : editVideoMaxFrames
-          ? `Max ${editVideoMaxFrames} frames`
-          : '',
-      editVideoQuality ? `Quality ${editVideoQuality}` : '',
-      editVideoWidth ? `${editVideoWidth}px` : '',
-    ]
-      .filter(Boolean)
-      .join(', ') || 'Default';
-
   const renderPage = () => {
     switch (currentPage) {
       case 'main':
@@ -3938,9 +3817,6 @@ export default function EditProfileModal({
             availableModelsForEdit={availableModelsForEdit}
             onOpenModelModal={() => setShowModelModal(true)}
             onNavigate={navigateTo}
-            systemPromptPreview={systemPromptPreview}
-            toolsPreview={toolsPreview}
-            advancedPreview={advancedPreview}
             editAutoOptimizer={editAutoOptimizer}
             editLayers={editLayers}
             editContextSize={editContextSize}
@@ -3988,11 +3864,6 @@ export default function EditProfileModal({
             editContextSize={editContextSize}
             editGpuLayersAuto={editGpuLayersAuto}
             editContextShift={editContextShift}
-            editKvOffload={editKvOffload}
-            editCacheTypeK={editCacheTypeK}
-            editCacheTypeV={editCacheTypeV}
-            editMmap={editMmap}
-            editMlock={editMlock}
             optimizerRunning={optimizerRunning}
             modelMaxLayers={modelMeta?.maxLayers ?? 200}
             modelMaxContext={modelMeta?.maxContext ?? 131072}
@@ -4001,19 +3872,12 @@ export default function EditProfileModal({
             onSetContextShift={setEditContextShift}
             onSetLayers={setEditLayers}
             onSetContextSize={setEditContextSize}
-            onSetKvOffload={setEditKvOffload}
-            onSetCacheTypeK={setEditCacheTypeK}
-            onSetCacheTypeV={setEditCacheTypeV}
-            onSetMmap={setEditMmap}
-            onSetMlock={setEditMlock}
             onRunOptimizer={handleRunOptimizer}
             onEstimateMemory={handleEstimateMemory}
             initialEstimate={profile?.estimation ?? lastEstimate}
             onNavigate={navigateTo}
             editSpecType={editSpecType}
             editDraftModelFilename={editDraftModelFilename}
-            editCpuMoe={editCpuMoe}
-            editNCpuMoe={editNCpuMoe}
           />
         );
       case 'moe-options':
@@ -4130,7 +3994,6 @@ export default function EditProfileModal({
             onOpenProjectorModal={() => setShowProjectorModal(true)}
             editProjector={editProjectorFilename}
             onNavigate={navigateTo}
-            videoSettingsPreview={videoSettingsPreview}
           />
         );
       case 'video-settings':
