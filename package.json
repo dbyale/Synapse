@@ -302,5 +302,11 @@
       ".erb/dll/**"
     ],
     "logLevel": "quiet"
+  },
+  "allowScripts": {
+    "@parcel/watcher@2.5.6": true,
+    "core-js@3.49.0": true,
+    "electron-winstaller@5.4.0": true,
+    "unrs-resolver@1.12.2": true
   }
 }
