@@ -5,7 +5,6 @@ import {
   useCallback,
   MouseEvent,
   KeyboardEvent,
-  ClipboardEvent,
 } from 'react';
 import {
   X,
@@ -559,89 +558,6 @@ const SYSTEM_PROMPT_VARIABLES = [
   },
 ];
 
-function textToHighlightedHtml(text: string): string {
-  const escaped = text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-  const withVariables = escaped.replace(
-    /\{(\w+)\}/g,
-    '<span class="epm-var-highlight">{$1}</span>',
-  );
-  return withVariables.replace(/\n/g, '<br>');
-}
-
-function getPlainText(el: HTMLElement): string {
-  let text = '';
-  Array.from(el.childNodes).forEach((node) => {
-    if (node.nodeType === Node.TEXT_NODE) {
-      text += node.textContent;
-    } else if (node.nodeName === 'BR') {
-      text += '\n';
-    } else if (node.nodeName === 'DIV') {
-      text += `\n${getPlainText(node as HTMLElement)}`;
-    } else if (node instanceof HTMLElement) {
-      text += getPlainText(node);
-    }
-  });
-  return text;
-}
-
-function highlightTextNodes(el: HTMLElement) {
-  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
-  const toProcess: Text[] = [];
-  while (true) {
-    const node = walker.nextNode() as Text | null;
-    if (!node) break;
-    if (/\{\w+\}/.test(node.textContent || '')) {
-      const parent = node.parentNode;
-      if (
-        parent &&
-        !(
-          parent instanceof HTMLElement &&
-          parent.classList.contains('epm-var-highlight')
-        )
-      ) {
-        toProcess.push(node);
-      }
-    }
-  }
-  toProcess.forEach((textNode) => {
-    const parts = (textNode.textContent || '').split(/(\{(\w+)\})/g);
-    const fragment = document.createDocumentFragment();
-    for (let i = 0; i < parts.length; i++) {
-      if (parts[i] === '') continue;
-      if (/^\{\w+\}$/.test(parts[i])) {
-        const span = document.createElement('span');
-        span.className = 'epm-var-highlight';
-        span.textContent = parts[i];
-        fragment.appendChild(span);
-      } else {
-        fragment.appendChild(document.createTextNode(parts[i]));
-      }
-    }
-    textNode.parentNode?.replaceChild(fragment, textNode);
-  });
-  mergeAdjacentText(el);
-}
-
-function mergeAdjacentText(el: HTMLElement) {
-  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
-  let prev: Text | null = null;
-  const toRemove: Text[] = [];
-  while (true) {
-    const node = walker.nextNode() as Text | null;
-    if (!node) break;
-    if (prev && node.parentNode === prev.parentNode) {
-      prev.textContent += node.textContent;
-      toRemove.push(node);
-    } else {
-      prev = node;
-    }
-  }
-  toRemove.forEach((n) => n.remove());
-}
-
 function SystemPromptPage({
   value,
   onChange,
@@ -649,46 +565,20 @@ function SystemPromptPage({
   value: string;
   onChange: (v: string) => void;
 }) {
-  const editorRef = useRef<HTMLDivElement>(null);
-  const mountedRef = useRef(false);
-  const scanningRef = useRef(false);
-
-  useEffect(() => {
-    if (editorRef.current && !mountedRef.current) {
-      editorRef.current.innerHTML = textToHighlightedHtml(value);
-      mountedRef.current = true;
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const handleInput = () => {
-    if (!editorRef.current || scanningRef.current) return;
-    onChange(getPlainText(editorRef.current));
-    scanningRef.current = true;
-    requestAnimationFrame(() => {
-      if (editorRef.current) {
-        highlightTextNodes(editorRef.current);
-      }
-      scanningRef.current = false;
-    });
-  };
-
-  const handlePaste = (e: ClipboardEvent) => {
-    e.preventDefault();
-    const text = e.clipboardData.getData('text/plain');
-    document.execCommand('insertText', false, text);
-  };
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const insertVariable = (variable: string) => {
-    if (!editorRef.current) return;
-    const sel = window.getSelection();
-    if (sel && editorRef.current.contains(sel.anchorNode)) {
-      document.execCommand('insertText', false, variable);
-    } else {
-      onChange(getPlainText(editorRef.current) + variable);
-    }
-    editorRef.current.focus();
-    handleInput();
+    const ta = textareaRef.current;
+    if (!ta) return;
+    const start = ta.selectionStart ?? value.length;
+    const end = ta.selectionEnd ?? value.length;
+    const next = value.slice(0, start) + variable + value.slice(end);
+    onChange(next);
+    requestAnimationFrame(() => {
+      ta.focus();
+      const pos = start + variable.length;
+      ta.setSelectionRange(pos, pos);
+    });
   };
 
   return (
@@ -710,17 +600,12 @@ function SystemPromptPage({
           ))}
         </div>
       </div>
-      <div
-        ref={editorRef}
+      <textarea
+        ref={textareaRef}
         className="epm-textarea epm-textarea--editor"
-        contentEditable
-        suppressContentEditableWarning
-        role="textbox"
-        aria-multiline="true"
-        tabIndex={0}
-        onInput={handleInput}
-        onPaste={handlePaste}
-        data-placeholder="Enter your system prompt here..."
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="Enter your system prompt here..."
       />
     </>
   );

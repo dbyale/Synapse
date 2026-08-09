@@ -337,15 +337,8 @@
   resize: none;
 }
 
-.epm-textarea--editor:empty:before {
-  content: attr(data-placeholder);
+.epm-textarea--editor::placeholder {
   color: var(--text-secondary);
-  pointer-events: none;
-}
-
-.epm-var-highlight {
-  color: var(--accent);
-  font-weight: 500;
 }
 
 .epm-variables-section {
