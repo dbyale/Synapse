@@ -1,10 +1,19 @@
 import { useState, MouseEvent, KeyboardEvent } from 'react';
-import { X, Settings, Puzzle } from 'lucide-react';
+import {
+  X,
+  Settings,
+  Puzzle,
+  ChevronLeft,
+  ChevronRight,
+  Code2,
+  ListTree,
+} from 'lucide-react';
 import FileSystemSettings from './FileSystemSettings';
 import SandboxSettings from './SandboxSettings';
 import GitHubExtensionSettings from './GitHubExtensionSettings';
 import { resolveIcon } from './workflows/IconPicker';
 import { svgToDataUrl } from '../utils/svgToDataUrl';
+import { CodeBlock } from './MarkdownRenderer';
 import './styles/ExtensionModal.css';
 
 interface ToolInfo {
@@ -12,9 +21,15 @@ interface ToolInfo {
   label: string;
   description: string;
   descriptionForHuman?: string;
+  descriptionForModel?: string;
   icon?: string;
   displayType?: string;
   tags?: string[];
+}
+
+interface ToolEntry {
+  meta: ToolInfo;
+  params: Record<string, any>;
 }
 
 interface ExtensionInfo {
@@ -29,7 +44,7 @@ interface ExtensionInfo {
     iconSvgData?: string;
     hasSettings?: boolean;
   };
-  tools: Record<string, { meta: ToolInfo; params: Record<string, any> }>;
+  tools: Record<string, ToolEntry>;
   enabled: boolean;
   extensionDir?: string;
 }
@@ -39,11 +54,203 @@ interface ExtensionModalProps {
   onClose: () => void;
 }
 
+const TYPE_LABELS: Record<string, string> = {
+  string: 'string',
+  number: 'number',
+  integer: 'integer',
+  boolean: 'boolean',
+  array: 'array',
+  object: 'object',
+  null: 'null',
+};
+
+function paramTypes(param: any): string[] {
+  const types: string[] = [];
+  if (Array.isArray(param.type)) {
+    types.push(...param.type.map((t: string) => t));
+  } else if (typeof param.type === 'string') {
+    types.push(param.type);
+  }
+  if (Array.isArray(param.oneOf)) {
+    param.oneOf.forEach((option: any) => {
+      if (option && typeof option.type === 'string') types.push(option.type);
+    });
+  }
+  if (types.length === 0) types.push('any');
+  return [...new Set(types)];
+}
+
+function formatType(param: any): string {
+  const types = paramTypes(param);
+  if (types.length === 1) return TYPE_LABELS[types[0]] ?? types[0];
+  return types.map((t) => TYPE_LABELS[t] ?? t).join(' | ');
+}
+
+function formatExtra(param: any): string | null {
+  const parts: string[] = [];
+  if (param.enum !== undefined) {
+    parts.push(`enum: ${JSON.stringify(param.enum)}`);
+  }
+  if (param.default !== undefined) {
+    parts.push(`default: ${JSON.stringify(param.default)}`);
+  }
+  if (typeof param.minimum === 'number') parts.push(`min: ${param.minimum}`);
+  if (typeof param.maximum === 'number') parts.push(`max: ${param.maximum}`);
+  if (typeof param.minLength === 'number')
+    parts.push(`minLength: ${param.minLength}`);
+  if (typeof param.maxLength === 'number')
+    parts.push(`maxLength: ${param.maxLength}`);
+  if (param.items !== undefined) {
+    parts.push(`items: ${formatType(param.items)}`);
+  }
+  return parts.length > 0 ? parts.join(' · ') : null;
+}
+
+function SchemaParams({ params }: { params: Record<string, any> }) {
+  const properties: Record<string, any> = params.properties ?? {};
+  const required = Array.isArray(params.required)
+    ? new Set(params.required as string[])
+    : new Set<string>();
+  const entries = Object.entries(properties);
+
+  return (
+    <div className="em-params">
+      {params.type && params.type !== 'object' && (
+        <div className="em-params-top">
+          <span className="em-param-meta">
+            type:{' '}
+            <span className="em-param-type-chip">{formatType(params)}</span>
+          </span>
+        </div>
+      )}
+      {entries.length === 0 ? (
+        <div className="em-empty em-params-empty">
+          This tool accepts no parameters.
+        </div>
+      ) : (
+        entries.map(([name, prop]) => (
+          <div key={name} className="em-param-row">
+            <div className="em-param-row-head">
+              <code className="em-param-name">{name}</code>
+              <span className="em-param-chip">{formatType(prop)}</span>
+              {required.has(name) && (
+                <span className="em-param-chip em-param-chip--required">
+                  required
+                </span>
+              )}
+            </div>
+            {prop.description && (
+              <div className="em-param-desc">{prop.description}</div>
+            )}
+            {prop.descriptionForModel && (
+              <div className="em-param-desc em-param-desc--model">
+                Model: {prop.descriptionForModel}
+              </div>
+            )}
+            {formatExtra(prop) && (
+              <div className="em-param-extra">{formatExtra(prop)}</div>
+            )}
+          </div>
+        ))
+      )}
+      {params.additionalProperties !== undefined && (
+        <div className="em-params-top">
+          <span className="em-param-meta">
+            additionalProperties:{' '}
+            <span className="em-param-chip">
+              {typeof params.additionalProperties === 'boolean'
+                ? String(params.additionalProperties)
+                : formatType(params.additionalProperties)}
+            </span>
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ToolDetail({ tool, onBack }: { tool: ToolEntry; onBack: () => void }) {
+  const [view, setView] = useState<'params' | 'raw'>('params');
+  const { meta } = tool;
+  const modelDescription = meta.descriptionForModel ?? meta.description;
+
+  const rawJson = JSON.stringify(
+    { name: meta.name, description: modelDescription, parameters: tool.params },
+    null,
+    2,
+  );
+
+  return (
+    <div className="em-tool-detail">
+      <button type="button" className="em-back-btn" onClick={onBack}>
+        <ChevronLeft size={14} />
+        All tools
+      </button>
+
+      <div className="em-tool-detail-head">
+        <div className="em-tool-name">{meta.label}</div>
+        <code className="em-tool-name-code">name: {meta.name}</code>
+      </div>
+
+      <div className="em-tool-section">
+        <div className="em-tool-section-title">
+          Description given to the model
+        </div>
+        <div className="em-tool-detail-desc">{modelDescription}</div>
+        {meta.descriptionForHuman &&
+          meta.descriptionForHuman !== modelDescription && (
+            <>
+              <div className="em-tool-section-title em-tool-section-title--sub">
+                Description for users
+              </div>
+              <div className="em-tool-detail-desc em-tool-detail-desc--human">
+                {meta.descriptionForHuman}
+              </div>
+            </>
+          )}
+      </div>
+
+      <div className="em-tool-view-tabs">
+        <button
+          type="button"
+          className={`em-tool-view-tab${view === 'params' ? ' em-tool-view-tab--active' : ''}`}
+          onClick={() => setView('params')}
+        >
+          <ListTree size={13} />
+          Parameters
+        </button>
+        <button
+          type="button"
+          className={`em-tool-view-tab${view === 'raw' ? ' em-tool-view-tab--active' : ''}`}
+          onClick={() => setView('raw')}
+        >
+          <Code2 size={13} />
+          Raw JSON
+        </button>
+      </div>
+
+      {view === 'params' ? (
+        <SchemaParams params={tool.params} />
+      ) : (
+        <div className="em-tool-raw">
+          <div className="em-tool-raw-head">
+            <span className="em-tool-raw-label">
+              Exact JSON sent to the model
+            </span>
+          </div>
+          <CodeBlock lang="json" code={rawJson} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ExtensionModal({
   extension,
   onClose,
 }: ExtensionModalProps) {
   const [tab, setTab] = useState<'tools' | 'settings'>('tools');
+  const [selectedTool, setSelectedTool] = useState<ToolEntry | null>(null);
 
   const handleOverlayClick = (e: MouseEvent<HTMLDivElement>) => {
     if (e.target === e.currentTarget) onClose();
@@ -121,54 +328,67 @@ export default function ExtensionModal({
         </div>
 
         <div className="em-body">
-          {tab === 'tools' && (
-            <div className="em-tools">
-              {tools.length === 0 ? (
-                <div className="em-empty">No tools in this extension.</div>
-              ) : (
-                tools.map((tool) => (
-                  <div key={tool.meta.name} className="em-tool-row">
-                    <div className="em-tool-info">
-                      <div className="em-tool-name">{tool.meta.label}</div>
-                      <div className="em-tool-desc">
-                        {tool.meta.descriptionForHuman ?? tool.meta.description}
-                      </div>
-                      {(tool.meta.displayType === 'projector' ||
-                        tool.meta.displayType === 'image' ||
-                        tool.meta.tags?.includes('input') ||
-                        tool.meta.tags?.includes('sources')) && (
-                        <div className="em-tool-tags">
-                          {tool.meta.tags?.includes('input') && (
-                            <span className="em-tool-badge em-tool-badge--input">
-                              Requires User Input
-                            </span>
-                          )}
-                          {(tool.meta.displayType === 'projector' ||
-                            tool.meta.displayType === 'image') && (
-                            <span className="em-tool-badge em-tool-badge--image">
-                              Displays Image
-                            </span>
-                          )}
-                          {tool.meta.tags?.includes('sources') && (
-                            <span className="em-tool-badge em-tool-badge--sources">
-                              Adds Sources
-                            </span>
-                          )}
-                          {tool.meta.displayType === 'projector' && (
-                            <div className="em-tool-tags-row">
-                              <span className="em-tool-badge em-tool-badge--vision">
-                                Requires vision model
-                              </span>
-                            </div>
-                          )}
+          {tab === 'tools' &&
+            (selectedTool ? (
+              <ToolDetail
+                tool={selectedTool}
+                onBack={() => setSelectedTool(null)}
+              />
+            ) : (
+              <div className="em-tools">
+                {tools.length === 0 ? (
+                  <div className="em-empty">No tools in this extension.</div>
+                ) : (
+                  tools.map((tool) => (
+                    <button
+                      type="button"
+                      key={tool.meta.name}
+                      className="em-tool-row"
+                      onClick={() => setSelectedTool(tool)}
+                    >
+                      <div className="em-tool-info">
+                        <div className="em-tool-name">{tool.meta.label}</div>
+                        <div className="em-tool-desc">
+                          {tool.meta.descriptionForHuman ??
+                            tool.meta.description}
                         </div>
-                      )}
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          )}
+                        {(tool.meta.displayType === 'projector' ||
+                          tool.meta.displayType === 'image' ||
+                          tool.meta.tags?.includes('input') ||
+                          tool.meta.tags?.includes('sources')) && (
+                          <div className="em-tool-tags">
+                            {tool.meta.tags?.includes('input') && (
+                              <span className="em-tool-badge em-tool-badge--input">
+                                Requires User Input
+                              </span>
+                            )}
+                            {(tool.meta.displayType === 'projector' ||
+                              tool.meta.displayType === 'image') && (
+                              <span className="em-tool-badge em-tool-badge--image">
+                                Displays Image
+                              </span>
+                            )}
+                            {tool.meta.tags?.includes('sources') && (
+                              <span className="em-tool-badge em-tool-badge--sources">
+                                Adds Sources
+                              </span>
+                            )}
+                            {tool.meta.displayType === 'projector' && (
+                              <div className="em-tool-tags-row">
+                                <span className="em-tool-badge em-tool-badge--vision">
+                                  Requires vision model
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      <ChevronRight size={16} className="em-tool-chevron" />
+                    </button>
+                  ))
+                )}
+              </div>
+            ))}
           {tab === 'settings' && extension.manifest.id === 'filesystem' && (
             <FileSystemSettings />
           )}

@@ -146,10 +146,29 @@
   padding: 10px 12px;
   border-radius: var(--radius-sm);
   transition: background 0.12s ease;
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
 .em-tool-row:hover {
   background: var(--bg-hover);
+}
+
+.em-tool-chevron {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--text-secondary);
+  opacity: 0.5;
+  transition: opacity 0.12s ease;
+}
+
+.em-tool-row:hover .em-tool-chevron {
+  opacity: 1;
 }
 
 .em-tool-info {
@@ -215,4 +234,221 @@
   color: #94e2d5;
   background: rgba(148, 226, 213, 0.1);
   border: 1px solid rgba(148, 226, 213, 0.25);
+}
+
+.em-tool-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.em-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  align-self: flex-start;
+  padding: 4px 8px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.em-back-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.em-tool-detail-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.em-tool-detail-head .em-tool-name {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 0;
+}
+
+.em-tool-name-code {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.em-tool-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.em-tool-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--text-secondary);
+}
+
+.em-tool-section-title--sub {
+  margin-top: 8px;
+}
+
+.em-tool-detail-desc {
+  font-size: 13px;
+  color: var(--text-primary);
+  line-height: 1.5;
+}
+
+.em-tool-detail-desc--human {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.em-tool-view-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.em-tool-view-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: all 0.1s ease;
+}
+
+.em-tool-view-tab:hover {
+  color: var(--text-primary);
+}
+
+.em-tool-view-tab--active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.em-params {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.em-params-empty {
+  padding: 16px 0;
+}
+
+.em-param-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+}
+
+.em-param-row-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.em-param-name {
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.em-param-chip {
+  display: inline-block;
+  padding: 1px 7px;
+  font-size: 10px;
+  font-weight: 600;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  color: var(--text-secondary);
+  background: var(--bg-hover);
+}
+
+.em-param-chip--required {
+  color: #f38ba8;
+  background: rgba(243, 139, 168, 0.1);
+  border: 1px solid rgba(243, 139, 168, 0.25);
+}
+
+.em-param-desc {
+  font-size: 12px;
+  color: var(--text-primary);
+  line-height: 1.45;
+}
+
+.em-param-desc--model {
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.em-param-extra {
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-family: var(--font-mono, monospace);
+}
+
+.em-params-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.em-param-meta {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.em-param-type-chip {
+  display: inline-block;
+  padding: 1px 7px;
+  font-size: 10px;
+  font-weight: 600;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  color: #a6e3a1;
+  background: rgba(166, 227, 161, 0.1);
+  border: 1px solid rgba(166, 227, 161, 0.25);
+}
+
+.em-tool-raw {
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+.em-tool-raw-head {
+  padding: 8px 12px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+}
+
+.em-tool-raw-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
 }
