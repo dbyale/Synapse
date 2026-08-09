@@ -21,7 +21,6 @@ export const tools: Record<string, ExtensionToolDef> = {
         'How to use:\n' +
         '  • Write a clear, specific question in the `question` field\n' +
         '  • Provide 2-6 concise options in the `options` array\n' +
-        '  • Set `allowOther` to true if the user might have an answer not in your list\n' +
         '  • Keep questions focused — ask one thing at a time\n' +
         "  • Wait for the user's response before continuing your reasoning\n" +
         '\n' +
@@ -43,26 +42,16 @@ export const tools: Record<string, ExtensionToolDef> = {
           description:
             'Predefined answer choices for the user to pick from (optional).',
         },
-        allowOther: {
-          type: 'boolean',
-          description:
-            'Allow the user to type a custom answer not in the options list (default: false).',
-        },
       },
       required: ['question'],
     },
-    async handler(params: {
-      question: string;
-      options?: string[];
-      allowOther?: boolean;
-    }) {
+    async handler(params: { question: string; options?: string[] }) {
       return {
         _userInput: {
           type: 'select',
           title: 'Question',
           prompt: params.question,
           options: params.options || [],
-          allowOther: params.allowOther === true,
         },
       };
     },

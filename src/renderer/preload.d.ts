@@ -410,7 +410,6 @@ declare global {
           title: string;
           prompt: string;
           options?: string[];
-          allowOther?: boolean;
           toolName: string;
           toolParams: any;
         }) => void,

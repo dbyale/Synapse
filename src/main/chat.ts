@@ -56,7 +56,6 @@ export interface UserInputRequest {
   title: string;
   prompt: string;
   options?: string[];
-  allowOther?: boolean;
   toolName: string;
   toolParams: any;
 }
@@ -996,7 +995,6 @@ export async function sendMessage(
               (userInput.type === 'confirm' ? 'Action Required' : 'Question'),
             prompt: userInput.prompt || `Allow ${tc.name}?`,
             options: userInput.options,
-            allowOther: userInput.allowOther,
             toolName: tc.name,
             toolParams: JSON.parse(tc.args),
           };

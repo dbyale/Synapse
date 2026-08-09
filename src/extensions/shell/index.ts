@@ -55,8 +55,6 @@ export const tools: Record<string, ExtensionToolDef> = {
           _userInput: {
             type: 'confirm',
             prompt: params.explanation || 'Run this command?',
-            options: undefined,
-            allowOther: undefined,
           },
         };
       }

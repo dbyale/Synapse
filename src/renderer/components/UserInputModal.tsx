@@ -7,7 +7,6 @@ interface UserInputModalProps {
   title: string;
   prompt: string;
   options?: string[];
-  allowOther?: boolean;
   toolName: string;
   toolParams: any;
   onResponse: (response: {
@@ -21,7 +20,6 @@ export default function UserInputModal({
   title,
   prompt,
   options,
-  allowOther,
   toolName,
   toolParams,
   onResponse,
@@ -176,26 +174,24 @@ export default function UserInputModal({
                     <span>{opt}</span>
                   </label>
                 ))}
-                {allowOther && (
-                  <label
-                    className={`uim-option${showCustomInput ? ' uim-option--selected' : ''}`}
-                  >
-                    <input
-                      type="radio"
-                      name="uim-select"
-                      checked={showCustomInput}
-                      tabIndex={showCustomInput ? 0 : -1}
-                      ref={(el) => {
-                        optionRefs.current[options.length] = el;
-                      }}
-                      onChange={() => {
-                        setShowCustomInput(true);
-                        setSelectedOption(null);
-                      }}
-                    />
-                    <span>Other...</span>
-                  </label>
-                )}
+                <label
+                  className={`uim-option${showCustomInput ? ' uim-option--selected' : ''}`}
+                >
+                  <input
+                    type="radio"
+                    name="uim-select"
+                    checked={showCustomInput}
+                    tabIndex={showCustomInput ? 0 : -1}
+                    ref={(el) => {
+                      optionRefs.current[options.length] = el;
+                    }}
+                    onChange={() => {
+                      setShowCustomInput(true);
+                      setSelectedOption(null);
+                    }}
+                  />
+                  <span>Other...</span>
+                </label>
               </div>
             )}
             {showCustomInput && (

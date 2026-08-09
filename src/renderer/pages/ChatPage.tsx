@@ -545,7 +545,6 @@ export default function ChatPage() {
     title: string;
     prompt: string;
     options?: string[];
-    allowOther?: boolean;
     toolName: string;
     toolParams: any;
   } | null>(null);
@@ -1991,7 +1990,6 @@ export default function ChatPage() {
           title={userInputRequest.title}
           prompt={userInputRequest.prompt}
           options={userInputRequest.options}
-          allowOther={userInputRequest.allowOther}
           toolName={userInputRequest.toolName}
           toolParams={userInputRequest.toolParams}
           onResponse={async (response) => {
