@@ -28,10 +28,15 @@ export default function UserInputModal({
   const [customValue, setCustomValue] = useState('');
   const [showCustomInput, setShowCustomInput] = useState(false);
   const overlayRef = useRef<HTMLDivElement>(null);
+  const optionRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   useEffect(() => {
-    if (type === 'select') overlayRef.current?.focus();
-  }, [type]);
+    if (type === 'select' && options && options.length > 0) {
+      optionRefs.current[0]?.focus();
+    } else if (type === 'select') {
+      overlayRef.current?.focus();
+    }
+  }, [type, options]);
 
   const handleSubmit = () => {
     if (showCustomInput && customValue.trim()) {
@@ -142,7 +147,7 @@ export default function UserInputModal({
             <p className="uim-prompt">{prompt}</p>
             {options && options.length > 0 && (
               <div className="uim-options">
-                {options.map((opt) => (
+                {options.map((opt, idx) => (
                   <label
                     key={opt}
                     className={`uim-option${selectedOption === opt ? ' uim-option--selected' : ''}`}
@@ -152,6 +157,15 @@ export default function UserInputModal({
                       name="uim-select"
                       value={opt}
                       checked={selectedOption === opt}
+                      tabIndex={
+                        selectedOption === opt ||
+                        (!selectedOption && !showCustomInput && idx === 0)
+                          ? 0
+                          : -1
+                      }
+                      ref={(el) => {
+                        optionRefs.current[idx] = el;
+                      }}
                       onChange={() => {
                         setSelectedOption(opt);
                         setShowCustomInput(false);
@@ -168,6 +182,10 @@ export default function UserInputModal({
                       type="radio"
                       name="uim-select"
                       checked={showCustomInput}
+                      tabIndex={showCustomInput ? 0 : -1}
+                      ref={(el) => {
+                        optionRefs.current[options.length] = el;
+                      }}
                       onChange={() => {
                         setShowCustomInput(true);
                         setSelectedOption(null);

@@ -131,6 +131,11 @@
   background: var(--bg-hover);
 }
 
+.uim-option:focus-within {
+  border-color: var(--accent);
+  background: rgba(37, 99, 235, 0.08);
+}
+
 .uim-option--selected {
   border-color: var(--accent);
   background: rgba(37, 99, 235, 0.08);
