@@ -1,4 +1,4 @@
-import { useState, KeyboardEvent, MouseEvent } from 'react';
+import { useState, useEffect, useRef, KeyboardEvent, MouseEvent } from 'react';
 import { AlertTriangle, ListChecks, HelpCircle, X } from 'lucide-react';
 import './styles/UserInputModal.css';
 
@@ -27,13 +27,35 @@ export default function UserInputModal({
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [customValue, setCustomValue] = useState('');
   const [showCustomInput, setShowCustomInput] = useState(false);
+  const overlayRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (type === 'select') overlayRef.current?.focus();
+  }, [type]);
+
+  const handleSubmit = () => {
+    if (showCustomInput && customValue.trim()) {
+      onResponse({ action: 'selected', value: customValue.trim() });
+    } else if (selectedOption) {
+      onResponse({ action: 'selected', value: selectedOption });
+    }
+  };
 
   const handleOverlayClick = (e: MouseEvent<HTMLDivElement>) => {
     if (e.target === e.currentTarget) onResponse({ action: 'denied' });
   };
 
   const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (e.key === 'Escape') onResponse({ action: 'denied' });
+    if (e.key === 'Escape') {
+      onResponse({ action: 'denied' });
+    } else if (e.key === 'Enter') {
+      if ((e.target as HTMLElement).tagName === 'BUTTON') return;
+      if (type === 'confirm') {
+        onResponse({ action: 'confirmed' });
+      } else {
+        handleSubmit();
+      }
+    }
   };
 
   if (type === 'confirm') {
@@ -44,6 +66,8 @@ export default function UserInputModal({
         onKeyDown={handleKeyDown}
         role="dialog"
         aria-modal="true"
+        ref={overlayRef}
+        tabIndex={-1}
       >
         <div className="uim-dialog">
           <div className="uim-header">
@@ -87,14 +111,6 @@ export default function UserInputModal({
   }
 
   if (type === 'select' || type === 'freeform') {
-    const handleSubmit = () => {
-      if (showCustomInput && customValue.trim()) {
-        onResponse({ action: 'selected', value: customValue.trim() });
-      } else if (selectedOption) {
-        onResponse({ action: 'selected', value: selectedOption });
-      }
-    };
-
     return (
       <div
         className="uim-overlay"
@@ -102,6 +118,8 @@ export default function UserInputModal({
         onKeyDown={handleKeyDown}
         role="dialog"
         aria-modal="true"
+        ref={overlayRef}
+        tabIndex={-1}
       >
         <div className="uim-dialog">
           <div className="uim-header">
