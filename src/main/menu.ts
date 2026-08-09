@@ -23,6 +23,9 @@ export default class MenuBuilder {
 
   menu: Menu | null = null;
 
+  isDev =
+    process.env.NODE_ENV === 'development' || process.env.DEBUG_PROD === 'true';
+
   constructor(mainWindow: BrowserWindow) {
     this.mainWindow = mainWindow;
   }
@@ -60,10 +63,6 @@ export default class MenuBuilder {
   }
 
   setupContextMenu(): void {
-    const isDev =
-      process.env.NODE_ENV === 'development' ||
-      process.env.DEBUG_PROD === 'true';
-
     this.mainWindow.webContents.on('context-menu', (_, props) => {
       const { x, y, editFlags } = props;
 
@@ -91,7 +90,7 @@ export default class MenuBuilder {
         },
       ];
 
-      if (isDev) {
+      if (this.isDev) {
         template.push(
           { type: 'separator' },
           {
@@ -181,7 +180,7 @@ export default class MenuBuilder {
       ],
     };
 
-    return [
+    const builds: MenuItemConstructorOptions[] = [
       subMenuAbout,
       this.buildEditTemplate(),
       subMenuEdit,
@@ -190,6 +189,13 @@ export default class MenuBuilder {
       subMenuWindow,
       this.buildReportIssueTemplate(),
     ];
+
+    const developerTemplate = this.buildDeveloperTemplate();
+    if (developerTemplate) {
+      builds.push(developerTemplate);
+    }
+
+    return builds;
   }
 
   buildEditTemplate(): MenuItemConstructorOptions {
@@ -247,6 +253,22 @@ export default class MenuBuilder {
     };
   }
 
+  buildDeveloperTemplate(): MenuItemConstructorOptions | null {
+    if (!this.isDev) return null;
+
+    return {
+      label: 'Developer',
+      submenu: [
+        {
+          label: 'Restart Onboarding',
+          click: () => {
+            this.mainWindow.webContents.send('onboarding:restart');
+          },
+        },
+      ],
+    };
+  }
+
   buildFullScreenTemplate(label: string): MenuItemConstructorOptions {
     return {
       label,
@@ -278,12 +300,18 @@ export default class MenuBuilder {
   }
 
   buildDefaultTemplate() {
+    const developerTemplate = this.buildDeveloperTemplate();
+
     const templateDefault = [
       this.buildEditTemplate(),
       this.buildNavigateTemplate(),
       this.buildFullScreenTemplate('&View'),
       this.buildReportIssueTemplate(),
     ];
+
+    if (developerTemplate) {
+      templateDefault.push(developerTemplate);
+    }
 
     return templateDefault;
   }

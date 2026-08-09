@@ -127,6 +127,7 @@ declare global {
       ) => () => void;
       removeDownloadProgressListener: () => void;
       onMenuNavigate: (callback: (path: string) => void) => () => void;
+      onRestartOnboarding: (callback: () => void) => () => void;
       notifyMenuEditState: (state: {
         canCopy: boolean;
         canCut: boolean;

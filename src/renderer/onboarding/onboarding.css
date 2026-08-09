@@ -1,0 +1,558 @@
+/* ── Onboarding overlay ── */
+
+.onb-root {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-primary);
+  overflow: hidden;
+  -webkit-app-region: no-drag;
+  animation: onb-overlay-in 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.onb-root--closing {
+  animation: onb-overlay-out 0.26s ease both;
+}
+
+.onb-layer {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow-y: auto;
+}
+
+.onb-layer--enter {
+  animation: onb-fade-in 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.onb-layer--exit {
+  animation: onb-fade-out 0.3s ease both;
+  pointer-events: none;
+}
+
+.onb-close {
+  position: absolute;
+  top: 20px;
+  right: 24px;
+  z-index: 10;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.onb-close:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* ── Shared page / rise animation ── */
+
+.onb-page {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48px;
+}
+
+.onb-rise {
+  animation: onb-rise-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.onb-delay-1 {
+  animation-delay: 0.08s;
+}
+
+.onb-delay-2 {
+  animation-delay: 0.16s;
+}
+
+.onb-delay-3 {
+  animation-delay: 0.24s;
+}
+
+.onb-delay-4 {
+  animation-delay: 0.32s;
+}
+
+/* ── Setup experience page ── */
+
+.onb-panel {
+  display: flex;
+  gap: 64px;
+  align-items: center;
+  max-width: 1080px;
+  width: 100%;
+}
+
+.onb-hero {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 22px;
+}
+
+.onb-hero-image {
+  position: relative;
+  width: 320px;
+  height: 320px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 32px;
+  background:
+    radial-gradient(circle at 30% 20%, rgba(137, 180, 250, 0.22), transparent 55%),
+    radial-gradient(circle at 75% 80%, rgba(74, 226, 213, 0.16), transparent 50%),
+    linear-gradient(145deg, var(--bg-input), #232538);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+}
+
+.onb-hero-logo {
+  width: 170px;
+  height: 170px;
+  filter: drop-shadow(0 0 24px rgba(137, 180, 250, 0.45));
+}
+
+.onb-hero-title {
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+.onb-hero-text {
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  max-width: 430px;
+}
+
+.onb-options {
+  flex: 1.15;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.onb-options-heading {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+
+.onb-option {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 18px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  transition:
+    transform 0.16s ease,
+    border-color 0.16s ease,
+    background 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
+.onb-option:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--onb-color) 55%, transparent);
+  background: #232538;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.3);
+}
+
+.onb-option-icon {
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+}
+
+.onb-option-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.onb-option-title {
+  font-size: 15px;
+  font-weight: 650;
+  color: var(--text-primary);
+}
+
+.onb-option-desc {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.onb-option-recommended {
+  font-weight: 650;
+  color: #4ade80;
+}
+
+.onb-option-arrow {
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  transition:
+    transform 0.16s ease,
+    background 0.16s ease;
+}
+
+.onb-option:hover .onb-option-arrow {
+  transform: translateX(3px);
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* ── Professions setup page ── */
+
+.onb-professions-page {
+  position: relative;
+  flex-direction: column;
+}
+
+.onb-back-arrow {
+  position: absolute;
+  top: 40px;
+  left: 40px;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.onb-back-arrow:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.onb-professions {
+  flex: 1;
+  width: 100%;
+  max-width: 1160px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 72px;
+}
+
+.onb-professions-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.onb-professions-title {
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+
+.onb-professions-text {
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+.onb-professions-note {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: rgba(137, 180, 250, 0.06);
+}
+
+.onb-professions-right {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.onb-professions-hint {
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--text-secondary);
+}
+
+.onb-profession-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.onb-profession {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  transition:
+    transform 0.16s ease,
+    border-color 0.16s ease,
+    background 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
+.onb-profession:hover {
+  transform: translateY(-2px);
+  border-color: rgba(137, 180, 250, 0.45);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
+}
+
+.onb-profession--selected {
+  border-color: var(--accent);
+  background: rgba(137, 180, 250, 0.1);
+}
+
+.onb-profession-icon {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  transition: background 0.16s ease, color 0.16s ease;
+}
+
+.onb-profession--selected .onb-profession-icon {
+  background: rgba(137, 180, 250, 0.22);
+  color: var(--accent);
+}
+
+.onb-profession-label {
+  font-size: 14px;
+  font-weight: 550;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.onb-profession-check {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid var(--border);
+  border-radius: 50%;
+  color: #11111b;
+  transition: background-color 0.16s ease, border-color 0.16s ease;
+}
+
+.onb-profession--selected .onb-profession-check {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.onb-professions-footer {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  padding-top: 28px;
+}
+
+.onb-continue {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 52px;
+  background: var(--accent);
+  border: none;
+  border-radius: 16px;
+  color: #11111b;
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: 650;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
+  box-shadow: 0 10px 30px rgba(137, 180, 250, 0.25);
+}
+
+.onb-continue:hover {
+  background: var(--accent-hover);
+  transform: translateY(-2px);
+  box-shadow: 0 14px 36px rgba(137, 180, 250, 0.35);
+}
+
+.onb-continue:active {
+  transform: translateY(0);
+}
+
+/* ── Llama setup page ── */
+
+.onb-llama {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 18px;
+}
+
+.onb-llama-icon {
+  width: 96px;
+  height: 96px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  background: var(--bg-secondary);
+  color: var(--accent);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.3);
+}
+
+.onb-llama-title {
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+.onb-llama-text {
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  max-width: 420px;
+}
+
+.onb-back-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 10px 18px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 550;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.onb-back-btn:hover {
+  background: var(--bg-hover);
+  border-color: rgba(137, 180, 250, 0.45);
+}
+
+/* ── Keyframes ── */
+
+@keyframes onb-rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes onb-fade-in {
+  from {
+    opacity: 0;
+    transform: scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes onb-fade-out {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.01);
+  }
+}
+
+@keyframes onb-overlay-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes onb-overlay-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}

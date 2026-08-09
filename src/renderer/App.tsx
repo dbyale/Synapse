@@ -9,6 +9,7 @@ import ProfilesPage from './pages/ProfilesPage';
 import WorkflowsPage from './pages/WorkflowPage';
 import ExtensionsPage from './pages/ExtensionsPage';
 import { fetchExtensionData } from './utils/extensionData';
+import Onboarding from './onboarding/Onboarding';
 
 export default function App() {
   useEffect(() => {
@@ -94,6 +95,7 @@ export default function App() {
           <Route path="extensions" element={<ExtensionsPage />} />
         </Route>
       </Routes>
+      <Onboarding />
     </Router>
   );
 }

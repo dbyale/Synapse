@@ -75,6 +75,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.removeListener('menu:navigate', subscription);
     };
   },
+  onRestartOnboarding: (callback: () => void) => {
+    const subscription = () => callback();
+
+    ipcRenderer.on('onboarding:restart', subscription);
+
+    return () => {
+      ipcRenderer.removeListener('onboarding:restart', subscription);
+    };
+  },
   notifyMenuEditState: (state: {
     canCopy: boolean;
     canCut: boolean;
