@@ -605,6 +605,7 @@ export async function loadProfile(
           : 1
         ).toString(),
         '--metrics',
+        '--no-webui',
       ];
       if (
         (profile as any).corsOrigins &&
