@@ -88,6 +88,13 @@ export default class MenuBuilder {
             this.mainWindow.webContents.paste();
           },
         },
+        { type: 'separator' },
+        {
+          label: 'Select All',
+          click: () => {
+            this.mainWindow.webContents.selectAll();
+          },
+        },
       ];
 
       if (this.isDev) {
