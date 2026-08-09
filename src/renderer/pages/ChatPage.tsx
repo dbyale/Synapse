@@ -542,6 +542,7 @@ export default function ChatPage() {
   const [userInputRequest, setUserInputRequest] = useState<{
     requestId: string;
     type: 'confirm' | 'select' | 'freeform';
+    title: string;
     prompt: string;
     options?: string[];
     allowOther?: boolean;
@@ -1987,6 +1988,7 @@ export default function ChatPage() {
       {userInputRequest && (
         <UserInputModal
           type={userInputRequest.type}
+          title={userInputRequest.title}
           prompt={userInputRequest.prompt}
           options={userInputRequest.options}
           allowOther={userInputRequest.allowOther}

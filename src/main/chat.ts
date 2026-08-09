@@ -53,6 +53,7 @@ let pendingInputReject: ((err: Error) => void) | null = null;
 export interface UserInputRequest {
   requestId: string;
   type: 'confirm' | 'select' | 'freeform';
+  title: string;
   prompt: string;
   options?: string[];
   allowOther?: boolean;
@@ -984,13 +985,18 @@ export async function sendMessage(
         let result = await handler(JSON.parse(tc.args));
 
         // Check if tool requests user input
-        if (result && typeof result === 'object' && result._userInput) {
+        const userInput =
+          result && typeof result === 'object' ? result._userInput : undefined;
+        if (userInput) {
           const inputReq: UserInputRequest = {
             requestId: tc.id,
-            type: result._userInput.type || 'confirm',
-            prompt: result._userInput.prompt || `Allow ${tc.name}?`,
-            options: result._userInput.options,
-            allowOther: result._userInput.allowOther,
+            type: userInput.type || 'confirm',
+            title:
+              userInput.title ||
+              (userInput.type === 'confirm' ? 'Action Required' : 'Question'),
+            prompt: userInput.prompt || `Allow ${tc.name}?`,
+            options: userInput.options,
+            allowOther: userInput.allowOther,
             toolName: tc.name,
             toolParams: JSON.parse(tc.args),
           };

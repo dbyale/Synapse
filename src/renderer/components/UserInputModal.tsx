@@ -4,6 +4,7 @@ import './styles/UserInputModal.css';
 
 interface UserInputModalProps {
   type: 'confirm' | 'select' | 'freeform';
+  title: string;
   prompt: string;
   options?: string[];
   allowOther?: boolean;
@@ -17,6 +18,7 @@ interface UserInputModalProps {
 
 export default function UserInputModal({
   type,
+  title,
   prompt,
   options,
   allowOther,
@@ -77,7 +79,7 @@ export default function UserInputModal({
         <div className="uim-dialog">
           <div className="uim-header">
             <AlertTriangle size={20} className="uim-warning-icon" />
-            <h2 className="uim-title">Action Required</h2>
+            <h2 className="uim-title">{title}</h2>
             <button
               type="button"
               className="uim-close"
@@ -133,7 +135,7 @@ export default function UserInputModal({
             ) : (
               <HelpCircle size={20} />
             )}
-            <h2 className="uim-title">{toolName}</h2>
+            <h2 className="uim-title">{title}</h2>
             <button
               type="button"
               className="uim-close"

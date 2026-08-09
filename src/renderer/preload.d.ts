@@ -407,6 +407,7 @@ declare global {
         callback: (data: {
           requestId: string;
           type: 'confirm' | 'select' | 'freeform';
+          title: string;
           prompt: string;
           options?: string[];
           allowOther?: boolean;

@@ -59,6 +59,7 @@ export const tools: Record<string, ExtensionToolDef> = {
       return {
         _userInput: {
           type: 'select',
+          title: 'Question',
           prompt: params.question,
           options: params.options || [],
           allowOther: params.allowOther === true,
