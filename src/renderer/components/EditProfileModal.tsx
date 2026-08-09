@@ -1228,6 +1228,10 @@ function extractQuantizationFromFilename(filename: string): string {
   return match ? match[1].toUpperCase() : 'Unknown';
 }
 
+function formatCacheType(t: CacheType): string {
+  return t === 'f16' ? 'F16 (Default)' : t.toUpperCase();
+}
+
 const CACHE_TYPE_OPTIONS: CacheType[] = [
   'f32',
   'bf16',
@@ -1271,7 +1275,7 @@ function CacheTypeSelector({
           onClick={() => setOpen(!open)}
           type="button"
         >
-          {value}
+          {formatCacheType(value)}
           <ChevronDown size={13} />
         </button>
         {open && (
@@ -1286,7 +1290,7 @@ function CacheTypeSelector({
                 }}
                 type="button"
               >
-                {t}
+                {formatCacheType(t)}
               </button>
             ))}
           </div>
