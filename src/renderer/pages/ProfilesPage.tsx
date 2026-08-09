@@ -154,7 +154,7 @@ export default function ProfilesPage() {
 
   // ── Global defaults (from settings) ──
   const [defaultHost, setDefaultHost] = useState('127.0.0.1');
-  const [defaultPort, setDefaultPort] = useState(8080);
+  const [defaultPort, setDefaultPort] = useState(9931);
   const [defaultCorsOrigins, setDefaultCorsOrigins] = useState('localhost');
   const [defaultCorsMethods, setDefaultCorsMethods] = useState('');
   const [defaultCorsHeaders, setDefaultCorsHeaders] = useState('');

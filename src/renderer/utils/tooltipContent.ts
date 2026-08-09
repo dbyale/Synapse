@@ -293,8 +293,8 @@ export const HOST_TOOLTIP = [
 
 export const PORT_TOOLTIP = [
   'The port the inference server listens on (--port).',
-  'Change this if the default port 8080 conflicts with another service.',
-  'Default: 8080',
+  'Change this if the default port 9931 conflicts with another service.',
+  'Default: 9931',
 ];
 
 // ── CORS (Server Settings) ──

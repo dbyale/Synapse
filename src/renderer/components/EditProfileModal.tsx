@@ -3066,7 +3066,7 @@ function ServerSettingsPage({
                 className="epm-input"
                 value={editPort}
                 onChange={(e) => setEditPort(e.target.value)}
-                placeholder="8080"
+                placeholder="9931"
                 min="1"
                 max="65535"
                 style={{ marginTop: '8px' }}
@@ -3469,8 +3469,8 @@ export default function EditProfileModal({
   );
   const [editPort, setEditPort] = useState<string>(
     profile !== null
-      ? String(profile.port ?? 8080)
-      : String(defaultPort ?? 8080),
+      ? String(profile.port ?? 9931)
+      : String(defaultPort ?? 9931),
   );
 
   const [editVideoFps, setEditVideoFps] = useState<string>(

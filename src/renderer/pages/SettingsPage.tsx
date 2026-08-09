@@ -364,7 +364,7 @@ export default function SettingsPage() {
           corsHeaders: loaded?.corsHeaders ?? '',
           corsCredentials: loaded?.corsCredentials ?? true,
           host: loaded?.host ?? '127.0.0.1',
-          port: loaded?.port ?? 8080,
+          port: loaded?.port ?? 9931,
         };
 
         savedAllocationsRef.current = {
@@ -731,13 +731,13 @@ export default function SettingsPage() {
                         prev
                           ? {
                               ...prev,
-                              port: parseInt(e.target.value, 10) || 8080,
+                              port: parseInt(e.target.value, 10) || 9931,
                             }
                           : prev,
                       )
                     }
                     onBlur={() => triggerSave({ port: settings.port })}
-                    placeholder="8080"
+                    placeholder="9931"
                     min="1"
                     max="65535"
                     style={{ marginTop: '8px' }}

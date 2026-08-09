@@ -181,7 +181,7 @@ export function setEmitFunctionCallback(cb: any) {
 
 function getServerUrl(path: string = ''): string {
   const host = currentProfile?.host || '127.0.0.1';
-  const port = currentProfile?.port || 8080;
+  const port = currentProfile?.port || 9931;
   return `http://${host}:${port}${path}`;
 }
 
@@ -595,7 +595,7 @@ export async function loadProfile(
         '--ctx-size',
         result.ctx.toString(),
         '--port',
-        ((profile as any).port ?? 8080).toString(),
+        ((profile as any).port ?? 9931).toString(),
         '--host',
         (profile as any).host ?? '127.0.0.1',
         '--parallel',
@@ -722,7 +722,7 @@ export async function loadProfile(
       for (let i = 0; i < 45; i++) {
         try {
           const host = (profile as any).host ?? '127.0.0.1';
-          const port = (profile as any).port ?? 8080;
+          const port = (profile as any).port ?? 9931;
           const res = await fetch(`http://${host}:${port}/health`);
           if (res.ok) {
             ready = true;
