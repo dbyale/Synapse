@@ -55,6 +55,7 @@ export interface Profile {
   cacheTypeV?: CacheType;
   mmap?: boolean;
   mlock?: boolean;
+  repack?: boolean;
   allocatedVRAM?: number;
   allocatedRAM?: number;
   maxLayers?: number;

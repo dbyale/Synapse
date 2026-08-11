@@ -193,6 +193,12 @@ export const MLOCK_TOOLTIP = [
   'Uses more system RAM and may affect other running applications.',
 ];
 
+export const REPACK_TOOLTIP = [
+  'Repacks the model weights into an optimized layout for better inference speed.',
+  'Enabled by default — the conversion is done once at load time, with a small startup delay.',
+  'Disable it if you prioritize faster loading or run into memory pressure while loading.',
+];
+
 // ── Memory Estimation ──
 
 export const MODEL_WEIGHTS_TOOLTIP =

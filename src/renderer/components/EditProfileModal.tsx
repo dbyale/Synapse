@@ -66,6 +66,7 @@ import {
   V_CACHE_TYPE_TOOLTIP,
   MMAP_TOOLTIP,
   MLOCK_TOOLTIP,
+  REPACK_TOOLTIP,
   MODEL_WEIGHTS_TOOLTIP,
   KV_CACHE_MEM_TOOLTIP,
   COMPUTE_OVERHEAD_TOOLTIP,
@@ -2377,13 +2378,17 @@ function CacheOptionsPage({
 function MemoryOptionsPage({
   editMmap,
   editMlock,
+  editRepack,
   onSetMmap,
   onSetMlock,
+  onSetRepack,
 }: {
   editMmap: boolean;
   editMlock: boolean;
+  editRepack: boolean;
   onSetMmap: (v: boolean) => void;
   onSetMlock: (v: boolean) => void;
+  onSetRepack: (v: boolean) => void;
 }) {
   return (
     <>
@@ -2445,6 +2450,32 @@ function MemoryOptionsPage({
                 if (e.key === ' ' || e.key === 'Enter') {
                   e.preventDefault();
                   onSetMlock(!editMlock);
+                }
+              }}
+            >
+              <div className="epm-toggle-switch__knob" />
+            </div>
+          </InfoTooltip>
+        </label>
+        <label className="epm-perf-toggle-row">
+          <InfoTooltip
+            content={REPACK_TOOLTIP}
+            side="right"
+            stretch
+            className="info-tooltip-stretch--row"
+            title="Weight Repacking"
+          >
+            <span className="epm-perf-toggle-label">Weight Repacking</span>
+            <div
+              className={`epm-toggle-switch${editRepack ? ' epm-toggle-switch--on' : ''}`}
+              onClick={() => onSetRepack(!editRepack)}
+              role="switch"
+              aria-checked={editRepack}
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === ' ' || e.key === 'Enter') {
+                  e.preventDefault();
+                  onSetRepack(!editRepack);
                 }
               }}
             >
@@ -3188,6 +3219,9 @@ export default function EditProfileModal({
   );
   const [editMmap, setEditMmap] = useState<boolean>(profile?.mmap ?? true);
   const [editMlock, setEditMlock] = useState<boolean>(profile?.mlock ?? false);
+  const [editRepack, setEditRepack] = useState<boolean>(
+    profile?.repack ?? true,
+  );
   const [editCacheTypeK, setEditCacheTypeK] = useState<CacheType>(
     profile?.cacheTypeK ?? 'f16',
   );
@@ -3531,6 +3565,7 @@ export default function EditProfileModal({
       cacheTypeV: editCacheTypeV,
       mmap: editMmap,
       mlock: editMlock,
+      repack: editRepack,
       gpuLayersAuto: editGpuLayersAuto,
       contextShift: editContextShift,
       ...(modelMeta
@@ -3818,8 +3853,10 @@ export default function EditProfileModal({
           <MemoryOptionsPage
             editMmap={editMmap}
             editMlock={editMlock}
+            editRepack={editRepack}
             onSetMmap={setEditMmap}
             onSetMlock={setEditMlock}
+            onSetRepack={setEditRepack}
           />
         );
       case 'draft-model':
