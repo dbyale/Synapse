@@ -1021,6 +1021,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 10px;
   cursor: pointer;
   user-select: none;
   padding: 8px 0;
@@ -1050,6 +1051,8 @@
   flex-shrink: 0;
   cursor: pointer;
   transition: background 0.2s ease;
+  border: none;
+  padding: 0;
 }
 
 .epm-toggle-switch--on {
@@ -1252,4 +1255,72 @@
   overflow: hidden;
   max-height: 280px;
   overflow-y: auto;
+}
+
+/* ── Launch Arguments Preview ── */
+
+.epm-launch-args__desc {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 10px;
+  line-height: 1.5;
+}
+
+.epm-launch-args {
+  padding: 14px 16px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-family: 'Cascadia Code', 'JetBrains Mono', Consolas, 'Courier New',
+    monospace;
+  font-size: 12.5px;
+  line-height: 1.8;
+  overflow-x: auto;
+  word-break: break-word;
+  user-select: text;
+}
+
+.epm-launch-args > span {
+  margin-right: 6px;
+}
+
+.epm-launch-args__line {
+  display: block;
+  white-space: pre-wrap;
+}
+
+.epm-launch-args__line > span {
+  margin-right: 6px;
+}
+
+.epm-launch-args > .epm-launch-args__binary {
+  display: block;
+  margin-bottom: 2px;
+}
+
+.epm-launch-args--condensed .epm-launch-args__line,
+.epm-launch-args--condensed > .epm-launch-args__binary {
+  display: inline;
+}
+
+.epm-launch-args__binary {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.epm-launch-args__flag {
+  color: #fab387;
+}
+
+.epm-launch-args__path {
+  color: #cba6f7;
+}
+
+.epm-launch-args__value {
+  color: #a6e3a1;
+}
+
+.epm-launch-args__empty {
+  color: var(--text-secondary);
+  font-style: italic;
 }

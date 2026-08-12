@@ -2832,6 +2832,35 @@ function MoeOptionsPage({
   );
 }
 
+function launchArgClass(arg: string): string {
+  if (arg.startsWith('-')) return 'epm-launch-args__flag';
+  if (/[\\/]/.test(arg)) return 'epm-launch-args__path';
+  return 'epm-launch-args__value';
+}
+
+function groupLaunchArgs(
+  args: string[],
+): Array<{ lineKey: string; tokens: Array<{ text: string; cls: string }> }> {
+  const lines = args.reduce<string[][]>((acc, arg) => {
+    if (arg.startsWith('-') || acc.length === 0) {
+      acc.push([arg]);
+    } else {
+      acc[acc.length - 1].push(arg);
+    }
+    return acc;
+  }, []);
+  const lineCounts = new Map<string, number>();
+  return lines.map((line) => {
+    const first = line[0];
+    const n = (lineCounts.get(first) ?? 0) + 1;
+    lineCounts.set(first, n);
+    return {
+      lineKey: `${first}::${n}`,
+      tokens: line.map((text) => ({ text, cls: launchArgClass(text) })),
+    };
+  });
+}
+
 function ServerSettingsPage({
   editHost,
   setEditHost,
@@ -2840,6 +2869,11 @@ function ServerSettingsPage({
   editParallel,
   setEditParallel,
   onNavigate,
+  launchArgs,
+  launchArgsLoading,
+  hasModel,
+  condensed,
+  onToggleCondensed,
 }: {
   editHost: string;
   setEditHost: (v: string) => void;
@@ -2848,7 +2882,19 @@ function ServerSettingsPage({
   editParallel: string;
   setEditParallel: (v: string) => void;
   onNavigate: (page: string) => void;
+  launchArgs: string[] | null;
+  launchArgsLoading: boolean;
+  hasModel: boolean;
+  condensed: boolean;
+  onToggleCondensed: (v: boolean) => void;
 }) {
+  let emptyMessage = 'Launch arguments unavailable.';
+  if (launchArgsLoading) {
+    emptyMessage = 'Building launch arguments…';
+  } else if (!hasModel) {
+    emptyMessage = 'Select a model to preview its launch arguments.';
+  }
+
   return (
     <>
       <h2 className="epm-page-title">Server Settings</h2>
@@ -2955,6 +3001,60 @@ function ServerSettingsPage({
             </div>
             <ChevronRight size={16} className="epm-section-card__chevron" />
           </button>
+        </div>
+      </div>
+
+      {/* Launch Arguments Preview */}
+      <div className="epm-section" style={{ marginTop: '20px' }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '12px',
+            marginBottom: '8px',
+          }}
+        >
+          <div className="epm-section__label" style={{ marginBottom: 0 }}>
+            Launch Arguments
+          </div>
+          <div className="epm-perf-toggle-row" style={{ padding: 0 }}>
+            <span className="epm-perf-toggle-label">Condensed view</span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={condensed}
+              aria-label="Condensed view"
+              className={`epm-toggle-switch${condensed ? ' epm-toggle-switch--on' : ''}`}
+              onClick={() => onToggleCondensed(!condensed)}
+            >
+              <div className="epm-toggle-switch__knob" />
+            </button>
+          </div>
+        </div>
+        <div className="epm-launch-args__desc">
+          Preview of the exact command line passed to llama-server when this
+          profile is loaded.
+        </div>
+        <div
+          className={`epm-launch-args${condensed ? ' epm-launch-args--condensed' : ''}`}
+        >
+          {launchArgs ? (
+            <>
+              <span className="epm-launch-args__binary">llama-server</span>
+              {groupLaunchArgs(launchArgs).map((line) => (
+                <div key={line.lineKey} className="epm-launch-args__line">
+                  {line.tokens.map((token) => (
+                    <span key={token.text} className={token.cls}>
+                      {token.text}
+                    </span>
+                  ))}
+                </div>
+              ))}
+            </>
+          ) : (
+            <span className="epm-launch-args__empty">{emptyMessage}</span>
+          )}
         </div>
       </div>
     </>
@@ -3300,6 +3400,116 @@ export default function EditProfileModal({
       ? String(profile.port ?? 9931)
       : String(defaultPort ?? 9931),
   );
+
+  // Launch arguments preview (built by the main process via chat.ts)
+  const [launchArgs, setLaunchArgs] = useState<string[] | null>(null);
+  const [launchArgsLoading, setLaunchArgsLoading] = useState(false);
+  const [launchArgsCondensed, setLaunchArgsCondensed] = useState(false);
+  const launchArgsReqId = useRef(0);
+  useEffect(() => {
+    if (!editModelFilename) {
+      launchArgsReqId.current += 1;
+      setLaunchArgs(null);
+      setLaunchArgsLoading(false);
+      return undefined;
+    }
+    launchArgsReqId.current += 1;
+    const reqId = launchArgsReqId.current;
+    setLaunchArgsLoading(true);
+    const timer = setTimeout(() => {
+      const draft = {
+        modelAuthor: editModelAuthor,
+        modelFolder: editModelFolder,
+        modelFilename: editModelFilename,
+        projectorFilename: editProjectorFilename || undefined,
+        kvOffload: editKvOffload,
+        mmap: editMmap,
+        mlock: editMlock,
+        repack: editRepack,
+        contextShift: editContextShift,
+        cacheTypeK: editCacheTypeK,
+        cacheTypeV: editCacheTypeV,
+        flashAttn: editFlashAttn,
+        gpuLayersAuto: editGpuLayersAuto,
+        cpuMoe: editCpuMoe,
+        nCpuMoe: parseInt(editNCpuMoe, 10),
+        specType: editSpecType,
+        draftModelAuthor:
+          (editSpecType.includes('draft-simple') && editDraftModelAuthor) ||
+          undefined,
+        draftModelFolder:
+          (editSpecType.includes('draft-simple') && editDraftModelFolder) ||
+          undefined,
+        draftModelFilename:
+          (editSpecType.includes('draft-simple') && editDraftModelFilename) ||
+          undefined,
+        specDraftNMax: parseFloat(editSpecDraftNMax),
+        specDraftNMin: parseFloat(editSpecDraftNMin),
+        specDraftPSplit: parseFloat(editSpecDraftPSplit),
+        specDraftPMin: parseFloat(editSpecDraftPMin),
+        parallel: parseInt(editParallel, 10),
+        host: editHost || undefined,
+        port: parseInt(editPort, 10) || undefined,
+        corsOrigins: editCorsOrigins || undefined,
+        corsMethods: editCorsMethods || undefined,
+        corsHeaders: editCorsHeaders || undefined,
+        corsCredentials: editCorsCredentials,
+      };
+      window.electronAPI
+        .getLaunchArgs(draft, {
+          ngl: editLayers ?? 0,
+          ctx: editContextSize ?? 512,
+        })
+        .then((args) => {
+          if (launchArgsReqId.current === reqId) {
+            setLaunchArgs(args);
+            setLaunchArgsLoading(false);
+          }
+          return undefined;
+        })
+        .catch(() => {
+          if (launchArgsReqId.current === reqId) {
+            setLaunchArgs(null);
+            setLaunchArgsLoading(false);
+          }
+          return undefined;
+        });
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [
+    editModelFilename,
+    editModelAuthor,
+    editModelFolder,
+    editProjectorFilename,
+    editKvOffload,
+    editMmap,
+    editMlock,
+    editRepack,
+    editContextShift,
+    editCacheTypeK,
+    editCacheTypeV,
+    editFlashAttn,
+    editGpuLayersAuto,
+    editCpuMoe,
+    editNCpuMoe,
+    editSpecType,
+    editDraftModelAuthor,
+    editDraftModelFolder,
+    editDraftModelFilename,
+    editSpecDraftNMax,
+    editSpecDraftNMin,
+    editSpecDraftPSplit,
+    editSpecDraftPMin,
+    editParallel,
+    editHost,
+    editPort,
+    editCorsOrigins,
+    editCorsMethods,
+    editCorsHeaders,
+    editCorsCredentials,
+    editLayers,
+    editContextSize,
+  ]);
 
   const [editVideoFps, setEditVideoFps] = useState<string>(
     profile?.videoSettings?.fps?.toString() ?? '',
@@ -3819,6 +4029,11 @@ export default function EditProfileModal({
             editParallel={editParallel}
             setEditParallel={setEditParallel}
             onNavigate={navigateTo}
+            launchArgs={launchArgs}
+            launchArgsLoading={launchArgsLoading}
+            hasModel={!!editModelFilename}
+            condensed={launchArgsCondensed}
+            onToggleCondensed={setLaunchArgsCondensed}
           />
         );
       case 'cors-settings':

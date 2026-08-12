@@ -185,6 +185,130 @@ function getServerUrl(path: string = ''): string {
   return `http://${host}:${port}${path}`;
 }
 
+// --- Build llama-server launch arguments ---
+// Single source of truth used by loadProfile() and exposed to the renderer
+// (chat:getLaunchArgs) so previews always match the real server invocation.
+
+export interface LlamaServerLaunchConfig {
+  modelPath: string;
+  projectorPath?: string;
+  ngl: number;
+  ctx: number;
+}
+
+export function buildLlamaServerArgs(
+  profile: Partial<Profile>,
+  config: LlamaServerLaunchConfig,
+): string[] {
+  const spawnArgs = [
+    '--model',
+    config.modelPath,
+    '--n-gpu-layers',
+    (profile as any).gpuLayersAuto ? 'auto' : config.ngl.toString(),
+    '--ctx-size',
+    config.ctx.toString(),
+    '--port',
+    ((profile as any).port ?? 9931).toString(),
+    '--host',
+    (profile as any).host ?? '127.0.0.1',
+    '--parallel',
+    ((profile as any).parallel !== undefined &&
+    (profile as any).parallel !== -1
+      ? (profile as any).parallel
+      : 1
+    ).toString(),
+    '--metrics',
+    '--no-webui',
+  ];
+  if ((profile as any).corsOrigins && (profile as any).corsOrigins !== '*') {
+    spawnArgs.push('--cors-origins', (profile as any).corsOrigins);
+  }
+  if (
+    (profile as any).corsMethods &&
+    (profile as any).corsMethods !== 'GET, POST, DELETE, OPTIONS'
+  ) {
+    spawnArgs.push('--cors-methods', (profile as any).corsMethods);
+  }
+  if ((profile as any).corsHeaders && (profile as any).corsHeaders !== '*') {
+    spawnArgs.push('--cors-headers', (profile as any).corsHeaders);
+  }
+  if ((profile as any).corsCredentials === false) {
+    spawnArgs.push('--no-cors-credentials');
+  }
+  if (profile.kvOffload === false) spawnArgs.push('--no-kv-offload');
+  if (profile.mmap === false) spawnArgs.push('--no-mmap');
+  if (profile.mlock === true) spawnArgs.push('--mlock');
+  if (profile.repack === false) spawnArgs.push('--no-repack');
+  if ((profile as any).contextShift === true) spawnArgs.push('--context-shift');
+  spawnArgs.push('--cache-type-k', (profile as any).cacheTypeK ?? 'f16');
+  spawnArgs.push('--cache-type-v', (profile as any).cacheTypeV ?? 'f16');
+  if ((profile as any).flashAttn) {
+    spawnArgs.push('--flash-attn', (profile as any).flashAttn);
+  }
+
+  // Mixture of Experts (MoE)
+  if (profile.cpuMoe === true) spawnArgs.push('--cpu-moe');
+  if (profile.nCpuMoe !== undefined && profile.nCpuMoe > 0) {
+    spawnArgs.push('--n-cpu-moe', profile.nCpuMoe.toString());
+  }
+
+  if (config.projectorPath) {
+    spawnArgs.push('--mmproj', config.projectorPath);
+  }
+
+  // Draft model (speculative decoding)
+  if (profile.specType && profile.specType.length > 0) {
+    spawnArgs.push('--spec-type', profile.specType.join(','));
+
+    const draftModelPath = profile.draftModelFilename
+      ? path.join(
+          getModelsDirectory(),
+          `${profile.draftModelAuthor}/${profile.draftModelFolder}/${profile.draftModelFilename}`,
+        )
+      : undefined;
+    if (
+      draftModelPath &&
+      fs.existsSync(draftModelPath) &&
+      profile.specType.includes('draft-simple')
+    ) {
+      spawnArgs.push('--spec-draft-model', draftModelPath);
+    }
+
+    if (
+      profile.specDraftNMax !== undefined &&
+      profile.specDraftNMax !== 3
+    ) {
+      spawnArgs.push(
+        '--spec-draft-n-max',
+        profile.specDraftNMax.toString(),
+      );
+    }
+    if (
+      profile.specDraftNMin !== undefined &&
+      profile.specDraftNMin !== 0
+    ) {
+      spawnArgs.push(
+        '--spec-draft-n-min',
+        profile.specDraftNMin.toString(),
+      );
+    }
+    if (
+      profile.specDraftPSplit !== undefined &&
+      profile.specDraftPSplit !== 0.1
+    ) {
+      spawnArgs.push('--draft-p-split', profile.specDraftPSplit.toFixed(2));
+    }
+    if (
+      profile.specDraftPMin !== undefined &&
+      profile.specDraftPMin !== 0.0
+    ) {
+      spawnArgs.push('--draft-p-min', profile.specDraftPMin.toFixed(2));
+    }
+  }
+
+  return spawnArgs;
+}
+
 // --- Build request body, only including profile fields that are defined ---
 function buildChatBody(messages: any[], tools: any[]): Record<string, any> {
   const p = currentProfile;
@@ -587,120 +711,17 @@ export async function loadProfile(
         });
       }
 
-      const spawnArgs = [
-        '--model',
-        fullModelPath,
-        '--n-gpu-layers',
-        (profile as any).gpuLayersAuto ? 'auto' : result.ngl.toString(),
-        '--ctx-size',
-        result.ctx.toString(),
-        '--port',
-        ((profile as any).port ?? 9931).toString(),
-        '--host',
-        (profile as any).host ?? '127.0.0.1',
-        '--parallel',
-        ((profile as any).parallel !== undefined &&
-        (profile as any).parallel !== -1
-          ? (profile as any).parallel
-          : 1
-        ).toString(),
-        '--metrics',
-        '--no-webui',
-      ];
-      if (
-        (profile as any).corsOrigins &&
-        (profile as any).corsOrigins !== '*'
-      ) {
-        spawnArgs.push('--cors-origins', (profile as any).corsOrigins);
-      }
-      if (
-        (profile as any).corsMethods &&
-        (profile as any).corsMethods !== 'GET, POST, DELETE, OPTIONS'
-      ) {
-        spawnArgs.push('--cors-methods', (profile as any).corsMethods);
-      }
-      if (
-        (profile as any).corsHeaders &&
-        (profile as any).corsHeaders !== '*'
-      ) {
-        spawnArgs.push('--cors-headers', (profile as any).corsHeaders);
-      }
-      if ((profile as any).corsCredentials === false) {
-        spawnArgs.push('--no-cors-credentials');
-      }
-      if (profile.kvOffload === false) spawnArgs.push('--no-kv-offload');
-      if (profile.mmap === false) spawnArgs.push('--no-mmap');
-      if (profile.mlock === true) spawnArgs.push('--mlock');
-      if (profile.repack === false) spawnArgs.push('--no-repack');
-      if ((profile as any).contextShift === true)
-        spawnArgs.push('--context-shift');
-      spawnArgs.push('--cache-type-k', (profile as any).cacheTypeK ?? 'f16');
-      spawnArgs.push('--cache-type-v', (profile as any).cacheTypeV ?? 'f16');
-      if ((profile as any).flashAttn) {
-        spawnArgs.push('--flash-attn', (profile as any).flashAttn);
-      }
-
-      // Mixture of Experts (MoE)
-      if (profile.cpuMoe === true) spawnArgs.push('--cpu-moe');
-      if (profile.nCpuMoe !== undefined && profile.nCpuMoe > 0) {
-        spawnArgs.push('--n-cpu-moe', profile.nCpuMoe.toString());
-      }
+      const spawnArgs = buildLlamaServerArgs(profile, {
+        modelPath: fullModelPath,
+        projectorPath: fullProjectorPath,
+        ngl: result.ngl,
+        ctx: result.ctx,
+      });
 
       if (fullProjectorPath) {
-        spawnArgs.push('--mmproj', fullProjectorPath);
         currentProjector = fullProjectorPath;
       } else {
         currentProjector = null;
-      }
-
-      // Draft model (speculative decoding)
-      if (profile.specType && profile.specType.length > 0) {
-        spawnArgs.push('--spec-type', profile.specType.join(','));
-
-        const draftModelPath = profile.draftModelFilename
-          ? path.join(
-              getModelsDirectory(),
-              `${profile.draftModelAuthor}/${profile.draftModelFolder}/${profile.draftModelFilename}`,
-            )
-          : undefined;
-        if (
-          draftModelPath &&
-          fs.existsSync(draftModelPath) &&
-          profile.specType.includes('draft-simple')
-        ) {
-          spawnArgs.push('--spec-draft-model', draftModelPath);
-        }
-
-        if (
-          profile.specDraftNMax !== undefined &&
-          profile.specDraftNMax !== 3
-        ) {
-          spawnArgs.push(
-            '--spec-draft-n-max',
-            profile.specDraftNMax.toString(),
-          );
-        }
-        if (
-          profile.specDraftNMin !== undefined &&
-          profile.specDraftNMin !== 0
-        ) {
-          spawnArgs.push(
-            '--spec-draft-n-min',
-            profile.specDraftNMin.toString(),
-          );
-        }
-        if (
-          profile.specDraftPSplit !== undefined &&
-          profile.specDraftPSplit !== 0.1
-        ) {
-          spawnArgs.push('--draft-p-split', profile.specDraftPSplit.toFixed(2));
-        }
-        if (
-          profile.specDraftPMin !== undefined &&
-          profile.specDraftPMin !== 0.0
-        ) {
-          spawnArgs.push('--draft-p-min', profile.specDraftPMin.toFixed(2));
-        }
       }
 
       console.log(

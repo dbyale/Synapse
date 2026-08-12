@@ -31,7 +31,7 @@ import {
 } from './estimator';
 import { registerExtensionIpcHandlers } from './ipcExtensions';
 import type { SearchFilter } from '../renderer/preload.d';
-import type { CacheType } from '../renderer/types/profile';
+import type { CacheType, Profile } from '../renderer/types/profile';
 
 const execAsync = util.promisify(exec);
 
@@ -422,6 +422,41 @@ export function registerIpcHandlers(win: BrowserWindow): void {
   ipcMain.handle('chat:getCurrentProfile', () => {
     return chatService.getCurrentProfile();
   });
+
+  ipcMain.handle(
+    'chat:getLaunchArgs',
+    (
+      _event,
+      profile: Partial<Profile>,
+      resolved?: { ngl: number; ctx: number } | null,
+    ) => {
+      if (!profile?.modelFilename) return null;
+      const modelsDir = getModelsDirectory();
+      const modelPath = path.join(
+        modelsDir,
+        profile.modelAuthor ?? '',
+        profile.modelFolder ?? '',
+        profile.modelFilename,
+      );
+      const projectorPath = profile.projectorFilename
+        ? path.join(
+            modelsDir,
+            profile.modelAuthor ?? '',
+            profile.modelFolder ?? '',
+            'projectors',
+            profile.projectorFilename,
+          )
+        : undefined;
+      const ngl = resolved?.ngl ?? profile.layers ?? 0;
+      const ctx = resolved?.ctx ?? profile.contextSize ?? 512;
+      return chatService.buildLlamaServerArgs(profile, {
+        modelPath,
+        projectorPath,
+        ngl,
+        ctx,
+      });
+    },
+  );
 
   ipcMain.handle('chat:setThinkingTokens', (_event, tokens: number) => {
     chatService.setThinkingTokens(tokens);
