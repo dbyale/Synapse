@@ -248,7 +248,7 @@ export function buildLlamaServerArgs(
 
   // Mixture of Experts (MoE)
   if (profile.cpuMoe === true) spawnArgs.push('--cpu-moe');
-  if (profile.nCpuMoe !== undefined && profile.nCpuMoe > 0) {
+  if (profile.nCpuMoe !== undefined && profile.nCpuMoe > 0 && profile.cpuMoe !== true) {
     spawnArgs.push('--n-cpu-moe', profile.nCpuMoe.toString());
   }
 
