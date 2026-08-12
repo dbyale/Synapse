@@ -200,63 +200,19 @@ export function buildLlamaServerArgs(
   profile: Partial<Profile>,
   config: LlamaServerLaunchConfig,
 ): string[] {
-  const spawnArgs = [
-    '--model',
-    config.modelPath,
+  // Model Arguments
+  const spawnArgs = ['--model', config.modelPath];
+  if (config.projectorPath) {
+    spawnArgs.push('--mmproj', config.projectorPath);
+  }
+  spawnArgs.push(
     '--n-gpu-layers',
     (profile as any).gpuLayersAuto ? 'auto' : config.ngl.toString(),
     '--ctx-size',
     config.ctx.toString(),
-    '--port',
-    ((profile as any).port ?? 9931).toString(),
-    '--host',
-    (profile as any).host ?? '127.0.0.1',
-    '--parallel',
-    ((profile as any).parallel !== undefined &&
-    (profile as any).parallel !== -1
-      ? (profile as any).parallel
-      : 1
-    ).toString(),
-    '--metrics',
-    '--no-ui',
-  ];
-  if ((profile as any).corsOrigins && (profile as any).corsOrigins !== '*') {
-    spawnArgs.push('--cors-origins', (profile as any).corsOrigins);
-  }
-  if (
-    (profile as any).corsMethods &&
-    (profile as any).corsMethods !== 'GET, POST, DELETE, OPTIONS'
-  ) {
-    spawnArgs.push('--cors-methods', (profile as any).corsMethods);
-  }
-  if ((profile as any).corsHeaders && (profile as any).corsHeaders !== '*') {
-    spawnArgs.push('--cors-headers', (profile as any).corsHeaders);
-  }
-  if ((profile as any).corsCredentials === false) {
-    spawnArgs.push('--no-cors-credentials');
-  }
-  if (profile.kvOffload === false) spawnArgs.push('--no-kv-offload');
-  if (profile.mmap === false) spawnArgs.push('--no-mmap');
-  if (profile.mlock === true) spawnArgs.push('--mlock');
-  if (profile.repack === false) spawnArgs.push('--no-repack');
-  if ((profile as any).contextShift === true) spawnArgs.push('--context-shift');
-  spawnArgs.push('--cache-type-k', (profile as any).cacheTypeK ?? 'f16');
-  spawnArgs.push('--cache-type-v', (profile as any).cacheTypeV ?? 'f16');
-  if ((profile as any).flashAttn) {
-    spawnArgs.push('--flash-attn', (profile as any).flashAttn);
-  }
+  );
 
-  // Mixture of Experts (MoE)
-  if (profile.cpuMoe === true) spawnArgs.push('--cpu-moe');
-  if (profile.nCpuMoe !== undefined && profile.nCpuMoe > 0 && profile.cpuMoe !== true) {
-    spawnArgs.push('--n-cpu-moe', profile.nCpuMoe.toString());
-  }
-
-  if (config.projectorPath) {
-    spawnArgs.push('--mmproj', config.projectorPath);
-  }
-
-  // Draft model (speculative decoding)
+  // Draft Model Arguments
   if (profile.specType && profile.specType.length > 0) {
     spawnArgs.push('--spec-type', profile.specType.join(','));
 
@@ -305,6 +261,60 @@ export function buildLlamaServerArgs(
       spawnArgs.push('--draft-p-min', profile.specDraftPMin.toFixed(2));
     }
   }
+
+  // MoE Arguments
+  if (profile.cpuMoe === true) spawnArgs.push('--cpu-moe');
+  if (profile.nCpuMoe !== undefined && profile.nCpuMoe > 0 && profile.cpuMoe !== true) {
+    spawnArgs.push('--n-cpu-moe', profile.nCpuMoe.toString());
+  }
+
+  // Cache Arguments
+  if (profile.kvOffload === false) spawnArgs.push('--no-kv-offload');
+  if ((profile as any).flashAttn) {
+    spawnArgs.push('--flash-attn', (profile as any).flashAttn);
+  }
+  spawnArgs.push('--cache-type-k', (profile as any).cacheTypeK ?? 'f16');
+  spawnArgs.push('--cache-type-v', (profile as any).cacheTypeV ?? 'f16');
+
+  // Memory Arguments
+  if (profile.mmap === false) spawnArgs.push('--no-mmap');
+  if (profile.mlock === true) spawnArgs.push('--mlock');
+  if (profile.repack === false) spawnArgs.push('--no-repack');
+  if ((profile as any).contextShift === true) spawnArgs.push('--context-shift');
+
+  // Server Arguments
+  spawnArgs.push(
+    '--host',
+    (profile as any).host ?? '127.0.0.1',
+    '--port',
+    ((profile as any).port ?? 9931).toString(),
+    '--parallel',
+    ((profile as any).parallel !== undefined &&
+    (profile as any).parallel !== -1
+      ? (profile as any).parallel
+      : 1
+    ).toString(),
+  );
+
+  // CORS Arguments
+  if ((profile as any).corsCredentials === false) {
+    spawnArgs.push('--no-cors-credentials');
+  }
+  if ((profile as any).corsOrigins && (profile as any).corsOrigins !== '*') {
+    spawnArgs.push('--cors-origins', (profile as any).corsOrigins);
+  }
+  if (
+    (profile as any).corsMethods &&
+    (profile as any).corsMethods !== 'GET, POST, DELETE, OPTIONS'
+  ) {
+    spawnArgs.push('--cors-methods', (profile as any).corsMethods);
+  }
+  if ((profile as any).corsHeaders && (profile as any).corsHeaders !== '*') {
+    spawnArgs.push('--cors-headers', (profile as any).corsHeaders);
+  }
+
+  // Static Server Arguments
+  spawnArgs.push('--metrics', '--no-ui');
 
   return spawnArgs;
 }
