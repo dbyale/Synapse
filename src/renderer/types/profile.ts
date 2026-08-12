@@ -18,6 +18,10 @@ export interface Profile {
   modelFolder: string;
   modelFilename: string;
   projectorFilename?: string;
+  mmprojOffload?: boolean;
+  imageMinTokens?: number;
+  imageMaxTokens?: number;
+  mtmdBatchMaxTokens?: number;
   systemPrompt: string;
   temperature?: number;
   topK?: number;

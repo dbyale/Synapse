@@ -202,15 +202,47 @@ export function buildLlamaServerArgs(
 ): string[] {
   // Model Arguments
   const spawnArgs = ['--model', config.modelPath];
-  if (config.projectorPath) {
-    spawnArgs.push('--mmproj', config.projectorPath);
-  }
   spawnArgs.push(
     '--n-gpu-layers',
     (profile as any).gpuLayersAuto ? 'auto' : config.ngl.toString(),
     '--ctx-size',
     config.ctx.toString(),
   );
+
+  // Projector Arguments
+  if (config.projectorPath) {
+    spawnArgs.push('--mmproj', config.projectorPath);
+  }
+  if ((profile as any).mmprojOffload === false) {
+    spawnArgs.push('--no-mmproj-offload');
+  }
+  if (
+    (profile as any).imageMinTokens !== undefined &&
+    (profile as any).imageMinTokens > 0
+  ) {
+    spawnArgs.push(
+      '--image-min-tokens',
+      (profile as any).imageMinTokens.toString(),
+    );
+  }
+  if (
+    (profile as any).imageMaxTokens !== undefined &&
+    (profile as any).imageMaxTokens > 0
+  ) {
+    spawnArgs.push(
+      '--image-max-tokens',
+      (profile as any).imageMaxTokens.toString(),
+    );
+  }
+  if (
+    (profile as any).mtmdBatchMaxTokens !== undefined &&
+    (profile as any).mtmdBatchMaxTokens !== 1024
+  ) {
+    spawnArgs.push(
+      '--mtmd-batch-max-tokens',
+      (profile as any).mtmdBatchMaxTokens.toString(),
+    );
+  }
 
   // Draft Model Arguments
   if (profile.specType && profile.specType.length > 0) {

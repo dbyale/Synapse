@@ -38,6 +38,10 @@ import {
   PROFILE_NAME_TOOLTIP,
   MODEL_TOOLTIP,
   PROJECTOR_TOOLTIP,
+  MMPROJ_OFFLOAD_TOOLTIP,
+  IMAGE_MIN_TOKENS_TOOLTIP,
+  IMAGE_MAX_TOKENS_TOOLTIP,
+  MTMD_BATCH_MAX_TOKENS_TOOLTIP,
   TEMPERATURE_TOOLTIP,
   TOP_K_TOOLTIP,
   TOP_P_TOOLTIP,
@@ -1225,6 +1229,14 @@ function ProjectorPage({
   onOpenProjectorModal,
   editProjector,
   onNavigate,
+  editMmprojOffload,
+  setEditMmprojOffload,
+  editImageMinTokens,
+  setEditImageMinTokens,
+  editImageMaxTokens,
+  setEditImageMaxTokens,
+  editMtmdBatchMaxTokens,
+  setEditMtmdBatchMaxTokens,
 }: {
   selectedProjectorDisplay: {
     filename: string;
@@ -1234,6 +1246,14 @@ function ProjectorPage({
   onOpenProjectorModal: () => void;
   editProjector: string;
   onNavigate: (page: string) => void;
+  editMmprojOffload: boolean;
+  setEditMmprojOffload: (v: boolean) => void;
+  editImageMinTokens: string;
+  setEditImageMinTokens: (v: string) => void;
+  editImageMaxTokens: string;
+  setEditImageMaxTokens: (v: string) => void;
+  editMtmdBatchMaxTokens: string;
+  setEditMtmdBatchMaxTokens: (v: string) => void;
 }) {
   return (
     <>
@@ -1294,6 +1314,76 @@ function ProjectorPage({
             preview="Configure how video frames are extracted."
             onClick={() => onNavigate('video-settings')}
           />
+          <div className="epm-section" style={{ marginTop: '20px' }}>
+            <InfoTooltip
+              content="Llama-server flags controlling projector GPU offloading and image token budgets."
+              side="right"
+              hideIcon
+              title="Image Settings"
+            >
+              <div className="epm-section__label">Image Settings</div>
+            </InfoTooltip>
+            <label className="epm-perf-toggle-row">
+              <InfoTooltip
+                content={MMPROJ_OFFLOAD_TOOLTIP}
+                side="right"
+                stretch
+                className="info-tooltip-stretch--row"
+                title="MMProj GPU Offload"
+              >
+                <span className="epm-perf-toggle-label">
+                  MMProj GPU Offload
+                </span>
+                <div
+                  className={`epm-toggle-switch${editMmprojOffload ? ' epm-toggle-switch--on' : ''}`}
+                  onClick={() => setEditMmprojOffload(!editMmprojOffload)}
+                  role="switch"
+                  aria-checked={editMmprojOffload}
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === ' ' || e.key === 'Enter') {
+                      e.preventDefault();
+                      setEditMmprojOffload(!editMmprojOffload);
+                    }
+                  }}
+                >
+                  <div className="epm-toggle-switch__knob" />
+                </div>
+              </InfoTooltip>
+            </label>
+            <div className="epm-number-grid" style={{ marginTop: '16px' }}>
+              <NumberField
+                label="Image Min Tokens"
+                value={editImageMinTokens}
+                onChange={setEditImageMinTokens}
+                min="0"
+                step="1"
+                helper="Default: read from model"
+                tooltip={IMAGE_MIN_TOKENS_TOOLTIP}
+                tooltipTitle="Image Min Tokens"
+              />
+              <NumberField
+                label="Image Max Tokens"
+                value={editImageMaxTokens}
+                onChange={setEditImageMaxTokens}
+                min="0"
+                step="1"
+                helper="Default: read from model"
+                tooltip={IMAGE_MAX_TOKENS_TOOLTIP}
+                tooltipTitle="Image Max Tokens"
+              />
+              <NumberField
+                label="Batch Max Tokens (MTMD)"
+                value={editMtmdBatchMaxTokens}
+                onChange={setEditMtmdBatchMaxTokens}
+                min="0"
+                step="1"
+                helper="Default: 1024"
+                tooltip={MTMD_BATCH_MAX_TOKENS_TOOLTIP}
+                tooltipTitle="Batch Max Tokens (MTMD)"
+              />
+            </div>
+          </div>
         </div>
       )}
     </>
@@ -3237,6 +3327,20 @@ export default function EditProfileModal({
   const [editProjectorFilename, setEditProjectorFilename] = useState(
     profile?.projectorFilename ?? '',
   );
+  const [editMmprojOffload, setEditMmprojOffload] = useState<boolean>(
+    profile?.mmprojOffload ?? true,
+  );
+  const [editImageMinTokens, setEditImageMinTokens] = useState<string>(
+    profile?.imageMinTokens !== undefined ? String(profile.imageMinTokens) : '',
+  );
+  const [editImageMaxTokens, setEditImageMaxTokens] = useState<string>(
+    profile?.imageMaxTokens !== undefined ? String(profile.imageMaxTokens) : '',
+  );
+  const [editMtmdBatchMaxTokens, setEditMtmdBatchMaxTokens] = useState<string>(
+    profile?.mtmdBatchMaxTokens !== undefined
+      ? String(profile.mtmdBatchMaxTokens)
+      : '',
+  );
   const [editTools, setEditTools] = useState<string[]>(profile?.tools ?? []);
   const [editRpEnabled, setEditRpEnabled] = useState(
     profile?.repeatPenalty?.enabled !== false,
@@ -3422,6 +3526,10 @@ export default function EditProfileModal({
         modelFolder: editModelFolder,
         modelFilename: editModelFilename,
         projectorFilename: editProjectorFilename || undefined,
+        mmprojOffload: editMmprojOffload,
+        imageMinTokens: parseInt(editImageMinTokens, 10) || undefined,
+        imageMaxTokens: parseInt(editImageMaxTokens, 10) || undefined,
+        mtmdBatchMaxTokens: parseInt(editMtmdBatchMaxTokens, 10) || undefined,
         kvOffload: editKvOffload,
         mmap: editMmap,
         mlock: editMlock,
@@ -3481,6 +3589,10 @@ export default function EditProfileModal({
     editModelAuthor,
     editModelFolder,
     editProjectorFilename,
+    editMmprojOffload,
+    editImageMinTokens,
+    editImageMaxTokens,
+    editMtmdBatchMaxTokens,
     editKvOffload,
     editMmap,
     editMlock,
@@ -3761,6 +3873,16 @@ export default function EditProfileModal({
       modelFolder: editModelFolder,
       modelFilename: editModelFilename,
       projectorFilename: editProjectorFilename || undefined,
+      mmprojOffload: editMmprojOffload,
+      ...(parseInt(editImageMinTokens, 10) > 0
+        ? { imageMinTokens: parseInt(editImageMinTokens, 10) }
+        : {}),
+      ...(parseInt(editImageMaxTokens, 10) > 0
+        ? { imageMaxTokens: parseInt(editImageMaxTokens, 10) }
+        : {}),
+      ...(parseInt(editMtmdBatchMaxTokens, 10) > 0
+        ? { mtmdBatchMaxTokens: parseInt(editMtmdBatchMaxTokens, 10) }
+        : {}),
       systemPrompt: editSystemPrompt,
       temperature: parseFloat(editTemperature),
       topK: parseInt(editTopK, 10),
@@ -4131,6 +4253,14 @@ export default function EditProfileModal({
             onOpenProjectorModal={() => setShowProjectorModal(true)}
             editProjector={editProjectorFilename}
             onNavigate={navigateTo}
+            editMmprojOffload={editMmprojOffload}
+            setEditMmprojOffload={setEditMmprojOffload}
+            editImageMinTokens={editImageMinTokens}
+            setEditImageMinTokens={setEditImageMinTokens}
+            editImageMaxTokens={editImageMaxTokens}
+            setEditImageMaxTokens={setEditImageMaxTokens}
+            editMtmdBatchMaxTokens={editMtmdBatchMaxTokens}
+            setEditMtmdBatchMaxTokens={setEditMtmdBatchMaxTokens}
           />
         );
       case 'video-settings':

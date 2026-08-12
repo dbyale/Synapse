@@ -8,6 +8,33 @@ export const MODEL_TOOLTIP =
 export const PROJECTOR_TOOLTIP =
   'Optional multimodal projector for vision-language models (e.g., LLaVA). Required only when using a model that includes vision capabilities.';
 
+export const MMPROJ_OFFLOAD_TOOLTIP = [
+  'Controls whether the multimodal projector is offloaded to the GPU.',
+  'When enabled (default), projector weights are loaded into VRAM for faster vision processing.',
+  'Disable to keep the projector in CPU memory.',
+  'Flag: --mmproj-offload / --no-mmproj-offload (env: LLAMA_ARG_MMPROJ_OFFLOAD, default: enabled).',
+];
+
+export const IMAGE_MIN_TOKENS_TOOLTIP = [
+  'Minimum number of tokens each image can take.',
+  'Only used by vision models with dynamic resolution.',
+  'Default: read from model.',
+  'Flag: --image-min-tokens (env: LLAMA_ARG_IMAGE_MIN_TOKENS).',
+];
+
+export const IMAGE_MAX_TOKENS_TOOLTIP = [
+  'Maximum number of tokens each image can take.',
+  'Only used by vision models with dynamic resolution.',
+  'Default: read from model.',
+  'Flag: --image-max-tokens (env: LLAMA_ARG_IMAGE_MAX_TOKENS).',
+];
+
+export const MTMD_BATCH_MAX_TOKENS_TOOLTIP = [
+  'Maximum number of image tokens per batch when encoding images.',
+  'Default: 1024.',
+  'Flag: --mtmd-batch-max-tokens (env: LLAMA_ARG_MTMD_BATCH_MAX_TOKENS).',
+];
+
 // ── Advanced Generation Parameters ──
 
 export const TEMPERATURE_TOOLTIP = [
