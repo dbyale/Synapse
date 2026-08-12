@@ -218,7 +218,7 @@ export function buildLlamaServerArgs(
       : 1
     ).toString(),
     '--metrics',
-    '--no-webui',
+    '--no-ui',
   ];
   if ((profile as any).corsOrigins && (profile as any).corsOrigins !== '*') {
     spawnArgs.push('--cors-origins', (profile as any).corsOrigins);
