@@ -43,7 +43,7 @@ export function SourcesProvider({ children }: { children: ReactNode }) {
           const promoted = newSources.find(
             (s) => s.url === k.url && s.kind === 'top',
           );
-          return promoted ? { ...promoted } : k;
+          return promoted ? { ...k, kind: 'top' } : k;
         }),
       ];
       persistentSources = updated;

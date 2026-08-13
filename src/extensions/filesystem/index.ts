@@ -70,7 +70,7 @@ export const tools: Record<string, ExtensionToolDef> = {
         return {
           _response: `Read file: ${params.path} (${mimeType})`,
           _image: { url: dataUrl, altText: params.path },
-          _top_sources: [{ title: filename, url: params.path }],
+          _top_sources: [{ title: `Image: ${filename}`, url: params.path }],
         };
       } catch (error) {
         return {
@@ -366,7 +366,7 @@ export const tools: Record<string, ExtensionToolDef> = {
         return {
           _response: `Displayed image: ${params.path} (${mimeType})`,
           _image: { url: dataUrl, altText: params.alt_text || params.path },
-          _top_sources: [{ title: filename, url: params.path }],
+          _top_sources: [{ title: `Image: ${filename}`, url: params.path }],
         };
       } catch (error) {
         return {

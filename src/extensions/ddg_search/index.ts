@@ -169,6 +169,14 @@ async function runExtract(url: string): Promise<ExtractResult> {
   }
 }
 
+function siteNameFromUrl(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '') || url;
+  } catch {
+    return url;
+  }
+}
+
 function buildSourcesFromResults(
   results: unknown[],
 ): { title: string; url: string }[] {
@@ -609,7 +617,7 @@ export const tools: Record<string, ExtensionToolDef> = {
       const sliced = content.slice(start_index, start_index + max_length);
       return {
         _response: sliced || 'No content found at the specified index.',
-        _top_sources: [{ title: `Web Fetch: ${url}`, url }],
+        _top_sources: [{ title: siteNameFromUrl(url), url }],
       };
     },
   },
@@ -679,7 +687,7 @@ export const tools: Record<string, ExtensionToolDef> = {
         return {
           _response: `Displayed web image: ${url} (${mimeType})`,
           _image: { url: imageUrl, altText: params.alt_text || url },
-          _top_sources: [{ title: `Image: ${params.alt_text || url}`, url }],
+          _top_sources: [{ title: `Image: ${siteNameFromUrl(url)}`, url }],
         };
       } catch (err) {
         return {
@@ -747,7 +755,7 @@ export const tools: Record<string, ExtensionToolDef> = {
           _response: `Displayed image: ${params.display_id} (${mimeType})`,
           _image: { url: dataUrl, altText: params.display_id },
           _top_sources: [
-            { title: `Image: ${params.display_id}`, url: imageUrl },
+            { title: `Image: ${siteNameFromUrl(imageUrl)}`, url: imageUrl },
           ],
         };
       } catch (err) {
