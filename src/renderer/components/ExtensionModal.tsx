@@ -370,7 +370,9 @@ export default function ExtensionModal({
                             )}
                             {tool.meta.tags?.includes('sources') && (
                               <span className="em-tool-badge em-tool-badge--sources">
-                                Adds Sources
+                                {tool.meta.tags?.includes('top_source')
+                                  ? 'Adds Top Sources'
+                                  : 'Adds Sources'}
                               </span>
                             )}
                             {tool.meta.displayType === 'projector' && (

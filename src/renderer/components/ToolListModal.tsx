@@ -119,7 +119,9 @@ export default function ToolListModal({
                         )}
                         {tool.tags?.includes('sources') && (
                           <span className="tlm-tool-badge tlm-tool-badge--sources">
-                            Adds Sources
+                            {tool.tags?.includes('top_source')
+                              ? 'Adds Top Sources'
+                              : 'Adds Sources'}
                           </span>
                         )}
                         {tool.displayType === 'projector' && (
