@@ -28,6 +28,7 @@ import {
   FileText,
   X,
   SquareDashedText,
+  Copy,
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -606,6 +607,25 @@ export default function ChatPage() {
   const projectorWarningExitTimer = useRef<ReturnType<
     typeof setTimeout
   > | null>(null);
+
+  const [copiedMsgId, setCopiedMsgId] = useState<number | null>(null);
+  const copiedMsgTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const copyMessageText = useCallback((msg: Message) => {
+    const text =
+      msg.content.find((s) => s.type === 'normal')?.text ||
+      msg.content[0]?.text ||
+      '';
+    if (!text) return;
+    navigator.clipboard
+      .writeText(text)
+      .then(() => {
+        setCopiedMsgId(msg.id);
+        if (copiedMsgTimer.current) clearTimeout(copiedMsgTimer.current);
+        return setTimeout(() => setCopiedMsgId(null), 2000);
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     setShowSourcesButton(false);
@@ -2655,6 +2675,20 @@ export default function ChatPage() {
                   <Zap size={12} />
                   <span>{msg.stats.tokensPerSecond.toFixed(1)} t/s</span>
                 </div>
+                <button
+                  type="button"
+                  className={`chat-message__copy ${copiedMsgId === msg.id ? 'chat-message__copy--copied' : ''}`}
+                  onClick={() => copyMessageText(msg)}
+                  title="Copy response"
+                  aria-label="Copy response"
+                >
+                  {copiedMsgId === msg.id ? (
+                    <Check size={12} />
+                  ) : (
+                    <Copy size={12} />
+                  )}
+                  <span>{copiedMsgId === msg.id ? 'Copied' : 'Copy'}</span>
+                </button>
               </div>
             )}
           </div>

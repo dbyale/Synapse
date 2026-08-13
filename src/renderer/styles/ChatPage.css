@@ -1629,6 +1629,43 @@
   flex-shrink: 0;
 }
 
+.chat-message__copy {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 500;
+  font-family: inherit;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  transition: color 0.2s ease;
+}
+
+.chat-message__copy svg {
+  flex-shrink: 0;
+  transition: color 0.2s ease;
+}
+
+.chat-message__copy:hover {
+  color: var(--text-primary);
+}
+
+.chat-message__copy:hover svg {
+  color: var(--accent);
+}
+
+.chat-message__copy--copied,
+.chat-message__copy--copied:hover,
+.chat-message__copy--copied svg,
+.chat-message__copy--copied:hover svg {
+  color: var(--accent);
+}
+
 @keyframes stats-fade-in {
   from {
     opacity: 0;
