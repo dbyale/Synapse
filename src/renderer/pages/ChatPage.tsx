@@ -97,6 +97,10 @@ interface Message {
   promptStats?: GenerationStatsData;
 }
 
+// Session-scoped map of image search display IDs to their source URLs,
+// mirroring the displayImageStore in the ddg_search extension.
+const displayIdUrlMap: Record<string, string> = {};
+
 function formatBackend(backend: string): string {
   const platformMap: Record<string, string> = {
     win: 'Win',
@@ -1203,6 +1207,9 @@ export default function ChatPage() {
             const url = item.href || item.url || item.image;
             const title =
               item.title || item.content || item.name || url || 'Untitled';
+            if (item.display_id && item.image && typeof item.image === 'string') {
+              displayIdUrlMap[item.display_id] = item.image;
+            }
             if (url && typeof url === 'string') {
               newSources.push({ title, url, kind: 'other' });
             }
@@ -1225,6 +1232,26 @@ export default function ChatPage() {
           newSources.push({
             title,
             url: params.url,
+            kind: isTopSource ? 'top' : 'other',
+          });
+        }
+      } else if (toolName === 'display_image_by_id' && paramsStr) {
+        const params = JSON.parse(paramsStr);
+        const imageUrl = displayIdUrlMap[params.display_id];
+        if (imageUrl) {
+          newSources.push({
+            title: `Image: ${params.display_id}`,
+            url: imageUrl,
+            kind: isTopSource ? 'top' : 'other',
+          });
+        }
+      } else if (toolName === 'display_local_image' && paramsStr) {
+        const params = JSON.parse(paramsStr);
+        if (params.path) {
+          const filename = params.path.split(/[/\\]/).pop() || params.path;
+          newSources.push({
+            title: filename,
+            url: params.path,
             kind: isTopSource ? 'top' : 'other',
           });
         }

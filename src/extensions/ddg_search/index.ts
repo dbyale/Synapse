@@ -670,6 +670,7 @@ export const tools: Record<string, ExtensionToolDef> = {
         'The model can see the image through the projector. Use this after search_images to view specific results.',
       icon: 'Image',
       displayType: 'projector',
+      tags: ['sources', 'top_source'],
     },
     params: {
       type: 'object',

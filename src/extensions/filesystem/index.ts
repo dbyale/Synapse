@@ -331,6 +331,7 @@ export const tools: Record<string, ExtensionToolDef> = {
         'Reads a local image file and displays it inline. The model can see the image through the projector.',
       icon: 'Image',
       displayType: 'projector',
+      tags: ['sources', 'top_source'],
     },
     params: {
       type: 'object',
