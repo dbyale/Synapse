@@ -666,7 +666,7 @@
 }
 
 .chat-input-wrapper textarea {
-  flex: 1;
+  flex: none;
   min-width: 0;
   background: transparent;
   border: none;
