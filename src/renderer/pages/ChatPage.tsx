@@ -121,6 +121,20 @@ function formatBackend(backend: string): string {
   return `${os} ${arch} ${middle.join(' ')}`;
 }
 
+function stripMarkdown(text: string): string {
+  return text
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/`([^`]*)`/g, '$1')
+    .replace(/^```.*$/gm, '')
+    .replace(/^>\s?/gm, '')
+    .replace(/^[-*+]\s+/gm, '')
+    .replace(/^(\d+)[.)]\s+/gm, '$1. ')
+    .replace(/[*_~]+/g, '')
+    .replace(/<[^>]+>/g, '');
+}
+
 let persistentMessages: Message[] = [];
 let persistentLoadedProfileId: string = '';
 let persistentBackend: string | null = null;
@@ -2077,7 +2091,13 @@ export default function ChatPage() {
           >
             {(() => {
               const text = msg.content[0]?.text || '';
-              const collapsible = msg.role !== 'user' || text.length >= 20;
+              const outputText =
+                msg.content.find((s) => s.type === 'normal')?.text || text;
+              let collapsible = true;
+              if (msg.role === 'user') collapsible = text.length >= 20;
+              else if (msg.role === 'assistant') {
+                collapsible = stripMarkdown(outputText).trim().length >= 40;
+              }
               return (
                 <div
                   className="chat-message__label"
@@ -2129,7 +2149,8 @@ export default function ChatPage() {
                 </div>
               );
             })()}
-            {msg.collapsed && msg.role === 'user' ? (
+            {msg.collapsed &&
+            (msg.role === 'user' || msg.role === 'assistant') ? (
               <div
                 className="chat-message__bubble chat-message__bubble--collapsed"
                 role="button"
@@ -2158,7 +2179,16 @@ export default function ChatPage() {
                   }
                 }}
               >
-                {(msg.content[0]?.text || '').slice(0, 20)}…
+                {(() => {
+                  const outputText =
+                    msg.content.find((s) => s.type === 'normal')?.text ||
+                    msg.content[0]?.text ||
+                    '';
+                  if (msg.role === 'assistant') {
+                    return `${stripMarkdown(outputText).trim().slice(0, 40)}…`;
+                  }
+                  return `${outputText.slice(0, 20)}…`;
+                })()}
               </div>
             ) : (
               !msg.collapsed && (
