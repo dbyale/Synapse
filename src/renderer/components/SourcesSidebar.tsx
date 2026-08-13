@@ -4,6 +4,7 @@ import { FileText, Globe, X, Search } from 'lucide-react';
 export interface Source {
   title: string;
   url: string;
+  kind?: 'top' | 'other';
 }
 
 function getDomain(url: string): string {
@@ -45,6 +46,30 @@ function handleOpen(source: Source) {
   }
 }
 
+function SourceItem({ source }: { source: Source }) {
+  return (
+    <button
+      type="button"
+      key={source.url}
+      className="sources-sidebar__item"
+      onClick={() => handleOpen(source)}
+      title={source.url}
+    >
+      <div className="sources-sidebar__item-icon">
+        {isWebUrl(source.url) ? (
+          <Favicon url={source.url} />
+        ) : (
+          <FileText size={16} className="sources-sidebar__favicon-fallback" />
+        )}
+      </div>
+      <div className="sources-sidebar__item-content">
+        <span className="sources-sidebar__item-title">{source.title}</span>
+        <span className="sources-sidebar__item-url">{source.url}</span>
+      </div>
+    </button>
+  );
+}
+
 export default function SourcesSidebar({
   sources,
   onClose,
@@ -64,6 +89,9 @@ export default function SourcesSidebar({
         s.title.toLowerCase().includes(q) || s.url.toLowerCase().includes(q),
     );
   }, [sources, searchQuery]);
+
+  const topSources = filteredSources.filter((s) => s.kind === 'top');
+  const otherSources = filteredSources.filter((s) => s.kind !== 'top');
 
   return (
     <div
@@ -102,34 +130,35 @@ export default function SourcesSidebar({
               {searchQuery ? 'No matching sources' : 'No sources found'}
             </div>
           ) : (
-            filteredSources.map((source, i) => (
-              <button
-                type="button"
-                key={`${source.url}-${i}`}
-                className="sources-sidebar__item"
-                onClick={() => handleOpen(source)}
-                title={source.url}
-              >
-                <div className="sources-sidebar__item-icon">
-                  {isWebUrl(source.url) ? (
-                    <Favicon url={source.url} />
-                  ) : (
-                    <FileText
-                      size={16}
-                      className="sources-sidebar__favicon-fallback"
-                    />
+            <>
+              {topSources.length > 0 && (
+                <>
+                  <div className="sources-sidebar__group-title">
+                    Top Sources
+                  </div>
+                  {topSources.map((source) => (
+                    <SourceItem key={`top-${source.url}`} source={source} />
+                  ))}
+                  {otherSources.length > 0 && (
+                    <>
+                      <div className="sources-sidebar__group-title">
+                        Other Sources
+                      </div>
+                      {otherSources.map((source) => (
+                        <SourceItem
+                          key={`other-${source.url}`}
+                          source={source}
+                        />
+                      ))}
+                    </>
                   )}
-                </div>
-                <div className="sources-sidebar__item-content">
-                  <span className="sources-sidebar__item-title">
-                    {source.title}
-                  </span>
-                  <span className="sources-sidebar__item-url">
-                    {source.url}
-                  </span>
-                </div>
-              </button>
-            ))
+                </>
+              )}
+              {topSources.length === 0 &&
+                otherSources.map((source) => (
+                  <SourceItem key={source.url} source={source} />
+                ))}
+            </>
           )}
         </div>
       </div>

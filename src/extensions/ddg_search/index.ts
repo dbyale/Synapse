@@ -545,7 +545,7 @@ export const tools: Record<string, ExtensionToolDef> = {
         '  max_length (optional, default 5000) — maximum characters to return\n' +
         '  start_index (optional, default 0) — character offset to start from',
       icon: 'Globe',
-      tags: ['sources'],
+      tags: ['sources', 'top_source'],
     },
     params: {
       type: 'object',
@@ -594,7 +594,7 @@ export const tools: Record<string, ExtensionToolDef> = {
         'Fetches an image from a URL and displays it inline. The model can see the image through the projector.',
       icon: 'Image',
       displayType: 'projector',
-      tags: ['sources'],
+      tags: ['sources', 'top_source'],
     },
     params: {
       type: 'object',

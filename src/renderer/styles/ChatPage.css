@@ -931,6 +931,19 @@
   padding: 24px;
 }
 
+.sources-sidebar__group-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+  padding: 8px 8px 2px;
+}
+
+.sources-sidebar__group-title:not(:first-child) {
+  margin-top: 8px;
+}
+
 .sources-sidebar__item {
   display: flex;
   align-items: center;

@@ -1180,8 +1180,11 @@ export default function ChatPage() {
     toolName: string,
     resultStr: string,
     paramsStr?: string,
+    tags?: string[],
   ) {
-    const newSources: { title: string; url: string }[] = [];
+    const newSources: { title: string; url: string; kind: 'top' | 'other' }[] =
+      [];
+    const isTopSource = tags?.includes('top_source') ?? false;
 
     try {
       if (
@@ -1198,7 +1201,7 @@ export default function ChatPage() {
             const title =
               item.title || item.content || item.name || url || 'Untitled';
             if (url && typeof url === 'string') {
-              newSources.push({ title, url });
+              newSources.push({ title, url, kind: 'other' });
             }
           }
         }
@@ -1206,32 +1209,52 @@ export default function ChatPage() {
         const params = JSON.parse(paramsStr);
         if (params.url) {
           const title = `Web Fetch: ${params.url}`;
-          newSources.push({ title, url: params.url });
+          newSources.push({
+            title,
+            url: params.url,
+            kind: isTopSource ? 'top' : 'other',
+          });
         }
       } else if (toolName === 'display_web_image' && paramsStr) {
         const params = JSON.parse(paramsStr);
         if (params.url) {
           const title = `Image: ${params.alt_text || params.url}`;
-          newSources.push({ title, url: params.url });
+          newSources.push({
+            title,
+            url: params.url,
+            kind: isTopSource ? 'top' : 'other',
+          });
         }
       } else if (toolName === 'read_text_file' && paramsStr) {
         const params = JSON.parse(paramsStr);
         if (params.path) {
           const filename = params.path.split(/[/\\]/).pop() || params.path;
-          newSources.push({ title: filename, url: params.path });
+          newSources.push({
+            title: filename,
+            url: params.path,
+            kind: isTopSource ? 'top' : 'other',
+          });
         }
       } else if (toolName === 'read_media_file' && paramsStr) {
         const params = JSON.parse(paramsStr);
         if (params.path) {
           const filename = params.path.split(/[/\\]/).pop() || params.path;
-          newSources.push({ title: filename, url: params.path });
+          newSources.push({
+            title: filename,
+            url: params.path,
+            kind: isTopSource ? 'top' : 'other',
+          });
         }
       } else if (toolName === 'read_multiple_files' && paramsStr) {
         const params = JSON.parse(paramsStr);
         if (Array.isArray(params.paths)) {
           for (const filePath of params.paths) {
             const filename = filePath.split(/[/\\]/).pop() || filePath;
-            newSources.push({ title: filename, url: filePath });
+            newSources.push({
+              title: filename,
+              url: filePath,
+              kind: isTopSource ? 'top' : 'other',
+            });
           }
         }
       }
@@ -1443,6 +1466,7 @@ export default function ChatPage() {
           data.name,
           data.result,
           lastToolParamsRef.current[data.name],
+          data.tags,
         );
         setMessages((prevMessages) => {
           const updatedMessages = [...prevMessages];
