@@ -97,10 +97,6 @@ interface Message {
   promptStats?: GenerationStatsData;
 }
 
-// Session-scoped map of image search display IDs to their source URLs,
-// mirroring the displayImageStore in the ddg_search extension.
-const displayIdUrlMap: Record<string, string> = {};
-
 function formatBackend(backend: string): string {
   const platformMap: Record<string, string> = {
     win: 'Win',
@@ -599,7 +595,6 @@ export default function ChatPage() {
     toggleSources,
     isOpen: isSourcesOpen,
   } = useSourcesContext();
-  const lastToolParamsRef = useRef<Record<string, string>>({});
 
   const [showSourcesButton, setShowSourcesButton] = useState(false);
   const [projectorLoaded, setProjectorLoaded] = useState(false);
@@ -1183,119 +1178,40 @@ export default function ChatPage() {
     return () => clearInterval(interval);
   }, [selectedProfileId, modelLoading, loading, maxTokens, loadError]);
 
-  function addSourcesFromResult(
-    toolName: string,
-    resultStr: string,
-    paramsStr?: string,
-    tags?: string[],
-  ) {
-    const newSources: { title: string; url: string; kind: 'top' | 'other' }[] =
-      [];
-    const isTopSource = tags?.includes('top_source') ?? false;
-
-    try {
-      if (
-        toolName === 'search_web' ||
-        toolName === 'search_news' ||
-        toolName === 'search_videos' ||
-        toolName === 'search_images' ||
-        toolName === 'search_books'
-      ) {
-        const parsed = JSON.parse(resultStr);
-        if (parsed.success && Array.isArray(parsed.results)) {
-          for (const item of parsed.results) {
-            const url = item.href || item.url || item.image;
-            const title =
-              item.title || item.content || item.name || url || 'Untitled';
-            if (item.display_id && item.image && typeof item.image === 'string') {
-              displayIdUrlMap[item.display_id] = item.image;
-            }
-            if (url && typeof url === 'string') {
-              newSources.push({ title, url, kind: 'other' });
-            }
-          }
-        }
-      } else if (toolName === 'web_fetch' && paramsStr) {
-        const params = JSON.parse(paramsStr);
-        if (params.url) {
-          const title = `Web Fetch: ${params.url}`;
-          newSources.push({
-            title,
-            url: params.url,
-            kind: isTopSource ? 'top' : 'other',
-          });
-        }
-      } else if (toolName === 'display_web_image' && paramsStr) {
-        const params = JSON.parse(paramsStr);
-        if (params.url) {
-          const title = `Image: ${params.alt_text || params.url}`;
-          newSources.push({
-            title,
-            url: params.url,
-            kind: isTopSource ? 'top' : 'other',
-          });
-        }
-      } else if (toolName === 'display_image_by_id' && paramsStr) {
-        const params = JSON.parse(paramsStr);
-        const imageUrl = displayIdUrlMap[params.display_id];
-        if (imageUrl) {
-          newSources.push({
-            title: `Image: ${params.display_id}`,
-            url: imageUrl,
-            kind: isTopSource ? 'top' : 'other',
-          });
-        }
-      } else if (toolName === 'display_local_image' && paramsStr) {
-        const params = JSON.parse(paramsStr);
-        if (params.path) {
-          const filename = params.path.split(/[/\\]/).pop() || params.path;
-          newSources.push({
-            title: filename,
-            url: params.path,
-            kind: isTopSource ? 'top' : 'other',
-          });
-        }
-      } else if (toolName === 'read_text_file' && paramsStr) {
-        const params = JSON.parse(paramsStr);
-        if (params.path) {
-          const filename = params.path.split(/[/\\]/).pop() || params.path;
-          newSources.push({
-            title: filename,
-            url: params.path,
-            kind: isTopSource ? 'top' : 'other',
-          });
-        }
-      } else if (toolName === 'read_media_file' && paramsStr) {
-        const params = JSON.parse(paramsStr);
-        if (params.path) {
-          const filename = params.path.split(/[/\\]/).pop() || params.path;
-          newSources.push({
-            title: filename,
-            url: params.path,
-            kind: isTopSource ? 'top' : 'other',
-          });
-        }
-      } else if (toolName === 'read_multiple_files' && paramsStr) {
-        const params = JSON.parse(paramsStr);
-        if (Array.isArray(params.paths)) {
-          for (const filePath of params.paths) {
-            const filename = filePath.split(/[/\\]/).pop() || filePath;
-            newSources.push({
-              title: filename,
-              url: filePath,
-              kind: isTopSource ? 'top' : 'other',
-            });
-          }
-        }
+  const addSourcesFromToolResult = useCallback(
+    (
+      sources?: { title: string; url: string }[],
+      topSources?: { title: string; url: string }[],
+    ) => {
+      const newSources: {
+        title: string;
+        url: string;
+        kind: 'top' | 'other';
+      }[] = [];
+      if (Array.isArray(sources)) {
+        newSources.push(
+          ...sources.map((s) => ({
+            title: s.title,
+            url: s.url,
+            kind: 'other' as const,
+          })),
+        );
       }
-    } catch {
-      // Silently ignore parse errors
-    }
-
-    if (newSources.length > 0) {
-      addSources(newSources);
-    }
-  }
+      if (Array.isArray(topSources)) {
+        newSources.push(
+          ...topSources.map((s) => ({
+            title: s.title,
+            url: s.url,
+            kind: 'top' as const,
+          })),
+        );
+      }
+      if (newSources.length > 0) {
+        addSources(newSources);
+      }
+    },
+    [addSources],
+  );
 
   useEffect(() => {
     const removeTokenListener = window.electronAPI.onChatToken(
@@ -1466,7 +1382,6 @@ export default function ChatPage() {
 
     const unsubscribeFunctionCall = window.electronAPI.onChatFunctionCall(
       (data) => {
-        lastToolParamsRef.current[data.name] = data.params;
         setStreamingTool(null);
         setMessages((prevMessages) => {
           const updatedMessages = [...prevMessages];
@@ -1492,12 +1407,12 @@ export default function ChatPage() {
     const unsubscribeFunctionResult = window.electronAPI.onChatFunctionResult(
       (data) => {
         isReprocessing = true;
-        addSourcesFromResult(
-          data.name,
-          data.result,
-          lastToolParamsRef.current[data.name],
-          data.tags,
-        );
+        if (data.tags?.includes('sources')) {
+          addSourcesFromToolResult(
+            data._sources,
+            data.tags.includes('top_source') ? data._top_sources : undefined,
+          );
+        }
         setMessages((prevMessages) => {
           const updatedMessages = [...prevMessages];
           const lastMessage = updatedMessages[updatedMessages.length - 1];
@@ -1582,7 +1497,7 @@ export default function ChatPage() {
       removeSystemDoneListener();
       removeChatErrorListener();
     };
-  }, [refreshCumulativeTokens]);
+  }, [refreshCumulativeTokens, addSourcesFromToolResult]);
 
   useEffect(() => {
     const container = messagesContainerRef.current;

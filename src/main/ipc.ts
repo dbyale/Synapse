@@ -685,6 +685,8 @@ export function registerIpcHandlers(win: BrowserWindow): void {
           name,
           result: parsed.result,
           _image: parsed._image,
+          _sources: parsed._sources,
+          _top_sources: parsed._top_sources,
           tags,
         });
       } else if (event === 'input-request') {

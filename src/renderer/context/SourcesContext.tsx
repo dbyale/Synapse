@@ -37,7 +37,15 @@ export function SourcesProvider({ children }: { children: ReactNode }) {
           seen.add(s.url);
         }
       }
-      const updated = [...toPrepend, ...kept];
+      const updated = [
+        ...toPrepend,
+        ...kept.map((k) => {
+          const promoted = newSources.find(
+            (s) => s.url === k.url && s.kind === 'top',
+          );
+          return promoted ? { ...promoted } : k;
+        }),
+      ];
       persistentSources = updated;
       return updated;
     });

@@ -36,7 +36,12 @@ export const tools: Record<string, ExtensionToolDef> = {
       },
     },
     async handler(params: { path: string; head?: number; tail?: number }) {
-      return await readTextFile(params);
+      const result = await readTextFile(params);
+      const filename = params.path.split(/[/\\]/).pop() || params.path;
+      return {
+        _response: result,
+        _top_sources: [{ title: filename, url: params.path }],
+      };
     },
   },
   read_media_file: {
@@ -61,9 +66,11 @@ export const tools: Record<string, ExtensionToolDef> = {
     async handler(params: { path: string }) {
       try {
         const { dataUrl, mimeType } = await readMediaFileAsDataUrl(params);
+        const filename = params.path.split(/[/\\]/).pop() || params.path;
         return {
           _response: `Read file: ${params.path} (${mimeType})`,
           _image: { url: dataUrl, altText: params.path },
+          _top_sources: [{ title: filename, url: params.path }],
         };
       } catch (error) {
         return {
@@ -93,7 +100,12 @@ export const tools: Record<string, ExtensionToolDef> = {
       },
     },
     async handler(params: { paths: string[] }) {
-      return await readMultipleFiles(params);
+      const result = await readMultipleFiles(params);
+      const sources = params.paths.map((filePath) => {
+        const filename = filePath.split(/[/\\]/).pop() || filePath;
+        return { title: filename, url: filePath };
+      });
+      return { _response: result, _top_sources: sources };
     },
   },
   write_file: {
@@ -350,9 +362,11 @@ export const tools: Record<string, ExtensionToolDef> = {
     async handler(params: { path: string; alt_text?: string }) {
       try {
         const { dataUrl, mimeType } = await readMediaFileAsDataUrl(params);
+        const filename = params.path.split(/[/\\]/).pop() || params.path;
         return {
           _response: `Displayed image: ${params.path} (${mimeType})`,
           _image: { url: dataUrl, altText: params.alt_text || params.path },
+          _top_sources: [{ title: filename, url: params.path }],
         };
       } catch (error) {
         return {

@@ -278,6 +278,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       name: string;
       result: string;
       _image?: { url: string; altText?: string };
+      _sources?: { title: string; url: string }[];
+      _top_sources?: { title: string; url: string }[];
       tags?: string[];
     }) => void,
   ) => {
@@ -287,6 +289,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
         name: string;
         result: string;
         _image?: { url: string; altText?: string };
+        _sources?: { title: string; url: string }[];
+        _top_sources?: { title: string; url: string }[];
         tags?: string[];
       },
     ) => callback(data);

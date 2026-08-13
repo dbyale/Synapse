@@ -169,6 +169,33 @@ async function runExtract(url: string): Promise<ExtractResult> {
   }
 }
 
+function buildSourcesFromResults(
+  results: unknown[],
+): { title: string; url: string }[] {
+  return results
+    .map((item) => {
+      const record = item as Record<string, unknown>;
+      const url = record.href || record.url || record.image;
+      const title =
+        record.title || record.content || record.name || url || 'Untitled';
+      return { title: String(title), url: url ? String(url) : '' };
+    })
+    .filter((s) => s.url.length > 0);
+}
+
+function searchResultWithSources(raw: SearchResult): {
+  _response: SearchResult;
+  _sources: { title: string; url: string }[];
+} {
+  return {
+    _response: raw,
+    _sources:
+      raw.success && Array.isArray(raw.results)
+        ? buildSourcesFromResults(raw.results)
+        : [],
+  };
+}
+
 export const tools: Record<string, ExtensionToolDef> = {
   search_web: {
     meta: {
@@ -233,7 +260,7 @@ export const tools: Record<string, ExtensionToolDef> = {
       };
       if (params.timelimit)
         keywordArgs.timelimit = `'${escapePyString(params.timelimit)}'`;
-      return await runSearch('text', keywordArgs);
+      return searchResultWithSources(await runSearch('text', keywordArgs));
     },
   },
 
@@ -297,7 +324,7 @@ export const tools: Record<string, ExtensionToolDef> = {
       };
       if (params.timelimit)
         keywordArgs.timelimit = `'${escapePyString(params.timelimit)}'`;
-      return await runSearch('news', keywordArgs);
+      return searchResultWithSources(await runSearch('news', keywordArgs));
     },
   },
 
@@ -401,7 +428,7 @@ export const tools: Record<string, ExtensionToolDef> = {
           }
         }
       }
-      return raw;
+      return searchResultWithSources(raw);
     },
   },
 
@@ -489,7 +516,7 @@ export const tools: Record<string, ExtensionToolDef> = {
         keywordArgs.license_videos = `'${escapePyString(params.license_videos)}'`;
       if (params.timelimit)
         keywordArgs.timelimit = `'${escapePyString(params.timelimit)}'`;
-      return await runSearch('videos', keywordArgs);
+      return searchResultWithSources(await runSearch('videos', keywordArgs));
     },
   },
 
@@ -528,7 +555,7 @@ export const tools: Record<string, ExtensionToolDef> = {
         query: `'${escapePyString(params.query)}'`,
         max_results: String(Math.min(params.max_results ?? 10, 50)),
       };
-      return await runSearch('books', keywordArgs);
+      return searchResultWithSources(await runSearch('books', keywordArgs));
     },
   },
 
@@ -580,7 +607,10 @@ export const tools: Record<string, ExtensionToolDef> = {
       }
       const content = result.content || '';
       const sliced = content.slice(start_index, start_index + max_length);
-      return sliced || 'No content found at the specified index.';
+      return {
+        _response: sliced || 'No content found at the specified index.',
+        _top_sources: [{ title: `Web Fetch: ${url}`, url }],
+      };
     },
   },
   display_web_image: {
@@ -649,6 +679,7 @@ export const tools: Record<string, ExtensionToolDef> = {
         return {
           _response: `Displayed web image: ${url} (${mimeType})`,
           _image: { url: imageUrl, altText: params.alt_text || url },
+          _top_sources: [{ title: `Image: ${params.alt_text || url}`, url }],
         };
       } catch (err) {
         return {
@@ -715,6 +746,9 @@ export const tools: Record<string, ExtensionToolDef> = {
         return {
           _response: `Displayed image: ${params.display_id} (${mimeType})`,
           _image: { url: dataUrl, altText: params.display_id },
+          _top_sources: [
+            { title: `Image: ${params.display_id}`, url: imageUrl },
+          ],
         };
       } catch (err) {
         return {

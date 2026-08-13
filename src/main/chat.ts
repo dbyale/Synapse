@@ -1096,6 +1096,14 @@ export async function sendMessage(
           modelContent = result._response;
           imageData = result._image ?? null;
         }
+        const sourcesData =
+          result && typeof result === 'object' && '_sources' in result
+            ? result._sources
+            : undefined;
+        const topSourcesData =
+          result && typeof result === 'object' && '_top_sources' in result
+            ? result._top_sources
+            : undefined;
 
         const resultStr = JSON.stringify(modelContent);
         if (lastUsage) {
@@ -1111,6 +1119,8 @@ export async function sendMessage(
           if (imageData && tc.name !== 'read_media_file') {
             payload._image = imageData;
           }
+          if (sourcesData) payload._sources = sourcesData;
+          if (topSourcesData) payload._top_sources = topSourcesData;
           emitFunctionEvent('result', tc.name, JSON.stringify(payload), chatFunctions[tc.name]?.tags);
         }
         messageHistory.push({
