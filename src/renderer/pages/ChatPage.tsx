@@ -590,6 +590,7 @@ export default function ChatPage() {
 
   const {
     addSources,
+    clearSources,
     closeSources,
     toggleSources,
     isOpen: isSourcesOpen,
@@ -920,6 +921,7 @@ export default function ChatPage() {
 
   const startNewChatWithProfile = async (profileId: string | null) => {
     setMessages([]);
+    clearSources();
     setStreamingTool(null);
     persistentMessages = [];
     messageCounter.current = 0;
@@ -1031,6 +1033,7 @@ export default function ChatPage() {
       setUsedTokens(0);
       setMaxTokens(null);
       setMessages([]);
+      clearSources();
       setStreamingTool(null);
       setBackend(null);
       persistentMessages = [];
@@ -1111,7 +1114,7 @@ export default function ChatPage() {
     return () => {
       abortController.cancelled = true;
     };
-  }, [selectedProfileId]);
+  }, [selectedProfileId, clearSources]);
 
   useEffect(() => {
     const interval = setInterval(() => {
