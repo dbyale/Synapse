@@ -146,7 +146,9 @@ export default function SessionsSidebar({
     >
       <div className="sessions-sidebar" style={{ width: 320, minWidth: 320 }}>
         <div className="sessions-sidebar__header">
-          <span className="sessions-sidebar__title">Sessions</span>
+          <span className="sessions-sidebar__title">
+            {profileName || 'Sessions'}
+          </span>
           <button
             type="button"
             className="sessions-sidebar__close"
