@@ -844,10 +844,29 @@
    SESSIONS BUTTON (standalone floating at top-left of chat page)
    ============================================================================ */
 
-.chat-sessions-button {
+.info-tooltip-wrapper--chat-sessions {
   position: absolute;
   top: 0;
   left: 0;
+  width: 36px;
+  height: 36px;
+}
+
+.info-tooltip-wrapper--chat-sessions-new {
+  position: absolute;
+  top: 44px;
+  left: 0;
+  width: 36px;
+  height: 36px;
+}
+
+.info-tooltip-wrapper--chat-sessions:hover,
+.info-tooltip-wrapper--chat-sessions-new:hover,
+.info-tooltip-wrapper--chat-sources:hover {
+  z-index: 20;
+}
+
+.chat-sessions-button {
   width: 36px;
   height: 36px;
   border-radius: var(--radius-md);
@@ -868,18 +887,19 @@
   border-color: var(--accent);
 }
 
-.chat-sessions-button--new {
-  top: 44px;
-}
-
 /* ============================================================================
    SOURCES BUTTON (standalone floating at top-right of chat page)
    ============================================================================ */
 
-.chat-sources-button {
+.info-tooltip-wrapper--chat-sources {
   position: absolute;
   top: 0;
   right: 0;
+  width: 36px;
+  height: 36px;
+}
+
+.chat-sources-button {
   width: 36px;
   height: 36px;
   border-radius: var(--radius-md);

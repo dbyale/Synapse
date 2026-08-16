@@ -41,6 +41,7 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import UserInputModal from '../components/UserInputModal';
 import ProfileSelectModal from '../components/ProfileSelectModal';
 import SessionsSidebar from '../components/SessionsSidebar';
+import InfoTooltip from '../components/InfoTooltip';
 import ThinkingDropdown from '../components/ThinkingDropdown';
 import SavingsModal from '../components/SavingsModal';
 import { useSourcesContext } from '../context/SourcesContext';
@@ -2085,41 +2086,56 @@ export default function ChatPage() {
         </div>
 
         {showSourcesButton && (
-          <button
-            type="button"
-            className={`chat-sources-button${isSourcesOpen ? ' chat-sources-button--active' : ''}`}
-            onClick={(e) => {
-              e.stopPropagation();
-              toggleSources();
-            }}
-            title="Sources"
+          <InfoTooltip
+            content="Sources"
+            hideIcon
+            className="info-tooltip-wrapper--chat-sources"
           >
-            <SquareDashedText size={18} />
-          </button>
+            <button
+              type="button"
+              className={`chat-sources-button${isSourcesOpen ? ' chat-sources-button--active' : ''}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleSources();
+              }}
+            >
+              <SquareDashedText size={18} />
+            </button>
+          </InfoTooltip>
         )}
 
-        <button
-          type="button"
-          className="chat-sessions-button"
-          onClick={(e) => {
-            e.stopPropagation();
-            setSidebarCollapsed((v) => !v);
-          }}
-          title={sidebarCollapsed ? 'Show Sessions' : 'Hide Sessions'}
+        <InfoTooltip
+          content="Sessions"
+          hideIcon
+          className="info-tooltip-wrapper--chat-sessions"
         >
-          <MessagesSquare size={18} />
-        </button>
-        <button
-          type="button"
-          className="chat-sessions-button chat-sessions-button--new"
-          onClick={(e) => {
-            e.stopPropagation();
-            handleNewChat();
-          }}
-          title="New Chat"
+          <button
+            type="button"
+            className="chat-sessions-button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setSidebarCollapsed((v) => !v);
+            }}
+          >
+            <MessagesSquare size={18} />
+          </button>
+        </InfoTooltip>
+        <InfoTooltip
+          content="New Session"
+          hideIcon
+          className="info-tooltip-wrapper--chat-sessions-new"
         >
-          <SquarePen size={18} />
-        </button>
+          <button
+            type="button"
+            className="chat-sessions-button chat-sessions-button--new"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleNewChat();
+            }}
+          >
+            <SquarePen size={18} />
+          </button>
+        </InfoTooltip>
 
         {userInputRequest && userInputRequest.sessionId === activeSessionId && (
           <UserInputModal
@@ -2921,22 +2937,27 @@ export default function ChatPage() {
 
         <div className="chat-input-wrapper">
           <div className="chat-input-row">
-            <button
-              type="button"
-              className="chat-attach-button"
-              onClick={() => setShowImageModal(true)}
-              title={
+            <InfoTooltip
+              content={
                 canAttachImages
                   ? 'Attach images, videos, or documents'
                   : 'Attach documents'
               }
+              hideIcon
+              side="top"
             >
-              {canAttachImages ? (
-                <ImagePlus size={18} />
-              ) : (
-                <FilePlusCorner size={18} />
-              )}
-            </button>
+              <button
+                type="button"
+                className="chat-attach-button"
+                onClick={() => setShowImageModal(true)}
+              >
+                {canAttachImages ? (
+                  <ImagePlus size={18} />
+                ) : (
+                  <FilePlusCorner size={18} />
+                )}
+              </button>
+            </InfoTooltip>
 
             <div className="chat-input-inner">
               {pendingMedia.length > 0 && (
