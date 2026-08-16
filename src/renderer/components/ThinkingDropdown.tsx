@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Lightbulb, LightbulbOff } from 'lucide-react';
+import InfoTooltip from './InfoTooltip';
 import './styles/ThinkingDropdown.css';
 
 const THINKING_OPTIONS = [
@@ -10,6 +11,15 @@ const THINKING_OPTIONS = [
   { label: 'High', tokens: 8192, tokenLabel: '8192 tokens' },
   { label: 'Max', tokens: -1, tokenLabel: 'Unlimited tokens' },
 ] as const;
+
+const THINKING_BUDGET_TOOLTIP = [
+  'Controls how many tokens the model may spend reasoning before it answers.',
+  'Off — answers immediately, no extra thinking.',
+  'Low (512) — brief thinking for simple questions.',
+  'Medium (2048) — balanced for everyday tasks.',
+  'High (8192) — deeper reasoning for complex problems.',
+  'Max — unlimited thinking for the most thorough answers.',
+];
 
 const DEFAULT_THINKING_TOKENS = 8192;
 const VALID_TOKENS = new Set(THINKING_OPTIONS.map((o) => o.tokens));
@@ -87,47 +97,64 @@ export default function ThinkingDropdown({
 
   return (
     <>
-      <button
-        ref={buttonRef}
-        type="button"
-        className="chat-thinking-button"
-        onClick={toggle}
-        title="Thinking budget"
+      <InfoTooltip
+        content="Select Reasoning Effort"
+        hideIcon
+        className="info-tooltip-wrapper--chat-thinking"
       >
-        {tokens === 0 ? <LightbulbOff size={14} /> : <Lightbulb size={14} />}
-        <span className="chat-thinking-button__label">{currentOpt.label}</span>
-      </button>
+        <button
+          ref={buttonRef}
+          type="button"
+          className="chat-thinking-button"
+          onClick={toggle}
+        >
+          {tokens === 0 ? <LightbulbOff size={14} /> : <Lightbulb size={14} />}
+          <span className="chat-thinking-button__label">
+            {currentOpt.label}
+          </span>
+        </button>
+      </InfoTooltip>
       {open &&
         rect &&
         createPortal(
           <div
-            ref={menuRef}
-            className="chat-thinking-dropdown"
+            className="chat-thinking-popover"
             style={{
               left: rect.left,
               bottom: window.innerHeight - rect.top + 8,
             }}
           >
-            {THINKING_OPTIONS.map((opt) => {
-              const Icon = opt.tokens === 0 ? LightbulbOff : Lightbulb;
-              const isActive = tokens === opt.tokens;
-              return (
-                <button
-                  key={opt.tokens}
-                  type="button"
-                  className={`chat-thinking-dropdown__item${isActive ? ' chat-thinking-dropdown__item--active' : ''}`}
-                  onClick={() => select(opt.tokens)}
-                >
-                  <Icon size={14} />
-                  <span className="chat-thinking-dropdown__label">
-                    {opt.label}
-                  </span>
-                  <span className="chat-thinking-dropdown__tokens">
-                    {opt.tokenLabel}
-                  </span>
-                </button>
-              );
-            })}
+            <div ref={menuRef} className="chat-thinking-dropdown">
+              {THINKING_OPTIONS.map((opt) => {
+                const Icon = opt.tokens === 0 ? LightbulbOff : Lightbulb;
+                const isActive = tokens === opt.tokens;
+                return (
+                  <button
+                    key={opt.tokens}
+                    type="button"
+                    className={`chat-thinking-dropdown__item${isActive ? ' chat-thinking-dropdown__item--active' : ''}`}
+                    onClick={() => select(opt.tokens)}
+                  >
+                    <Icon size={14} />
+                    <span className="chat-thinking-dropdown__label">
+                      {opt.label}
+                    </span>
+                    <span className="chat-thinking-dropdown__tokens">
+                      {opt.tokenLabel}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            <InfoTooltip
+              title="Thinking Budget"
+              content={THINKING_BUDGET_TOOLTIP}
+              hideIcon
+              side="right"
+              className="info-tooltip-wrapper--always"
+            >
+              <span className="chat-thinking-tooltip-anchor" />
+            </InfoTooltip>
           </div>,
           document.body,
         )}

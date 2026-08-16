@@ -251,6 +251,140 @@ body,
   visibility: visible;
 }
 
+/* ── Always-visible variant (e.g. inline info panels) ── */
+.info-tooltip-wrapper--always .info-tooltip {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.info-tooltip-wrapper--always.info-tooltip-wrapper--right .info-tooltip {
+  transform: translateY(-50%) translateX(0);
+}
+
+/* ── Portal mode (bubbles rendered at document.body) ── */
+.info-tooltip--portal {
+  position: fixed;
+  opacity: 1;
+  visibility: visible;
+}
+
+.info-tooltip--portal--bottom::after {
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border-color: transparent transparent var(--border) transparent;
+}
+
+.info-tooltip--portal--bottom::before {
+  bottom: calc(100% - 1px);
+  left: 50%;
+  transform: translateX(-50%);
+  border-color: transparent transparent var(--bg-input) transparent;
+}
+
+.info-tooltip--portal--top::after {
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border-color: var(--border) transparent transparent transparent;
+}
+
+.info-tooltip--portal--top::before {
+  top: calc(100% - 1px);
+  left: 50%;
+  transform: translateX(-50%);
+  border-color: var(--bg-input) transparent transparent transparent;
+}
+
+.info-tooltip--portal--left::after {
+  right: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  border-color: transparent var(--border) transparent transparent;
+}
+
+.info-tooltip--portal--left::before {
+  right: calc(100% - 1px);
+  top: 50%;
+  transform: translateY(-50%);
+  border-color: transparent var(--bg-input) transparent transparent;
+}
+
+.info-tooltip--portal--right::after {
+  left: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  border-color: transparent transparent transparent var(--border);
+}
+
+.info-tooltip--portal--right::before {
+  left: calc(100% - 1px);
+  top: 50%;
+  transform: translateY(-50%);
+  border-color: transparent transparent transparent var(--bg-input);
+}
+
+@keyframes info-tooltip-portal-in-bottom {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+@keyframes info-tooltip-portal-in-top {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+@keyframes info-tooltip-portal-in-left {
+  from {
+    opacity: 0;
+    transform: translateY(-50%) translateX(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(-50%) translateX(0);
+  }
+}
+
+@keyframes info-tooltip-portal-in-right {
+  from {
+    opacity: 0;
+    transform: translateY(-50%) translateX(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(-50%) translateX(0);
+  }
+}
+
+.info-tooltip--portal--bottom {
+  animation: info-tooltip-portal-in-bottom 0.2s ease;
+}
+
+.info-tooltip--portal--top {
+  animation: info-tooltip-portal-in-top 0.2s ease;
+}
+
+.info-tooltip--portal--left {
+  animation: info-tooltip-portal-in-left 0.2s ease;
+}
+
+.info-tooltip--portal--right {
+  animation: info-tooltip-portal-in-right 0.2s ease;
+}
+
 /* ── Arrow ── */
 .info-tooltip::after {
   content: '';

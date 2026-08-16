@@ -6,7 +6,7 @@
   background: transparent;
   border: 1px solid var(--border);
   border-radius: 6px;
-  color: var(--text-secondary);
+  color: color-mix(in srgb, var(--text-secondary) 70%, transparent);
   font-size: 11px;
   font-weight: 500;
   padding: 2px 6px;
@@ -15,7 +15,11 @@
   transition: all 0.15s ease;
   line-height: 1;
   font-family: inherit;
+}
+
+.info-tooltip-wrapper--chat-thinking {
   justify-self: start;
+  width: max-content;
 }
 
 .chat-thinking-button:hover {
@@ -36,6 +40,30 @@
   padding: 4px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
   z-index: 1000;
+}
+
+.chat-thinking-popover {
+  position: fixed;
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+  z-index: 1000;
+}
+
+.chat-thinking-popover .chat-thinking-dropdown {
+  position: static;
+  margin: 0;
+  flex-shrink: 0;
+}
+
+.chat-thinking-popover .info-tooltip-wrapper {
+  align-self: stretch;
+}
+
+.chat-thinking-tooltip-anchor {
+  display: block;
+  width: 0;
+  height: 100%;
 }
 
 .chat-thinking-dropdown__item {

@@ -2,6 +2,12 @@
   position: relative;
 }
 
+.dl-manager .info-tooltip-wrapper--open .info-tooltip,
+.dl-manager .info-tooltip-wrapper--open:hover .info-tooltip {
+  opacity: 0;
+  visibility: hidden;
+}
+
 .dl-manager__btn {
   display: flex;
   align-items: center;

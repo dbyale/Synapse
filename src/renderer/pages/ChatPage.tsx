@@ -78,6 +78,46 @@ type PendingMedia =
   | { id: string; type: 'video'; file: File; objectUrl: string }
   | { id: string; type: 'document'; name: string; content: string };
 
+const TOKEN_COUNTER_TOOLTIP = [
+  "Shows how many tokens this session has used out of the model's context window.",
+  'Turns yellow at 75% and red at 90% usage as a warning.',
+  'Once full, the model can no longer remember earlier messages — start a new session to reset.',
+];
+
+const GENERATION_SPEED_TOOLTIP = [
+  'Shows how fast the model is generating tokens while it answers.',
+  'Higher speeds mean faster responses — speed depends on model size and hardware.',
+  'Measured in tokens per second (t/s).',
+];
+
+const PROMPT_TOKENS_STAT_TOOLTIP = [
+  'Tokens the model reads in to understand your message.',
+];
+const PROMPT_TIME_STAT_TOOLTIP = [
+  'How long the model took to process the prompt.',
+];
+const PROMPT_SPEED_STAT_TOOLTIP = [
+  'How fast the model processes prompt tokens per second.',
+];
+const GENERATED_TOKENS_STAT_TOOLTIP = [
+  'Tokens the model wrote as part of its response.',
+];
+const GENERATION_TIME_STAT_TOOLTIP = [
+  'How long the model spent writing the response.',
+];
+const GENERATION_SPEED_STAT_TOOLTIP = [
+  'How fast the model writes tokens per second.',
+];
+const REPROCESS_TOKENS_STAT_TOOLTIP = [
+  'Tokens the model re-read when using this tool.',
+];
+const REPROCESS_TIME_STAT_TOOLTIP = [
+  'How long the model took to reprocess when using this tool.',
+];
+const REPROCESS_SPEED_STAT_TOOLTIP = [
+  'How fast the model reprocesses tokens per second.',
+];
+
 function formatBackend(backend: string): string {
   const platformMap: Record<string, string> = {
     win: 'Win',
@@ -199,12 +239,41 @@ function ToolCallSegment({
         ) : null}
         {showInlineStats && segment.reprocessStats && (
           <span className="tool-call-segment__header-stats">
-            <Hash size={10} />
-            <span>{segment.reprocessStats.tokens}</span>
-            <Timer size={10} />
-            <span>{(segment.reprocessStats.timeMs / 1000).toFixed(1)}s</span>
-            <Zap size={10} />
-            <span>{segment.reprocessStats.tokensPerSecond.toFixed(1)}</span>
+            <InfoTooltip
+              title="Reprocessing tokens"
+              content={REPROCESS_TOKENS_STAT_TOOLTIP}
+              hideIcon
+              portal
+            >
+              <span className="tool-call-segment__header-stat">
+                <Hash size={10} />
+                <span>{segment.reprocessStats.tokens}</span>
+              </span>
+            </InfoTooltip>
+            <InfoTooltip
+              title="Reprocessing time"
+              content={REPROCESS_TIME_STAT_TOOLTIP}
+              hideIcon
+              portal
+            >
+              <span className="tool-call-segment__header-stat">
+                <Timer size={10} />
+                <span>
+                  {(segment.reprocessStats.timeMs / 1000).toFixed(1)}s
+                </span>
+              </span>
+            </InfoTooltip>
+            <InfoTooltip
+              title="Reprocessing speed"
+              content={REPROCESS_SPEED_STAT_TOOLTIP}
+              hideIcon
+              portal
+            >
+              <span className="tool-call-segment__header-stat">
+                <Zap size={10} />
+                <span>{segment.reprocessStats.tokensPerSecond.toFixed(1)}</span>
+              </span>
+            </InfoTooltip>
           </span>
         )}
         {segment.toolParams || segment.toolResult ? (
@@ -2054,35 +2123,42 @@ export default function ChatPage() {
             size={18}
             style={{ color: 'var(--text-secondary)', flexShrink: 0 }}
           />
-          <button
-            type="button"
-            className="chat-model-selector__button"
-            onClick={() => setShowProfileModal(true)}
-            disabled={profiles.length === 0}
+          <InfoTooltip
+            content="Select Profile"
+            hideIcon
+            className="info-tooltip-wrapper--chat-profile-select"
           >
-            <span className="chat-model-selector__button-text">
-              {selectedProfileId
-                ? profiles.find((p) => p.id === selectedProfileId)?.name
-                : profiles.length === 0
-                  ? 'No profiles available'
-                  : 'Select a profile...'}
-            </span>
-            <ChevronDown size={16} className="chat-model-selector__chevron" />
-          </button>
+            <button
+              type="button"
+              className="chat-model-selector__button"
+              onClick={() => setShowProfileModal(true)}
+              disabled={profiles.length === 0}
+            >
+              <span className="chat-model-selector__button-text">
+                {selectedProfileId
+                  ? profiles.find((p) => p.id === selectedProfileId)?.name
+                  : profiles.length === 0
+                    ? 'No profiles available'
+                    : 'Select a profile...'}
+              </span>
+              <ChevronDown size={16} className="chat-model-selector__chevron" />
+            </button>
+          </InfoTooltip>
 
           {modelLoading && !loadError && (
             <span className="chat-model-loading-label">Loading...</span>
           )}
           {loadError && <span className="chat-model-error-label">Error</span>}
 
-          <button
-            type="button"
-            className="chat-system-prompt-button"
-            onClick={() => navigate('/profiles')}
-            title="Manage Profiles"
-          >
-            <SlidersHorizontal size={18} />
-          </button>
+          <InfoTooltip content="Manage Profiles" hideIcon>
+            <button
+              type="button"
+              className="chat-system-prompt-button"
+              onClick={() => navigate('/profiles')}
+            >
+              <SlidersHorizontal size={18} />
+            </button>
+          </InfoTooltip>
         </div>
 
         {showSourcesButton && (
@@ -2429,37 +2505,51 @@ export default function ChatPage() {
                                   </div>
                                   {group.stats && (
                                     <div className="tool-call-group__stats">
-                                      <div
-                                        className="chat-stat-item"
+                                      <InfoTooltip
                                         title="Prompt tokens"
+                                        content={PROMPT_TOKENS_STAT_TOOLTIP}
+                                        hideIcon
+                                        portal
                                       >
-                                        <Hash size={12} />
-                                        <span>{group.stats.tokens} tokens</span>
-                                      </div>
-                                      <div
-                                        className="chat-stat-item"
+                                        <div className="chat-stat-item">
+                                          <Hash size={12} />
+                                          <span>
+                                            {group.stats.tokens} tokens
+                                          </span>
+                                        </div>
+                                      </InfoTooltip>
+                                      <InfoTooltip
                                         title="Prompt processing time"
+                                        content={PROMPT_TIME_STAT_TOOLTIP}
+                                        hideIcon
+                                        portal
                                       >
-                                        <Timer size={12} />
-                                        <span>
-                                          {(group.stats.timeMs / 1000).toFixed(
-                                            2,
-                                          )}
-                                          s
-                                        </span>
-                                      </div>
-                                      <div
-                                        className="chat-stat-item"
+                                        <div className="chat-stat-item">
+                                          <Timer size={12} />
+                                          <span>
+                                            {(
+                                              group.stats.timeMs / 1000
+                                            ).toFixed(2)}
+                                            s
+                                          </span>
+                                        </div>
+                                      </InfoTooltip>
+                                      <InfoTooltip
                                         title="Prompt processing speed"
+                                        content={PROMPT_SPEED_STAT_TOOLTIP}
+                                        hideIcon
+                                        portal
                                       >
-                                        <Zap size={12} />
-                                        <span>
-                                          {group.stats.tokensPerSecond.toFixed(
-                                            1,
-                                          )}{' '}
-                                          t/s
-                                        </span>
-                                      </div>
+                                        <div className="chat-stat-item">
+                                          <Zap size={12} />
+                                          <span>
+                                            {group.stats.tokensPerSecond.toFixed(
+                                              1,
+                                            )}{' '}
+                                            t/s
+                                          </span>
+                                        </div>
+                                      </InfoTooltip>
                                     </div>
                                   )}
                                 </div>
@@ -2766,26 +2856,43 @@ export default function ChatPage() {
               {(msg.role === 'user' || msg.role === 'system') &&
                 msg.promptStats && (
                   <div className="chat-message__stats">
-                    <div className="chat-stat-item" title="Prompt tokens">
-                      <Hash size={12} />
-                      <span>{msg.promptStats.tokens} tokens</span>
-                    </div>
-                    <div
-                      className="chat-stat-item"
+                    <InfoTooltip
+                      title="Prompt tokens"
+                      content={PROMPT_TOKENS_STAT_TOOLTIP}
+                      hideIcon
+                      portal
+                    >
+                      <div className="chat-stat-item">
+                        <Hash size={12} />
+                        <span>{msg.promptStats.tokens} tokens</span>
+                      </div>
+                    </InfoTooltip>
+                    <InfoTooltip
                       title="Prompt processing time"
+                      content={PROMPT_TIME_STAT_TOOLTIP}
+                      hideIcon
+                      portal
                     >
-                      <Timer size={12} />
-                      <span>{(msg.promptStats.timeMs / 1000).toFixed(2)}s</span>
-                    </div>
-                    <div
-                      className="chat-stat-item"
+                      <div className="chat-stat-item">
+                        <Timer size={12} />
+                        <span>
+                          {(msg.promptStats.timeMs / 1000).toFixed(2)}s
+                        </span>
+                      </div>
+                    </InfoTooltip>
+                    <InfoTooltip
                       title="Prompt processing speed"
+                      content={PROMPT_SPEED_STAT_TOOLTIP}
+                      hideIcon
+                      portal
                     >
-                      <Zap size={12} />
-                      <span>
-                        {msg.promptStats.tokensPerSecond.toFixed(1)} t/s
-                      </span>
-                    </div>
+                      <div className="chat-stat-item">
+                        <Zap size={12} />
+                        <span>
+                          {msg.promptStats.tokensPerSecond.toFixed(1)} t/s
+                        </span>
+                      </div>
+                    </InfoTooltip>
                     {msg.role === 'user' && msg.content[0]?.text && (
                       <button
                         type="button"
@@ -2810,18 +2917,39 @@ export default function ChatPage() {
               {/* Display generation statistics below assistant responses */}
               {msg.role === 'assistant' && msg.stats && (
                 <div className="chat-message__stats">
-                  <div className="chat-stat-item" title="Tokens generated">
-                    <Hash size={12} />
-                    <span>{msg.stats.tokens} tokens</span>
-                  </div>
-                  <div className="chat-stat-item" title="Generation time">
-                    <Timer size={12} />
-                    <span>{(msg.stats.timeMs / 1000).toFixed(2)}s</span>
-                  </div>
-                  <div className="chat-stat-item" title="Generation speed">
-                    <Zap size={12} />
-                    <span>{msg.stats.tokensPerSecond.toFixed(1)} t/s</span>
-                  </div>
+                  <InfoTooltip
+                    title="Tokens generated"
+                    content={GENERATED_TOKENS_STAT_TOOLTIP}
+                    hideIcon
+                    portal
+                  >
+                    <div className="chat-stat-item">
+                      <Hash size={12} />
+                      <span>{msg.stats.tokens} tokens</span>
+                    </div>
+                  </InfoTooltip>
+                  <InfoTooltip
+                    title="Generation time"
+                    content={GENERATION_TIME_STAT_TOOLTIP}
+                    hideIcon
+                    portal
+                  >
+                    <div className="chat-stat-item">
+                      <Timer size={12} />
+                      <span>{(msg.stats.timeMs / 1000).toFixed(2)}s</span>
+                    </div>
+                  </InfoTooltip>
+                  <InfoTooltip
+                    title="Generation speed"
+                    content={GENERATION_SPEED_STAT_TOOLTIP}
+                    hideIcon
+                    portal
+                  >
+                    <div className="chat-stat-item">
+                      <Zap size={12} />
+                      <span>{msg.stats.tokensPerSecond.toFixed(1)} t/s</span>
+                    </div>
+                  </InfoTooltip>
                   <button
                     type="button"
                     className={`chat-message__copy ${copiedMsgId === msg.id ? 'chat-message__copy--copied' : ''}`}
@@ -3051,29 +3179,35 @@ export default function ChatPage() {
             <span className="chat-backend-indicator">
               {backend ? formatBackend(backend) : ''}
             </span>
-            <span>
+            <span className="chat-token-counter__stats">
               {loading && tps > 0 && (
-                <span
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    marginRight: '10px',
-                    opacity: 0.75,
-                  }}
+                <InfoTooltip
+                  title="Generation Speed"
+                  content={GENERATION_SPEED_TOOLTIP}
+                  hideIcon
+                  side="top"
                 >
-                  <Gauge size={13} />
-                  {tps.toFixed(1)} t/s
-                </span>
+                  <span
+                    className="chat-token-counter__tps"
+                    style={{ marginRight: '10px', opacity: 0.75 }}
+                  >
+                    <Gauge size={13} />
+                    {tps.toFixed(1)} t/s
+                  </span>
+                </InfoTooltip>
               )}
-              {maxTokens !== null ? (
-                <span>
-                  {usedTokens.toLocaleString()} / {maxTokens.toLocaleString()}{' '}
-                  tokens
+              <InfoTooltip
+                title="Token Counter"
+                content={TOKEN_COUNTER_TOOLTIP}
+                hideIcon
+                side="top"
+              >
+                <span className="chat-token-counter__tokens">
+                  {maxTokens !== null
+                    ? `${usedTokens.toLocaleString()} / ${maxTokens.toLocaleString()} tokens`
+                    : '— / — tokens'}
                 </span>
-              ) : (
-                <span>— / — tokens</span>
-              )}
+              </InfoTooltip>
             </span>
           </div>
         </div>

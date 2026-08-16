@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { Download, RefreshCw, Play, X } from 'lucide-react';
 import type { DownloadProgress } from '../preload.d';
 import { formatGB, formatSpeed, formatETA } from '../utils/formatters';
+import InfoTooltip from './InfoTooltip';
 import '../styles/DownloadManager.css';
 
 interface ActiveDL {
@@ -235,17 +236,23 @@ export default function DownloadManager() {
 
   return (
     <div className="dl-manager" ref={ref}>
-      <button
-        type="button"
-        className={`dl-manager__btn ${open ? 'dl-manager__btn--active' : ''}`}
-        onClick={() => setOpen(!open)}
-        title="Downloads"
+      <InfoTooltip
+        content="Downloads"
+        hideIcon
+        portal={!open}
+        className={`info-tooltip-wrapper--dl-manager${open ? ' info-tooltip-wrapper--open' : ''}`}
       >
-        <Download size={18} />
-        {activeCount > 0 && (
-          <span className="dl-manager__badge">{activeCount}</span>
-        )}
-      </button>
+        <button
+          type="button"
+          className={`dl-manager__btn ${open ? 'dl-manager__btn--active' : ''}`}
+          onClick={() => setOpen(!open)}
+        >
+          <Download size={18} />
+          {activeCount > 0 && (
+            <span className="dl-manager__badge">{activeCount}</span>
+          )}
+        </button>
+      </InfoTooltip>
 
       {open && (
         <div className="dl-manager__popup">
