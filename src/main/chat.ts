@@ -3,6 +3,7 @@ import { spawn, exec, ChildProcess } from 'child_process';
 import { app } from 'electron';
 import path from 'path';
 import util from 'util';
+import { randomUUID } from 'crypto';
 import { graphics } from 'systeminformation';
 import {
   loadSettings,
@@ -12,12 +13,21 @@ import {
 import type { Profile } from '../renderer/types/profile';
 import { createChatFunctions } from './chatFunctions';
 import { solveMaxConfig, getOrRunOptimizer } from './estimator';
-import {
-  addTokenUsage,
-  addWebSearch,
-  getUsage,
-} from './usage';
+import { addTokenUsage, addWebSearch, getUsage } from './usage';
 import type { UsageStore } from '../renderer/utils/usage';
+import * as store from './sessionStore';
+import type {
+  ChatHistoryMsg,
+  GenerationStatsData,
+  MediaDisplayItem,
+  Message,
+  MessageSegment,
+  SavedSession,
+  SessionStatus,
+  StreamEventPayload,
+  UserInputRequest,
+  UserInputResponse,
+} from '../shared/chatTypes';
 
 export interface GenerationStats {
   tokens: number;
@@ -31,64 +41,54 @@ export interface SendMessageResponse {
   promptStats?: GenerationStats;
 }
 
+export type { SessionStatus };
+export type { UserInputRequest, UserInputResponse, StreamEventPayload };
+
+interface PendingToolInput {
+  request: UserInputRequest;
+  resolve: (value: UserInputResponse) => void;
+  reject: (err: Error) => void;
+}
+
+interface SessionStream {
+  sessionId: string;
+  profileId: string;
+  title: string;
+  createdAt: number;
+  messages: Message[];
+  history: ChatHistoryMsg[];
+  status: SessionStatus;
+  abortController: AbortController | null;
+  currentReader: ReadableStreamDefaultReader<Uint8Array> | null;
+  aborted: boolean;
+  failed: boolean;
+  messageCounter: number;
+  segmentCounter: number;
+  toolQueue: string[];
+  pendingSegmentIds: string[];
+  pendingInput: PendingToolInput | null;
+  isReprocessing: boolean;
+  systemInserted: boolean;
+  streamingTool: { name: string; text: string } | null;
+  promptProgress: number;
+}
+
 // --- State ---
 let serverProcess: ChildProcess | null = null;
-let messageHistory: any[] = [];
-let abortController: AbortController | null = null;
-let currentReader: ReadableStreamDefaultReader<Uint8Array> | null = null;
-let aborted = false;
 let currentProfile: Profile | null = null;
 let currentProjector: string | null = null;
 let chatFunctions: any = null;
 let activeTools: any[] = [];
-let emitFunctionEvent: any = null;
+let emitStreamEvent: ((payload: StreamEventPayload) => void) | null = null;
+
+const sessions = new Map<string, SessionStream>();
+
+let currentSystemPrompt = '';
+let lastPreloadStats: { stats: GenerationStatsData; toolCount: number } | null =
+  null;
 
 // Ensures only one loadProfile() runs at a time
 let loadProfileMutex: Promise<void> = Promise.resolve();
-
-// --- Pending user input ---
-let pendingInputResolve: ((value: UserInputResponse) => void) | null = null;
-let pendingInputReject: ((err: Error) => void) | null = null;
-
-export interface UserInputRequest {
-  requestId: string;
-  type: 'confirm' | 'select' | 'freeform';
-  title: string;
-  prompt: string;
-  options?: string[];
-  toolName: string;
-  toolParams: any;
-}
-
-export interface UserInputResponse {
-  action: 'confirmed' | 'denied' | 'selected';
-  value?: string;
-}
-
-export function waitForUserInput(): Promise<UserInputResponse> {
-  return new Promise((resolve, reject) => {
-    pendingInputResolve = resolve;
-    pendingInputReject = reject;
-  });
-}
-
-export function resolveUserInput(response: UserInputResponse): boolean {
-  if (pendingInputResolve) {
-    pendingInputResolve(response);
-    pendingInputResolve = null;
-    pendingInputReject = null;
-    return true;
-  }
-  return false;
-}
-
-export function cancelPendingInput(): void {
-  if (pendingInputReject) {
-    pendingInputReject(new Error('User input request cancelled'));
-    pendingInputResolve = null;
-    pendingInputReject = null;
-  }
-}
 
 let preloadAbortController: AbortController | null = null;
 let lastResolvedMemory: any = null;
@@ -100,6 +100,186 @@ export function getCumulativeTokenUsage(): UsageStore {
 }
 
 const execAsync = util.promisify(exec);
+
+export function setStreamEventCallback(
+  cb: (payload: StreamEventPayload) => void,
+) {
+  emitStreamEvent = cb;
+}
+
+// --- Stream event helpers ---
+function emit(payload: StreamEventPayload): void {
+  emitStreamEvent?.(payload);
+}
+
+function emitSessionChanged(sessionId: string): void {
+  const s = sessions.get(sessionId);
+  emit({
+    type: 'session-changed',
+    sessionId,
+    streaming: s ? s.status !== 'idle' : false,
+  });
+}
+
+class SlotUnavailableError extends Error {
+  constructor() {
+    super('No generation slot is free');
+    this.name = 'SlotUnavailableError';
+  }
+}
+
+function isSlotUnavailableError(status: number, message: string): boolean {
+  if (status === 503) return true;
+  return /no slot is free|no available slot|slot.*(not.*free|busy)/i.test(
+    message,
+  );
+}
+
+function persistSessionState(sessionId: string): void {
+  const s = sessions.get(sessionId);
+  if (!s) return;
+  const saved: SavedSession = {
+    id: s.sessionId,
+    profileId: s.profileId,
+    title: s.title,
+    createdAt: s.createdAt,
+    updatedAt: Date.now(),
+    messages: store.sanitizeMessagesForStorage(s.messages),
+    history: s.history,
+  };
+  store.saveSession(saved);
+}
+
+function getSessionState(sessionId: string): SessionStream | null {
+  let s = sessions.get(sessionId);
+  if (!s) {
+    // Rebuild in-memory state from the persisted store (e.g. after a restart
+    // or when a session was never loaded into memory).
+    const stored = store.getSession(sessionId);
+    if (!stored) return null;
+    s = {
+      sessionId,
+      profileId: stored.profileId,
+      title: stored.title,
+      createdAt: stored.createdAt,
+      messages: stored.messages,
+      history: stored.history,
+      status: 'idle',
+      abortController: null,
+      currentReader: null,
+      aborted: false,
+      failed: false,
+      messageCounter: stored.messages.reduce(
+        (max, m) => Math.max(max, m.id + 1),
+        0,
+      ),
+      segmentCounter: 0,
+      toolQueue: [],
+      pendingSegmentIds: [],
+      pendingInput: null,
+      isReprocessing: false,
+      systemInserted: stored.messages.some((m) => m.role === 'system'),
+      streamingTool: null,
+      promptProgress: 0,
+    };
+    sessions.set(sessionId, s);
+  }
+  return s;
+}
+
+// --- Pending user input (per session) ---
+function waitForSessionInput(
+  s: SessionStream,
+  request: UserInputRequest,
+): Promise<UserInputResponse> {
+  return new Promise((resolve, reject) => {
+    s.pendingInput = { request, resolve, reject };
+  });
+}
+
+export function resolveUserInput(
+  sessionId: string,
+  response: UserInputResponse,
+): boolean {
+  const s = sessions.get(sessionId);
+  if (!s?.pendingInput) return false;
+  s.pendingInput.resolve(response);
+  s.pendingInput = null;
+  emit({ type: 'user-input-resolved', sessionId });
+  emitSessionChanged(sessionId);
+  return true;
+}
+
+function cancelPendingInput(s: SessionStream): void {
+  if (s.pendingInput) {
+    s.pendingInput.reject(new Error('User input request cancelled'));
+    s.pendingInput = null;
+  }
+}
+
+// --- Session lifecycle ---
+export function startSession(profileId: string, title: string): string {
+  const sessionId = randomUUID();
+  const state: SessionStream = {
+    sessionId,
+    profileId,
+    title: title.trim() || 'Untitled session',
+    createdAt: Date.now(),
+    messages: [],
+    history: [],
+    status: 'idle',
+    abortController: null,
+    currentReader: null,
+    aborted: false,
+    failed: false,
+    messageCounter: 0,
+    segmentCounter: 0,
+    toolQueue: [],
+    pendingSegmentIds: [],
+    pendingInput: null,
+    isReprocessing: false,
+    systemInserted: false,
+    streamingTool: null,
+    promptProgress: 0,
+  };
+  sessions.set(sessionId, state);
+  persistSessionState(sessionId);
+  emitSessionChanged(sessionId);
+  return sessionId;
+}
+
+export function getSessionView(sessionId: string) {
+  const s = getSessionState(sessionId);
+  if (!s) return null;
+  return {
+    session: {
+      id: s.sessionId,
+      profileId: s.profileId,
+      title: s.title,
+      createdAt: s.createdAt,
+      updatedAt: Date.now(),
+      messages: s.messages,
+      history: s.history,
+    },
+    status: s.status,
+    streaming: s.status !== 'idle',
+    streamingTool: s.streamingTool,
+    progress: s.promptProgress,
+    pendingInput: s.pendingInput?.request ?? null,
+  };
+}
+
+export function deleteSession(sessionId: string): void {
+  const s = sessions.get(sessionId);
+  if (s) {
+    s.aborted = true;
+    cancelPendingInput(s);
+    s.abortController?.abort();
+    sessions.delete(sessionId);
+  }
+  store.deleteSession(sessionId);
+  emitSessionChanged(sessionId);
+}
 
 async function getNvidiaDriverVersion(): Promise<number | null> {
   try {
@@ -173,10 +353,6 @@ async function detectBackend(): Promise<string> {
   }
 
   return 'win-cpu-x64';
-}
-
-export function setEmitFunctionCallback(cb: any) {
-  emitFunctionEvent = cb;
 }
 
 function getServerUrl(path: string = ''): string {
@@ -262,23 +438,11 @@ export function buildLlamaServerArgs(
       spawnArgs.push('--spec-draft-model', draftModelPath);
     }
 
-    if (
-      profile.specDraftNMax !== undefined &&
-      profile.specDraftNMax !== 3
-    ) {
-      spawnArgs.push(
-        '--spec-draft-n-max',
-        profile.specDraftNMax.toString(),
-      );
+    if (profile.specDraftNMax !== undefined && profile.specDraftNMax !== 3) {
+      spawnArgs.push('--spec-draft-n-max', profile.specDraftNMax.toString());
     }
-    if (
-      profile.specDraftNMin !== undefined &&
-      profile.specDraftNMin !== 0
-    ) {
-      spawnArgs.push(
-        '--spec-draft-n-min',
-        profile.specDraftNMin.toString(),
-      );
+    if (profile.specDraftNMin !== undefined && profile.specDraftNMin !== 0) {
+      spawnArgs.push('--spec-draft-n-min', profile.specDraftNMin.toString());
     }
     if (
       profile.specDraftPSplit !== undefined &&
@@ -286,17 +450,18 @@ export function buildLlamaServerArgs(
     ) {
       spawnArgs.push('--draft-p-split', profile.specDraftPSplit.toFixed(2));
     }
-    if (
-      profile.specDraftPMin !== undefined &&
-      profile.specDraftPMin !== 0.0
-    ) {
+    if (profile.specDraftPMin !== undefined && profile.specDraftPMin !== 0.0) {
       spawnArgs.push('--draft-p-min', profile.specDraftPMin.toFixed(2));
     }
   }
 
   // MoE Arguments
   if (profile.cpuMoe === true) spawnArgs.push('--cpu-moe');
-  if (profile.nCpuMoe !== undefined && profile.nCpuMoe > 0 && profile.cpuMoe !== true) {
+  if (
+    profile.nCpuMoe !== undefined &&
+    profile.nCpuMoe > 0 &&
+    profile.cpuMoe !== true
+  ) {
     spawnArgs.push('--n-cpu-moe', profile.nCpuMoe.toString());
   }
 
@@ -321,8 +486,7 @@ export function buildLlamaServerArgs(
     '--port',
     ((profile as any).port ?? 9931).toString(),
     '--parallel',
-    ((profile as any).parallel !== undefined &&
-    (profile as any).parallel !== -1
+    ((profile as any).parallel !== undefined && (profile as any).parallel !== -1
       ? (profile as any).parallel
       : 1
     ).toString(),
@@ -402,13 +566,10 @@ function buildChatBody(messages: any[], tools: any[]): Record<string, any> {
   // Thinking / reasoning budget
   // Mirrors the llama.cpp webui (tools/ui/src/lib/services/chat.service.ts): thinking is
   // toggled via chat_template_kwargs.enable_thinking, budgeted per-request via
-  // thinking_budget_tokens, and reasoning is parsed into reasoning_content via reasoning_format.
-  // Off (0) and Max (-1) omit the budget so the server default (no cap) applies.
+  // reasoning_budget_tokens, and reasoning is parsed into reasoning_content via reasoning_format.
   const thinkingTokens = p?.thinkingTokens ?? 8192;
   body.reasoning_format = 'auto';
-  if (thinkingTokens > 0) {
-    body.thinking_budget_tokens = thinkingTokens;
-  }
+  body.reasoning_budget_tokens = thinkingTokens;
   body.chat_template_kwargs = {
     ...(body.chat_template_kwargs ?? {}),
     enable_thinking: thinkingTokens !== 0,
@@ -506,6 +667,7 @@ export async function preloadSystemPrompt(
     } else {
       promptStats = { tokens: 0, timeMs: 0, tokensPerSecond: 0 };
     }
+    lastPreloadStats = { stats: promptStats, toolCount: tools.length };
     onDone(promptStats, tools.length);
   };
 
@@ -594,6 +756,10 @@ export async function preloadSystemPrompt(
                   timeMs: time_ms || 0,
                   tokensPerSecond: timeS > 0 ? newTokens / timeS : 0,
                 };
+                lastPreloadStats = {
+                  stats: promptStats,
+                  toolCount: tools.length,
+                };
                 if (onDone) onDone(promptStats, tools.length);
               }
               continue;
@@ -606,6 +772,7 @@ export async function preloadSystemPrompt(
                 tokensPerSecond: data.timings?.prompt_per_second || 0,
               };
               promptStats = pFromUsage;
+              lastPreloadStats = { stats: pFromUsage, toolCount: tools.length };
               if (onDone) onDone(pFromUsage, tools.length);
             }
           } catch (e) {}
@@ -628,9 +795,14 @@ export async function preloadSystemPrompt(
 export async function loadProfile(
   profile: Profile,
   onStatus?: (data: { phase: string; message: string }) => void,
-): Promise<{ success: boolean; error?: string; profile?: any }> {
+): Promise<{
+  success: boolean;
+  error?: string;
+  profile?: any;
+  backend?: string;
+}> {
   const prevMutex = loadProfileMutex;
-  let releaseMutex: () => void;
+  let releaseMutex: () => void = () => {};
   loadProfileMutex = new Promise<void>((r) => {
     releaseMutex = r;
   });
@@ -824,7 +996,8 @@ export async function loadProfile(
 
       onStatus?.({ phase: 'ready', message: '' });
       currentProfile = profile;
-      messageHistory = [{ role: 'system', content: resolvedSystemPrompt }];
+      currentSystemPrompt = resolvedSystemPrompt;
+      lastPreloadStats = null;
 
       if (updatedProfile) {
         return {
@@ -839,28 +1012,241 @@ export async function loadProfile(
       return { success: false, error: error.message };
     }
   } finally {
-    releaseMutex?.();
+    releaseMutex();
   }
 }
 
+// --- Message construction (mirrors the renderer's display logic) ---
+function appendAssistantToken(
+  s: SessionStream,
+  token: string,
+  segmentType?: 'thought' | 'comment' | 'tool',
+): void {
+  const messages = s.messages;
+  const last = messages[messages.length - 1];
+
+  let currentType: 'thought' | 'comment' | 'normal' = 'normal';
+  if (segmentType === 'thought') currentType = 'thought';
+  else if (segmentType === 'comment') currentType = 'comment';
+
+  if (last && last.role === 'assistant') {
+    const updatedContent = [...last.content];
+    const lastSegment = updatedContent[updatedContent.length - 1];
+
+    if (lastSegment && lastSegment.type === currentType) {
+      updatedContent[updatedContent.length - 1] = {
+        ...lastSegment,
+        text: lastSegment.text + token,
+      };
+    } else {
+      s.segmentCounter += 1;
+      updatedContent.push({
+        id: `seg-${Date.now()}-${s.segmentCounter}`,
+        text: token,
+        type: currentType,
+      });
+    }
+
+    s.messages = [
+      ...messages.slice(0, -1),
+      { ...last, content: updatedContent },
+    ];
+    return;
+  }
+
+  const id = s.messageCounter;
+  s.messageCounter += 1;
+
+  let initialType: 'thought' | 'comment' | 'normal' = 'normal';
+  if (segmentType === 'thought') initialType = 'thought';
+  else if (segmentType === 'comment') initialType = 'comment';
+
+  s.segmentCounter += 1;
+  s.messages = [
+    ...messages,
+    {
+      id,
+      role: 'assistant',
+      content: [
+        {
+          id: `seg-${Date.now()}-${s.segmentCounter}`,
+          text: token.replace(/^\s+/, ''),
+          type: initialType,
+        },
+      ],
+    },
+  ];
+}
+
+function handleFunctionCalling(s: SessionStream, name: string): void {
+  const updatedMessages = [...s.messages];
+  const lastMessage = updatedMessages[updatedMessages.length - 1];
+
+  const segId = randomUUID();
+  s.pendingSegmentIds.push(segId);
+
+  const toolSegment: MessageSegment = {
+    id: segId,
+    text: '',
+    type: 'tool',
+    toolName: name,
+    toolStatus: 'calling',
+  };
+
+  if (lastMessage?.role === 'assistant') {
+    lastMessage.content = [...lastMessage.content, toolSegment];
+  } else {
+    const assistantMessage: Message = {
+      id: s.messageCounter,
+      role: 'assistant',
+      content: [toolSegment],
+    };
+    s.messageCounter += 1;
+    updatedMessages.push(assistantMessage);
+  }
+
+  s.toolQueue.push(toolSegment.id);
+  s.messages = updatedMessages;
+  s.streamingTool = {
+    name,
+    text: s.streamingTool?.name === name ? (s.streamingTool.text ?? '') : '',
+  };
+}
+
+function handleFunctionCall(
+  s: SessionStream,
+  name: string,
+  params: string,
+): void {
+  s.streamingTool = null;
+  const updatedMessages = [...s.messages];
+  const lastMessage = updatedMessages[updatedMessages.length - 1];
+
+  if (lastMessage?.role === 'assistant' && s.toolQueue[0]) {
+    const toolSegment = lastMessage.content.find(
+      (seg) => seg.id === s.toolQueue[0],
+    );
+    if (toolSegment && toolSegment.type === 'tool') {
+      toolSegment.toolParams = params;
+    }
+  }
+
+  s.messages = updatedMessages;
+}
+
+function handleFunctionResult(s: SessionStream, payload: any): void {
+  s.isReprocessing = true;
+  const updatedMessages = [...s.messages];
+  const lastMessage = updatedMessages[updatedMessages.length - 1];
+
+  if (lastMessage?.role === 'assistant' && s.toolQueue[0]) {
+    const toolSegment = lastMessage.content.find(
+      (seg) => seg.id === s.toolQueue[0],
+    );
+    if (toolSegment && toolSegment.type === 'tool') {
+      toolSegment.toolStatus = 'done';
+      toolSegment.toolResult = payload.result;
+      const imgData = payload._image;
+      if (imgData) {
+        toolSegment.displayedImage = {
+          url: imgData.url,
+          altText: imgData.altText,
+        };
+      }
+    }
+  }
+
+  s.toolQueue.shift();
+  s.messages = updatedMessages;
+}
+
+function handlePromptDone(
+  s: SessionStream,
+  promptStats: GenerationStatsData,
+): void {
+  if (s.isReprocessing) {
+    s.isReprocessing = false;
+    if (s.pendingSegmentIds.length > 0) {
+      const ids = s.pendingSegmentIds.splice(0);
+      const updated = [...s.messages];
+      const last = updated[updated.length - 1];
+      if (last?.role === 'assistant') {
+        updated[updated.length - 1] = {
+          ...last,
+          content: last.content.map((seg) =>
+            seg.type === 'tool' && ids.includes(seg.id)
+              ? { ...seg, reprocessStats: promptStats }
+              : seg,
+          ),
+        };
+        s.messages = updated;
+      }
+    }
+    return;
+  }
+
+  const updated = [...s.messages];
+  for (let i = updated.length - 1; i >= 0; i -= 1) {
+    if (updated[i].role === 'user' && !updated[i].promptStats) {
+      updated[i] = { ...updated[i], promptStats };
+      break;
+    }
+  }
+  s.messages = updated;
+}
+
+function finishSession(sessionId: string, stats?: GenerationStats): void {
+  const s = sessions.get(sessionId);
+  if (!s) return;
+  s.status = 'idle';
+  if (stats && s.messages.length > 0) {
+    const last = s.messages[s.messages.length - 1];
+    if (last.role === 'assistant' && !last.stats) {
+      s.messages = [...s.messages.slice(0, -1), { ...last, stats }];
+    }
+  }
+  s.abortController = null;
+  s.currentReader = null;
+  s.streamingTool = null;
+  s.promptProgress = 0;
+  cancelPendingInput(s);
+  persistSessionState(sessionId);
+  emit({ type: 'done', sessionId, ...(stats ? { stats } : {}) });
+  emitSessionChanged(sessionId);
+}
+
+export function failSession(sessionId: string, message: string): void {
+  const s = sessions.get(sessionId);
+  if (!s || s.failed) return;
+  s.failed = true;
+  s.aborted = true;
+  s.abortController?.abort();
+  s.abortController = null;
+  s.currentReader = null;
+  s.status = 'idle';
+  cancelPendingInput(s);
+  persistSessionState(sessionId);
+  emit({ type: 'done', sessionId });
+  emit({ type: 'error', sessionId, message });
+  emitSessionChanged(sessionId);
+}
+
+// --- Streaming engine ---
 export async function sendMessage(
+  sessionId: string,
   text: string,
-  onToken: (t: string, type?: 'thought' | 'comment' | 'tool') => void,
   contentParts?: {
     kind: string;
     url?: string;
     filePath?: string;
     text?: string;
   }[],
-  onProgress?: (data: {
-    progress: number;
-    promptN: number;
-    promptMs: number;
-    total: number;
-  }) => void,
-  onPromptDone?: (stats: GenerationStats) => void,
+  displayItems?: MediaDisplayItem[],
 ): Promise<SendMessageResponse> {
   if (!currentProfile) throw new Error('No profile loaded');
+  const s = getSessionState(sessionId);
+  if (!s) throw new Error('Session not found');
+  if (s.status !== 'idle') throw new Error('Session is already generating');
 
   const userTokens = (await tokenize(text)) ?? 0;
   let currentNewTokens = userTokens;
@@ -870,37 +1256,106 @@ export async function sendMessage(
 
   const userContent: any[] = [];
   if (contentParts && contentParts.length > 0) {
-    for (const part of contentParts) {
+    contentParts.forEach((part) => {
       if (part.kind === 'image_url' && part.url) {
         userContent.push({ type: 'image_url', image_url: { url: part.url } });
       } else if (part.kind === 'text' && part.text) {
         userContent.push({ type: 'text', text: part.text });
       }
-    }
+    });
   }
   userContent.push({ type: 'text', text });
 
-  messageHistory.push({ role: 'user', content: userContent });
-  abortController = new AbortController();
-  aborted = false;
+  // Build the user Message (mirrors the renderer's construction)
+  s.segmentCounter += 1;
+  const userMsg: Message = {
+    id: s.messageCounter,
+    role: 'user',
+    content: [
+      {
+        id: `seg-${Date.now()}-${s.segmentCounter}`,
+        text,
+        type: 'normal',
+        mediaItems:
+          displayItems && displayItems.length > 0 ? displayItems : undefined,
+      },
+    ],
+    collapsed: text.length >= 20 && text.split('\n').length > 5,
+  };
+  s.messageCounter += 1;
+
+  const nextMessages = [...s.messages];
+  if (!s.systemInserted && lastPreloadStats) {
+    nextMessages.push({
+      id: s.messageCounter,
+      role: 'system',
+      content: [
+        {
+          id: `seg-sys-${Date.now()}`,
+          text:
+            lastPreloadStats.toolCount > 0
+              ? `System Prompt with ${lastPreloadStats.toolCount} tools`
+              : 'System Prompt',
+          type: 'normal',
+        },
+      ],
+      promptStats: lastPreloadStats.stats,
+    });
+    s.messageCounter += 1;
+  }
+  s.systemInserted = true;
+  nextMessages.push(userMsg);
+  s.messages = nextMessages;
+
+  // Ensure conversation history includes the current system prompt
+  if (s.history[0]?.role !== 'system' && currentSystemPrompt) {
+    s.history = [
+      { role: 'system', content: currentSystemPrompt },
+      ...s.history,
+    ];
+  }
+  s.history.push({ role: 'user', content: userContent });
+  persistSessionState(sessionId);
+
+  s.status = 'generating';
+  s.aborted = false;
+  s.failed = false;
+  s.abortController = new AbortController();
+  s.promptProgress = 0;
+  s.streamingTool = null;
+  emitSessionChanged(sessionId);
 
   const runCompletion = async (): Promise<SendMessageResponse> => {
     const response = await fetch(getServerUrl('/v1/chat/completions'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(buildChatBody(messageHistory, activeTools)),
-      signal: abortController?.signal,
+      body: JSON.stringify(buildChatBody(s.history, activeTools)),
+      signal: s.abortController?.signal,
     });
+
+    if (!response.ok) {
+      let serverMessage = '';
+      try {
+        const errData = await response.json();
+        serverMessage = errData?.error?.message ?? JSON.stringify(errData);
+      } catch {
+        serverMessage = `HTTP ${response.status}`;
+      }
+      if (isSlotUnavailableError(response.status, serverMessage)) {
+        emit({ type: 'slot-unavailable', sessionId });
+        throw new SlotUnavailableError();
+      }
+      throw new Error(serverMessage || `HTTP ${response.status}`);
+    }
 
     if (!response.body) throw new Error('No response body');
     const reader = response.body.getReader();
-    currentReader = reader;
+    s.currentReader = reader;
     const decoder = new TextDecoder();
     let fullResponse = '';
     const toolCalls: any[] = [];
     let stats: GenerationStats | undefined;
     let promptStats: GenerationStats | undefined;
-    const emitFn = emitFunctionEvent;
 
     try {
       while (true) {
@@ -913,7 +1368,7 @@ export async function sendMessage(
         }
         const { done, value } = readResult;
         if (done) break;
-        if (aborted) {
+        if (s.aborted) {
           // Drain remaining bytes so the HTTP parser finishes cleanly
           try {
             while (true) {
@@ -942,14 +1397,12 @@ export async function sendMessage(
                 total > 0
                   ? Math.min(100, Math.round((processed / total) * 100))
                   : 0;
-              if (onProgress) {
-                onProgress({
-                  progress: pct,
-                  promptN: processed,
-                  promptMs: time_ms || 0,
-                  total,
-                });
-              }
+              s.promptProgress = pct;
+              emit({
+                type: 'progress',
+                sessionId,
+                progress: pct,
+              });
               // Prompt processing complete — send stats immediately
               if (total > 0 && processed >= total && !promptStats) {
                 const timeS = (time_ms || 0) / 1000;
@@ -959,7 +1412,12 @@ export async function sendMessage(
                   tokensPerSecond: timeS > 0 ? currentNewTokens / timeS : 0,
                 };
                 promptStats = pStats;
-                if (onPromptDone) onPromptDone(pStats);
+                handlePromptDone(s, pStats);
+                emit({
+                  type: 'prompt-done',
+                  sessionId,
+                  stats: pStats,
+                });
               }
               continue;
             }
@@ -986,7 +1444,12 @@ export async function sendMessage(
               // Only set if not already sent via progress events
               if (!promptStats) {
                 promptStats = pFromUsage;
-                if (onPromptDone) onPromptDone(pFromUsage);
+                handlePromptDone(s, pFromUsage);
+                emit({
+                  type: 'prompt-done',
+                  sessionId,
+                  stats: pFromUsage,
+                });
               }
             }
 
@@ -995,10 +1458,23 @@ export async function sendMessage(
 
             if (delta.content) {
               fullResponse += delta.content;
-              onToken(delta.content);
+              s.promptProgress = 0;
+              appendAssistantToken(s, delta.content);
+              emit({
+                type: 'token',
+                sessionId,
+                token: delta.content,
+              });
             }
             if (delta.reasoning_content) {
-              onToken(delta.reasoning_content, 'thought');
+              s.promptProgress = 0;
+              appendAssistantToken(s, delta.reasoning_content, 'thought');
+              emit({
+                type: 'token',
+                sessionId,
+                token: delta.reasoning_content,
+                segmentType: 'thought',
+              });
             }
             if (delta.tool_calls) {
               delta.tool_calls.forEach((tc: any) => {
@@ -1006,11 +1482,28 @@ export async function sendMessage(
                   toolCalls[tc.index] = { id: tc.id, name: '', args: '' };
                 if (tc.function?.name) {
                   toolCalls[tc.index].name = tc.function.name;
-                  if (emitFn) emitFn('calling', tc.function.name, '', chatFunctions[tc.function.name]?.tags);
+                  handleFunctionCalling(s, tc.function.name);
+                  emit({
+                    type: 'function-calling',
+                    sessionId,
+                    name: tc.function.name,
+                    tags: chatFunctions[tc.function.name]?.tags,
+                  });
                 }
                 if (tc.function?.arguments) {
                   toolCalls[tc.index].args += tc.function.arguments;
-                  if (onToken) onToken(tc.function.arguments, 'tool');
+                  if (s.streamingTool) {
+                    s.streamingTool = {
+                      ...s.streamingTool,
+                      text: s.streamingTool.text + tc.function.arguments,
+                    };
+                  }
+                  emit({
+                    type: 'token',
+                    sessionId,
+                    token: tc.function.arguments,
+                    segmentType: 'tool',
+                  });
                 }
               });
             }
@@ -1023,12 +1516,17 @@ export async function sendMessage(
       }
     } finally {
       reader.releaseLock();
-      currentReader = null;
+      s.currentReader = null;
     }
 
-    if (aborted) return { content: 'Aborted' };
+    if (s.aborted) {
+      finishSession(sessionId);
+      return { content: 'Aborted' };
+    }
 
     if (toolCalls.length > 0) {
+      s.status = 'tool-running';
+      emitSessionChanged(sessionId);
       const toolCallRequests = toolCalls.map((tc) => ({
         id: tc.id,
         type: 'function',
@@ -1037,14 +1535,23 @@ export async function sendMessage(
       const toolCallRequestStr = JSON.stringify(toolCallRequests);
       const toolCallRequestTokens = (await tokenize(toolCallRequestStr)) ?? 0;
       let totalResultTokens = 0;
-      messageHistory.push({
+      s.history.push({
         role: 'assistant',
+        content: '',
         tool_calls: toolCallRequests,
       });
       for (const tc of toolCalls) {
         const handler = chatFunctions[tc.name]?.handler;
-        if (chatFunctions[tc.name]?.tags?.includes('web_search')) addWebSearch();
-        if (emitFunctionEvent) emitFunctionEvent('call', tc.name, tc.args, chatFunctions[tc.name]?.tags);
+        if (chatFunctions[tc.name]?.tags?.includes('web_search'))
+          addWebSearch();
+        handleFunctionCall(s, tc.name, tc.args);
+        emit({
+          type: 'function-call',
+          sessionId,
+          name: tc.name,
+          params: tc.args,
+          tags: chatFunctions[tc.name]?.tags,
+        });
         let result = await handler(JSON.parse(tc.args));
 
         // Check if tool requests user input
@@ -1062,13 +1569,15 @@ export async function sendMessage(
             toolName: tc.name,
             toolParams: JSON.parse(tc.args),
           };
-          if (emitFunctionEvent)
-            emitFunctionEvent(
-              'input-request',
-              tc.name,
-              JSON.stringify(inputReq),
-            );
-          const userResponse = await waitForUserInput();
+          // Pause this session's stream until the user responds. The model's
+          // output stops here; other sessions keep generating in their slots.
+          s.status = 'awaiting-tool';
+          emit({ type: 'user-input', sessionId, request: inputReq });
+          emitSessionChanged(sessionId);
+          const userResponse = await waitForSessionInput(s, inputReq);
+
+          s.status = 'tool-running';
+          emitSessionChanged(sessionId);
 
           if (inputReq.type === 'confirm') {
             if (userResponse.action === 'confirmed') {
@@ -1114,16 +1623,27 @@ export async function sendMessage(
             total: lastUsage.total,
           };
         }
-        if (emitFunctionEvent) {
-          const payload: any = { result: resultStr };
-          if (imageData && tc.name !== 'read_media_file') {
-            payload._image = imageData;
-          }
-          if (sourcesData) payload._sources = sourcesData;
-          if (topSourcesData) payload._top_sources = topSourcesData;
-          emitFunctionEvent('result', tc.name, JSON.stringify(payload), chatFunctions[tc.name]?.tags);
+        /* eslint-disable no-underscore-dangle */
+        const resultPayload: any = { result: resultStr };
+        if (imageData && tc.name !== 'read_media_file') {
+          resultPayload._image = imageData;
         }
-        messageHistory.push({
+        if (sourcesData) resultPayload._sources = sourcesData;
+        if (topSourcesData) resultPayload._top_sources = topSourcesData;
+        handleFunctionResult(s, resultPayload);
+        emit({
+          type: 'function-result',
+          sessionId,
+          name: tc.name,
+          result: resultStr,
+          _image:
+            imageData && tc.name !== 'read_media_file' ? imageData : undefined,
+          _sources: sourcesData,
+          _top_sources: topSourcesData,
+          tags: chatFunctions[tc.name]?.tags,
+        });
+        /* eslint-enable no-underscore-dangle */
+        s.history.push({
           role: 'tool',
           tool_call_id: tc.id,
           content: resultStr,
@@ -1132,7 +1652,7 @@ export async function sendMessage(
         // For projector tools with image data, inject the image into the
         // conversation so the model can process it through the vision encoder
         if (imageData && chatFunctions[tc.name]?.displayType === 'projector') {
-          messageHistory.push({
+          s.history.push({
             role: 'tool',
             content: [
               {
@@ -1153,23 +1673,57 @@ export async function sendMessage(
 
   try {
     const result = await runCompletion();
-    messageHistory.push({ role: 'assistant', content: result.content });
+    s.history.push({ role: 'assistant', content: result.content });
+    finishSession(sessionId, result.stats);
     return result;
   } catch (e: any) {
-    if (e.name === 'AbortError' || aborted) return { content: 'Aborted' };
+    if (e.name === 'AbortError' || s.aborted) {
+      finishSession(sessionId);
+      return { content: 'Aborted' };
+    }
+    if (e instanceof SlotUnavailableError) {
+      finishSession(sessionId);
+      return { content: '' };
+    }
+    failSession(sessionId, e?.message ?? 'Unknown error');
     throw e;
   }
 }
 
-export async function abort() {
-  aborted = true;
-  cancelPendingInput();
-  if (abortController) {
-    abortController.abort();
-    abortController = null;
+export async function abort(sessionId?: string | null) {
+  if (sessionId) {
+    const s = sessions.get(sessionId);
+    if (!s) return;
+    s.aborted = true;
+    cancelPendingInput(s);
+    if (s.abortController) {
+      s.abortController.abort();
+      s.abortController = null;
+    }
+    return;
   }
+  // Abort every live stream (teardown)
+  sessions.forEach((s) => {
+    s.aborted = true;
+    cancelPendingInput(s);
+    if (s.abortController) {
+      s.abortController.abort();
+      s.abortController = null;
+    }
+  });
   // The main read loop's inner drain loop handles stream cleanup.
   // Do NOT cancel the reader — that leaves the llhttp parser paused.
+}
+
+function abortAllStreams(): void {
+  sessions.forEach((s) => {
+    s.aborted = true;
+    cancelPendingInput(s);
+    if (s.abortController) {
+      s.abortController.abort();
+      s.abortController = null;
+    }
+  });
 }
 
 export async function unloadModel() {
@@ -1177,18 +1731,29 @@ export async function unloadModel() {
   if (proc) {
     serverProcess = null;
     currentProjector = null;
+    abortAllStreams();
+    // Persist partial content before the streams die with the server
+    sessions.forEach((s) => {
+      persistSessionState(s.sessionId);
+      emitSessionChanged(s.sessionId);
+    });
     proc.kill();
     await new Promise<void>((resolve) => {
       proc.on('exit', () => resolve());
     });
   }
-  messageHistory = [];
   currentContextSize = null;
   lastUsage = null;
+  currentSystemPrompt = '';
+  lastPreloadStats = null;
 }
 
 export function hasConversationContext(): boolean {
-  return messageHistory.length > 1;
+  let hasContext = false;
+  sessions.forEach((s) => {
+    if (s.history.length > 1) hasContext = true;
+  });
+  return hasContext;
 }
 
 export function isServerRunning(): boolean {

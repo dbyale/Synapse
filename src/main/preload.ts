@@ -107,6 +107,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   chatSetThinkingTokens: (tokens: number) =>
     ipcRenderer.invoke('chat:setThinkingTokens', tokens),
   chatSend: (
+    sessionId: string,
     text: string,
     contentParts?: {
       kind: string;
@@ -114,69 +115,33 @@ contextBridge.exposeInMainWorld('electronAPI', {
       filePath?: string;
       text?: string;
     }[],
-  ) => ipcRenderer.invoke('chat:send', text, contentParts),
-
-  onChatToken: (
-    callback: (data: {
-      token: string;
-      segmentType?: 'thought' | 'comment' | 'tool';
-    }) => void,
-  ) => {
-    const listener = (
-      _: any,
-      data: { token: string; segmentType?: 'thought' | 'comment' | 'tool' },
-    ) => callback(data);
-    ipcRenderer.on('chat:token', listener);
-    return () => ipcRenderer.removeListener('chat:token', listener);
-  },
-
-  onChatDone: (
-    callback: (stats?: {
-      tokens: number;
-      timeMs: number;
-      tokensPerSecond: number;
-    }) => void,
-  ) => {
-    const listener = (_event: any, stats?: any) => callback(stats);
-    ipcRenderer.on('chat:done', listener);
-    return () => ipcRenderer.removeListener('chat:done', listener);
-  },
-
-  onChatProgress: (
-    callback: (data: {
-      progress: number;
-      promptN: number;
-      promptMs: number;
-      total: number;
-    }) => void,
-  ) => {
-    const listener = (
-      _event: any,
-      data: {
-        progress: number;
-        promptN: number;
-        promptMs: number;
-        total: number;
-      },
-    ) => callback(data);
-    ipcRenderer.on('chat:progress', listener);
-    return () => ipcRenderer.removeListener('chat:progress', listener);
-  },
-
-  onChatPromptDone: (
-    callback: (stats: {
-      tokens: number;
-      timeMs: number;
-      tokensPerSecond: number;
-    }) => void,
-  ) => {
-    const listener = (
-      _event: IpcRendererEvent,
-      stats: { tokens: number; timeMs: number; tokensPerSecond: number },
-    ) => callback(stats);
-    ipcRenderer.on('chat:prompt-done', listener);
-    return () => ipcRenderer.removeListener('chat:prompt-done', listener);
-  },
+    displayItems?: any[],
+  ) =>
+    ipcRenderer.invoke(
+      'chat:send',
+      sessionId,
+      text,
+      contentParts,
+      displayItems,
+    ),
+  chatStartSession: (profileId: string, title: string) =>
+    ipcRenderer.invoke('chat:startSession', profileId, title),
+  chatGetSession: (sessionId: string) =>
+    ipcRenderer.invoke('chat:getSession', sessionId),
+  chatListSessions: (profileId: string) =>
+    ipcRenderer.invoke('chat:listSessions', profileId),
+  chatRenameSession: (sessionId: string, title: string) =>
+    ipcRenderer.invoke('chat:renameSession', sessionId, title),
+  chatDeleteSession: (sessionId: string) =>
+    ipcRenderer.invoke('chat:deleteSession', sessionId),
+  chatRespondInput: (sessionId: string, response: any) =>
+    ipcRenderer.invoke('chat:respond-input', sessionId, response),
+  chatAbort: (sessionId?: string | null) =>
+    ipcRenderer.invoke('chat:abort', sessionId),
+  chatUnload: () => ipcRenderer.invoke('chat:unload'),
+  chatHasConversation: () => ipcRenderer.invoke('chat:hasConversation'),
+  chatIsRunning: () => ipcRenderer.invoke('chat:isRunning'),
+  chatReloadProfile: () => ipcRenderer.invoke('chat:reloadProfile'),
 
   onChatSystemProgress: (
     callback: (data: {
@@ -199,6 +164,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('chat:system-progress', listener);
   },
 
+  onChatSystemStatus: (
+    callback: (data: { phase: string; message: string }) => void,
+  ) => {
+    const listener = (
+      _event: IpcRendererEvent,
+      data: { phase: string; message: string },
+    ) => callback(data);
+    ipcRenderer.on('chat:system-status', listener);
+    return () => ipcRenderer.removeListener('chat:system-status', listener);
+  },
+
   onChatSystemDone: (
     callback: (data: {
       stats: { tokens: number; timeMs: number; tokensPerSecond: number };
@@ -216,34 +192,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('chat:system-done', listener);
   },
 
-  onChatSystemStatus: (
-    callback: (data: { phase: string; message: string }) => void,
-  ) => {
-    const listener = (
-      _event: IpcRendererEvent,
-      data: { phase: string; message: string },
-    ) => callback(data);
-    ipcRenderer.on('chat:system-status', listener);
-    return () => ipcRenderer.removeListener('chat:system-status', listener);
+  onChatStreamEvent: (callback: (payload: any) => void) => {
+    const listener = (_event: IpcRendererEvent, payload: any) =>
+      callback(payload);
+    ipcRenderer.on('chat:stream-event', listener);
+    return () => ipcRenderer.removeListener('chat:stream-event', listener);
   },
-
-  onChatError: (callback: (error: string) => void) => {
-    const listener = (_: any, error: string) => callback(error);
-    ipcRenderer.on('chat:error', listener);
-    return () => ipcRenderer.removeListener('chat:error', listener);
-  },
-
-  chatAbort: () => ipcRenderer.invoke('chat:abort'),
-  chatUnload: () => ipcRenderer.invoke('chat:unload'),
-  chatHasConversation: () => ipcRenderer.invoke('chat:hasConversation'),
-  chatIsRunning: () => ipcRenderer.invoke('chat:isRunning'),
-  chatReloadProfile: () => ipcRenderer.invoke('chat:reloadProfile'),
 
   removeChatListeners: () => {
-    ipcRenderer.removeAllListeners('chat:token');
-    ipcRenderer.removeAllListeners('chat:done');
-    ipcRenderer.removeAllListeners('chat:progress');
-    ipcRenderer.removeAllListeners('chat:prompt-done');
+    ipcRenderer.removeAllListeners('chat:stream-event');
   },
 
   chatContextUsage: () => ipcRenderer.invoke('chat:contextUsage'),
@@ -256,47 +213,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   openModelsFolder: () => ipcRenderer.invoke('open-models-folder'),
   openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
-  openPath: (filePath: string) => ipcRenderer.invoke('shell:openPath', filePath),
-
-  onChatFunctionCall: (
-    callback: (data: { name: string; params: string; tags?: string[] }) => void,
-  ) => {
-    const listener = (_: any, data: { name: string; params: string; tags?: string[] }) =>
-      callback(data);
-    ipcRenderer.on('chat-function-call', listener);
-    return () => ipcRenderer.removeListener('chat-function-call', listener);
-  },
-
-  onChatFunctionCalling: (callback: (data: { name: string; tags?: string[] }) => void) => {
-    const listener = (_: any, data: { name: string; tags?: string[] }) => callback(data);
-    ipcRenderer.on('chat-function-calling', listener);
-    return () => ipcRenderer.removeListener('chat-function-calling', listener);
-  },
-
-  onChatFunctionResult: (
-    callback: (data: {
-      name: string;
-      result: string;
-      _image?: { url: string; altText?: string };
-      _sources?: { title: string; url: string }[];
-      _top_sources?: { title: string; url: string }[];
-      tags?: string[];
-    }) => void,
-  ) => {
-    const listener = (
-      _: any,
-      data: {
-        name: string;
-        result: string;
-        _image?: { url: string; altText?: string };
-        _sources?: { title: string; url: string }[];
-        _top_sources?: { title: string; url: string }[];
-        tags?: string[];
-      },
-    ) => callback(data);
-    ipcRenderer.on('chat-function-result', listener);
-    return () => ipcRenderer.removeListener('chat-function-result', listener);
-  },
+  openPath: (filePath: string) =>
+    ipcRenderer.invoke('shell:openPath', filePath),
 
   chatCumulativeTokenUsage: (): Promise<{
     totalInputTokens: number;
@@ -333,10 +251,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     error?: string;
   }> => ipcRenderer.invoke('files:convertWithMarkitdown', filePath),
 
-  saveBufferToTemp: (
-    buffer: Uint8Array,
-    filename: string,
-  ): Promise<string> => ipcRenderer.invoke('files:saveBufferToTemp', buffer, filename),
+  saveBufferToTemp: (buffer: Uint8Array, filename: string): Promise<string> =>
+    ipcRenderer.invoke('files:saveBufferToTemp', buffer, filename),
 
   getModelMetadata: (params: {
     modelAuthor: string;
@@ -394,25 +310,4 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('extensions:getSettings', id),
   extensionsSetSettings: (id: string, settings: any) =>
     ipcRenderer.invoke('extensions:setSettings', id, settings),
-
-  // ── User Input ──
-  onChatUserInput: (
-    callback: (data: {
-      requestId: string;
-      type: 'confirm' | 'select' | 'freeform';
-      title: string;
-      prompt: string;
-      options?: string[];
-      toolName: string;
-      toolParams: any;
-    }) => void,
-  ) => {
-    const listener = (_event: any, data: any) => callback(data);
-    ipcRenderer.on('chat:user-input', listener);
-    return () => ipcRenderer.removeListener('chat:user-input', listener);
-  },
-  respondToUserInput: (response: {
-    action: 'confirmed' | 'denied' | 'selected';
-    value?: string;
-  }) => ipcRenderer.invoke('chat:respond-input', response),
 });

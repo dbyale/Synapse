@@ -2,12 +2,19 @@
    CHAT PAGE — LAYOUT
    ============================================================================ */
 
+.chat-page-shell {
+  display: flex;
+  height: calc(100% + 48px);
+  margin: -24px;
+  position: relative;
+}
+
 .chat-page {
   display: flex;
   flex-direction: column;
-  height: 100%;
-  margin: 0 auto;
-  width: 100%;
+  margin: 24px;
+  flex: 1;
+  min-width: 0;
   gap: 16px;
   padding: 16px 10%;
   box-sizing: border-box;
@@ -397,6 +404,50 @@
     opacity: 0;
     transform: translateY(-4px);
   }
+}
+
+/* ── All slots busy info banner (above input) ── */
+
+.chat-slot-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: rgba(149, 197, 255, 0.08);
+  border: 1px solid rgba(149, 197, 255, 0.25);
+  border-radius: var(--radius-lg);
+  color: #95c5ff;
+  font-size: 12.5px;
+  flex-shrink: 0;
+  animation: chat-projector-warning-in 0.2s ease;
+}
+
+.chat-slot-info__icon {
+  flex-shrink: 0;
+}
+
+.chat-slot-info__text {
+  flex: 1;
+  line-height: 1.4;
+}
+
+.chat-slot-info__close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  border-radius: 4px;
+  flex-shrink: 0;
+  transition: background 0.1s ease;
+}
+
+.chat-slot-info__close:hover {
+  background: rgba(149, 197, 255, 0.15);
 }
 
 /* ============================================================================
@@ -790,6 +841,38 @@
 }
 
 /* ============================================================================
+   SESSIONS BUTTON (standalone floating at top-left of chat page)
+   ============================================================================ */
+
+.chat-sessions-button {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+  z-index: 10;
+}
+
+.chat-sessions-button:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--accent);
+}
+
+.chat-sessions-button--new {
+  top: 44px;
+}
+
+/* ============================================================================
    SOURCES BUTTON (standalone floating at top-right of chat page)
    ============================================================================ */
 
@@ -822,8 +905,6 @@
   color: var(--accent);
   border-color: var(--accent);
 }
-
-
 
 /* ============================================================================
    SOURCES SIDEBAR

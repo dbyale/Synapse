@@ -23,6 +23,7 @@ import {
   registerLocalModel,
 } from '../renderer/utils/models';
 import * as chatService from './chat';
+import * as sessionStore from './sessionStore';
 import * as usageService from './usage';
 import {
   getOrRunOptimizer,
@@ -392,7 +393,8 @@ export function registerIpcHandlers(win: BrowserWindow): void {
             message: 'Preloading system prompt…',
           });
         }
-        // Preload system prompt to warm KV cache, with progress tracking
+        // Preload system prompt to warm KV cache, with progress tracking.
+        // Await completion so sends can never race the preload.
         await chatService.preloadSystemPrompt(
           profile.systemPrompt,
           chatService.getActiveTools(),
@@ -466,7 +468,8 @@ export function registerIpcHandlers(win: BrowserWindow): void {
   ipcMain.handle(
     'chat:send',
     async (
-      event,
+      _event,
+      sessionId: string,
       text: string,
       contentParts?: {
         kind: string;
@@ -474,74 +477,57 @@ export function registerIpcHandlers(win: BrowserWindow): void {
         filePath?: string;
         text?: string;
       }[],
+      displayItems?: any[],
     ) => {
       try {
-        const onTokenCallback = (
-          token: string,
-          segmentType?: 'thought' | 'comment' | 'tool',
-        ) => {
-          if (!event.sender.isDestroyed()) {
-            event.sender.send('chat:token', { token, segmentType });
-          }
-        };
-
-        const onProgressCallback = (data: {
-          progress: number;
-          promptN: number;
-          promptMs: number;
-          total: number;
-        }) => {
-          if (!event.sender.isDestroyed()) {
-            event.sender.send('chat:progress', data);
-          }
-        };
-
-        const onPromptDoneCallback = (stats: {
-          tokens: number;
-          timeMs: number;
-          tokensPerSecond: number;
-        }) => {
-          if (!event.sender.isDestroyed()) {
-            event.sender.send('chat:prompt-done', stats);
-          }
-        };
-
-        const result = await chatService.sendMessage(
+        await chatService.sendMessage(
+          sessionId,
           text,
-          onTokenCallback,
           contentParts,
-          onProgressCallback,
-          onPromptDoneCallback,
+          displayItems,
         );
-
-        if (!event.sender.isDestroyed()) {
-          event.sender.send('chat:done', result.stats);
-        }
-
         return { success: true };
       } catch (err: any) {
-        if (err.name === 'AbortError') {
-          if (!event.sender.isDestroyed()) {
-            event.sender.send('chat:done');
-          }
-          return { success: true, aborted: true };
-        }
+        chatService.failSession(sessionId, err?.message ?? 'Unknown error');
         console.error('[chat:send]', err);
-        if (!event.sender.isDestroyed()) {
-          event.sender.send('chat:done');
-          event.sender.send('chat:error', err.message);
-        }
         return { success: false, error: err.message };
       }
     },
   );
 
-  ipcMain.handle('chat:respond-input', async (_event, response) => {
-    return { success: chatService.resolveUserInput(response) };
+  ipcMain.handle(
+    'chat:startSession',
+    (_event, profileId: string, title: string) => {
+      return chatService.startSession(profileId, title);
+    },
+  );
+
+  ipcMain.handle('chat:getSession', (_event, sessionId: string) => {
+    return chatService.getSessionView(sessionId);
   });
 
-  ipcMain.handle('chat:abort', async () => {
-    await chatService.abort();
+  ipcMain.handle('chat:listSessions', (_event, profileId: string) => {
+    return sessionStore.listSessions(profileId);
+  });
+
+  ipcMain.handle(
+    'chat:renameSession',
+    (_event, sessionId: string, title: string) => {
+      return sessionStore.renameSession(sessionId, title);
+    },
+  );
+
+  ipcMain.handle('chat:deleteSession', (_event, sessionId: string) => {
+    chatService.deleteSession(sessionId);
+    return { success: true };
+  });
+
+  ipcMain.handle('chat:respond-input', async (_event, sessionId, response) => {
+    return { success: chatService.resolveUserInput(sessionId, response) };
+  });
+
+  ipcMain.handle('chat:abort', async (_event, sessionId?: string | null) => {
+    await chatService.abort(sessionId);
   });
 
   ipcMain.handle('chat:unload', async () => {
@@ -665,35 +651,11 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     await shell.openPath(filePath);
   });
 
-  chatService.setEmitFunctionCallback(
-    (
-      event: 'calling' | 'call' | 'result' | 'input-request',
-      name: string,
-      data: string,
-      tags?: string[],
-    ) => {
-      const win = BrowserWindow.getAllWindows()[0];
-      if (!win || win.isDestroyed()) return;
-
-      if (event === 'calling') {
-        win.webContents.send('chat-function-calling', { name, tags });
-      } else if (event === 'call') {
-        win.webContents.send('chat-function-call', { name, params: data, tags });
-      } else if (event === 'result') {
-        const parsed = JSON.parse(data);
-        win.webContents.send('chat-function-result', {
-          name,
-          result: parsed.result,
-          _image: parsed._image,
-          _sources: parsed._sources,
-          _top_sources: parsed._top_sources,
-          tags,
-        });
-      } else if (event === 'input-request') {
-        win.webContents.send('chat:user-input', JSON.parse(data));
-      }
-    },
-  );
+  chatService.setStreamEventCallback((payload) => {
+    const win = BrowserWindow.getAllWindows()[0];
+    if (!win || win.isDestroyed()) return;
+    win.webContents.send('chat:stream-event', payload);
+  });
 
   ipcMain.handle('chat:cumulativeTokenUsage', () => {
     return chatService.getCumulativeTokenUsage();

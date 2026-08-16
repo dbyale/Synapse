@@ -1,4 +1,9 @@
 import { Profile } from './types/profile';
+import type {
+  SavedSession,
+  SessionView,
+  ChatStreamEvent,
+} from '../shared/chatTypes';
 
 export interface DownloadProgress {
   modelId: string;
@@ -165,38 +170,35 @@ declare global {
       chatSetThinkingTokens: (tokens: number) => Promise<{ success: boolean }>;
       chatHasProjector: () => Promise<boolean>;
       chatSend: (
+        sessionId: string,
         text: string,
         contentParts?: ContentPart[],
-      ) => Promise<{ success: boolean; error?: string; aborted?: boolean }>;
-      onChatToken: (
-        callback: (data: {
-          token: string;
-          segmentType?: 'thought' | 'comment' | 'tool';
-        }) => void,
+        displayItems?: any[],
+      ) => Promise<{ success: boolean; error?: string }>;
+      chatStartSession: (profileId: string, title: string) => Promise<string>;
+      chatGetSession: (sessionId: string) => Promise<SessionView | null>;
+      chatListSessions: (profileId: string) => Promise<SavedSession[]>;
+      chatRenameSession: (sessionId: string, title: string) => Promise<void>;
+      chatDeleteSession: (sessionId: string) => Promise<{ success: boolean }>;
+      chatRespondInput: (
+        sessionId: string,
+        response: {
+          action: 'confirmed' | 'denied' | 'selected';
+          value?: string;
+        },
+      ) => Promise<{ success: boolean }>;
+      onChatStreamEvent: (
+        callback: (payload: ChatStreamEvent) => void,
       ) => () => void;
-      onChatDone: (
-        callback: (stats?: {
-          tokens: number;
-          timeMs: number;
-          tokensPerSecond: number;
-        }) => void,
-      ) => () => void;
-      onChatProgress: (
-        callback: (data: {
-          progress: number;
-          promptN: number;
-          promptMs: number;
-          total: number;
-        }) => void,
-      ) => () => void;
-      onChatPromptDone: (
-        callback: (stats: {
-          tokens: number;
-          timeMs: number;
-          tokensPerSecond: number;
-        }) => void,
-      ) => () => void;
-      onChatError: (callback: (error: string) => void) => () => void;
+      chatAbort: (sessionId?: string | null) => Promise<void>;
+      chatUnload: () => Promise<void>;
+      chatHasConversation: () => Promise<boolean>;
+      chatIsRunning: () => Promise<boolean>;
+      chatReloadProfile: () => Promise<{
+        success: boolean;
+        error?: string;
+        profile?: Profile;
+      }>;
       onChatSystemProgress: (
         callback: (data: {
           progress: number;
@@ -204,6 +206,9 @@ declare global {
           promptMs: number;
           total: number;
         }) => void,
+      ) => () => void;
+      onChatSystemStatus: (
+        callback: (data: { phase: string; message: string }) => void,
       ) => () => void;
       onChatSystemDone: (
         callback: (data: {
@@ -215,15 +220,6 @@ declare global {
           toolCount: number;
         }) => void,
       ) => () => void;
-      chatAbort: () => Promise<void>;
-      chatUnload: () => Promise<void>;
-      chatHasConversation: () => Promise<boolean>;
-      chatIsRunning: () => Promise<boolean>;
-      chatReloadProfile: () => Promise<{
-        success: boolean;
-        error?: string;
-        profile?: Profile;
-      }>;
       removeChatListeners: () => void;
       chatTokenize: (text: string) => Promise<{ count: number | null }>;
       chatContextUsage: () => Promise<{ used: number; total: number }>;
@@ -261,23 +257,6 @@ declare global {
       openModelsFolder: () => Promise<void>;
       openExternal: (url: string) => Promise<void>;
       openPath: (filePath: string) => Promise<void>;
-
-      onChatFunctionCall: (
-        callback: (data: { name: string; params: string; tags?: string[] }) => void,
-      ) => () => void;
-      onChatFunctionCalling: (
-        callback: (data: { name: string; tags?: string[] }) => void,
-      ) => () => void;
-      onChatFunctionResult: (
-        callback: (data: {
-          name: string;
-          result: string;
-          _image?: { url: string; altText?: string };
-          _sources?: { title: string; url: string }[];
-          _top_sources?: { title: string; url: string }[];
-          tags?: string[];
-        }) => void,
-      ) => () => void;
 
       readFileAsDataUrl: (filePath: string) => Promise<string>;
       readFileAsBuffer: (filePath: string) => Promise<Uint8Array>;
@@ -408,22 +387,6 @@ declare global {
         id: string,
         settings: Record<string, any>,
       ) => Promise<{ success: boolean }>;
-
-      onChatUserInput: (
-        callback: (data: {
-          requestId: string;
-          type: 'confirm' | 'select' | 'freeform';
-          title: string;
-          prompt: string;
-          options?: string[];
-          toolName: string;
-          toolParams: any;
-        }) => void,
-      ) => () => void;
-      respondToUserInput: (response: {
-        action: 'confirmed' | 'denied' | 'selected';
-        value?: string;
-      }) => Promise<{ success: boolean }>;
     };
   }
 }
