@@ -2770,6 +2770,24 @@ export default function ChatPage() {
                         {msg.promptStats.tokensPerSecond.toFixed(1)} t/s
                       </span>
                     </div>
+                    {msg.role === 'user' && msg.content[0]?.text && (
+                      <button
+                        type="button"
+                        className={`chat-message__copy ${copiedMsgId === msg.id ? 'chat-message__copy--copied' : ''}`}
+                        onClick={() => copyMessageText(msg)}
+                        title="Copy message"
+                        aria-label="Copy message"
+                      >
+                        {copiedMsgId === msg.id ? (
+                          <Check size={12} />
+                        ) : (
+                          <Copy size={12} />
+                        )}
+                        <span>
+                          {copiedMsgId === msg.id ? 'Copied' : 'Copy'}
+                        </span>
+                      </button>
+                    )}
                   </div>
                 )}
 
