@@ -72,8 +72,8 @@ const createWindow = async () => {
 
   mainWindow = new BrowserWindow({
     show: false,
-    width: 1024,
-    height: 728,
+    width: 1408,
+    height: 852,
     icon: getAssetPath('icon.png'),
     autoHideMenuBar: true,
     webPreferences: {
