@@ -469,18 +469,26 @@ function MediaAttachModal({
     for (const filePath of paths) {
       const ext = getExtension(filePath);
       const filename = filePath.split(/[/\\]/).pop() || 'file';
-      if (hasProjector && VIDEO_EXTENSIONS_SET.has(ext)) {
+      const isImage = IMAGE_EXTENSIONS_SET.has(ext);
+      const isVideo = VIDEO_EXTENSIONS_SET.has(ext);
+      if ((isImage || isVideo) && !hasProjector) {
+        onToastError(
+          `${filename} needs a loaded vision projector to be attached`,
+        );
+      } else if (isVideo) {
         const uint8 = await window.electronAPI.readFileAsBuffer(filePath);
         const mime = ext === 'webm' ? 'video/webm' : 'video/mp4';
         const blob = new Blob([uint8.buffer as ArrayBuffer], { type: mime });
         const file = new File([blob], filename, { type: mime });
         onAttachVideo(file);
         break;
-      } else if (hasProjector && IMAGE_EXTENSIONS_SET.has(ext)) {
+      } else if (isImage) {
         const dataUrl = await window.electronAPI.readFileAsDataUrl(filePath);
         onAttach(dataUrl, filename);
       } else if (DOC_EXTENSIONS_SET.has(ext)) {
         processDocument(filePath, filename);
+      } else {
+        onToastError(`${filename} is unsupported`);
       }
     }
   };
@@ -598,11 +606,12 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [modelLoading, setModelLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [chatError, setChatError] = useState<{
-    message: string;
-    id: number;
-  } | null>(null);
-  const chatErrorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [chatErrors, setChatErrors] = useState<
+    { message: string; id: string }[]
+  >([]);
+  const chatErrorTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>(
+    {},
+  );
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [selectedProfileId, setSelectedProfileId] = useState<string>('');
   const [placeholder, setPlaceholder] = useState('Select a profile first...');
@@ -838,6 +847,23 @@ export default function ChatPage() {
   useEffect(() => {
     refreshCumulativeTokens();
   }, [refreshCumulativeTokens]);
+
+  const dismissChatError = useCallback((id: string) => {
+    if (chatErrorTimers.current[id]) {
+      clearTimeout(chatErrorTimers.current[id]);
+      delete chatErrorTimers.current[id];
+    }
+    setChatErrors((prev) => prev.filter((e) => e.id !== id));
+  }, []);
+
+  const showErrorToast = useCallback((message: string) => {
+    const id = crypto.randomUUID();
+    setChatErrors((prev) => [...prev, { message, id }]);
+    chatErrorTimers.current[id] = setTimeout(() => {
+      delete chatErrorTimers.current[id];
+      setChatErrors((prev) => prev.filter((e) => e.id !== id));
+    }, 6000);
+  }, []);
 
   // Shown only when llama-server directly denies a generation request
   // (HTTP 503 / "no slot is free"), surfaced via the 'slot-unavailable'
@@ -1671,12 +1697,7 @@ export default function ChatPage() {
         case 'error': {
           setSessionLoading(false);
           setSessionProcessing(false);
-          if (chatErrorTimer.current) clearTimeout(chatErrorTimer.current);
-          const id = Date.now();
-          setChatError({ message: payload.message ?? 'Unknown error', id });
-          chatErrorTimer.current = setTimeout(() => {
-            setChatError((prev) => (prev?.id === id ? null : prev));
-          }, 6000);
+          showErrorToast(payload.message ?? 'Unknown error');
           return;
         }
 
@@ -1709,6 +1730,7 @@ export default function ChatPage() {
     addSourcesFromToolResult,
     queueSessionSync,
     showSlotBanner,
+    showErrorToast,
   ]);
 
   useEffect(() => {
@@ -1802,15 +1824,6 @@ export default function ChatPage() {
     }
   };
 
-  const showErrorToast = useCallback((message: string) => {
-    if (chatErrorTimer.current) clearTimeout(chatErrorTimer.current);
-    const id = Date.now();
-    setChatError({ message, id });
-    chatErrorTimer.current = setTimeout(() => {
-      setChatError((prev) => (prev?.id === id ? null : prev));
-    }, 6000);
-  }, []);
-
   const convertDocumentToPending = useCallback(
     (id: string, filePath: string, filename: string) => {
       const setStatus = (status: 'waiting' | 'converting') =>
@@ -1880,10 +1893,16 @@ export default function ChatPage() {
     const files = Array.from(e.dataTransfer.files);
     for (const file of files) {
       const ext = getExtension(file.name);
-      if (
-        canAttachImages &&
-        (IMAGE_EXTENSIONS_SET.has(ext) || file.type.startsWith('image/'))
-      ) {
+      const isImage =
+        IMAGE_EXTENSIONS_SET.has(ext) || file.type.startsWith('image/');
+      const isVideo =
+        VIDEO_EXTENSIONS_SET.has(ext) || file.type.startsWith('video/');
+      const isDoc = DOC_EXTENSIONS_SET.has(ext);
+      if ((isImage || isVideo) && !canAttachImages) {
+        showErrorToast(
+          `${file.name} needs a loaded vision projector to be attached`,
+        );
+      } else if (isImage) {
         const reader = new FileReader();
         reader.onload = (ev) => {
           const result = ev.target?.result;
@@ -1896,10 +1915,7 @@ export default function ChatPage() {
           }
         };
         reader.readAsDataURL(file);
-      } else if (
-        canAttachImages &&
-        (VIDEO_EXTENSIONS_SET.has(ext) || file.type.startsWith('video/'))
-      ) {
+      } else if (isVideo) {
         const id = crypto.randomUUID();
         setPendingMedia((prev) => [
           ...prev,
@@ -1910,7 +1926,7 @@ export default function ChatPage() {
             objectUrl: URL.createObjectURL(file),
           },
         ]);
-      } else if (DOC_EXTENSIONS_SET.has(ext)) {
+      } else if (isDoc) {
         const filePath = (file as any).path;
         if (filePath) {
           processDroppedDocument(filePath, file.name);
@@ -1949,6 +1965,8 @@ export default function ChatPage() {
             }
           })();
         }
+      } else {
+        showErrorToast(`${file.name} is unsupported`);
       }
     }
   };
@@ -3443,33 +3461,37 @@ export default function ChatPage() {
           />
         )}
 
-        {chatError && (
-          <div key={chatError.id} className="chat-toast">
-            <X
-              size={14}
-              className="chat-toast__close"
-              onClick={() => setChatError(null)}
-            />
-            <span className="chat-toast__title">Error</span>
-            {(() => {
-              const lines = chatError.message.split('\n').filter(Boolean);
-              if (lines.length <= 1)
-                return (
-                  <span className="chat-toast__message">
-                    {chatError.message}
-                  </span>
-                );
-              return (
-                <>
-                  <span className="chat-toast__message">{lines[0]}</span>
-                  <ul className="chat-error__log">
-                    {lines.slice(1).map((l, i) => (
-                      <li key={i}>{l}</li>
-                    ))}
-                  </ul>
-                </>
-              );
-            })()}
+        {chatErrors.length > 0 && (
+          <div className="chat-toast-stack">
+            {chatErrors.map((error) => (
+              <div key={error.id} className="chat-toast">
+                <X
+                  size={14}
+                  className="chat-toast__close"
+                  onClick={() => dismissChatError(error.id)}
+                />
+                <span className="chat-toast__title">Error</span>
+                {(() => {
+                  const lines = error.message.split('\n').filter(Boolean);
+                  if (lines.length <= 1)
+                    return (
+                      <span className="chat-toast__message">
+                        {error.message}
+                      </span>
+                    );
+                  return (
+                    <>
+                      <span className="chat-toast__message">{lines[0]}</span>
+                      <ul className="chat-error__log">
+                        {lines.slice(1).map((l, i) => (
+                          <li key={i}>{l}</li>
+                        ))}
+                      </ul>
+                    </>
+                  );
+                })()}
+              </div>
+            ))}
           </div>
         )}
       </div>
