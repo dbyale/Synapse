@@ -76,7 +76,59 @@ export type {
 type PendingMedia =
   | { id: string; type: 'image'; dataUrl: string; name?: string }
   | { id: string; type: 'video'; file: File; objectUrl: string }
-  | { id: string; type: 'document'; name: string; content: string };
+  | {
+      id: string;
+      type: 'document';
+      name: string;
+      content: string;
+      status?: 'waiting' | 'converting';
+    };
+
+const MAX_CONCURRENT_CONVERSIONS = 3;
+let activeConversions = 0;
+const pendingConversions: (() => void)[] = [];
+
+function pumpConversions() {
+  while (
+    activeConversions < MAX_CONCURRENT_CONVERSIONS &&
+    pendingConversions.length > 0
+  ) {
+    pendingConversions.shift()!();
+  }
+}
+
+function withConversionSlot<T>(
+  task: () => Promise<T>,
+  onStart?: () => void,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const start = () => {
+      activeConversions += 1;
+      onStart?.();
+      task()
+        .then(
+          (value) => {
+            activeConversions -= 1;
+            pumpConversions();
+            resolve(value);
+            return undefined;
+          },
+          (err) => {
+            activeConversions -= 1;
+            pumpConversions();
+            reject(err);
+            return undefined;
+          },
+        )
+        .catch(() => {});
+    };
+    if (activeConversions < MAX_CONCURRENT_CONVERSIONS) {
+      start();
+    } else {
+      pendingConversions.push(start);
+    }
+  });
+}
 
 const TOKEN_COUNTER_TOOLTIP = [
   "Shows how many tokens this session has used out of the model's context window.",
@@ -358,19 +410,25 @@ function MediaAttachModal({
   onAttach,
   onAttachVideo,
   onAttachText,
+  onAttachTextStart,
+  onAttachTextStatus,
+  onAttachTextFail,
+  onToastError,
   onClose,
   hasProjector,
   dragging,
 }: {
   onAttach: (dataUrl: string, name: string) => void;
   onAttachVideo: (file: File) => void;
-  onAttachText: (name: string, content: string) => void;
+  onAttachText: (id: string, name: string, content: string) => void;
+  onAttachTextStart: (name: string) => string;
+  onAttachTextStatus: (id: string, status: 'waiting' | 'converting') => void;
+  onAttachTextFail: (id: string) => void;
+  onToastError: (message: string) => void;
   onClose: () => void;
   hasProjector: boolean;
   dragging: boolean;
 }) {
-  const [converting, setConverting] = useState(false);
-
   const supportedExtensions = hasProjector
     ? [...IMAGE_EXTENSIONS, ...VIDEO_EXTENSIONS, ...DOC_EXTENSIONS]
     : [...DOC_EXTENSIONS];
@@ -380,21 +438,23 @@ function MediaAttachModal({
     : 'All supported documents';
 
   async function processDocument(filePath: string, filename: string) {
-    setConverting(true);
+    const id = onAttachTextStart(filename);
     try {
-      const result =
-        await window.electronAPI.convertFileWithMarkitdown(filePath);
+      const result = await withConversionSlot(
+        () => window.electronAPI.convertFileWithMarkitdown(filePath),
+        () => onAttachTextStatus(id, 'converting'),
+      );
       if (result.success && result.markdown) {
-        onAttachText(filename, result.markdown);
+        onAttachText(id, filename, result.markdown);
       } else {
-        alert(
+        onAttachTextFail(id);
+        onToastError(
           `Failed to convert ${filename}: ${result.error || 'Unknown error'}`,
         );
       }
     } catch (err: any) {
-      alert(`Error converting ${filename}: ${err.message}`);
-    } finally {
-      setConverting(false);
+      onAttachTextFail(id);
+      onToastError(`Error converting ${filename}: ${err.message}`);
     }
   }
 
@@ -405,6 +465,7 @@ function MediaAttachModal({
       filters: [{ name: filterName, extensions: supportedExtensions }],
     });
     if (paths.length === 0) return;
+    onClose();
     for (const filePath of paths) {
       const ext = getExtension(filePath);
       const filename = filePath.split(/[/\\]/).pop() || 'file';
@@ -419,49 +480,39 @@ function MediaAttachModal({
         const dataUrl = await window.electronAPI.readFileAsDataUrl(filePath);
         onAttach(dataUrl, filename);
       } else if (DOC_EXTENSIONS_SET.has(ext)) {
-        await processDocument(filePath, filename);
+        processDocument(filePath, filename);
       }
     }
-    onClose();
   };
 
   return (
     <div className="image-modal-overlay" onClick={onClose}>
       <div
-        className={`image-modal${dragging ? ' image-modal--dragging' : ''}${converting ? ' image-modal--converting' : ''}`}
+        className={`image-modal${dragging ? ' image-modal--dragging' : ''}`}
         onClick={(e) => e.stopPropagation()}
       >
         <button className="image-modal__close" onClick={onClose} type="button">
           <X size={18} />
         </button>
         <div className="image-modal__drop-zone">
-          {converting ? (
-            <div className="image-modal__converting">
-              <div className="image-modal__spinner" />
-              <p className="image-modal__label">Converting file...</p>
-            </div>
+          {hasProjector ? (
+            <ImagePlus className="image-modal__icon" size={40} />
           ) : (
-            <>
-              {hasProjector ? (
-                <ImagePlus className="image-modal__icon" size={40} />
-              ) : (
-                <FileText className="image-modal__icon" size={40} />
-              )}
-              <p className="image-modal__label">
-                {hasProjector
-                  ? 'Drop images, videos, or documents here'
-                  : 'Drop documents here'}
-              </p>
-              <p className="image-modal__sublabel">or</p>
-              <button
-                type="button"
-                className="image-modal__browse"
-                onClick={handleSelectFromDisk}
-              >
-                Select from disk
-              </button>
-            </>
+            <FileText className="image-modal__icon" size={40} />
           )}
+          <p className="image-modal__label">
+            {hasProjector
+              ? 'Drop images, videos, or documents here'
+              : 'Drop documents here'}
+          </p>
+          <p className="image-modal__sublabel">or</p>
+          <button
+            type="button"
+            className="image-modal__browse"
+            onClick={handleSelectFromDisk}
+          >
+            Select from disk
+          </button>
         </div>
       </div>
     </div>
@@ -1751,29 +1802,74 @@ export default function ChatPage() {
     }
   };
 
-  const processDroppedDocument = async (filePath: string, filename: string) => {
-    try {
-      const result =
-        await window.electronAPI.convertFileWithMarkitdown(filePath);
-      if (result.success && result.markdown) {
-        const id = crypto.randomUUID();
-        setPendingMedia((prev) => [
-          ...prev,
-          {
-            id,
-            type: 'document',
-            name: filename,
-            content: result.markdown ?? '',
-          },
-        ]);
-      } else {
-        alert(
-          `Failed to convert ${filename}: ${result.error || 'Unknown error'}`,
+  const showErrorToast = useCallback((message: string) => {
+    if (chatErrorTimer.current) clearTimeout(chatErrorTimer.current);
+    const id = Date.now();
+    setChatError({ message, id });
+    chatErrorTimer.current = setTimeout(() => {
+      setChatError((prev) => (prev?.id === id ? null : prev));
+    }, 6000);
+  }, []);
+
+  const convertDocumentToPending = useCallback(
+    (id: string, filePath: string, filename: string) => {
+      const setStatus = (status: 'waiting' | 'converting') =>
+        setPendingMedia((prev) =>
+          prev.some((m) => m.id === id)
+            ? prev.map((m) =>
+                m.id === id && m.type === 'document' ? { ...m, status } : m,
+              )
+            : prev,
         );
-      }
-    } catch (err: any) {
-      alert(`Error converting ${filename}: ${err.message}`);
-    }
+      const convert = async () => {
+        try {
+          const result = await withConversionSlot(
+            () => window.electronAPI.convertFileWithMarkitdown(filePath),
+            () => setStatus('converting'),
+          );
+          if (result.success && result.markdown) {
+            setPendingMedia((prev) =>
+              prev.some((m) => m.id === id)
+                ? prev.map((m) =>
+                    m.id === id && m.type === 'document'
+                      ? {
+                          ...m,
+                          content: result.markdown ?? '',
+                          status: undefined,
+                        }
+                      : m,
+                  )
+                : prev,
+            );
+          } else {
+            setPendingMedia((prev) => prev.filter((m) => m.id !== id));
+            showErrorToast(
+              `Failed to convert ${filename}: ${result.error || 'Unknown error'}`,
+            );
+          }
+        } catch (err: any) {
+          setPendingMedia((prev) => prev.filter((m) => m.id !== id));
+          showErrorToast(`Error converting ${filename}: ${err.message}`);
+        }
+      };
+      convert();
+    },
+    [showErrorToast],
+  );
+
+  const processDroppedDocument = (filePath: string, filename: string) => {
+    const id = crypto.randomUUID();
+    setPendingMedia((prev) => [
+      ...prev,
+      {
+        id,
+        type: 'document',
+        name: filename,
+        content: '',
+        status: 'waiting',
+      },
+    ]);
+    convertDocumentToPending(id, filePath, filename);
   };
 
   const handlePageDrop = async (e: DragEvent<HTMLDivElement>) => {
@@ -1817,19 +1913,41 @@ export default function ChatPage() {
       } else if (DOC_EXTENSIONS_SET.has(ext)) {
         const filePath = (file as any).path;
         if (filePath) {
-          await processDroppedDocument(filePath, file.name);
+          processDroppedDocument(filePath, file.name);
         } else {
-          const reader = new FileReader();
-          const result = await new Promise<ArrayBuffer>((resolve, reject) => {
-            reader.onload = (ev) => resolve(ev.target!.result as ArrayBuffer);
-            reader.onerror = () => reject(new Error('Failed to read file'));
-            reader.readAsArrayBuffer(file);
-          });
-          const tempPath = await window.electronAPI.saveBufferToTemp(
-            new Uint8Array(result),
-            file.name,
-          );
-          await processDroppedDocument(tempPath, file.name);
+          const id = crypto.randomUUID();
+          setPendingMedia((prev) => [
+            ...prev,
+            {
+              id,
+              type: 'document',
+              name: file.name,
+              content: '',
+              status: 'waiting',
+            },
+          ]);
+          (async () => {
+            try {
+              const reader = new FileReader();
+              const result = await new Promise<ArrayBuffer>(
+                (resolve, reject) => {
+                  reader.onload = (ev) =>
+                    resolve(ev.target!.result as ArrayBuffer);
+                  reader.onerror = () =>
+                    reject(new Error('Failed to read file'));
+                  reader.readAsArrayBuffer(file);
+                },
+              );
+              const tempPath = await window.electronAPI.saveBufferToTemp(
+                new Uint8Array(result),
+                file.name,
+              );
+              convertDocumentToPending(id, tempPath, file.name);
+            } catch (err: any) {
+              setPendingMedia((prev) => prev.filter((m) => m.id !== id));
+              showErrorToast(`Error reading ${file.name}: ${err.message}`);
+            }
+          })();
         }
       }
     }
@@ -1844,7 +1962,12 @@ export default function ChatPage() {
       persistentModelLoading ||
       !selectedProfileId ||
       loadError ||
-      systemPhase !== 'ready'
+      systemPhase !== 'ready' ||
+      pendingMedia.some(
+        (m) =>
+          m.type === 'document' &&
+          (m.status === 'waiting' || m.status === 'converting'),
+      )
     )
       return;
 
@@ -1899,7 +2022,7 @@ export default function ChatPage() {
 
     if (videoExtractError) {
       setPendingMedia([]);
-      alert(`Failed to process video: ${videoExtractError}`);
+      showErrorToast(`Failed to process video: ${videoExtractError}`);
       return;
     }
 
@@ -3107,11 +3230,24 @@ export default function ChatPage() {
                         />
                       )}
                       {item.type === 'document' && (
-                        <div className="chat-media-preview__document">
-                          <FileText size={20} />
+                        <div
+                          className={`chat-media-preview__document${item.status ? ' chat-media-preview__document--pending' : ''}`}
+                        >
+                          {item.status ? (
+                            <div className="chat-media-preview__spinner" />
+                          ) : (
+                            <FileText size={20} />
+                          )}
                           <span className="chat-media-preview__doc-name">
                             {item.name}
                           </span>
+                          {item.status && (
+                            <span className="chat-media-preview__converting">
+                              {item.status === 'waiting'
+                                ? 'Waiting…'
+                                : 'Converting…'}
+                            </span>
+                          )}
                         </div>
                       )}
                       <button
@@ -3161,7 +3297,12 @@ export default function ChatPage() {
                   !selectedProfileId ||
                   modelLoading ||
                   persistentModelLoading ||
-                  !!loadError
+                  !!loadError ||
+                  pendingMedia.some(
+                    (m) =>
+                      m.type === 'document' &&
+                      (m.status === 'waiting' || m.status === 'converting'),
+                  )
                 }
                 onClick={handleSend}
                 title="Send message"
@@ -3244,13 +3385,40 @@ export default function ChatPage() {
                 },
               ]);
             }}
-            onAttachText={(name, content) => {
+            onAttachTextStart={(name) => {
               const id = crypto.randomUUID();
               setPendingMedia((prev) => [
                 ...prev,
-                { id, type: 'document', name, content },
+                { id, type: 'document', name, content: '', status: 'waiting' },
               ]);
+              return id;
             }}
+            onAttachTextStatus={(id, status) => {
+              setPendingMedia((prev) =>
+                prev.some((m) => m.id === id)
+                  ? prev.map((m) =>
+                      m.id === id && m.type === 'document'
+                        ? { ...m, status }
+                        : m,
+                    )
+                  : prev,
+              );
+            }}
+            onAttachText={(id, name, content) => {
+              setPendingMedia((prev) =>
+                prev.some((m) => m.id === id)
+                  ? prev.map((m) =>
+                      m.id === id && m.type === 'document'
+                        ? { ...m, content, status: undefined }
+                        : m,
+                    )
+                  : prev,
+              );
+            }}
+            onAttachTextFail={(id) => {
+              setPendingMedia((prev) => prev.filter((m) => m.id !== id));
+            }}
+            onToastError={showErrorToast}
             onClose={() => setShowImageModal(false)}
             hasProjector={canAttachImages}
             dragging={pageDragging}

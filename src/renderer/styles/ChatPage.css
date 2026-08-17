@@ -1959,6 +1959,30 @@
   line-height: 1.2;
 }
 
+.chat-media-preview__document--pending {
+  border-style: dashed;
+  opacity: 0.85;
+  height: auto;
+  min-height: 64px;
+}
+
+.chat-media-preview__spinner {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: image-modal-spin 0.7s linear infinite;
+}
+
+.chat-media-preview__converting {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  line-height: 1.2;
+}
+
 .chat-media-preview__remove {
   position: absolute;
   top: -6px;
@@ -2143,33 +2167,6 @@
 .image-modal__browse:hover {
   background: var(--bg-hover);
   border-color: var(--accent);
-}
-
-.image-modal--converting {
-  border-color: var(--accent);
-}
-
-.image-modal__converting {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  padding: 28px 24px;
-  border: 2px dashed var(--border);
-  border-radius: var(--radius-md);
-  width: 100%;
-  flex: 1;
-  box-sizing: border-box;
-}
-
-.image-modal__spinner {
-  width: 32px;
-  height: 32px;
-  border: 3px solid var(--border);
-  border-top-color: var(--accent);
-  border-radius: 50%;
-  animation: image-modal-spin 0.7s linear infinite;
 }
 
 @keyframes image-modal-spin {
