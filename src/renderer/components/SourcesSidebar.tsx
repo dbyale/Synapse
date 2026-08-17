@@ -105,7 +105,12 @@ export default function SourcesSidebar({
     >
       <div className="sources-sidebar" style={{ width: 320, minWidth: 320 }}>
         <div className="sources-sidebar__header">
-          <span className="sources-sidebar__title">Sources</span>
+          <span className="sources-sidebar__title">
+            Sources
+            <span className="sources-sidebar__count">
+              ({filteredSources.length})
+            </span>
+          </span>
           <button
             type="button"
             className="sources-sidebar__close"

@@ -973,6 +973,13 @@
   color: var(--text-primary);
 }
 
+.sources-sidebar__count {
+  margin-left: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
 .sources-sidebar__close {
   width: 28px;
   height: 28px;
