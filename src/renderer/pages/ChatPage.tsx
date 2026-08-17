@@ -42,7 +42,9 @@ import UserInputModal from '../components/UserInputModal';
 import ProfileSelectModal from '../components/ProfileSelectModal';
 import SessionsSidebar from '../components/SessionsSidebar';
 import InfoTooltip from '../components/InfoTooltip';
-import ThinkingDropdown from '../components/ThinkingDropdown';
+import ThinkingDropdown, {
+  readThinkingTokens,
+} from '../components/ThinkingDropdown';
 import SavingsModal from '../components/SavingsModal';
 import { useSourcesContext } from '../context/SourcesContext';
 import type { Profile } from '../types/profile';
@@ -830,7 +832,6 @@ export default function ChatPage() {
       } catch {
         // Ignore storage errors
       }
-      window.electronAPI.chatSetThinkingTokens(tokens).catch(() => {});
     },
     [selectedProfileId],
   );
@@ -2120,6 +2121,7 @@ export default function ChatPage() {
       text,
       contentParts,
       mediaItems,
+      readThinkingTokens(selectedProfileId),
     );
   };
 
@@ -3060,7 +3062,16 @@ export default function ChatPage() {
                 <div className="chat-message__stats">
                   <InfoTooltip
                     title="Tokens generated"
-                    content={GENERATED_TOKENS_STAT_TOOLTIP}
+                    content={[
+                      GENERATED_TOKENS_STAT_TOOLTIP[0],
+                      ...(msg.stats.responseTokens !== undefined
+                        ? [
+                            `Response tokens: ${msg.stats.responseTokens.toLocaleString()}`,
+                            `Thinking tokens: ${(msg.stats.thinkingTokens ?? 0).toLocaleString()}`,
+                            `Tool call tokens: ${(msg.stats.toolTokens ?? 0).toLocaleString()}`,
+                          ]
+                        : []),
+                    ]}
                     hideIcon
                     portal
                   >

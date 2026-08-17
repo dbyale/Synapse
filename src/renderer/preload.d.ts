@@ -167,13 +167,13 @@ declare global {
         profile: Partial<Profile>,
         resolved?: { ngl: number; ctx: number } | null,
       ) => Promise<string[] | null>;
-      chatSetThinkingTokens: (tokens: number) => Promise<{ success: boolean }>;
       chatHasProjector: () => Promise<boolean>;
       chatSend: (
         sessionId: string,
         text: string,
         contentParts?: ContentPart[],
         displayItems?: any[],
+        thinkingTokens?: number,
       ) => Promise<{ success: boolean; error?: string }>;
       chatStartSession: (profileId: string, title: string) => Promise<string>;
       chatGetSession: (sessionId: string) => Promise<SessionView | null>;

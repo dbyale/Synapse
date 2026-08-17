@@ -33,6 +33,9 @@ export interface GenerationStats {
   tokens: number;
   timeMs: number;
   tokensPerSecond: number;
+  responseTokens?: number;
+  thinkingTokens?: number;
+  toolTokens?: number;
 }
 
 export interface SendMessageResponse {
@@ -516,7 +519,11 @@ export function buildLlamaServerArgs(
 }
 
 // --- Build request body, only including profile fields that are defined ---
-function buildChatBody(messages: any[], tools: any[]): Record<string, any> {
+function buildChatBody(
+  messages: any[],
+  tools: any[],
+  thinkingTokensOverride?: number,
+): Record<string, any> {
   const p = currentProfile;
 
   const body: Record<string, any> = {
@@ -567,7 +574,7 @@ function buildChatBody(messages: any[], tools: any[]): Record<string, any> {
   // Mirrors the llama.cpp webui (tools/ui/src/lib/services/chat.service.ts): thinking is
   // toggled via chat_template_kwargs.enable_thinking, budgeted per-request via
   // reasoning_budget_tokens, and reasoning is parsed into reasoning_content via reasoning_format.
-  const thinkingTokens = p?.thinkingTokens ?? 8192;
+  const thinkingTokens = thinkingTokensOverride ?? p?.thinkingTokens ?? 8192;
   body.reasoning_format = 'auto';
   body.reasoning_budget_tokens = thinkingTokens;
   body.chat_template_kwargs = {
@@ -1242,6 +1249,7 @@ export async function sendMessage(
     text?: string;
   }[],
   displayItems?: MediaDisplayItem[],
+  thinkingTokens?: number,
 ): Promise<SendMessageResponse> {
   if (!currentProfile) throw new Error('No profile loaded');
   const s = getSessionState(sessionId);
@@ -1325,11 +1333,19 @@ export async function sendMessage(
   s.streamingTool = null;
   emitSessionChanged(sessionId);
 
+  // Token counts per output category, accumulated across all tool-loop rounds
+  // so the breakdown covers the full message (response, thinking, tool calls).
+  let responseTokenCount = 0;
+  let thinkingTokenCount = 0;
+  let toolTokenCount = 0;
+
   const runCompletion = async (): Promise<SendMessageResponse> => {
     const response = await fetch(getServerUrl('/v1/chat/completions'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(buildChatBody(s.history, activeTools)),
+      body: JSON.stringify(
+        buildChatBody(s.history, activeTools, thinkingTokens),
+      ),
       signal: s.abortController?.signal,
     });
 
@@ -1435,6 +1451,9 @@ export async function sendMessage(
                 tokens: data.usage.completion_tokens,
                 timeMs: data.timings?.predicted_ms || 0,
                 tokensPerSecond: data.timings?.predicted_per_second || 0,
+                responseTokens: responseTokenCount,
+                thinkingTokens: thinkingTokenCount,
+                toolTokens: toolTokenCount,
               };
               const pFromUsage: GenerationStats = {
                 tokens: currentNewTokens,
@@ -1458,6 +1477,7 @@ export async function sendMessage(
 
             if (delta.content) {
               fullResponse += delta.content;
+              responseTokenCount += 1;
               s.promptProgress = 0;
               appendAssistantToken(s, delta.content);
               emit({
@@ -1468,6 +1488,7 @@ export async function sendMessage(
             }
             if (delta.reasoning_content) {
               s.promptProgress = 0;
+              thinkingTokenCount += 1;
               appendAssistantToken(s, delta.reasoning_content, 'thought');
               emit({
                 type: 'token',
@@ -1492,6 +1513,7 @@ export async function sendMessage(
                 }
                 if (tc.function?.arguments) {
                   toolCalls[tc.index].args += tc.function.arguments;
+                  toolTokenCount += 1;
                   if (s.streamingTool) {
                     s.streamingTool = {
                       ...s.streamingTool,
@@ -1777,11 +1799,6 @@ export function getCurrentProfile() {
   return currentProfile;
 }
 
-export function setThinkingTokens(tokens: number) {
-  if (currentProfile) {
-    currentProfile.thinkingTokens = tokens;
-  }
-}
 export function getActiveTools(): any[] {
   return activeTools;
 }

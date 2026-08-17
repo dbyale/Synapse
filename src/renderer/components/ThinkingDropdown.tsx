@@ -24,7 +24,9 @@ const THINKING_BUDGET_TOOLTIP = [
 const DEFAULT_THINKING_TOKENS = 8192;
 const VALID_TOKENS = new Set(THINKING_OPTIONS.map((o) => o.tokens));
 
-function readThinkingTokens(profileId: string | null | undefined): number {
+export function readThinkingTokens(
+  profileId: string | null | undefined,
+): number {
   if (!profileId) return DEFAULT_THINKING_TOKENS;
   try {
     const stored = localStorage.getItem('profiles');
@@ -58,6 +60,16 @@ export default function ThinkingDropdown({
 
   useEffect(() => {
     setTokens(readThinkingTokens(profileId));
+  }, [profileId]);
+
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === 'profiles') {
+        setTokens(readThinkingTokens(profileId));
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
   }, [profileId]);
 
   useEffect(() => {

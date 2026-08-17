@@ -2,6 +2,9 @@ export interface GenerationStatsData {
   tokens: number;
   timeMs: number;
   tokensPerSecond: number;
+  responseTokens?: number;
+  thinkingTokens?: number;
+  toolTokens?: number;
 }
 
 export interface MediaDisplayItem {

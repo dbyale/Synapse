@@ -104,8 +104,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     profile: unknown,
     resolved?: { ngl: number; ctx: number } | null,
   ) => ipcRenderer.invoke('chat:getLaunchArgs', profile, resolved),
-  chatSetThinkingTokens: (tokens: number) =>
-    ipcRenderer.invoke('chat:setThinkingTokens', tokens),
   chatSend: (
     sessionId: string,
     text: string,
@@ -116,6 +114,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       text?: string;
     }[],
     displayItems?: any[],
+    thinkingTokens?: number,
   ) =>
     ipcRenderer.invoke(
       'chat:send',
@@ -123,6 +122,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       text,
       contentParts,
       displayItems,
+      thinkingTokens,
     ),
   chatStartSession: (profileId: string, title: string) =>
     ipcRenderer.invoke('chat:startSession', profileId, title),

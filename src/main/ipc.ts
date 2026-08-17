@@ -460,11 +460,6 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     },
   );
 
-  ipcMain.handle('chat:setThinkingTokens', (_event, tokens: number) => {
-    chatService.setThinkingTokens(tokens);
-    return { success: true };
-  });
-
   ipcMain.handle(
     'chat:send',
     async (
@@ -478,6 +473,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
         text?: string;
       }[],
       displayItems?: any[],
+      thinkingTokens?: number,
     ) => {
       try {
         await chatService.sendMessage(
@@ -485,6 +481,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
           text,
           contentParts,
           displayItems,
+          thinkingTokens,
         );
         return { success: true };
       } catch (err: any) {
