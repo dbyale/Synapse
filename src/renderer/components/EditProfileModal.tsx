@@ -47,6 +47,11 @@ import {
   TOP_P_TOOLTIP,
   MIN_P_TOOLTIP,
   SEED_TOOLTIP,
+  IGNORE_EOS_TOOLTIP,
+  TYPICAL_P_TOOLTIP,
+  TOP_N_SIGMA_TOOLTIP,
+  XTC_PROBABILITY_TOOLTIP,
+  XTC_THRESHOLD_TOOLTIP,
   REPEAT_PENALTY_TOOLTIP,
   LAST_TOKENS_TOOLTIP,
   REPEAT_PENALTY_VALUE_TOOLTIP,
@@ -175,6 +180,7 @@ const PAGE_DEPTH: Record<string, number> = {
   tools: 1,
   advanced: 1,
   'repeat-penalty': 2,
+  'advanced-samplers': 2,
   projector: 1,
   'video-settings': 2,
   performance: 1,
@@ -193,6 +199,10 @@ const BREADCRUMB_MAP: Record<string, { label: string; parent: string | null }> =
     tools: { label: 'Tools', parent: 'main' },
     advanced: { label: 'Advanced Parameters', parent: 'main' },
     'repeat-penalty': { label: 'Repeat Penalty', parent: 'advanced' },
+    'advanced-samplers': {
+      label: 'Advanced Samplers',
+      parent: 'advanced',
+    },
     projector: { label: 'Projector', parent: 'main' },
     'video-settings': { label: 'Video Settings', parent: 'projector' },
     performance: { label: 'Performance', parent: 'main' },
@@ -727,8 +737,6 @@ function AdvancedPage({
   setEditTopP,
   editMinP,
   setEditMinP,
-  editSeed,
-  setEditSeed,
   onNavigate,
 }: {
   editTemperature: string;
@@ -739,8 +747,6 @@ function AdvancedPage({
   setEditTopP: (v: string) => void;
   editMinP: string;
   setEditMinP: (v: string) => void;
-  editSeed: string;
-  setEditSeed: (v: string) => void;
   onNavigate: (page: string) => void;
 }) {
   return (
@@ -785,15 +791,6 @@ function AdvancedPage({
           helper="Default: 0.05"
           tooltip={MIN_P_TOOLTIP}
         />
-        <NumberField
-          label="Seed"
-          value={editSeed}
-          onChange={setEditSeed}
-          min="0"
-          step="1"
-          helper="Default: -1 (random)"
-          tooltip={SEED_TOOLTIP}
-        />
       </div>
 
       <div style={{ marginTop: '20px' }}>
@@ -803,6 +800,14 @@ function AdvancedPage({
           preview="Discourages the model from repeating recent tokens"
           onClick={() => onNavigate('repeat-penalty')}
         />
+        <div style={{ marginTop: '12px' }}>
+          <SectionCard
+            icon={<SlidersHorizontal size={18} />}
+            title="Advanced Samplers"
+            preview="Ignore EOS, seed, locally typical, top-n-sigma and XTC sampling"
+            onClick={() => onNavigate('advanced-samplers')}
+          />
+        </div>
       </div>
     </>
   );
@@ -923,19 +928,31 @@ function RepeatPenaltyPage({
         Discourages the model from repeating recent tokens.
       </p>
 
-      <label className="epm-rp-enabled-row">
-        <input
-          type="checkbox"
-          checked={editRpEnabled}
-          onChange={(e) => setEditRpEnabled(e.target.checked)}
-        />
+      <label className="epm-perf-toggle-row" style={{ paddingTop: 0 }}>
         <InfoTooltip
           content={REPEAT_PENALTY_TOOLTIP}
           side="right"
-          hideIcon
-          title="Enabled"
+          stretch
+          portal
+          className="info-tooltip-stretch--row"
+          title="Repeat Penalty"
         >
-          <span>Enabled</span>
+          <span className="epm-perf-toggle-label">Enabled</span>
+          <div
+            className={`epm-toggle-switch${editRpEnabled ? ' epm-toggle-switch--on' : ''}`}
+            onClick={() => setEditRpEnabled(!editRpEnabled)}
+            role="switch"
+            aria-checked={editRpEnabled}
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === ' ' || e.key === 'Enter') {
+                e.preventDefault();
+                setEditRpEnabled(!editRpEnabled);
+              }
+            }}
+          >
+            <div className="epm-toggle-switch__knob" />
+          </div>
         </InfoTooltip>
       </label>
 
@@ -1000,19 +1017,31 @@ function RepeatPenaltyPage({
           DRY SETTINGS
         </div>
 
-        <label className="epm-rp-enabled-row">
-          <input
-            type="checkbox"
-            checked={editDryEnabled}
-            onChange={(e) => setEditDryEnabled(e.target.checked)}
-          />
+        <label className="epm-perf-toggle-row" style={{ paddingTop: 0 }}>
           <InfoTooltip
             content={DRY_PENALTY_ENABLED}
             side="right"
-            hideIcon
-            title="Enabled"
+            stretch
+            portal
+            className="info-tooltip-stretch--row"
+            title="DRY Sampling"
           >
-            <span>Enabled</span>
+            <span className="epm-perf-toggle-label">Enabled</span>
+            <div
+              className={`epm-toggle-switch${editDryEnabled ? ' epm-toggle-switch--on' : ''}`}
+              onClick={() => setEditDryEnabled(!editDryEnabled)}
+              role="switch"
+              aria-checked={editDryEnabled}
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === ' ' || e.key === 'Enter') {
+                  e.preventDefault();
+                  setEditDryEnabled(!editDryEnabled);
+                }
+              }}
+            >
+              <div className="epm-toggle-switch__knob" />
+            </div>
           </InfoTooltip>
         </label>
 
@@ -1078,6 +1107,128 @@ function RepeatPenaltyPage({
             </InfoTooltip>
           </div>
         </div>
+      </div>
+    </>
+  );
+}
+
+function AdvancedSamplersPage({
+  editIgnoreEos,
+  setEditIgnoreEos,
+  editSeed,
+  setEditSeed,
+  editTypicalP,
+  setEditTypicalP,
+  editTopNSigma,
+  setEditTopNSigma,
+  editXtcProbability,
+  setEditXtcProbability,
+  editXtcThreshold,
+  setEditXtcThreshold,
+}: {
+  editIgnoreEos: boolean;
+  setEditIgnoreEos: (v: boolean) => void;
+  editSeed: string;
+  setEditSeed: (v: string) => void;
+  editTypicalP: string;
+  setEditTypicalP: (v: string) => void;
+  editTopNSigma: string;
+  setEditTopNSigma: (v: string) => void;
+  editXtcProbability: string;
+  setEditXtcProbability: (v: string) => void;
+  editXtcThreshold: string;
+  setEditXtcThreshold: (v: string) => void;
+}) {
+  return (
+    <>
+      <p
+        style={{
+          fontSize: '14px',
+          color: 'var(--text-secondary)',
+          margin: '0 0 16px',
+          lineHeight: 1.5,
+        }}
+      >
+        Additional sampling strategies for fine-tuning generation.
+      </p>
+
+      <label className="epm-perf-toggle-row" style={{ paddingTop: 0 }}>
+        <InfoTooltip
+          content={IGNORE_EOS_TOOLTIP}
+          side="right"
+          stretch
+          portal
+          className="info-tooltip-stretch--row"
+          title="Ignore EOS"
+        >
+          <span className="epm-perf-toggle-label">Ignore EOS</span>
+          <div
+            className={`epm-toggle-switch${editIgnoreEos ? ' epm-toggle-switch--on' : ''}`}
+            onClick={() => setEditIgnoreEos(!editIgnoreEos)}
+            role="switch"
+            aria-checked={editIgnoreEos}
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === ' ' || e.key === 'Enter') {
+                e.preventDefault();
+                setEditIgnoreEos(!editIgnoreEos);
+              }
+            }}
+          >
+            <div className="epm-toggle-switch__knob" />
+          </div>
+        </InfoTooltip>
+      </label>
+
+      <div className="epm-number-grid" style={{ marginTop: '16px' }}>
+        <NumberField
+          label="Seed"
+          value={editSeed}
+          onChange={setEditSeed}
+          min="0"
+          step="1"
+          helper="Default: -1 (random)"
+          tooltip={SEED_TOOLTIP}
+        />
+        <NumberField
+          label="Typical P"
+          value={editTypicalP}
+          onChange={setEditTypicalP}
+          min="0"
+          max="1"
+          step="0.01"
+          helper="Default: 1.00 (disabled)"
+          tooltip={TYPICAL_P_TOOLTIP}
+        />
+        <NumberField
+          label="Top N Sigma"
+          value={editTopNSigma}
+          onChange={setEditTopNSigma}
+          min="-1"
+          step="0.01"
+          helper="Default: -1.00 (disabled)"
+          tooltip={TOP_N_SIGMA_TOOLTIP}
+        />
+        <NumberField
+          label="XTC Probability"
+          value={editXtcProbability}
+          onChange={setEditXtcProbability}
+          min="0"
+          max="1"
+          step="0.01"
+          helper="Default: 0.00 (disabled)"
+          tooltip={XTC_PROBABILITY_TOOLTIP}
+        />
+        <NumberField
+          label="XTC Threshold"
+          value={editXtcThreshold}
+          onChange={setEditXtcThreshold}
+          min="0"
+          max="1"
+          step="0.01"
+          helper="Default: 0.10"
+          tooltip={XTC_THRESHOLD_TOOLTIP}
+        />
       </div>
     </>
   );
@@ -1417,21 +1568,33 @@ function VideoSettingsPage({
 }) {
   return (
     <>
-      <label
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-          marginBottom: '16px',
-          cursor: 'pointer',
-        }}
-      >
-        <input
-          type="checkbox"
-          checked={editVideoUnlimitedMaxFrames}
-          onChange={(e) => setEditVideoUnlimitedMaxFrames(e.target.checked)}
-        />
-        <span>Disable Frame Limit</span>
+      <label className="epm-perf-toggle-row" style={{ paddingTop: 0 }}>
+        <InfoTooltip
+          content="Remove the maximum frame limit when extracting frames from videos."
+          side="right"
+          stretch
+          className="info-tooltip-stretch--row"
+          title="Disable Frame Limit"
+        >
+          <span className="epm-perf-toggle-label">Disable Frame Limit</span>
+          <div
+            className={`epm-toggle-switch${editVideoUnlimitedMaxFrames ? ' epm-toggle-switch--on' : ''}`}
+            onClick={() =>
+              setEditVideoUnlimitedMaxFrames(!editVideoUnlimitedMaxFrames)
+            }
+            role="switch"
+            aria-checked={editVideoUnlimitedMaxFrames}
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === ' ' || e.key === 'Enter') {
+                e.preventDefault();
+                setEditVideoUnlimitedMaxFrames(!editVideoUnlimitedMaxFrames);
+              }
+            }}
+          >
+            <div className="epm-toggle-switch__knob" />
+          </div>
+        </InfoTooltip>
       </label>
       <div className="epm-number-grid">
         <NumberField
@@ -3315,6 +3478,23 @@ export default function EditProfileModal({
   const [editTopP, setEditTopP] = useState(String(profile?.topP ?? 0.95));
   const [editMinP, setEditMinP] = useState(String(profile?.minP ?? 0.05));
   const [editSeed, setEditSeed] = useState(String(profile?.seed ?? -1));
+  const [editIgnoreEos, setEditIgnoreEos] = useState(
+    profile?.ignoreEos === true,
+  );
+  const [editTypicalP, setEditTypicalP] = useState(
+    profile?.typicalP !== undefined ? String(profile.typicalP) : '',
+  );
+  const [editTopNSigma, setEditTopNSigma] = useState(
+    profile?.topNSigma !== undefined ? String(profile.topNSigma) : '',
+  );
+  const [editXtcProbability, setEditXtcProbability] = useState(
+    profile?.xtc?.probability !== undefined
+      ? String(profile.xtc.probability)
+      : '',
+  );
+  const [editXtcThreshold, setEditXtcThreshold] = useState(
+    profile?.xtc?.threshold !== undefined ? String(profile.xtc.threshold) : '',
+  );
   const [editModelAuthor, setEditModelAuthor] = useState(
     profile?.modelAuthor ?? '',
   );
@@ -3863,6 +4043,26 @@ export default function EditProfileModal({
       return Object.keys(rp).length > 0 ? rp : undefined;
     };
 
+    const buildAdvancedSamplers = (): Partial<Profile> => {
+      const s: Partial<Profile> = {};
+      if (editIgnoreEos) s.ignoreEos = true;
+      const typicalP = parseFloat(editTypicalP);
+      if (!isNaN(typicalP) && typicalP !== 1.0) s.typicalP = typicalP;
+      const topNSigma = parseFloat(editTopNSigma);
+      if (!isNaN(topNSigma) && topNSigma !== -1.0) s.topNSigma = topNSigma;
+      const xtcProbability = parseFloat(editXtcProbability);
+      const xtcThreshold = parseFloat(editXtcThreshold);
+      if (
+        !isNaN(xtcProbability) &&
+        xtcProbability !== 0 &&
+        !isNaN(xtcThreshold) &&
+        xtcThreshold !== 0.1
+      ) {
+        s.xtc = { probability: xtcProbability, threshold: xtcThreshold };
+      }
+      return s;
+    };
+
     const now = Date.now();
     const updatedProfile: Profile = {
       id: profile?.id ?? now.toString(),
@@ -3891,6 +4091,7 @@ export default function EditProfileModal({
       seed: parseInt(editSeed, 10),
       tools: editTools.filter((t) => getAvailableToolNames().includes(t)),
       repeatPenalty: buildRepeatPenalty(),
+      ...buildAdvancedSamplers(),
       kvOffload: editKvOffload,
       flashAttn: editFlashAttn,
       cacheTypeK: editCacheTypeK,
@@ -4103,9 +4304,24 @@ export default function EditProfileModal({
             setEditTopP={setEditTopP}
             editMinP={editMinP}
             setEditMinP={setEditMinP}
+            onNavigate={navigateTo}
+          />
+        );
+      case 'advanced-samplers':
+        return (
+          <AdvancedSamplersPage
+            editIgnoreEos={editIgnoreEos}
+            setEditIgnoreEos={setEditIgnoreEos}
             editSeed={editSeed}
             setEditSeed={setEditSeed}
-            onNavigate={navigateTo}
+            editTypicalP={editTypicalP}
+            setEditTypicalP={setEditTypicalP}
+            editTopNSigma={editTopNSigma}
+            setEditTopNSigma={setEditTopNSigma}
+            editXtcProbability={editXtcProbability}
+            setEditXtcProbability={setEditXtcProbability}
+            editXtcThreshold={editXtcThreshold}
+            setEditXtcThreshold={setEditXtcThreshold}
           />
         );
       case 'performance':

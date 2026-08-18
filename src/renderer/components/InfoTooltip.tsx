@@ -31,11 +31,17 @@ export default function InfoTooltip({
   const wrapperRef = useRef<HTMLDivElement>(null);
   const [rect, setRect] = useState<DOMRect | null>(null);
 
+  const getRect = (): DOMRect | null => {
+    const el =
+      wrapperRef.current?.querySelector('.info-tooltip-anchor') ??
+      wrapperRef.current;
+    return el ? el.getBoundingClientRect() : null;
+  };
+
   useEffect(() => {
     if (!portal || !rect) return undefined;
     const update = () => {
-      const el = wrapperRef.current;
-      if (el) setRect(el.getBoundingClientRect());
+      setRect(getRect());
     };
     window.addEventListener('resize', update);
     window.addEventListener('scroll', update, true);
@@ -92,6 +98,38 @@ export default function InfoTooltip({
     };
   };
 
+  if (stretch && portal) {
+    const childArray = Children.toArray(children);
+    const firstChild = childArray[0];
+    const restChildren = childArray.slice(1);
+    return (
+      <div
+        ref={wrapperRef}
+        className={`info-tooltip-wrapper info-tooltip-wrapper--stretch${className ? ` ${className}` : ''}`}
+        style={style}
+        onMouseEnter={() => setRect(getRect())}
+        onMouseLeave={() => setRect(null)}
+      >
+        <div
+          className={`info-tooltip-anchor${restChildren.length === 0 ? ' info-tooltip-anchor--fill' : ''}`}
+        >
+          {firstChild}
+        </div>
+        {restChildren}
+        {rect &&
+          createPortal(
+            <div
+              className={`info-tooltip info-tooltip--portal info-tooltip--portal--${side}`}
+              style={getPortalStyle()}
+            >
+              {renderBody()}
+            </div>,
+            document.body,
+          )}
+      </div>
+    );
+  }
+
   if (stretch && !portal) {
     const childArray = Children.toArray(children);
     const firstChild = childArray[0];
@@ -120,8 +158,7 @@ export default function InfoTooltip({
           className={`info-tooltip-wrapper info-tooltip-wrapper--${side}${className ? ` ${className}` : ''}`}
           style={style}
           onMouseEnter={() => {
-            const el = wrapperRef.current;
-            if (el) setRect(el.getBoundingClientRect());
+            setRect(getRect());
           }}
           onMouseLeave={() => setRect(null)}
         >

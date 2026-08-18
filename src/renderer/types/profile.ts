@@ -28,6 +28,9 @@ export interface Profile {
   topP?: number;
   minP?: number;
   seed?: number;
+  typicalP?: number;
+  topNSigma?: number;
+  ignoreEos?: boolean;
   xtc?: {
     probability: number;
     threshold: number;

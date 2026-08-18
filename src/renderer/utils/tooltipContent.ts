@@ -12,27 +12,23 @@ export const MMPROJ_OFFLOAD_TOOLTIP = [
   'Controls whether the multimodal projector is offloaded to the GPU.',
   'When enabled (default), projector weights are loaded into VRAM for faster vision processing.',
   'Disable to keep the projector in CPU memory.',
-  'Flag: --mmproj-offload / --no-mmproj-offload (env: LLAMA_ARG_MMPROJ_OFFLOAD, default: enabled).',
 ];
 
 export const IMAGE_MIN_TOKENS_TOOLTIP = [
   'Minimum number of tokens each image can take.',
   'Only used by vision models with dynamic resolution.',
   'Default: read from model.',
-  'Flag: --image-min-tokens (env: LLAMA_ARG_IMAGE_MIN_TOKENS).',
 ];
 
 export const IMAGE_MAX_TOKENS_TOOLTIP = [
   'Maximum number of tokens each image can take.',
   'Only used by vision models with dynamic resolution.',
   'Default: read from model.',
-  'Flag: --image-max-tokens (env: LLAMA_ARG_IMAGE_MAX_TOKENS).',
 ];
 
 export const MTMD_BATCH_MAX_TOKENS_TOOLTIP = [
   'Maximum number of image tokens per batch when encoding images.',
   'Default: 1024.',
-  'Flag: --mtmd-batch-max-tokens (env: LLAMA_ARG_MTMD_BATCH_MAX_TOKENS).',
 ];
 
 // ── Advanced Generation Parameters ──
@@ -68,6 +64,38 @@ export const SEED_TOOLTIP = [
   'Using the same seed, model, and parameters produces identical output.',
   'Set to -1 for fully random output each time.',
   'Default: -1 (random).',
+];
+
+// ── Advanced Samplers ──
+
+export const IGNORE_EOS_TOOLTIP = [
+  'Ignore the end-of-stream (EOS) token and continue generating.',
+  'The model keeps producing tokens past its natural stopping point until another stop condition is reached.',
+  'Implies logit bias of -infinity on the EOS token.',
+];
+
+export const TYPICAL_P_TOOLTIP = [
+  'Locally typical sampling — keeps tokens whose probability is close to the expected entropy of the distribution.',
+  'A value of 1.0 disables this sampler.',
+  'Range: 0–1. Default: 1.00 (disabled).',
+];
+
+export const TOP_N_SIGMA_TOOLTIP = [
+  'Top-n-sigma sampling — keeps tokens within n standard deviations of the mean logit.',
+  'A value of -1.0 disables this sampler.',
+  'Default: -1.00 (disabled).',
+];
+
+export const XTC_PROBABILITY_TOOLTIP = [
+  'XTC probability — chance of applying XTC (exclude top choice) sampling at each step.',
+  'A value of 0.0 disables this sampler.',
+  'Range: 0–1. Default: 0.00 (disabled).',
+];
+
+export const XTC_THRESHOLD_TOOLTIP = [
+  'XTC threshold — excludes top choices whose probability exceeds this threshold.',
+  'A value of 1.0 effectively disables XTC.',
+  'Range: 0–1. Default: 0.10.',
 ];
 
 // ── Repeat Penalty ──
@@ -305,7 +333,6 @@ export const CPU_MOE_TOOLTIP = [
 export const N_CPU_MOE_TOOLTIP = [
   'Keeps the MoE weights of the first N layers in the CPU (--n-cpu-moe).',
   'Layers beyond N will have their MoE weights on the GPU.',
-  'Set to 0 to let the server decide or use the --cpu-moe flag for all layers.',
   'Default: 0.',
 ];
 

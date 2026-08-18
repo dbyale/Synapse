@@ -265,6 +265,7 @@ body,
 /* ── Portal mode (bubbles rendered at document.body) ── */
 .info-tooltip--portal {
   position: fixed;
+  z-index: 2500;
   opacity: 1;
   visibility: visible;
 }

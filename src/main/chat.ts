@@ -539,12 +539,20 @@ function buildChatBody(
   if (p?.topK !== undefined) body.top_k = p.topK;
   if (p?.topP !== undefined) body.top_p = p.topP;
   if (p?.minP !== undefined) body.min_p = p.minP;
-  if (p?.seed !== undefined) body.seed = p.seed;
+  if (p?.seed !== undefined && p.seed !== -1) body.seed = p.seed;
+
+  // Advanced samplers
+  if (p?.typicalP !== undefined && p.typicalP !== 1.0)
+    body.typical_p = p.typicalP;
+  if (p?.topNSigma !== undefined && p.topNSigma !== -1.0)
+    body.top_n_sigma = p.topNSigma;
+  if (p?.ignoreEos === true) body.ignore_eos = true;
 
   // XTC sampler
-  if (p?.xtc?.probability !== undefined)
+  if (p?.xtc?.probability !== undefined && p.xtc.probability !== 0)
     body.xtc_probability = p.xtc.probability;
-  if (p?.xtc?.threshold !== undefined) body.xtc_threshold = p.xtc.threshold;
+  if (p?.xtc?.threshold !== undefined && p.xtc.threshold !== 0.1)
+    body.xtc_threshold = p.xtc.threshold;
 
   // Repeat penalty — only apply the block if enabled
   if (p?.repeatPenalty?.enabled) {

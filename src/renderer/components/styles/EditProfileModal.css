@@ -957,30 +957,6 @@
   transition: opacity 0.2s ease;
 }
 
-.epm-rp-enabled-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 16px;
-  cursor: pointer;
-  user-select: none;
-  padding: 10px 0;
-}
-
-.epm-rp-enabled-row input[type='checkbox'] {
-  width: 16px;
-  height: 16px;
-  accent-color: var(--accent);
-  cursor: pointer;
-}
-
-.epm-rp-enabled-row label {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-primary);
-  cursor: pointer;
-}
-
 /* ── Page header on sub-pages ── */
 
 .epm-sub-header {
