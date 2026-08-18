@@ -60,6 +60,19 @@ export interface Profile {
   flashAttn?: 'on' | 'off' | 'auto';
   cacheTypeK?: CacheType;
   cacheTypeV?: CacheType;
+  rope?: {
+    scaling?: 'none' | 'linear' | 'yarn';
+    scale?: number;
+    freqBase?: number;
+    freqScale?: number;
+  };
+  yarn?: {
+    origCtx?: number;
+    extFactor?: number;
+    attnFactor?: number;
+    betaSlow?: number;
+    betaFast?: number;
+  };
   mmap?: boolean;
   mlock?: boolean;
   repack?: boolean;

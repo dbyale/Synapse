@@ -186,6 +186,7 @@ const PAGE_DEPTH: Record<string, number> = {
   performance: 1,
   'cache-options': 2,
   'memory-options': 2,
+  'rope-scaling': 2,
   'draft-model': 2,
   'moe-options': 2,
   'server-settings': 1,
@@ -208,6 +209,10 @@ const BREADCRUMB_MAP: Record<string, { label: string; parent: string | null }> =
     performance: { label: 'Performance', parent: 'main' },
     'cache-options': { label: 'Cache Options', parent: 'performance' },
     'memory-options': { label: 'Memory Options', parent: 'performance' },
+    'rope-scaling': {
+      label: 'Context Scaling (RoPE/YaRN)',
+      parent: 'cache-options',
+    },
     'draft-model': { label: 'Draft Model', parent: 'performance' },
     'moe-options': { label: 'Mixture of Experts', parent: 'performance' },
     'server-settings': { label: 'Server Settings', parent: 'main' },
@@ -1373,6 +1378,280 @@ function FlashAttnSelector({
   );
 }
 
+const ROPE_SCALING_METHODS: Array<{ value: string; label: string }> = [
+  { value: '', label: 'model default' },
+  { value: 'none', label: 'none' },
+  { value: 'linear', label: 'linear' },
+  { value: 'yarn', label: 'yarn' },
+];
+
+function RopeScalingMethodSelector({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClick(e: Event) {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
+  const current = ROPE_SCALING_METHODS.find((m) => m.value === value);
+
+  return (
+    <div className="epm-cache-selector" ref={ref}>
+      <span className="epm-cache-selector-label">Method</span>
+      <div className="epm-cache-selector-wrap">
+        <button
+          className="epm-cache-selector-trigger"
+          onClick={() => setOpen(!open)}
+          type="button"
+        >
+          {current ? current.label : 'model default'}
+          <ChevronDown size={13} />
+        </button>
+        {open && (
+          <div className="epm-cache-selector-dropdown">
+            {ROPE_SCALING_METHODS.map((m) => (
+              <button
+                key={m.value}
+                className={`epm-cache-selector-option${m.value === value ? ' epm-cache-selector-option--active' : ''}`}
+                onClick={() => {
+                  onChange(m.value);
+                  setOpen(false);
+                }}
+                type="button"
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Context Scaling (RoPE/YaRN) subpage ──
+
+function RopeScalingPage({
+  editRopeScaling,
+  onSetRopeScaling,
+  editRopeScale,
+  onSetRopeScale,
+  editRopeFreqBase,
+  onSetRopeFreqBase,
+  editRopeFreqScale,
+  onSetRopeFreqScale,
+  editYarnOrigCtx,
+  onSetYarnOrigCtx,
+  editYarnExtFactor,
+  onSetYarnExtFactor,
+  editYarnAttnFactor,
+  onSetYarnAttnFactor,
+  editYarnBetaSlow,
+  onSetYarnBetaSlow,
+  editYarnBetaFast,
+  onSetYarnBetaFast,
+}: {
+  editRopeScaling: string;
+  onSetRopeScaling: (v: string) => void;
+  editRopeScale: string;
+  onSetRopeScale: (v: string) => void;
+  editRopeFreqBase: string;
+  onSetRopeFreqBase: (v: string) => void;
+  editRopeFreqScale: string;
+  onSetRopeFreqScale: (v: string) => void;
+  editYarnOrigCtx: string;
+  onSetYarnOrigCtx: (v: string) => void;
+  editYarnExtFactor: string;
+  onSetYarnExtFactor: (v: string) => void;
+  editYarnAttnFactor: string;
+  onSetYarnAttnFactor: (v: string) => void;
+  editYarnBetaSlow: string;
+  onSetYarnBetaSlow: (v: string) => void;
+  editYarnBetaFast: string;
+  onSetYarnBetaFast: (v: string) => void;
+}) {
+  const isYarn = editRopeScaling === 'yarn';
+
+  return (
+    <>
+      <h2 className="epm-page-title">Context Scaling (RoPE/YaRN)</h2>
+      <p
+        style={{
+          fontSize: '14px',
+          color: 'var(--text-secondary)',
+          margin: '0 0 20px',
+          lineHeight: 1.5,
+        }}
+      >
+        Extend the effective context length using RoPE scaling or YaRN.
+        Settings equal to the server defaults are left unset.
+      </p>
+
+      <div className="epm-section">
+        <InfoTooltip
+          content={[
+            'RoPE (Rotary Position Embedding) encodes token positions using rotation matrices, which the model learns during training.',
+            'RoPE scaling stretches those rotations so the model can reason beyond the context length it was trained on, at the cost of some accuracy.',
+            "linear: stretches positions uniformly across the full context. Simple and predictable, but degrades sooner at very long contexts.",
+            'yarn: YaRN (Yet another RoPE extensioN) re-calibrates the rotations and adds temperature smoothing, keeping quality high at much longer contexts.',
+            "'model default' leaves the model's built-in setting untouched.",
+          ]}
+          side="right"
+          hideIcon
+          title="Method"
+        >
+          <div className="epm-section__label">Method</div>
+        </InfoTooltip>
+        <RopeScalingMethodSelector
+          value={editRopeScaling}
+          onChange={onSetRopeScaling}
+        />
+        <div className="epm-number-grid" style={{ marginTop: '16px' }}>
+          <NumberField
+            label="RoPE Scale Factor"
+            value={editRopeScale}
+            onChange={onSetRopeScale}
+            min="0.01"
+            step="0.01"
+            helper="Default: 1.00"
+            tooltip={[
+              'Multiplies the trained context length by this factor, e.g. 2.0 doubles the usable context.',
+              'Requires a matching value at load time; the same factor must be used every session or outputs will degrade.',
+              'Keep at 1.0 to leave the model untouched. (default: 1.0)',
+            ]}
+          />
+          <NumberField
+            label="RoPE Freq Base"
+            value={editRopeFreqBase}
+            onChange={onSetRopeFreqBase}
+            min="0"
+            step="1"
+            helper="Default: model"
+            tooltip={[
+              'Base frequency of the rotary embeddings.',
+              'Increasing it (e.g. 500000–1000000) stretches the context window with minimal loss, often preferred over --rope-scale.',
+              'Leave empty to use the value embedded in the model. (default: model)',
+            ]}
+          />
+          <NumberField
+            label="RoPE Freq Scale"
+            value={editRopeFreqScale}
+            onChange={onSetRopeFreqScale}
+            min="0.01"
+            step="0.01"
+            helper="Default: 1.00"
+            tooltip={[
+              'Scales the computed rotation frequencies by this percentage.',
+              'Most users should prefer --rope-scale or --rope-freq-base; this is rarely needed.',
+              'Keep at 1.00 to leave the model untouched. (default: 1.0)',
+            ]}
+          />
+        </div>
+      </div>
+
+      <div className="epm-section" style={{ marginTop: '20px' }}>
+        <InfoTooltip
+          content={[
+            'YaRN (Yet another RoPE extensioN) is a context extension method that keeps long-context quality much higher than plain linear scaling.',
+            'It rescales RoPE rotations per-dimension and applies a temperature to the attention softmax, which stabilises the model at extreme context lengths.',
+            'Requires --rope-scaling yarn (the Method setting above) to take effect.',
+            'Settings left at their defaults (-1.00 / 0) are not passed to the server, so the model or llama.cpp chooses.',
+          ]}
+          side="right"
+          hideIcon
+          title="YaRN Settings"
+        >
+          <div className="epm-section__label">YaRN Settings</div>
+        </InfoTooltip>
+        <div className="epm-number-grid">
+          <NumberField
+            label="YaRN Original Context"
+            value={editYarnOrigCtx}
+            onChange={onSetYarnOrigCtx}
+            min="0"
+            step="1"
+            helper="Default: 0 (model context)"
+            tooltip={[
+              'The context length the model was originally trained on, before any scaling.',
+              'Used as the reference point for computing the YaRN rotation adjustments.',
+              '0 uses the model’s native context size. (default: 0)',
+            ]}
+            disabled={!isYarn}
+          />
+          <NumberField
+            label="YaRN Extrapolation Factor"
+            value={editYarnExtFactor}
+            onChange={onSetYarnExtFactor}
+            min="-1"
+            step="0.01"
+            helper="Default: -1.00"
+            tooltip={[
+              'Controls how aggressively positions beyond the original context are extrapolated.',
+              'Higher values extend further but reduce accuracy at extreme positions.',
+              '-1.00 lets llama.cpp derive it automatically. (default: -1.0)',
+            ]}
+            disabled={!isYarn}
+          />
+          <NumberField
+            label="YaRN Attention Factor"
+            value={editYarnAttnFactor}
+            onChange={onSetYarnAttnFactor}
+            min="-1"
+            step="0.01"
+            helper="Default: -1.00"
+            tooltip={[
+              'Scales the attention temperature to compensate for the extra context length.',
+              'Tuned together with the beta parameters; most users never need to change it.',
+              '-1.00 lets llama.cpp derive it automatically. (default: -1.0)',
+            ]}
+            disabled={!isYarn}
+          />
+          <NumberField
+            label="YaRN Beta Slow"
+            value={editYarnBetaSlow}
+            onChange={onSetYarnBetaSlow}
+            min="-1"
+            step="0.01"
+            helper="Default: -1.00"
+            tooltip={[
+              'Lower bound of the frequency band that YaRN gradually rescales.',
+              'Together with Beta Fast it defines which position frequencies are affected.',
+              '-1.00 lets llama.cpp derive it automatically. (default: -1.0)',
+            ]}
+            disabled={!isYarn}
+          />
+          <NumberField
+            label="YaRN Beta Fast"
+            value={editYarnBetaFast}
+            onChange={onSetYarnBetaFast}
+            min="-1"
+            step="0.01"
+            helper="Default: -1.00"
+            tooltip={[
+              'Upper bound of the frequency band that YaRN gradually rescales.',
+              'Frequencies above this bound are left mostly unchanged to avoid distortion.',
+              '-1.00 lets llama.cpp derive it automatically. (default: -1.0)',
+            ]}
+            disabled={!isYarn}
+          />
+        </div>
+      </div>
+    </>
+  );
+}
+
 // ── Projector Page (sub-page) ──
 
 function ProjectorPage({
@@ -2468,6 +2747,7 @@ function CacheOptionsPage({
   onSetCacheTypeK,
   onSetCacheTypeV,
   onEstimateMemory,
+  onNavigate,
 }: {
   editKvOffload: boolean;
   editFlashAttn: 'on' | 'off' | 'auto';
@@ -2485,6 +2765,7 @@ function CacheOptionsPage({
     cacheTypeK?: CacheType,
     cacheTypeV?: CacheType,
   ) => Promise<any>;
+  onNavigate: (page: string) => void;
 }) {
   return (
     <>
@@ -2620,6 +2901,30 @@ function CacheOptionsPage({
               }}
             />
           </InfoTooltip>
+        </div>
+      </div>
+
+      <div className="epm-section" style={{ marginTop: '20px' }}>
+        <div className="epm-section__label">Advanced Options</div>
+        <div style={{ marginTop: '10px' }}>
+          <button
+            type="button"
+            className="epm-section-card"
+            onClick={() => onNavigate('rope-scaling')}
+          >
+            <div className="epm-section-card__icon">
+              <SlidersHorizontal size={18} />
+            </div>
+            <div className="epm-section-card__body">
+              <div className="epm-section-card__title">
+                Context Scaling (RoPE/YaRN)
+              </div>
+              <div className="epm-section-card__preview">
+                Extend context length with RoPE scaling or YaRN
+              </div>
+            </div>
+            <ChevronRight size={16} className="epm-section-card__chevron" />
+          </button>
         </div>
       </div>
     </>
@@ -3615,6 +3920,41 @@ export default function EditProfileModal({
   const [editFlashAttn, setEditFlashAttn] = useState<'on' | 'off' | 'auto'>(
     profile?.flashAttn ?? 'auto',
   );
+
+  // Context scaling (RoPE/YaRN) options
+  const [editRopeScaling, setEditRopeScaling] = useState<string>(
+    profile?.rope?.scaling ?? '',
+  );
+  const [editRopeScale, setEditRopeScale] = useState<string>(
+    profile?.rope?.scale !== undefined ? String(profile.rope.scale) : '',
+  );
+  const [editRopeFreqBase, setEditRopeFreqBase] = useState<string>(
+    profile?.rope?.freqBase !== undefined ? String(profile.rope.freqBase) : '',
+  );
+  const [editRopeFreqScale, setEditRopeFreqScale] = useState<string>(
+    profile?.rope?.freqScale !== undefined
+      ? String(profile.rope.freqScale)
+      : '',
+  );
+  const [editYarnOrigCtx, setEditYarnOrigCtx] = useState<string>(
+    profile?.yarn?.origCtx !== undefined ? String(profile.yarn.origCtx) : '',
+  );
+  const [editYarnExtFactor, setEditYarnExtFactor] = useState<string>(
+    profile?.yarn?.extFactor !== undefined
+      ? String(profile.yarn.extFactor)
+      : '',
+  );
+  const [editYarnAttnFactor, setEditYarnAttnFactor] = useState<string>(
+    profile?.yarn?.attnFactor !== undefined
+      ? String(profile.yarn.attnFactor)
+      : '',
+  );
+  const [editYarnBetaSlow, setEditYarnBetaSlow] = useState<string>(
+    profile?.yarn?.betaSlow !== undefined ? String(profile.yarn.betaSlow) : '',
+  );
+  const [editYarnBetaFast, setEditYarnBetaFast] = useState<string>(
+    profile?.yarn?.betaFast !== undefined ? String(profile.yarn.betaFast) : '',
+  );
   const [optimizerRunning, setOptimizerRunning] = useState<
     'longest-context' | 'most-gpu' | null
   >(null);
@@ -3701,6 +4041,40 @@ export default function EditProfileModal({
     const reqId = launchArgsReqId.current;
     setLaunchArgsLoading(true);
     const timer = setTimeout(() => {
+      const rope: NonNullable<Profile['rope']> = {};
+      if (editRopeScaling) {
+        rope.scaling = editRopeScaling as 'none' | 'linear' | 'yarn';
+      }
+      if (editRopeScale !== '' && parseFloat(editRopeScale) !== 1.0) {
+        rope.scale = parseFloat(editRopeScale);
+      }
+      if (editRopeFreqBase !== '') {
+        rope.freqBase = parseFloat(editRopeFreqBase);
+      }
+      if (editRopeFreqScale !== '' && parseFloat(editRopeFreqScale) !== 1.0) {
+        rope.freqScale = parseFloat(editRopeFreqScale);
+      }
+
+      const yarn: NonNullable<Profile['yarn']> = {};
+      if (editYarnOrigCtx !== '' && parseFloat(editYarnOrigCtx) !== 0) {
+        yarn.origCtx = parseFloat(editYarnOrigCtx);
+      }
+      if (editYarnExtFactor !== '' && parseFloat(editYarnExtFactor) !== -1.0) {
+        yarn.extFactor = parseFloat(editYarnExtFactor);
+      }
+      if (
+        editYarnAttnFactor !== '' &&
+        parseFloat(editYarnAttnFactor) !== -1.0
+      ) {
+        yarn.attnFactor = parseFloat(editYarnAttnFactor);
+      }
+      if (editYarnBetaSlow !== '' && parseFloat(editYarnBetaSlow) !== -1.0) {
+        yarn.betaSlow = parseFloat(editYarnBetaSlow);
+      }
+      if (editYarnBetaFast !== '' && parseFloat(editYarnBetaFast) !== -1.0) {
+        yarn.betaFast = parseFloat(editYarnBetaFast);
+      }
+
       const draft = {
         modelAuthor: editModelAuthor,
         modelFolder: editModelFolder,
@@ -3718,6 +4092,8 @@ export default function EditProfileModal({
         cacheTypeK: editCacheTypeK,
         cacheTypeV: editCacheTypeV,
         flashAttn: editFlashAttn,
+        rope: Object.keys(rope).length > 0 ? rope : undefined,
+        yarn: Object.keys(yarn).length > 0 ? yarn : undefined,
         gpuLayersAuto: editGpuLayersAuto,
         cpuMoe: editCpuMoe,
         nCpuMoe: parseInt(editNCpuMoe, 10),
@@ -3781,6 +4157,15 @@ export default function EditProfileModal({
     editCacheTypeK,
     editCacheTypeV,
     editFlashAttn,
+    editRopeScaling,
+    editRopeScale,
+    editRopeFreqBase,
+    editRopeFreqScale,
+    editYarnOrigCtx,
+    editYarnExtFactor,
+    editYarnAttnFactor,
+    editYarnBetaSlow,
+    editYarnBetaFast,
     editGpuLayersAuto,
     editCpuMoe,
     editNCpuMoe,
@@ -4004,6 +4389,46 @@ export default function EditProfileModal({
       return Object.keys(vs).length > 0 ? vs : undefined;
     };
 
+    const buildRopeScaling = (): Profile['rope'] => {
+      const rope: NonNullable<Profile['rope']> = {};
+      if (editRopeScaling) {
+        rope.scaling = editRopeScaling as 'none' | 'linear' | 'yarn';
+      }
+      if (editRopeScale !== '' && parseFloat(editRopeScale) !== 1.0) {
+        rope.scale = parseFloat(editRopeScale);
+      }
+      if (editRopeFreqBase !== '') {
+        rope.freqBase = parseFloat(editRopeFreqBase);
+      }
+      if (editRopeFreqScale !== '' && parseFloat(editRopeFreqScale) !== 1.0) {
+        rope.freqScale = parseFloat(editRopeFreqScale);
+      }
+      return Object.keys(rope).length > 0 ? rope : undefined;
+    };
+
+    const buildYarnScaling = (): Profile['yarn'] => {
+      const yarn: NonNullable<Profile['yarn']> = {};
+      if (editYarnOrigCtx !== '' && parseFloat(editYarnOrigCtx) !== 0) {
+        yarn.origCtx = parseFloat(editYarnOrigCtx);
+      }
+      if (editYarnExtFactor !== '' && parseFloat(editYarnExtFactor) !== -1.0) {
+        yarn.extFactor = parseFloat(editYarnExtFactor);
+      }
+      if (
+        editYarnAttnFactor !== '' &&
+        parseFloat(editYarnAttnFactor) !== -1.0
+      ) {
+        yarn.attnFactor = parseFloat(editYarnAttnFactor);
+      }
+      if (editYarnBetaSlow !== '' && parseFloat(editYarnBetaSlow) !== -1.0) {
+        yarn.betaSlow = parseFloat(editYarnBetaSlow);
+      }
+      if (editYarnBetaFast !== '' && parseFloat(editYarnBetaFast) !== -1.0) {
+        yarn.betaFast = parseFloat(editYarnBetaFast);
+      }
+      return Object.keys(yarn).length > 0 ? yarn : undefined;
+    };
+
     const buildRepeatPenalty = (): Profile['repeatPenalty'] => {
       if (!editRpEnabled && !editDryEnabled) return { enabled: false };
       const rp: NonNullable<Profile['repeatPenalty']> = {};
@@ -4096,6 +4521,8 @@ export default function EditProfileModal({
       flashAttn: editFlashAttn,
       cacheTypeK: editCacheTypeK,
       cacheTypeV: editCacheTypeV,
+      rope: buildRopeScaling(),
+      yarn: buildYarnScaling(),
       mmap: editMmap,
       mlock: editMlock,
       repack: editRepack,
@@ -4399,6 +4826,7 @@ export default function EditProfileModal({
             onSetCacheTypeK={setEditCacheTypeK}
             onSetCacheTypeV={setEditCacheTypeV}
             onEstimateMemory={handleEstimateMemory}
+            onNavigate={navigateTo}
           />
         );
       case 'memory-options':
@@ -4410,6 +4838,29 @@ export default function EditProfileModal({
             onSetMmap={setEditMmap}
             onSetMlock={setEditMlock}
             onSetRepack={setEditRepack}
+          />
+        );
+      case 'rope-scaling':
+        return (
+          <RopeScalingPage
+            editRopeScaling={editRopeScaling}
+            onSetRopeScaling={setEditRopeScaling}
+            editRopeScale={editRopeScale}
+            onSetRopeScale={setEditRopeScale}
+            editRopeFreqBase={editRopeFreqBase}
+            onSetRopeFreqBase={setEditRopeFreqBase}
+            editRopeFreqScale={editRopeFreqScale}
+            onSetRopeFreqScale={setEditRopeFreqScale}
+            editYarnOrigCtx={editYarnOrigCtx}
+            onSetYarnOrigCtx={setEditYarnOrigCtx}
+            editYarnExtFactor={editYarnExtFactor}
+            onSetYarnExtFactor={setEditYarnExtFactor}
+            editYarnAttnFactor={editYarnAttnFactor}
+            onSetYarnAttnFactor={setEditYarnAttnFactor}
+            editYarnBetaSlow={editYarnBetaSlow}
+            onSetYarnBetaSlow={setEditYarnBetaSlow}
+            editYarnBetaFast={editYarnBetaFast}
+            onSetYarnBetaFast={setEditYarnBetaFast}
           />
         );
       case 'draft-model':

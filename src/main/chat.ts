@@ -482,6 +482,86 @@ export function buildLlamaServerArgs(
   if (profile.repack === false) spawnArgs.push('--no-repack');
   if ((profile as any).contextShift === true) spawnArgs.push('--context-shift');
 
+  // Context Scaling Arguments (only applied when different from server defaults)
+  const scalingMethod = (profile as any).rope?.scaling;
+  if (scalingMethod) {
+    spawnArgs.push('--rope-scaling', scalingMethod);
+  }
+
+  // RoPE parameters only make sense when a scaling method is active
+  if (scalingMethod) {
+    if (
+      (profile as any).rope?.scale !== undefined &&
+      (profile as any).rope.scale !== 1.0
+    ) {
+      spawnArgs.push('--rope-scale', (profile as any).rope.scale.toString());
+    }
+    if ((profile as any).rope?.freqBase !== undefined) {
+      spawnArgs.push(
+        '--rope-freq-base',
+        (profile as any).rope.freqBase.toString(),
+      );
+    }
+    if (
+      (profile as any).rope?.freqScale !== undefined &&
+      (profile as any).rope.freqScale !== 1.0
+    ) {
+      spawnArgs.push(
+        '--rope-freq-scale',
+        (profile as any).rope.freqScale.toString(),
+      );
+    }
+  }
+
+  // YaRN parameters only apply when the YaRN method is selected
+  if (scalingMethod === 'yarn') {
+    if (
+      (profile as any).yarn?.origCtx !== undefined &&
+      (profile as any).yarn.origCtx !== 0
+    ) {
+      spawnArgs.push(
+        '--yarn-orig-ctx',
+        (profile as any).yarn.origCtx.toString(),
+      );
+    }
+    if (
+      (profile as any).yarn?.extFactor !== undefined &&
+      (profile as any).yarn.extFactor !== -1.0
+    ) {
+      spawnArgs.push(
+        '--yarn-ext-factor',
+        (profile as any).yarn.extFactor.toString(),
+      );
+    }
+    if (
+      (profile as any).yarn?.attnFactor !== undefined &&
+      (profile as any).yarn.attnFactor !== -1.0
+    ) {
+      spawnArgs.push(
+        '--yarn-attn-factor',
+        (profile as any).yarn.attnFactor.toString(),
+      );
+    }
+    if (
+      (profile as any).yarn?.betaSlow !== undefined &&
+      (profile as any).yarn.betaSlow !== -1.0
+    ) {
+      spawnArgs.push(
+        '--yarn-beta-slow',
+        (profile as any).yarn.betaSlow.toString(),
+      );
+    }
+    if (
+      (profile as any).yarn?.betaFast !== undefined &&
+      (profile as any).yarn.betaFast !== -1.0
+    ) {
+      spawnArgs.push(
+        '--yarn-beta-fast',
+        (profile as any).yarn.betaFast.toString(),
+      );
+    }
+  }
+
   // Server Arguments
   spawnArgs.push(
     '--host',
