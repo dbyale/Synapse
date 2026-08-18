@@ -435,7 +435,7 @@ function MainPage({
                 </div>
               ) : (
                 <div className="sp-card__edit-select-trigger__placeholder">
-                  <span>No Model Selected</span>
+                  <span className="epm-model-not-selected">Not Selected</span>
                   <ChevronDown
                     size={18}
                     className="sp-card__edit-select-trigger__chevron"
@@ -4363,7 +4363,7 @@ export default function EditProfileModal({
   };
 
   const handleSave = () => {
-    if (!editName.trim() || !editModelFilename) return;
+    if (!editName.trim()) return;
 
     const modelRelativePath = `${editModelAuthor}/${editModelFolder}/${editModelFilename}`;
 
@@ -4492,7 +4492,7 @@ export default function EditProfileModal({
     const updatedProfile: Profile = {
       id: profile?.id ?? now.toString(),
       name: editName.trim(),
-      model: modelRelativePath,
+      model: editModelFilename ? modelRelativePath : '',
       projector: projectorRelativePath || undefined,
       modelAuthor: editModelAuthor,
       modelFolder: editModelFolder,
@@ -5037,7 +5037,7 @@ export default function EditProfileModal({
             type="button"
             className="btn-accent"
             onClick={handleSave}
-            disabled={!editName.trim() || !editModelFilename}
+            disabled={!editName.trim()}
           >
             Save
           </button>

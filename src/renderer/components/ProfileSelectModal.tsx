@@ -128,11 +128,13 @@ export default function ProfileSelectModal({
               <button
                 key={profile.id}
                 type="button"
-                className={`psm-card${selectedProfileId === profile.id ? ' psm-card--active' : ''}`}
+                className={`psm-card${selectedProfileId === profile.id ? ' psm-card--active' : ''}${!profile.modelFilename ? ' psm-card--disabled' : ''}`}
                 onClick={() => {
+                  if (!profile.modelFilename) return;
                   onSelect(profile.id);
                   onClose();
                 }}
+                disabled={!profile.modelFilename}
               >
                 <div className="psm-card__title-row">
                   <h3>{profile.name}</h3>
@@ -141,7 +143,9 @@ export default function ProfileSelectModal({
                   )}
                 </div>
                 <p className="psm-card__model">
-                  {profile.model.split(/[/\\]/).pop()}
+                  {profile.modelFilename
+                    ? profile.model.split(/[/\\]/).pop()
+                    : 'No model'}
                 </p>
                 {renderToolBadges(profile.tools ?? [])}
                 <span className="psm-card__date">

@@ -1300,3 +1300,8 @@
   color: var(--text-secondary);
   font-style: italic;
 }
+
+.epm-model-not-selected {
+  color: #ef4444;
+  font-weight: 600;
+}

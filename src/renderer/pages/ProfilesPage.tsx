@@ -646,14 +646,20 @@ export default function ProfilesPage() {
                         </div>
                         <p className="sp-card__model">
                           <strong>Model:</strong>{' '}
-                          <InfoTooltip
-                            content="The GGUF model file assigned to this profile."
-                            side="right"
-                            hideIcon
-                            title="Model"
-                          >
-                            <span>{profile.model.split(/[/\\]/).pop()}</span>
-                          </InfoTooltip>
+                          {profile.modelFilename ? (
+                            <InfoTooltip
+                              content="The GGUF model file assigned to this profile."
+                              side="right"
+                              hideIcon
+                              title="Model"
+                            >
+                              <span>{profile.model.split(/[/\\]/).pop()}</span>
+                            </InfoTooltip>
+                          ) : (
+                            <span className="sp-card__model-not-selected">
+                              No Model Selected
+                            </span>
+                          )}
                         </p>
                         {/* ── Tool badges (grouped by extension) ── */}
                         {profile.tools &&
@@ -725,7 +731,14 @@ export default function ProfilesPage() {
                               handleSelect(profile.id);
                             }
                           }}
-                          disabled={loadingId !== null}
+                          disabled={
+                            loadingId !== null || !profile.modelFilename
+                          }
+                          title={
+                            profile.modelFilename
+                              ? undefined
+                              : 'Add a model to this profile before activating it'
+                          }
                           aria-label={
                             isLoadingThis
                               ? `Loading profile ${profile.name}`

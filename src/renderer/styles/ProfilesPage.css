@@ -214,6 +214,11 @@
   word-break: break-all;
 }
 
+.sp-card__model-not-selected {
+  color: #ef4444;
+  font-weight: 600;
+}
+
 .sp-card__date {
   font-size: 12px;
   color: var(--text-tertiary, var(--text-secondary));
@@ -249,6 +254,17 @@
   border-color: var(--accent);
   color: var(--accent);
   background: rgba(37, 99, 235, 0.06);
+}
+
+.sp-card__select-btn:disabled,
+.sp-card__select-btn:disabled:hover,
+.sp-card__select-btn--active:disabled,
+.sp-card__select-btn--active:disabled:hover {
+  border-color: var(--border);
+  background: transparent;
+  color: var(--text-tertiary, var(--text-secondary));
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .sp-card__select-btn--active {
