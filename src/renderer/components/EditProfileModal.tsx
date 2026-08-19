@@ -4490,6 +4490,7 @@ export default function EditProfileModal({
 
     const now = Date.now();
     const updatedProfile: Profile = {
+      ...profile,
       id: profile?.id ?? now.toString(),
       name: editName.trim(),
       model: editModelFilename ? modelRelativePath : '',
