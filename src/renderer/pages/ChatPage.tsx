@@ -5,6 +5,8 @@ import {
   useState,
   KeyboardEvent,
   useCallback,
+  useMemo,
+  memo,
   ReactNode,
   DragEvent,
 } from 'react';
@@ -215,7 +217,7 @@ let persistentLoadedProfileId: string = '';
 let persistentModelLoading = false;
 let persistentLastLoadId = 0;
 
-function ToolCallSegment({
+const ToolCallSegment = memo(function ToolCallSegmentInner({
   segment,
   showInlineStats,
   onImageClick,
@@ -380,7 +382,648 @@ function ToolCallSegment({
       )}
     </div>
   );
+});
+
+interface MessageViewProps {
+  msg: Message;
+  isLast: boolean;
+  profileName: string;
+  loading: boolean;
+  processing: boolean;
+  progressPercent: number;
+  streamingTool: { name: string; text: string } | null;
+  settings: AppSettings | null;
+  copiedMsgId: number | null;
+  onToggleCollapsed: (id: number) => void;
+  onCopy: (msg: Message) => void;
+  onImageClick: (url: string) => void;
 }
+
+function MessageViewInner({
+  msg,
+  isLast,
+  profileName,
+  loading,
+  processing,
+  progressPercent,
+  streamingTool,
+  settings,
+  copiedMsgId,
+  onToggleCollapsed,
+  onCopy,
+  onImageClick,
+}: MessageViewProps) {
+  const streamingDisplayText = useMemo(() => {
+    if (!streamingTool) return '';
+    let displayText = streamingTool.text;
+    try {
+      displayText = JSON.stringify(JSON.parse(streamingTool.text), null, 2);
+    } catch {
+      displayText = streamingTool.text;
+    }
+    return displayText.replace(/\\r\\n/g, '\r\n').replace(/\\n/g, '\n');
+  }, [streamingTool]);
+
+  return (
+    <div className={`chat-message chat-message--${msg.role}`}>
+      {(() => {
+        const text = msg.content[0]?.text || '';
+        const outputText =
+          msg.content.find((s) => s.type === 'normal')?.text || text;
+        let collapsible = true;
+        if (msg.role === 'user') collapsible = text.length >= 20;
+        else if (msg.role === 'assistant') {
+          collapsible = stripMarkdown(outputText).trim().length >= 40;
+        }
+        return (
+          <div
+            className="chat-message__label"
+            role="button"
+            tabIndex={collapsible ? 0 : undefined}
+            onClick={() => {
+              if (collapsible) onToggleCollapsed(msg.id);
+            }}
+            onKeyDown={(e) => {
+              if (!collapsible) return;
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onToggleCollapsed(msg.id);
+              }
+            }}
+          >
+            {msg.role === 'user'
+              ? 'You'
+              : msg.role === 'system'
+                ? 'System'
+                : profileName || 'Assistant'}
+            {collapsible && (
+              <ChevronDown
+                size={12}
+                className={`chat-message__label-chevron${msg.collapsed ? ' chat-message__label-chevron--collapsed' : ''}`}
+              />
+            )}
+          </div>
+        );
+      })()}
+      {msg.collapsed && (msg.role === 'user' || msg.role === 'assistant') ? (
+        <div
+          className="chat-message__bubble chat-message__bubble--collapsed"
+          role="button"
+          tabIndex={0}
+          onClick={() => onToggleCollapsed(msg.id)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              onToggleCollapsed(msg.id);
+            }
+          }}
+        >
+          {(() => {
+            const outputText =
+              msg.content.find((s) => s.type === 'normal')?.text ||
+              msg.content[0]?.text ||
+              '';
+            if (msg.role === 'assistant') {
+              return `${stripMarkdown(outputText).trim().slice(0, 40)}…`;
+            }
+            return `${outputText.slice(0, 20)}…`;
+          })()}
+        </div>
+      ) : (
+        !msg.collapsed && (
+          <>
+            {loading && isLast && msg.role === 'assistant' && !processing && (
+              <div className="chat-message__indicator-box">
+                <div className="chat-indicator">
+                  <div className="chat-indicator__spinner" />
+                  <span className="chat-indicator__label">Generating…</span>
+                </div>
+              </div>
+            )}
+            <div className="chat-message__bubble">
+              {msg.role === 'assistant' ? (
+                <div className="chat-message__assistant-content">
+                  {(() => {
+                    const elements: ReactNode[] = [];
+                    let batchSegments: MessageSegment[] = [];
+                    let standaloneToolBuffer: MessageSegment[] = [];
+
+                    const buildToolGroups = (
+                      tools: MessageSegment[],
+                    ): {
+                      segments: MessageSegment[];
+                      stats: GenerationStatsData | null;
+                    }[] => {
+                      const groups: {
+                        segments: MessageSegment[];
+                        stats: GenerationStatsData | null;
+                      }[] = [];
+                      let currentGroup: MessageSegment[] = [];
+                      let currentStats: GenerationStatsData | null = null;
+
+                      for (const tool of tools) {
+                        const stats = tool.reprocessStats ?? null;
+                        if (currentGroup.length > 0 && currentStats !== stats) {
+                          groups.push({
+                            segments: currentGroup,
+                            stats: currentStats,
+                          });
+                          currentGroup = [];
+                        }
+                        currentGroup.push(tool);
+                        currentStats = stats;
+                      }
+
+                      if (currentGroup.length > 0) {
+                        groups.push({
+                          segments: currentGroup,
+                          stats: currentStats,
+                        });
+                      }
+
+                      return groups;
+                    };
+
+                    const renderToolGroup = (
+                      group: {
+                        segments: MessageSegment[];
+                        stats: GenerationStatsData | null;
+                      },
+                      key: string | number,
+                    ): ReactNode => {
+                      if (group.segments.length === 1) {
+                        return (
+                          <ToolCallSegment
+                            key={key}
+                            segment={group.segments[0]}
+                            showInlineStats={!!group.stats}
+                            onImageClick={onImageClick}
+                          />
+                        );
+                      }
+
+                      return (
+                        <div
+                          key={`tool-group-${key}`}
+                          className="tool-call-group"
+                        >
+                          <div className="tool-call-group__tools">
+                            {group.segments.map((seg) => (
+                              <ToolCallSegment
+                                key={seg.id}
+                                segment={seg}
+                                showInlineStats={false}
+                                onImageClick={onImageClick}
+                              />
+                            ))}
+                          </div>
+                          {group.stats && (
+                            <div className="tool-call-group__stats">
+                              <InfoTooltip
+                                title="Prompt tokens"
+                                content={PROMPT_TOKENS_STAT_TOOLTIP}
+                                hideIcon
+                                portal
+                              >
+                                <div className="chat-stat-item">
+                                  <Hash size={12} />
+                                  <span>{group.stats.tokens} tokens</span>
+                                </div>
+                              </InfoTooltip>
+                              <InfoTooltip
+                                title="Prompt processing time"
+                                content={PROMPT_TIME_STAT_TOOLTIP}
+                                hideIcon
+                                portal
+                              >
+                                <div className="chat-stat-item">
+                                  <Timer size={12} />
+                                  <span>
+                                    {(group.stats.timeMs / 1000).toFixed(2)}s
+                                  </span>
+                                </div>
+                              </InfoTooltip>
+                              <InfoTooltip
+                                title="Prompt processing speed"
+                                content={PROMPT_SPEED_STAT_TOOLTIP}
+                                hideIcon
+                                portal
+                              >
+                                <div className="chat-stat-item">
+                                  <Zap size={12} />
+                                  <span>
+                                    {group.stats.tokensPerSecond.toFixed(1)} t/s
+                                  </span>
+                                </div>
+                              </InfoTooltip>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    };
+
+                    const flushStandaloneTools = () => {
+                      if (standaloneToolBuffer.length === 0) return;
+                      const groups = buildToolGroups(standaloneToolBuffer);
+                      for (let i = 0; i < groups.length; i++) {
+                        elements.push(
+                          renderToolGroup(
+                            groups[i],
+                            `solo-${elements.length}-${i}`,
+                          ),
+                        );
+                      }
+                      standaloneToolBuffer = [];
+                    };
+
+                    const buildThoughtItems = (
+                      segments: MessageSegment[],
+                    ): {
+                      kind: 'text' | 'tools';
+                      text?: string;
+                      groups?: {
+                        segments: MessageSegment[];
+                        stats: GenerationStatsData | null;
+                      }[];
+                    }[] => {
+                      const items: {
+                        kind: 'text' | 'tools';
+                        text?: string;
+                        groups?: {
+                          segments: MessageSegment[];
+                          stats: GenerationStatsData | null;
+                        }[];
+                      }[] = [];
+                      let textBuffer: string[] = [];
+                      let toolBuffer: MessageSegment[] = [];
+
+                      const flushText = () => {
+                        if (textBuffer.length > 0) {
+                          items.push({
+                            kind: 'text',
+                            text: textBuffer.join(''),
+                          });
+                          textBuffer = [];
+                        }
+                      };
+
+                      const flushTools = () => {
+                        if (toolBuffer.length > 0) {
+                          const groups = buildToolGroups(toolBuffer);
+                          items.push({ kind: 'tools', groups });
+                          toolBuffer = [];
+                        }
+                      };
+
+                      for (const seg of segments) {
+                        if (seg.type === 'tool') {
+                          flushText();
+                          toolBuffer.push(seg);
+                        } else {
+                          flushTools();
+                          if (
+                            seg.type === 'thought' &&
+                            seg.text.trim().length > 0
+                          ) {
+                            textBuffer.push(seg.text);
+                          }
+                        }
+                      }
+                      flushText();
+                      flushTools();
+
+                      return items;
+                    };
+
+                    const flushBatch = (thinkingDone?: boolean) => {
+                      if (batchSegments.length === 0) return;
+
+                      const hasThought = batchSegments.some(
+                        (s) => s.type === 'thought',
+                      );
+
+                      const autoOpen = settings?.autoOpenThinking ?? true;
+                      const autoCloseDone =
+                        settings?.autoCloseThinkingDone ?? false;
+                      const thoughtDefaultOpen = autoOpen
+                        ? !autoCloseDone || !thinkingDone
+                        : false;
+
+                      if (hasThought) {
+                        const items = buildThoughtItems(batchSegments);
+                        elements.push(
+                          <MessageContent
+                            key={`batch-${elements.length}-thought-${!!thinkingDone}`}
+                            segments={[]}
+                            thoughtItems={items}
+                            onImageClick={onImageClick}
+                            defaultOpen={thoughtDefaultOpen}
+                            renderTool={(seg, showInline) => (
+                              <ToolCallSegment
+                                key={seg.id}
+                                segment={seg}
+                                showInlineStats={showInline}
+                                onImageClick={onImageClick}
+                              />
+                            )}
+                          />,
+                        );
+                      } else {
+                        elements.push(
+                          <MessageContent
+                            key={`batch-${elements.length}`}
+                            segments={batchSegments}
+                            onImageClick={onImageClick}
+                          />,
+                        );
+                      }
+
+                      batchSegments = [];
+                    };
+
+                    msg.content.forEach((segment) => {
+                      if (segment.type === 'tool') {
+                        const isInThoughtBatch =
+                          batchSegments.length > 0 &&
+                          batchSegments.every(
+                            (s) => s.type === 'thought' || s.type === 'tool',
+                          );
+
+                        if (isInThoughtBatch && !segment.displayedImage) {
+                          batchSegments.push(segment);
+                        } else if (segment.displayedImage && isInThoughtBatch) {
+                          standaloneToolBuffer.push(segment);
+                        } else {
+                          flushBatch();
+                          standaloneToolBuffer.push(segment);
+                        }
+                      } else {
+                        const closingBatch =
+                          batchSegments.length > 0 &&
+                          segment.type !== 'thought';
+                        if (closingBatch) {
+                          flushBatch(true);
+                          flushStandaloneTools();
+                        } else if (batchSegments.length === 0) {
+                          flushStandaloneTools();
+                        }
+                        batchSegments.push(segment);
+                      }
+                    });
+
+                    flushBatch();
+                    flushStandaloneTools();
+
+                    return elements;
+                  })()}
+                  {streamingTool && isLast && msg.role === 'assistant' && (
+                    <div className="tool-call-stream">
+                      <div className="tool-call-stream__header">
+                        {(() => {
+                          const meta = streamingTool.name
+                            ? getToolMeta(streamingTool.name)
+                            : undefined;
+                          const IconComp = meta?.icon
+                            ? resolveIcon(meta.icon)
+                            : Wrench;
+                          return (
+                            <IconComp
+                              className="tool-call-stream__icon"
+                              size={16}
+                            />
+                          );
+                        })()}
+                        <span className="tool-call-stream__name">
+                          {(streamingTool.name &&
+                            getToolMeta(streamingTool.name)?.label) ??
+                            streamingTool.name}
+                        </span>
+                        <div className="tool-call-stream__spinner" />
+                      </div>
+                      <SyntaxHighlighter
+                        language="json"
+                        style={oneDark}
+                        customStyle={{
+                          margin: 0,
+                          borderTop: '1px solid var(--border)',
+                          borderRadius: 0,
+                          fontSize: 11,
+                          lineHeight: 1.4,
+                          maxHeight: 240,
+                          overflow: 'auto',
+                          background: 'transparent',
+                        }}
+                        codeTagProps={{ style: { fontFamily: 'inherit' } }}
+                      >
+                        {streamingDisplayText}
+                      </SyntaxHighlighter>
+                    </div>
+                  )}
+                  {loading &&
+                    isLast &&
+                    msg.role === 'assistant' &&
+                    processing && (
+                      <div className="chat-message__indicator-box">
+                        <div className="chat-indicator">
+                          <div className="chat-indicator__spinner" />
+                          <span className="chat-indicator__label">
+                            Processing prompt… ({progressPercent}%)
+                          </span>
+                        </div>
+                        <div className="chat-progress-bar">
+                          <div
+                            className="chat-progress-bar__fill"
+                            style={{ width: `${progressPercent}%` }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                </div>
+              ) : msg.role === 'system' ? (
+                <>{msg.content[0]?.text || ''}</>
+              ) : (
+                <>
+                  {msg.content[0]?.mediaItems?.map((item, idx) => {
+                    if (item.type === 'image') {
+                      return (
+                        <img
+                          key={`img-${idx}`}
+                          src={item.url}
+                          alt="Attached media"
+                          className="chat-message__user-image"
+                          onClick={() => onImageClick(item.url!)}
+                        />
+                      );
+                    }
+                    if (item.type === 'video') {
+                      return (
+                        <video
+                          key={`vid-${idx}`}
+                          src={item.url}
+                          controls
+                          className="chat-message__user-video"
+                        />
+                      );
+                    }
+                    if (item.type === 'document') {
+                      return (
+                        <div
+                          key={`doc-${idx}`}
+                          className="chat-message__user-document"
+                        >
+                          <FileText size={20} />
+                          <span className="chat-message__user-document-name">
+                            {item.name}
+                          </span>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })}
+                  {msg.content[0]?.text || ''}
+                </>
+              )}
+            </div>
+          </>
+        )
+      )}
+
+      {/* Display prompt processing statistics below user and system messages */}
+      {(msg.role === 'user' || msg.role === 'system') && msg.promptStats && (
+        <div className="chat-message__stats">
+          <InfoTooltip
+            title="Prompt tokens"
+            content={PROMPT_TOKENS_STAT_TOOLTIP}
+            hideIcon
+            portal
+          >
+            <div className="chat-stat-item">
+              <Hash size={12} />
+              <span>{msg.promptStats.tokens} tokens</span>
+            </div>
+          </InfoTooltip>
+          <InfoTooltip
+            title="Prompt processing time"
+            content={PROMPT_TIME_STAT_TOOLTIP}
+            hideIcon
+            portal
+          >
+            <div className="chat-stat-item">
+              <Timer size={12} />
+              <span>{(msg.promptStats.timeMs / 1000).toFixed(2)}s</span>
+            </div>
+          </InfoTooltip>
+          <InfoTooltip
+            title="Prompt processing speed"
+            content={PROMPT_SPEED_STAT_TOOLTIP}
+            hideIcon
+            portal
+          >
+            <div className="chat-stat-item">
+              <Zap size={12} />
+              <span>{msg.promptStats.tokensPerSecond.toFixed(1)} t/s</span>
+            </div>
+          </InfoTooltip>
+          {msg.role === 'user' && msg.content[0]?.text && (
+            <button
+              type="button"
+              className={`chat-message__copy ${copiedMsgId === msg.id ? 'chat-message__copy--copied' : ''}`}
+              onClick={() => onCopy(msg)}
+              title="Copy message"
+              aria-label="Copy message"
+            >
+              {copiedMsgId === msg.id ? (
+                <Check size={12} />
+              ) : (
+                <Copy size={12} />
+              )}
+              <span>{copiedMsgId === msg.id ? 'Copied' : 'Copy'}</span>
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Display generation statistics below assistant responses */}
+      {msg.role === 'assistant' && msg.stats && (
+        <div className="chat-message__stats">
+          <InfoTooltip
+            title="Tokens generated"
+            content={[
+              GENERATED_TOKENS_STAT_TOOLTIP[0],
+              ...(msg.stats.responseTokens !== undefined
+                ? [
+                    `Response tokens: ${msg.stats.responseTokens.toLocaleString()}`,
+                    `Thinking tokens: ${(msg.stats.thinkingTokens ?? 0).toLocaleString()}`,
+                    `Tool call tokens: ${(msg.stats.toolTokens ?? 0).toLocaleString()}`,
+                  ]
+                : []),
+            ]}
+            hideIcon
+            portal
+          >
+            <div className="chat-stat-item">
+              <Hash size={12} />
+              <span>{msg.stats.tokens} tokens</span>
+            </div>
+          </InfoTooltip>
+          <InfoTooltip
+            title="Generation time"
+            content={GENERATION_TIME_STAT_TOOLTIP}
+            hideIcon
+            portal
+          >
+            <div className="chat-stat-item">
+              <Timer size={12} />
+              <span>{(msg.stats.timeMs / 1000).toFixed(2)}s</span>
+            </div>
+          </InfoTooltip>
+          <InfoTooltip
+            title="Generation speed"
+            content={GENERATION_SPEED_STAT_TOOLTIP}
+            hideIcon
+            portal
+          >
+            <div className="chat-stat-item">
+              <Zap size={12} />
+              <span>{msg.stats.tokensPerSecond.toFixed(1)} t/s</span>
+            </div>
+          </InfoTooltip>
+          <button
+            type="button"
+            className={`chat-message__copy ${copiedMsgId === msg.id ? 'chat-message__copy--copied' : ''}`}
+            onClick={() => onCopy(msg)}
+            title="Copy response"
+            aria-label="Copy response"
+          >
+            {copiedMsgId === msg.id ? <Check size={12} /> : <Copy size={12} />}
+            <span>{copiedMsgId === msg.id ? 'Copied' : 'Copy'}</span>
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function messageViewPropsEqual(prev: MessageViewProps, next: MessageViewProps) {
+  if (
+    prev.msg !== next.msg ||
+    prev.isLast !== next.isLast ||
+    prev.profileName !== next.profileName ||
+    prev.settings !== next.settings ||
+    prev.copiedMsgId !== next.copiedMsgId
+  ) {
+    return false;
+  }
+  if (!prev.isLast) return true;
+  return (
+    prev.loading === next.loading &&
+    prev.processing === next.processing &&
+    prev.progressPercent === next.progressPercent &&
+    prev.streamingTool === next.streamingTool
+  );
+}
+
+const MessageView = memo(MessageViewInner, messageViewPropsEqual);
 
 const DOC_EXTENSIONS = [
   'pdf',
@@ -696,6 +1339,13 @@ export default function ChatPage() {
   const syncThrottleRef = useRef<Record<string, ReturnType<typeof setTimeout>>>(
     {},
   );
+  const pendingTokenBuffersRef = useRef<
+    Record<string, { token: string; segmentType?: string }[]>
+  >({});
+  const streamingToolDirtyRef = useRef(false);
+  const processingDirtyRef = useRef(false);
+  const tokenFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const messagesRef = useRef<Message[]>([]);
   const slotBannerHideTimer = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
@@ -736,6 +1386,20 @@ export default function ChatPage() {
 
   const [copiedMsgId, setCopiedMsgId] = useState<number | null>(null);
   const copiedMsgTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const toggleMessageCollapsed = useCallback((id: number) => {
+    setMessages((prev) => {
+      const updated = [...prev];
+      const idx = updated.findIndex((m) => m.id === id);
+      if (idx >= 0) {
+        updated[idx] = {
+          ...updated[idx],
+          collapsed: !updated[idx].collapsed,
+        };
+      }
+      return updated;
+    });
+  }, []);
 
   const copyMessageText = useCallback((msg: Message) => {
     const text =
@@ -967,6 +1631,7 @@ export default function ChatPage() {
 
   const loading = !!activeSessionId && !!loadingSessions[activeSessionId];
   const processing = !!activeSessionId && !!processingSessions[activeSessionId];
+  messagesRef.current = messages;
 
   useEffect(() => {
     activeSessionIdRef.current = activeSessionId;
@@ -1425,11 +2090,118 @@ export default function ChatPage() {
 
       const isActive = sessionId === activeSessionIdRef.current;
 
-      const applyToSession = (fn: (prev: Message[]) => Message[]) => {
-        const current = sessionMessagesRef.current[sessionId] ?? [];
+      const applyToSession = (
+        sessionIdToApply: string,
+        isActiveToApply: boolean,
+        fn: (prev: Message[]) => Message[],
+      ) => {
+        const current = sessionMessagesRef.current[sessionIdToApply] ?? [];
         const next = fn(current);
-        sessionMessagesRef.current[sessionId] = next;
-        if (isActive) setMessages(next);
+        sessionMessagesRef.current[sessionIdToApply] = next;
+        if (isActiveToApply) setMessages(next);
+      };
+
+      const flushTokenBuffer = () => {
+        if (tokenFlushTimerRef.current) {
+          clearTimeout(tokenFlushTimerRef.current);
+          tokenFlushTimerRef.current = null;
+        }
+        const buffers = pendingTokenBuffersRef.current;
+        pendingTokenBuffersRef.current = {};
+        const toolDirty = streamingToolDirtyRef.current;
+        streamingToolDirtyRef.current = false;
+        const procDirty = processingDirtyRef.current;
+        processingDirtyRef.current = false;
+
+        Object.keys(buffers).forEach((bufferedSessionId) => {
+          const events = buffers[bufferedSessionId];
+          if (!events || events.length === 0) return;
+          const bufferedActive =
+            bufferedSessionId === activeSessionIdRef.current;
+
+          if (procDirty) {
+            setProcessingSessions((prev) => ({
+              ...prev,
+              [bufferedSessionId]: false,
+            }));
+          }
+          if (bufferedActive && toolDirty) {
+            setStreamingTool(
+              streamingToolsRef.current[bufferedSessionId] ?? null,
+            );
+          }
+
+          applyToSession(bufferedSessionId, bufferedActive, (prev) => {
+            let updated = prev;
+            events.forEach((ev) => {
+              const { token, segmentType } = ev;
+              const last = updated[updated.length - 1];
+
+              if (last && last.role === 'assistant') {
+                const updatedContent = [...last.content];
+                const lastSegment = updatedContent[updatedContent.length - 1];
+
+                let currentType: 'thought' | 'comment' | 'normal' = 'normal';
+                if (segmentType === 'thought') currentType = 'thought';
+                else if (segmentType === 'comment') currentType = 'comment';
+
+                if (lastSegment && lastSegment.type === currentType) {
+                  lastSegment.text += token;
+                } else {
+                  const counters = segmentCountersRef.current;
+                  counters[bufferedSessionId] =
+                    (counters[bufferedSessionId] ?? 0) + 1;
+                  updatedContent.push({
+                    id: `seg-${Date.now()}-${counters[bufferedSessionId]}`,
+                    text: token ?? '',
+                    type: currentType,
+                  });
+                }
+
+                updated = [
+                  ...updated.slice(0, -1),
+                  { ...last, content: updatedContent },
+                ];
+                return;
+              }
+
+              const counters = messageCountersRef.current;
+              const id = counters[bufferedSessionId] ?? 0;
+              counters[bufferedSessionId] = id + 1;
+              const segCounters = segmentCountersRef.current;
+              segCounters[bufferedSessionId] =
+                (segCounters[bufferedSessionId] ?? 0) + 1;
+
+              let initialType: 'thought' | 'comment' | 'normal' = 'normal';
+              if (segmentType === 'thought') initialType = 'thought';
+              else if (segmentType === 'comment') initialType = 'comment';
+
+              updated = [
+                ...updated,
+                {
+                  id,
+                  role: 'assistant',
+                  content: [
+                    {
+                      id: `seg-${Date.now()}-${segCounters[bufferedSessionId]}`,
+                      text: (token ?? '').replace(/^\s+/, ''),
+                      type: initialType,
+                    },
+                  ],
+                },
+              ];
+            });
+            return updated;
+          });
+        });
+      };
+
+      const scheduleTokenFlush = () => {
+        if (tokenFlushTimerRef.current) return;
+        tokenFlushTimerRef.current = setTimeout(() => {
+          tokenFlushTimerRef.current = null;
+          flushTokenBuffer();
+        }, 50);
       };
 
       const setSessionLoading = (value: boolean) => {
@@ -1448,66 +2220,20 @@ export default function ChatPage() {
               name: prev?.name ?? 'tool',
               text: (prev?.text ?? '') + token,
             };
-            if (isActive)
-              setStreamingTool(streamingToolsRef.current[sessionId]);
+            streamingToolDirtyRef.current = true;
+            scheduleTokenFlush();
             return;
           }
 
-          setSessionProcessing(false);
-          applyToSession((prev) => {
-            const last = prev[prev.length - 1];
-
-            if (last && last.role === 'assistant') {
-              const updatedContent = [...last.content];
-              const lastSegment = updatedContent[updatedContent.length - 1];
-
-              let currentType: 'thought' | 'comment' | 'normal' = 'normal';
-              if (segmentType === 'thought') currentType = 'thought';
-              else if (segmentType === 'comment') currentType = 'comment';
-
-              if (lastSegment && lastSegment.type === currentType) {
-                lastSegment.text += token;
-              } else {
-                const counters = segmentCountersRef.current;
-                counters[sessionId] = (counters[sessionId] ?? 0) + 1;
-                updatedContent.push({
-                  id: `seg-${Date.now()}-${counters[sessionId]}`,
-                  text: token ?? '',
-                  type: currentType,
-                });
-              }
-
-              return [
-                ...prev.slice(0, -1),
-                { ...last, content: updatedContent },
-              ];
-            }
-
-            const counters = messageCountersRef.current;
-            const id = counters[sessionId] ?? 0;
-            counters[sessionId] = id + 1;
-            const segCounters = segmentCountersRef.current;
-            segCounters[sessionId] = (segCounters[sessionId] ?? 0) + 1;
-
-            let initialType: 'thought' | 'comment' | 'normal' = 'normal';
-            if (segmentType === 'thought') initialType = 'thought';
-            else if (segmentType === 'comment') initialType = 'comment';
-
-            return [
-              ...prev,
-              {
-                id,
-                role: 'assistant',
-                content: [
-                  {
-                    id: `seg-${Date.now()}-${segCounters[sessionId]}`,
-                    text: (token ?? '').replace(/^\s+/, ''),
-                    type: initialType,
-                  },
-                ],
-              },
-            ];
+          processingDirtyRef.current = true;
+          if (!pendingTokenBuffersRef.current[sessionId]) {
+            pendingTokenBuffersRef.current[sessionId] = [];
+          }
+          pendingTokenBuffersRef.current[sessionId].push({
+            token: token ?? '',
+            segmentType,
           });
+          scheduleTokenFlush();
           return;
         }
 
@@ -1518,13 +2244,14 @@ export default function ChatPage() {
         }
 
         case 'prompt-done': {
+          flushTokenBuffer();
           const promptStats = payload.stats;
           if (!promptStats) return;
           if (isReprocessingRef.current[sessionId]) {
             isReprocessingRef.current[sessionId] = false;
             const ids =
               pendingSegmentIdsRef.current[sessionId]?.splice(0) ?? [];
-            applyToSession((prev) => {
+            applyToSession(sessionId, isActive, (prev) => {
               const updated = [...prev];
               const last = updated[updated.length - 1];
               if (last?.role === 'assistant') {
@@ -1540,7 +2267,7 @@ export default function ChatPage() {
               return updated;
             });
           } else {
-            applyToSession((prev) => {
+            applyToSession(sessionId, isActive, (prev) => {
               const updated = [...prev];
               for (let i = updated.length - 1; i >= 0; i--) {
                 if (updated[i].role === 'user' && !updated[i].promptStats) {
@@ -1555,7 +2282,8 @@ export default function ChatPage() {
         }
 
         case 'function-calling': {
-          applyToSession((prev) => {
+          flushTokenBuffer();
+          applyToSession(sessionId, isActive, (prev) => {
             const updatedMessages = [...prev];
             const lastMessage = updatedMessages[updatedMessages.length - 1];
 
@@ -1574,7 +2302,10 @@ export default function ChatPage() {
             };
 
             if (lastMessage?.role === 'assistant') {
-              lastMessage.content.push(toolSegment);
+              updatedMessages[updatedMessages.length - 1] = {
+                ...lastMessage,
+                content: [...lastMessage.content, toolSegment],
+              };
             } else {
               const counters = messageCountersRef.current;
               const id = counters[sessionId] ?? 0;
@@ -1604,20 +2335,23 @@ export default function ChatPage() {
         }
 
         case 'function-call': {
+          flushTokenBuffer();
           streamingToolsRef.current[sessionId] = null;
           if (isActive) setStreamingTool(null);
-          applyToSession((prev) => {
+          applyToSession(sessionId, isActive, (prev) => {
             const updatedMessages = [...prev];
             const lastMessage = updatedMessages[updatedMessages.length - 1];
             const queue = toolSegmentQueuesRef.current[sessionId] ?? [];
 
             if (lastMessage?.role === 'assistant' && queue[0]) {
-              const toolSegment = lastMessage.content.find(
-                (seg) => seg.id === queue[0],
-              );
-              if (toolSegment && toolSegment.type === 'tool') {
-                toolSegment.toolParams = payload.params;
-              }
+              updatedMessages[updatedMessages.length - 1] = {
+                ...lastMessage,
+                content: lastMessage.content.map((seg) =>
+                  seg.id === queue[0] && seg.type === 'tool'
+                    ? { ...seg, toolParams: payload.params }
+                    : seg,
+                ),
+              };
             }
 
             return updatedMessages;
@@ -1626,6 +2360,7 @@ export default function ChatPage() {
         }
 
         case 'function-result': {
+          flushTokenBuffer();
           isReprocessingRef.current[sessionId] = true;
           const tags = payload.tags ?? [];
           /* eslint-disable no-underscore-dangle */
@@ -1636,27 +2371,38 @@ export default function ChatPage() {
             );
           }
           /* eslint-enable no-underscore-dangle */
-          applyToSession((prev) => {
+          /* eslint-disable no-underscore-dangle */
+          const image = payload._image;
+          /* eslint-enable no-underscore-dangle */
+          applyToSession(sessionId, isActive, (prev) => {
             const updatedMessages = [...prev];
             const lastMessage = updatedMessages[updatedMessages.length - 1];
             const queue = toolSegmentQueuesRef.current[sessionId] ?? [];
 
             if (lastMessage?.role === 'assistant' && queue[0]) {
-              const toolSegment = lastMessage.content.find(
-                (seg) => seg.id === queue[0],
-              );
-              if (toolSegment && toolSegment.type === 'tool') {
-                toolSegment.toolStatus = 'done';
-                toolSegment.toolResult = payload.result;
-                /* eslint-disable no-underscore-dangle */
-                if (payload._image) {
-                  toolSegment.displayedImage = {
-                    url: payload._image.url,
-                    altText: payload._image.altText,
-                  };
-                }
-                /* eslint-enable no-underscore-dangle */
-              }
+              const { result } = payload;
+              updatedMessages[updatedMessages.length - 1] = {
+                ...lastMessage,
+                content: lastMessage.content.map((seg) => {
+                  if (seg.id === queue[0] && seg.type === 'tool') {
+                    const updatedSeg: MessageSegment = {
+                      ...seg,
+                      toolStatus: 'done',
+                      toolResult: result,
+                    };
+                    /* eslint-disable no-underscore-dangle */
+                    if (image) {
+                      updatedSeg.displayedImage = {
+                        url: image.url,
+                        altText: image.altText,
+                      };
+                    }
+                    /* eslint-enable no-underscore-dangle */
+                    return updatedSeg;
+                  }
+                  return seg;
+                }),
+              };
             }
 
             toolSegmentQueuesRef.current[sessionId] = queue.slice(1);
@@ -1680,6 +2426,7 @@ export default function ChatPage() {
         }
 
         case 'done': {
+          flushTokenBuffer();
           pendingSegmentIdsRef.current[sessionId] = [];
           toolSegmentQueuesRef.current[sessionId] = [];
           setSessionLoading(false);
@@ -1696,6 +2443,7 @@ export default function ChatPage() {
         }
 
         case 'error': {
+          flushTokenBuffer();
           setSessionLoading(false);
           setSessionProcessing(false);
           showErrorToast(payload.message ?? 'Unknown error');
@@ -1703,6 +2451,7 @@ export default function ChatPage() {
         }
 
         case 'slot-unavailable': {
+          flushTokenBuffer();
           setSessionLoading(false);
           setSessionProcessing(false);
           showSlotBanner();
@@ -1710,6 +2459,7 @@ export default function ChatPage() {
         }
 
         case 'session-changed': {
+          flushTokenBuffer();
           setStreamingSessions((prev) => {
             const next = new Set(prev);
             if (payload.streaming) next.add(sessionId);
@@ -1725,7 +2475,13 @@ export default function ChatPage() {
       }
     });
 
-    return unsubscribe;
+    return () => {
+      if (tokenFlushTimerRef.current) {
+        clearTimeout(tokenFlushTimerRef.current);
+        tokenFlushTimerRef.current = null;
+      }
+      unsubscribe();
+    };
   }, [
     refreshCumulativeTokens,
     addSourcesFromToolResult,
@@ -1779,7 +2535,9 @@ export default function ChatPage() {
       ) < 40;
 
     if (isAtBottom) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      messagesEndRef.current?.scrollIntoView({
+        behavior: loading || processing ? 'auto' : 'smooth',
+      });
     }
   }, [messages, loading, processing]);
 
@@ -2173,37 +2931,42 @@ export default function ChatPage() {
     }, 100);
   };
 
-  const handleRestoreSession = async (sessionId: string) => {
-    if (modelLoading || loadError) return;
-    const view = await window.electronAPI.chatGetSession(sessionId);
-    if (!view) return;
+  const handleRestoreSession = useCallback(
+    async (sessionId: string) => {
+      if (modelLoading || loadError) return;
+      const view = await window.electronAPI.chatGetSession(sessionId);
+      if (!view) return;
 
+      if (activeSessionIdRef.current) {
+        sessionMessagesRef.current[activeSessionIdRef.current] =
+          messagesRef.current;
+      }
+
+      activeSessionIdRef.current = sessionId;
+      setActiveSessionId(sessionId);
+      const restored = view.session.messages;
+      sessionMessagesRef.current[sessionId] = restored;
+      messageCountersRef.current[sessionId] = restored.reduce(
+        (max, m) => Math.max(max, m.id + 1),
+        0,
+      );
+      setMessages(restored);
+      setStreamingTool(view.streamingTool);
+      setProgressPercent(view.progress);
+      setLoadingSessions((prev) => ({
+        ...prev,
+        [sessionId]: view.status !== 'idle',
+      }));
+      setProcessingSessions((prev) => ({ ...prev, [sessionId]: false }));
+      clearSources();
+    },
+    [modelLoading, loadError, clearSources],
+  );
+
+  const handleNewChat = useCallback(async () => {
     if (activeSessionIdRef.current) {
-      sessionMessagesRef.current[activeSessionIdRef.current] = messages;
-    }
-
-    activeSessionIdRef.current = sessionId;
-    setActiveSessionId(sessionId);
-    const restored = view.session.messages;
-    sessionMessagesRef.current[sessionId] = restored;
-    messageCountersRef.current[sessionId] = restored.reduce(
-      (max, m) => Math.max(max, m.id + 1),
-      0,
-    );
-    setMessages(restored);
-    setStreamingTool(view.streamingTool);
-    setProgressPercent(view.progress);
-    setLoadingSessions((prev) => ({
-      ...prev,
-      [sessionId]: view.status !== 'idle',
-    }));
-    setProcessingSessions((prev) => ({ ...prev, [sessionId]: false }));
-    clearSources();
-  };
-
-  const handleNewChat = async () => {
-    if (activeSessionIdRef.current) {
-      sessionMessagesRef.current[activeSessionIdRef.current] = messages;
+      sessionMessagesRef.current[activeSessionIdRef.current] =
+        messagesRef.current;
     }
     activeSessionIdRef.current = null;
     setActiveSessionId(null);
@@ -2219,9 +2982,9 @@ export default function ChatPage() {
       if (m.type === 'video') URL.revokeObjectURL(m.objectUrl);
     });
     setPendingMedia([]);
-  };
+  }, [pendingMedia, clearSources]);
 
-  const handleDeleteSession = (id: string) => {
+  const handleDeleteSession = useCallback((id: string) => {
     window.electronAPI.chatDeleteSession(id).catch(() => {});
     if (activeSessionIdRef.current === id) {
       activeSessionIdRef.current = null;
@@ -2229,7 +2992,11 @@ export default function ChatPage() {
       setMessages([]);
       delete sessionMessagesRef.current[id];
     }
-  };
+  }, []);
+
+  const toggleSidebarCollapsed = useCallback(() => {
+    setSidebarCollapsed((v) => !v);
+  }, []);
 
   const tokenRatio = maxTokens !== null ? usedTokens / maxTokens : 0;
   let tokenCounterClass = 'chat-token-counter';
@@ -2254,7 +3021,7 @@ export default function ChatPage() {
         activeSessionId={activeSessionId}
         collapsed={sidebarCollapsed}
         streamingSessionIds={streamingSessions}
-        onToggle={() => setSidebarCollapsed((v) => !v)}
+        onToggle={toggleSidebarCollapsed}
         onOpen={handleRestoreSession}
         onNewChat={handleNewChat}
         onDelete={handleDeleteSession}
@@ -2444,681 +3211,21 @@ export default function ChatPage() {
           )}
 
           {messages.map((msg) => (
-            <div
+            <MessageView
               key={msg.id}
-              className={`chat-message chat-message--${msg.role}`}
-            >
-              {(() => {
-                const text = msg.content[0]?.text || '';
-                const outputText =
-                  msg.content.find((s) => s.type === 'normal')?.text || text;
-                let collapsible = true;
-                if (msg.role === 'user') collapsible = text.length >= 20;
-                else if (msg.role === 'assistant') {
-                  collapsible = stripMarkdown(outputText).trim().length >= 40;
-                }
-                return (
-                  <div
-                    className="chat-message__label"
-                    role="button"
-                    tabIndex={collapsible ? 0 : undefined}
-                    onClick={() => {
-                      if (!collapsible) return;
-                      setMessages((prev) => {
-                        const updated = [...prev];
-                        const idx = updated.findIndex((m) => m.id === msg.id);
-                        if (idx >= 0) {
-                          updated[idx] = {
-                            ...updated[idx],
-                            collapsed: !updated[idx].collapsed,
-                          };
-                        }
-                        return updated;
-                      });
-                    }}
-                    onKeyDown={(e) => {
-                      if (!collapsible) return;
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        setMessages((prev) => {
-                          const updated = [...prev];
-                          const idx = updated.findIndex((m) => m.id === msg.id);
-                          if (idx >= 0) {
-                            updated[idx] = {
-                              ...updated[idx],
-                              collapsed: !updated[idx].collapsed,
-                            };
-                          }
-                          return updated;
-                        });
-                      }
-                    }}
-                  >
-                    {msg.role === 'user'
-                      ? 'You'
-                      : msg.role === 'system'
-                        ? 'System'
-                        : selectedProfile?.name || 'Assistant'}
-                    {collapsible && (
-                      <ChevronDown
-                        size={12}
-                        className={`chat-message__label-chevron${msg.collapsed ? ' chat-message__label-chevron--collapsed' : ''}`}
-                      />
-                    )}
-                  </div>
-                );
-              })()}
-              {msg.collapsed &&
-              (msg.role === 'user' || msg.role === 'assistant') ? (
-                <div
-                  className="chat-message__bubble chat-message__bubble--collapsed"
-                  role="button"
-                  tabIndex={0}
-                  onClick={() =>
-                    setMessages((prev) => {
-                      const updated = [...prev];
-                      const idx = updated.findIndex((m) => m.id === msg.id);
-                      if (idx >= 0) {
-                        updated[idx] = { ...updated[idx], collapsed: false };
-                      }
-                      return updated;
-                    })
-                  }
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      setMessages((prev) => {
-                        const updated = [...prev];
-                        const idx = updated.findIndex((m) => m.id === msg.id);
-                        if (idx >= 0) {
-                          updated[idx] = { ...updated[idx], collapsed: false };
-                        }
-                        return updated;
-                      });
-                    }
-                  }}
-                >
-                  {(() => {
-                    const outputText =
-                      msg.content.find((s) => s.type === 'normal')?.text ||
-                      msg.content[0]?.text ||
-                      '';
-                    if (msg.role === 'assistant') {
-                      return `${stripMarkdown(outputText).trim().slice(0, 40)}…`;
-                    }
-                    return `${outputText.slice(0, 20)}…`;
-                  })()}
-                </div>
-              ) : (
-                !msg.collapsed && (
-                  <>
-                    {loading &&
-                      msg === messages[messages.length - 1] &&
-                      msg.role === 'assistant' &&
-                      !processing && (
-                        <div className="chat-message__indicator-box">
-                          <div className="chat-indicator">
-                            <div className="chat-indicator__spinner" />
-                            <span className="chat-indicator__label">
-                              Generating…
-                            </span>
-                          </div>
-                        </div>
-                      )}
-                    <div className="chat-message__bubble">
-                      {msg.role === 'assistant' ? (
-                        <div className="chat-message__assistant-content">
-                          {(() => {
-                            const elements: ReactNode[] = [];
-                            let batchSegments: MessageSegment[] = [];
-                            let standaloneToolBuffer: MessageSegment[] = [];
-
-                            const buildToolGroups = (
-                              tools: MessageSegment[],
-                            ): {
-                              segments: MessageSegment[];
-                              stats: GenerationStatsData | null;
-                            }[] => {
-                              const groups: {
-                                segments: MessageSegment[];
-                                stats: GenerationStatsData | null;
-                              }[] = [];
-                              let currentGroup: MessageSegment[] = [];
-                              let currentStats: GenerationStatsData | null =
-                                null;
-
-                              for (const tool of tools) {
-                                const stats = tool.reprocessStats ?? null;
-                                if (
-                                  currentGroup.length > 0 &&
-                                  currentStats !== stats
-                                ) {
-                                  groups.push({
-                                    segments: currentGroup,
-                                    stats: currentStats,
-                                  });
-                                  currentGroup = [];
-                                }
-                                currentGroup.push(tool);
-                                currentStats = stats;
-                              }
-
-                              if (currentGroup.length > 0) {
-                                groups.push({
-                                  segments: currentGroup,
-                                  stats: currentStats,
-                                });
-                              }
-
-                              return groups;
-                            };
-
-                            const renderToolGroup = (
-                              group: {
-                                segments: MessageSegment[];
-                                stats: GenerationStatsData | null;
-                              },
-                              key: string | number,
-                            ): ReactNode => {
-                              if (group.segments.length === 1) {
-                                return (
-                                  <ToolCallSegment
-                                    key={key}
-                                    segment={group.segments[0]}
-                                    showInlineStats={!!group.stats}
-                                    onImageClick={setImageViewerUrl}
-                                  />
-                                );
-                              }
-
-                              return (
-                                <div
-                                  key={`tool-group-${key}`}
-                                  className="tool-call-group"
-                                >
-                                  <div className="tool-call-group__tools">
-                                    {group.segments.map((seg) => (
-                                      <ToolCallSegment
-                                        key={seg.id}
-                                        segment={seg}
-                                        showInlineStats={false}
-                                        onImageClick={setImageViewerUrl}
-                                      />
-                                    ))}
-                                  </div>
-                                  {group.stats && (
-                                    <div className="tool-call-group__stats">
-                                      <InfoTooltip
-                                        title="Prompt tokens"
-                                        content={PROMPT_TOKENS_STAT_TOOLTIP}
-                                        hideIcon
-                                        portal
-                                      >
-                                        <div className="chat-stat-item">
-                                          <Hash size={12} />
-                                          <span>
-                                            {group.stats.tokens} tokens
-                                          </span>
-                                        </div>
-                                      </InfoTooltip>
-                                      <InfoTooltip
-                                        title="Prompt processing time"
-                                        content={PROMPT_TIME_STAT_TOOLTIP}
-                                        hideIcon
-                                        portal
-                                      >
-                                        <div className="chat-stat-item">
-                                          <Timer size={12} />
-                                          <span>
-                                            {(
-                                              group.stats.timeMs / 1000
-                                            ).toFixed(2)}
-                                            s
-                                          </span>
-                                        </div>
-                                      </InfoTooltip>
-                                      <InfoTooltip
-                                        title="Prompt processing speed"
-                                        content={PROMPT_SPEED_STAT_TOOLTIP}
-                                        hideIcon
-                                        portal
-                                      >
-                                        <div className="chat-stat-item">
-                                          <Zap size={12} />
-                                          <span>
-                                            {group.stats.tokensPerSecond.toFixed(
-                                              1,
-                                            )}{' '}
-                                            t/s
-                                          </span>
-                                        </div>
-                                      </InfoTooltip>
-                                    </div>
-                                  )}
-                                </div>
-                              );
-                            };
-
-                            const flushStandaloneTools = () => {
-                              if (standaloneToolBuffer.length === 0) return;
-                              const groups =
-                                buildToolGroups(standaloneToolBuffer);
-                              for (let i = 0; i < groups.length; i++) {
-                                elements.push(
-                                  renderToolGroup(
-                                    groups[i],
-                                    `solo-${elements.length}-${i}`,
-                                  ),
-                                );
-                              }
-                              standaloneToolBuffer = [];
-                            };
-
-                            const buildThoughtItems = (
-                              segments: MessageSegment[],
-                            ): {
-                              kind: 'text' | 'tools';
-                              text?: string;
-                              groups?: {
-                                segments: MessageSegment[];
-                                stats: GenerationStatsData | null;
-                              }[];
-                            }[] => {
-                              const items: {
-                                kind: 'text' | 'tools';
-                                text?: string;
-                                groups?: {
-                                  segments: MessageSegment[];
-                                  stats: GenerationStatsData | null;
-                                }[];
-                              }[] = [];
-                              let textBuffer: string[] = [];
-                              let toolBuffer: MessageSegment[] = [];
-
-                              const flushText = () => {
-                                if (textBuffer.length > 0) {
-                                  items.push({
-                                    kind: 'text',
-                                    text: textBuffer.join(''),
-                                  });
-                                  textBuffer = [];
-                                }
-                              };
-
-                              const flushTools = () => {
-                                if (toolBuffer.length > 0) {
-                                  const groups = buildToolGroups(toolBuffer);
-                                  items.push({ kind: 'tools', groups });
-                                  toolBuffer = [];
-                                }
-                              };
-
-                              for (const seg of segments) {
-                                if (seg.type === 'tool') {
-                                  flushText();
-                                  toolBuffer.push(seg);
-                                } else {
-                                  flushTools();
-                                  if (
-                                    seg.type === 'thought' &&
-                                    seg.text.trim().length > 0
-                                  ) {
-                                    textBuffer.push(seg.text);
-                                  }
-                                }
-                              }
-                              flushText();
-                              flushTools();
-
-                              return items;
-                            };
-
-                            const flushBatch = (thinkingDone?: boolean) => {
-                              if (batchSegments.length === 0) return;
-
-                              const hasThought = batchSegments.some(
-                                (s) => s.type === 'thought',
-                              );
-
-                              const autoOpen =
-                                settings?.autoOpenThinking ?? true;
-                              const autoCloseDone =
-                                settings?.autoCloseThinkingDone ?? false;
-                              const thoughtDefaultOpen = autoOpen
-                                ? !autoCloseDone || !thinkingDone
-                                : false;
-
-                              if (hasThought) {
-                                const items = buildThoughtItems(batchSegments);
-                                elements.push(
-                                  <MessageContent
-                                    key={`batch-${elements.length}-thought-${!!thinkingDone}`}
-                                    segments={[]}
-                                    thoughtItems={items}
-                                    onImageClick={setImageViewerUrl}
-                                    defaultOpen={thoughtDefaultOpen}
-                                    renderTool={(seg, showInline) => (
-                                      <ToolCallSegment
-                                        key={seg.id}
-                                        segment={seg}
-                                        showInlineStats={showInline}
-                                        onImageClick={setImageViewerUrl}
-                                      />
-                                    )}
-                                  />,
-                                );
-                              } else {
-                                elements.push(
-                                  <MessageContent
-                                    key={`batch-${elements.length}`}
-                                    segments={batchSegments}
-                                    onImageClick={setImageViewerUrl}
-                                  />,
-                                );
-                              }
-
-                              batchSegments = [];
-                            };
-
-                            msg.content.forEach((segment) => {
-                              if (segment.type === 'tool') {
-                                const isInThoughtBatch =
-                                  batchSegments.length > 0 &&
-                                  batchSegments.every(
-                                    (s) =>
-                                      s.type === 'thought' || s.type === 'tool',
-                                  );
-
-                                if (
-                                  isInThoughtBatch &&
-                                  !segment.displayedImage
-                                ) {
-                                  batchSegments.push(segment);
-                                } else if (
-                                  segment.displayedImage &&
-                                  isInThoughtBatch
-                                ) {
-                                  standaloneToolBuffer.push(segment);
-                                } else {
-                                  flushBatch();
-                                  standaloneToolBuffer.push(segment);
-                                }
-                              } else {
-                                const closingBatch =
-                                  batchSegments.length > 0 &&
-                                  segment.type !== 'thought';
-                                if (closingBatch) {
-                                  flushBatch(true);
-                                  flushStandaloneTools();
-                                } else if (batchSegments.length === 0) {
-                                  flushStandaloneTools();
-                                }
-                                batchSegments.push(segment);
-                              }
-                            });
-
-                            flushBatch();
-                            flushStandaloneTools();
-
-                            return elements;
-                          })()}
-                          {streamingTool &&
-                            msg === messages[messages.length - 1] &&
-                            msg.role === 'assistant' && (
-                              <div className="tool-call-stream">
-                                <div className="tool-call-stream__header">
-                                  {(() => {
-                                    const meta = streamingTool.name
-                                      ? getToolMeta(streamingTool.name)
-                                      : undefined;
-                                    const IconComp = meta?.icon
-                                      ? resolveIcon(meta.icon)
-                                      : Wrench;
-                                    return (
-                                      <IconComp
-                                        className="tool-call-stream__icon"
-                                        size={16}
-                                      />
-                                    );
-                                  })()}
-                                  <span className="tool-call-stream__name">
-                                    {(streamingTool.name &&
-                                      getToolMeta(streamingTool.name)?.label) ??
-                                      streamingTool.name}
-                                  </span>
-                                  <div className="tool-call-stream__spinner" />
-                                </div>
-                                {(() => {
-                                  let displayText = streamingTool.text;
-                                  try {
-                                    displayText = JSON.stringify(
-                                      JSON.parse(streamingTool.text),
-                                      null,
-                                      2,
-                                    );
-                                  } catch {
-                                    displayText = streamingTool.text;
-                                  }
-                                  displayText = displayText
-                                    .replace(/\\r\\n/g, '\r\n')
-                                    .replace(/\\n/g, '\n');
-                                  return (
-                                    <SyntaxHighlighter
-                                      language="json"
-                                      style={oneDark}
-                                      customStyle={{
-                                        margin: 0,
-                                        borderTop: '1px solid var(--border)',
-                                        borderRadius: 0,
-                                        fontSize: 11,
-                                        lineHeight: 1.4,
-                                        maxHeight: 240,
-                                        overflow: 'auto',
-                                        background: 'transparent',
-                                      }}
-                                      codeTagProps={{
-                                        style: { fontFamily: 'inherit' },
-                                      }}
-                                    >
-                                      {displayText}
-                                    </SyntaxHighlighter>
-                                  );
-                                })()}
-                              </div>
-                            )}
-                          {loading &&
-                            msg === messages[messages.length - 1] &&
-                            msg.role === 'assistant' &&
-                            processing && (
-                              <div className="chat-message__indicator-box">
-                                <div className="chat-indicator">
-                                  <div className="chat-indicator__spinner" />
-                                  <span className="chat-indicator__label">
-                                    Processing prompt… ({progressPercent}%)
-                                  </span>
-                                </div>
-                                <div className="chat-progress-bar">
-                                  <div
-                                    className="chat-progress-bar__fill"
-                                    style={{ width: `${progressPercent}%` }}
-                                  />
-                                </div>
-                              </div>
-                            )}
-                        </div>
-                      ) : msg.role === 'system' ? (
-                        <>{msg.content[0]?.text || ''}</>
-                      ) : (
-                        <>
-                          {msg.content[0]?.mediaItems?.map((item, idx) => {
-                            if (item.type === 'image') {
-                              return (
-                                <img
-                                  key={`img-${idx}`}
-                                  src={item.url}
-                                  alt="Attached media"
-                                  className="chat-message__user-image"
-                                  onClick={() => setImageViewerUrl(item.url!)}
-                                />
-                              );
-                            }
-                            if (item.type === 'video') {
-                              return (
-                                <video
-                                  key={`vid-${idx}`}
-                                  src={item.url}
-                                  controls
-                                  className="chat-message__user-video"
-                                />
-                              );
-                            }
-                            if (item.type === 'document') {
-                              return (
-                                <div
-                                  key={`doc-${idx}`}
-                                  className="chat-message__user-document"
-                                >
-                                  <FileText size={20} />
-                                  <span className="chat-message__user-document-name">
-                                    {item.name}
-                                  </span>
-                                </div>
-                              );
-                            }
-                            return null;
-                          })}
-                          {msg.content[0]?.text || ''}
-                        </>
-                      )}
-                    </div>
-                  </>
-                )
-              )}
-
-              {/* Display prompt processing statistics below user and system messages */}
-              {(msg.role === 'user' || msg.role === 'system') &&
-                msg.promptStats && (
-                  <div className="chat-message__stats">
-                    <InfoTooltip
-                      title="Prompt tokens"
-                      content={PROMPT_TOKENS_STAT_TOOLTIP}
-                      hideIcon
-                      portal
-                    >
-                      <div className="chat-stat-item">
-                        <Hash size={12} />
-                        <span>{msg.promptStats.tokens} tokens</span>
-                      </div>
-                    </InfoTooltip>
-                    <InfoTooltip
-                      title="Prompt processing time"
-                      content={PROMPT_TIME_STAT_TOOLTIP}
-                      hideIcon
-                      portal
-                    >
-                      <div className="chat-stat-item">
-                        <Timer size={12} />
-                        <span>
-                          {(msg.promptStats.timeMs / 1000).toFixed(2)}s
-                        </span>
-                      </div>
-                    </InfoTooltip>
-                    <InfoTooltip
-                      title="Prompt processing speed"
-                      content={PROMPT_SPEED_STAT_TOOLTIP}
-                      hideIcon
-                      portal
-                    >
-                      <div className="chat-stat-item">
-                        <Zap size={12} />
-                        <span>
-                          {msg.promptStats.tokensPerSecond.toFixed(1)} t/s
-                        </span>
-                      </div>
-                    </InfoTooltip>
-                    {msg.role === 'user' && msg.content[0]?.text && (
-                      <button
-                        type="button"
-                        className={`chat-message__copy ${copiedMsgId === msg.id ? 'chat-message__copy--copied' : ''}`}
-                        onClick={() => copyMessageText(msg)}
-                        title="Copy message"
-                        aria-label="Copy message"
-                      >
-                        {copiedMsgId === msg.id ? (
-                          <Check size={12} />
-                        ) : (
-                          <Copy size={12} />
-                        )}
-                        <span>
-                          {copiedMsgId === msg.id ? 'Copied' : 'Copy'}
-                        </span>
-                      </button>
-                    )}
-                  </div>
-                )}
-
-              {/* Display generation statistics below assistant responses */}
-              {msg.role === 'assistant' && msg.stats && (
-                <div className="chat-message__stats">
-                  <InfoTooltip
-                    title="Tokens generated"
-                    content={[
-                      GENERATED_TOKENS_STAT_TOOLTIP[0],
-                      ...(msg.stats.responseTokens !== undefined
-                        ? [
-                            `Response tokens: ${msg.stats.responseTokens.toLocaleString()}`,
-                            `Thinking tokens: ${(msg.stats.thinkingTokens ?? 0).toLocaleString()}`,
-                            `Tool call tokens: ${(msg.stats.toolTokens ?? 0).toLocaleString()}`,
-                          ]
-                        : []),
-                    ]}
-                    hideIcon
-                    portal
-                  >
-                    <div className="chat-stat-item">
-                      <Hash size={12} />
-                      <span>{msg.stats.tokens} tokens</span>
-                    </div>
-                  </InfoTooltip>
-                  <InfoTooltip
-                    title="Generation time"
-                    content={GENERATION_TIME_STAT_TOOLTIP}
-                    hideIcon
-                    portal
-                  >
-                    <div className="chat-stat-item">
-                      <Timer size={12} />
-                      <span>{(msg.stats.timeMs / 1000).toFixed(2)}s</span>
-                    </div>
-                  </InfoTooltip>
-                  <InfoTooltip
-                    title="Generation speed"
-                    content={GENERATION_SPEED_STAT_TOOLTIP}
-                    hideIcon
-                    portal
-                  >
-                    <div className="chat-stat-item">
-                      <Zap size={12} />
-                      <span>{msg.stats.tokensPerSecond.toFixed(1)} t/s</span>
-                    </div>
-                  </InfoTooltip>
-                  <button
-                    type="button"
-                    className={`chat-message__copy ${copiedMsgId === msg.id ? 'chat-message__copy--copied' : ''}`}
-                    onClick={() => copyMessageText(msg)}
-                    title="Copy response"
-                    aria-label="Copy response"
-                  >
-                    {copiedMsgId === msg.id ? (
-                      <Check size={12} />
-                    ) : (
-                      <Copy size={12} />
-                    )}
-                    <span>{copiedMsgId === msg.id ? 'Copied' : 'Copy'}</span>
-                  </button>
-                </div>
-              )}
-            </div>
+              msg={msg}
+              isLast={msg === messages[messages.length - 1]}
+              profileName={selectedProfile?.name ?? ''}
+              loading={loading}
+              processing={processing}
+              progressPercent={progressPercent}
+              streamingTool={streamingTool}
+              settings={settings}
+              copiedMsgId={copiedMsgId}
+              onToggleCollapsed={toggleMessageCollapsed}
+              onCopy={copyMessageText}
+              onImageClick={setImageViewerUrl}
+            />
           ))}
 
           {loading &&

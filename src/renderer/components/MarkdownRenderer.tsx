@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { memo, useMemo, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -12,7 +12,13 @@ type Props = {
   onImageClick?: (url: string) => void;
 };
 
-export function CodeBlock({ lang, code }: { lang: string; code: string }) {
+export const CodeBlock = memo(function CodeBlockInner({
+  lang,
+  code,
+}: {
+  lang: string;
+  code: string;
+}) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = () => {
@@ -53,7 +59,7 @@ export function CodeBlock({ lang, code }: { lang: string; code: string }) {
       </SyntaxHighlighter>
     </div>
   );
-}
+});
 
 const components: Components = {
   code({ className, children }) {
@@ -85,22 +91,25 @@ const components: Components = {
   },
 };
 
-export default function MarkdownRenderer({ content, onImageClick }: Props) {
+function MarkdownRenderer({ content, onImageClick }: Props) {
   const cleaned = content.replace(/^\n+/, '');
 
-  const componentsWithImg: Components = {
-    ...components,
-    img({ src, alt }) {
-      return (
-        <img
-          src={src}
-          alt={alt || ''}
-          onClick={() => onImageClick?.(src || '')}
-          style={{ cursor: 'pointer' }}
-        />
-      );
-    },
-  };
+  const componentsWithImg = useMemo<Components>(
+    () => ({
+      ...components,
+      img({ src, alt }) {
+        return (
+          <img
+            src={src}
+            alt={alt || ''}
+            onClick={() => onImageClick?.(src || '')}
+            style={{ cursor: 'pointer' }}
+          />
+        );
+      },
+    }),
+    [onImageClick],
+  );
 
   return (
     <div className="md">
@@ -114,3 +123,9 @@ export default function MarkdownRenderer({ content, onImageClick }: Props) {
     </div>
   );
 }
+
+export default memo(
+  MarkdownRenderer,
+  (prev: Props, next: Props) =>
+    prev.content === next.content && prev.onImageClick === next.onImageClick,
+);

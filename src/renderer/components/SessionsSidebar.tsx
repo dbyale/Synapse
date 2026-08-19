@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useState, FormEvent } from 'react';
+import { useEffect, useCallback, useState, FormEvent, memo } from 'react';
 import {
   X,
   SquarePen,
@@ -49,7 +49,7 @@ function getGroupLabel(ts: number): GroupLabel {
   return 'Older';
 }
 
-export default function SessionsSidebar({
+function SessionsSidebar({
   profileId,
   profileName,
   activeSessionId,
@@ -299,3 +299,5 @@ export default function SessionsSidebar({
     </div>
   );
 }
+
+export default memo(SessionsSidebar);
