@@ -7,6 +7,7 @@ import {
   SlidersHorizontal,
   MessageSquare,
   Server,
+  ShieldCog,
 } from 'lucide-react';
 import type { AppSettings, HardwareStats } from '../preload.d';
 import InfoTooltip from '../components/InfoTooltip';
@@ -265,7 +266,9 @@ export default function SettingsPage() {
   const [ramStats, setRamStats] = useState<MemoryStats>(EMPTY_MEMORY);
   const [vramStats, setVramStats] = useState<MemoryStats>(EMPTY_MEMORY);
   const [showRestartDialog, setShowRestartDialog] = useState(false);
-  const [tab, setTab] = useState<'system' | 'chat' | 'server'>('system');
+  const [tab, setTab] = useState<'system' | 'chat' | 'security' | 'server'>(
+    'chat',
+  );
 
   const savedAllocationsRef = useRef<{
     allocatedRAM?: number;
@@ -315,7 +318,7 @@ export default function SettingsPage() {
       // -- VRAM (GPU) --
       if (hw.vram && hw.vram.total > 0) {
         const savedVram = savedAllocationsRef.current.allocatedVRAM;
-        const vram = hw.vram;
+        const { vram } = hw;
 
         // MAX = everything except other processes and the safety buffer.
         // VRAM_SAFETY_BUFFER_MB is intentionally tight — VRAM overflow only
@@ -363,6 +366,7 @@ export default function SettingsPage() {
           corsMethods: loaded?.corsMethods ?? '',
           corsHeaders: loaded?.corsHeaders ?? '',
           corsCredentials: loaded?.corsCredentials ?? true,
+          disableExternalReadmes: loaded?.disableExternalReadmes ?? false,
           host: loaded?.host ?? '127.0.0.1',
           port: loaded?.port ?? 9931,
         };
@@ -499,6 +503,13 @@ export default function SettingsPage() {
       <div className="settings-tabs">
         <button
           type="button"
+          className={`settings-tab ${tab === 'chat' ? 'settings-tab--active' : ''}`}
+          onClick={() => setTab('chat')}
+        >
+          <MessageSquare size={16} /> Chat
+        </button>
+        <button
+          type="button"
           className={`settings-tab ${tab === 'system' ? 'settings-tab--active' : ''}`}
           onClick={() => setTab('system')}
         >
@@ -506,10 +517,10 @@ export default function SettingsPage() {
         </button>
         <button
           type="button"
-          className={`settings-tab ${tab === 'chat' ? 'settings-tab--active' : ''}`}
-          onClick={() => setTab('chat')}
+          className={`settings-tab ${tab === 'security' ? 'settings-tab--active' : ''}`}
+          onClick={() => setTab('security')}
         >
-          <MessageSquare size={16} /> Chat
+          <ShieldCog size={16} /> Security
         </button>
         <button
           type="button"
@@ -666,6 +677,42 @@ export default function SettingsPage() {
                 <div className="epm-toggle-switch__knob" />
               </div>
             </label>
+          </div>
+        </div>
+      )}
+
+      {tab === 'security' && (
+        <div className="settings-card">
+          <h2 className="settings-card-title">Security</h2>
+
+          <div className="settings-field">
+            <div className="settings-toggle-row">
+              <span className="settings-label">
+                Disable downloading external READMEs
+              </span>
+              <div
+                className={`epm-toggle-switch${settings.disableExternalReadmes ? ' epm-toggle-switch--on' : ''}`}
+                onClick={() =>
+                  triggerSave({
+                    disableExternalReadmes: !settings.disableExternalReadmes,
+                  })
+                }
+                role="switch"
+                aria-label="Disable downloading external READMEs"
+                aria-checked={settings.disableExternalReadmes}
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === ' ' || e.key === 'Enter') {
+                    e.preventDefault();
+                    triggerSave({
+                      disableExternalReadmes: !settings.disableExternalReadmes,
+                    });
+                  }
+                }}
+              >
+                <div className="epm-toggle-switch__knob" />
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -842,8 +889,7 @@ export default function SettingsPage() {
               <div
                 className={`epm-toggle-switch${settings.corsCredentials !== false ? ' epm-toggle-switch--on' : ''}`}
                 onClick={() => {
-                  const next =
-                    settings.corsCredentials !== false ? false : true;
+                  const next = settings.corsCredentials === false;
                   setSettings((prev) =>
                     prev ? { ...prev, corsCredentials: next } : prev,
                   );
@@ -855,8 +901,7 @@ export default function SettingsPage() {
                 onKeyDown={(e) => {
                   if (e.key === ' ' || e.key === 'Enter') {
                     e.preventDefault();
-                    const next =
-                      settings.corsCredentials !== false ? false : true;
+                    const next = settings.corsCredentials === false;
                     setSettings((prev) =>
                       prev ? { ...prev, corsCredentials: next } : prev,
                     );

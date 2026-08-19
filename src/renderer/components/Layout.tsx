@@ -45,7 +45,7 @@ function LayoutInner() {
     },
     content: {
       flex: 1,
-      overflowY: 'auto',
+      overflow: 'hidden auto',
       padding: 24,
       minWidth: 0,
     },

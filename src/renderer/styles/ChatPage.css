@@ -473,6 +473,16 @@
   margin: 0;
 }
 
+/* ── Images ── */
+
+.md img {
+  max-width: 100%;
+  height: auto;
+  max-height: 75vh;
+  object-fit: contain;
+  align-self: flex-start;
+}
+
 /* ── Headings ── */
 
 .md h1,

@@ -1,10 +1,11 @@
 import { MouseEvent, KeyboardEvent } from 'react';
+import type { ReactNode } from 'react';
 import { AlertTriangle } from 'lucide-react';
 import './styles/ConfirmDialog.css';
 
 interface ConfirmDialogProps {
   title: string;
-  message: string;
+  message: ReactNode;
   confirmText: string;
   cancelText: string;
   onConfirm: () => void;

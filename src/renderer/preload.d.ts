@@ -75,6 +75,7 @@ export interface AppSettings {
   corsMethods?: string;
   corsHeaders?: string;
   corsCredentials?: boolean;
+  disableExternalReadmes?: boolean;
 }
 
 export interface HardwareGpuInfo {

@@ -27,6 +27,7 @@ import ModelSortDropdown from '../components/models/ModelSortDropdown';
 import type { SortOption } from '../components/models/ModelSortDropdown';
 import AddLocalModelModal from '../components/models/AddLocalModel';
 import ModelCard from '../components/models/ModelCard';
+import ModelDetailPanel from '../components/models/ModelDetailPanel';
 import LocalModelCard, {
   ExtendedLocalModel,
   LocalModelGroup,
@@ -106,11 +107,16 @@ export default function ModelsPage() {
   const downloadingRef = useRef(new Set<string>());
   const localModelKeys = useMemo(() => {
     const keys = new Set<string>();
-    localModels.forEach((m) => keys.add(m.generalName + ':' + m.filename));
+    localModels.forEach((m) => keys.add(`${m.generalName}:${m.filename}`));
     return keys;
   }, [localModels]);
   const [downloads, setDownloads] = useState<Record<string, ActiveDownload>>(
     {},
+  );
+
+  const selectedResult = useMemo(
+    () => results.find((m) => m.id === expanded?.repoId),
+    [results, expanded],
   );
 
   // ── Recommendations & Settings State ──
@@ -246,7 +252,7 @@ export default function ModelsPage() {
 
     const unsubscribe = window.electronAPI.onDownloadProgress(
       (progress: DownloadProgress & { status?: string }) => {
-        const key = progress.modelId + ':' + progress.filename;
+        const key = `${progress.modelId}:${progress.filename}`;
         setDownloads((prev) => {
           if (progress.status === 'cancelled' || progress.status === 'failed') {
             const next = { ...prev };
@@ -494,7 +500,7 @@ export default function ModelsPage() {
     repoId: string,
     filename: string,
   ): Promise<void> => {
-    const compositeKey = repoId + ':' + filename;
+    const compositeKey = `${repoId}:${filename}`;
     if (downloadingRef.current.has(compositeKey)) return;
     downloadingRef.current.add(compositeKey);
 
@@ -577,7 +583,9 @@ export default function ModelsPage() {
   }
 
   return (
-    <div className="models-page">
+    <div
+      className={`models-page ${tab === 'browse' ? 'models-page--browse' : ''}`}
+    >
       <h1 className="models-heading">Models</h1>
 
       {/* Tabs */}
@@ -655,6 +663,7 @@ export default function ModelsPage() {
                     const recReason = RECOMMENDATIONS.find(
                       (r) => r.id === model.id,
                     )?.reason;
+                    const isSelected = expanded?.repoId === model.id;
                     return (
                       <div key={model.id} className="recommendation-wrapper">
                         {recReason && (
@@ -664,34 +673,35 @@ export default function ModelsPage() {
                         )}
                         <ModelCard
                           model={model}
-                          systemMemoryMB={systemMemoryMB}
-                          isExpanded={expanded?.repoId === model.id}
-                          files={
-                            expanded?.repoId === model.id ? expanded.files : []
-                          }
-                          filesLoading={
-                            expanded?.repoId === model.id
-                              ? expanded.loading
-                              : false
-                          }
-                          downloads={downloads}
-                          localModelKeys={localModelKeys}
-                          onToggleExpand={handleExpand}
-                          onDownload={handleDownload}
-                          onSearchBaseModel={(bmQuery) => {
-                            setTab('browse');
-                            setQuery(bmQuery);
-                            setLimit(20);
-                            doSearch(
-                              bmQuery,
-                              selectedLanguage,
-                              selectedPipeline,
-                              20,
-                              sortBy,
-                              false,
-                            );
-                          }}
+                          selected={isSelected}
+                          onSelect={handleExpand}
                         />
+                        {isSelected && (
+                          <ModelDetailPanel
+                            key={expanded.repoId}
+                            model={model}
+                            files={expanded.files}
+                            filesLoading={expanded.loading}
+                            downloads={downloads}
+                            localModelKeys={localModelKeys}
+                            systemMemoryMB={systemMemoryMB}
+                            onDownload={handleDownload}
+                            onSearchBaseModel={(bmQuery) => {
+                              setTab('browse');
+                              setQuery(bmQuery);
+                              setLimit(20);
+                              doSearch(
+                                bmQuery,
+                                selectedLanguage,
+                                selectedPipeline,
+                                20,
+                                sortBy,
+                                false,
+                              );
+                            }}
+                            onClose={() => setExpanded(null)}
+                          />
+                        )}
                       </div>
                     );
                   })}
@@ -807,42 +817,58 @@ export default function ModelsPage() {
             </div>
           )}
 
-          {results.map((model: ModelSearchResult) => (
-            <ModelCard
-              key={model.id}
-              model={model}
-              systemMemoryMB={systemMemoryMB}
-              isExpanded={expanded?.repoId === model.id}
-              files={expanded?.repoId === model.id ? expanded.files : []}
-              filesLoading={
-                expanded?.repoId === model.id ? expanded.loading : false
-              }
-              downloads={downloads}
-              localModelKeys={localModelKeys}
-              onToggleExpand={handleExpand}
-              onDownload={handleDownload}
-              onSearchBaseModel={(bmQuery) => {
-                setQuery(bmQuery);
-                setLimit(20);
-                doSearch(
-                  bmQuery,
-                  selectedLanguage,
-                  selectedPipeline,
-                  20,
-                  sortBy,
-                  false,
-                );
-              }}
-            />
-          ))}
+          {results.length > 0 && (
+            <div
+              className={`browse-layout ${expanded && selectedResult ? '' : 'browse-layout--list-only'}`}
+            >
+              <div className="model-list">
+                {results.map((model: ModelSearchResult) => (
+                  <ModelCard
+                    key={model.id}
+                    model={model}
+                    selected={expanded?.repoId === model.id}
+                    onSelect={handleExpand}
+                  />
+                ))}
 
-          {results.length > 0 && hasMore && (
-            <div ref={loaderRef} className="models-loader">
-              <Loader
-                size={24}
-                className={isLoadingMore ? 'spin' : ''}
-                style={{ opacity: isLoadingMore ? 1 : 0 }}
-              />
+                {hasMore && (
+                  <div ref={loaderRef} className="models-loader">
+                    <Loader
+                      size={24}
+                      className={isLoadingMore ? 'spin' : ''}
+                      style={{ opacity: isLoadingMore ? 1 : 0 }}
+                    />
+                  </div>
+                )}
+              </div>
+
+              {expanded && selectedResult && (
+                <div className="model-detail-column">
+                  <ModelDetailPanel
+                    key={expanded.repoId}
+                    model={selectedResult}
+                    files={expanded.files}
+                    filesLoading={expanded.loading}
+                    downloads={downloads}
+                    localModelKeys={localModelKeys}
+                    systemMemoryMB={systemMemoryMB}
+                    onDownload={handleDownload}
+                    onSearchBaseModel={(bmQuery) => {
+                      setQuery(bmQuery);
+                      setLimit(20);
+                      doSearch(
+                        bmQuery,
+                        selectedLanguage,
+                        selectedPipeline,
+                        20,
+                        sortBy,
+                        false,
+                      );
+                    }}
+                    onClose={() => setExpanded(null)}
+                  />
+                </div>
+              )}
             </div>
           )}
         </>

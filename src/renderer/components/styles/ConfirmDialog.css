@@ -64,6 +64,21 @@
   margin: 0;
 }
 
+/* ── Embedded URL shown in the confirmation popup ── */
+.confirm-dialog-url {
+  display: block;
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-family: monospace;
+  font-size: 12px;
+  color: var(--text-primary);
+  word-break: break-all;
+  text-align: left;
+}
+
 .confirm-dialog-actions {
   display: flex;
   gap: 12px;

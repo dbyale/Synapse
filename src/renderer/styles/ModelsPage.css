@@ -1730,3 +1730,142 @@
   color: var(--accent);
   background: rgba(137, 180, 250, 0.05);
 }
+
+/* ============================================================================
+   BROWSE — TWO-PANE LAYOUT (list on left, detail panel on right)
+   ============================================================================ */
+
+.models-page--browse {
+  max-width: 1400px;
+}
+
+.browse-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 40%) minmax(0, 60%);
+  gap: 20px;
+  align-items: start;
+}
+
+.browse-layout--list-only {
+  grid-template-columns: 1fr;
+}
+
+.model-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.model-card--selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.model-detail-column {
+  min-width: 0;
+}
+
+.model-detail-panel {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  position: sticky;
+  top: 0;
+  max-height: calc(100vh - 76px);
+  overflow-y: auto;
+}
+
+.model-detail-panel__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.model-detail-panel__close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+.model-detail-panel__close:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.model-detail-panel__section {
+  border-bottom: 1px solid var(--border);
+}
+
+.model-detail-panel__section:last-child {
+  border-bottom: none;
+}
+
+.model-detail-panel__section-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  padding: 14px 20px 0;
+}
+
+.model-detail-panel__downloads .model-card__dl-row {
+  padding: 12px 20px;
+}
+
+.model-detail-panel__details .model-card__info-grid {
+  background: transparent;
+  border-bottom: none;
+  padding: 4px 20px 16px;
+}
+
+.model-detail-panel__readme-body {
+  padding: 4px 20px 20px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.model-detail-panel__readme-disabled {
+  margin: 0;
+  padding: 4px 20px 20px;
+  font-size: 13px;
+  font-style: italic;
+  color: var(--text-secondary);
+}
+
+/* Flip download tooltips to open downward inside the scrolling panel
+   so they aren't clipped at the top edge. */
+.model-detail-panel .model-card__dl-tooltip {
+  bottom: auto;
+  top: calc(100% + 8px);
+  transform: translateX(-50%) translateY(4px);
+}
+
+.model-detail-panel .model-card__dl-tooltip::after {
+  top: auto;
+  bottom: 100%;
+  border-color: transparent transparent var(--border) transparent;
+}
+
+.model-detail-panel .model-card__dl-tooltip::before {
+  top: auto;
+  bottom: calc(100% - 1px);
+  border-color: transparent transparent var(--bg-input) transparent;
+}
+
+.model-detail-panel .model-card__dl-pill-wrapper:hover .model-card__dl-tooltip {
+  transform: translateX(-50%) translateY(0);
+}

@@ -157,6 +157,12 @@ body,
   background: transparent;
 }
 
+/* The corner where horizontal and vertical scrollbars meet — keep it
+   transparent so it doesn't render as a light square in the dark theme. */
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 /* 2. Create a thin-looking scrollbar by using a thick transparent border */
 ::-webkit-scrollbar-thumb {
   background-color: rgba(147, 153, 178, 0.3); /* Subtle grayish tint */

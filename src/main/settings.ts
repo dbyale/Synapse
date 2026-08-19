@@ -14,6 +14,7 @@ export interface AppSettings {
   corsMethods?: string;
   corsHeaders?: string;
   corsCredentials?: boolean;
+  disableExternalReadmes?: boolean;
 }
 
 const SETTINGS_FILE = path.join(app.getPath('userData'), 'settings.json');
@@ -29,6 +30,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   corsMethods: '',
   corsHeaders: '',
   corsCredentials: true,
+  disableExternalReadmes: false,
 };
 
 let cachedSettings: AppSettings | null = null;
