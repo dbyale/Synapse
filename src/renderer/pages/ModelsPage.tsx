@@ -31,6 +31,7 @@ import LocalModelCard, {
   ExtendedLocalModel,
   LocalModelGroup,
 } from '../components/models/LocalModelCard';
+import ConfirmDialog from '../components/ConfirmDialog';
 
 import '../styles/ModelsPage.css';
 
@@ -90,6 +91,7 @@ export default function ModelsPage() {
 
   // ── Server-side state ──
   const [sortBy, setSortBy] = useState<SortOption>('trending');
+  const [pendingDelete, setPendingDelete] = useState<string[] | null>(null);
   const [limit, setLimit] = useState(20);
   const [hasMore, setHasMore] = useState(true);
   const loaderRef = useRef<HTMLDivElement>(null);
@@ -711,7 +713,7 @@ export default function ModelsPage() {
               <LocalModelCard
                 key={group.name}
                 group={group}
-                onDelete={handleDeleteGroup}
+                onDelete={(filenames) => setPendingDelete(filenames)}
                 onSearchModel={handleSearchLocalModel}
               />
             ))}
@@ -844,6 +846,21 @@ export default function ModelsPage() {
             </div>
           )}
         </>
+      )}
+
+      {pendingDelete && (
+        <ConfirmDialog
+          title="Delete Model?"
+          message={`Delete "${pendingDelete.map((f) => f.split(/[\\/]/).pop()).join('", "')}"? This will remove the model file from disk.`}
+          confirmText="Delete"
+          cancelText="Cancel"
+          danger
+          onConfirm={() => {
+            handleDeleteGroup(pendingDelete);
+            setPendingDelete(null);
+          }}
+          onCancel={() => setPendingDelete(null)}
+        />
       )}
     </div>
   );

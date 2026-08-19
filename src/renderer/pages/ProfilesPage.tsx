@@ -145,6 +145,7 @@ export default function ProfilesPage() {
   const [showRestartDialog, setShowRestartDialog] = useState(false);
   const [pendingSwitchId, setPendingSwitchId] = useState<string | null>(null);
   const [showEditRestartDialog, setShowEditRestartDialog] = useState(false);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [pendingEditProfiles, setPendingEditProfiles] = useState<
     Profile[] | null
   >(null);
@@ -782,11 +783,11 @@ export default function ProfilesPage() {
                         <button
                           type="button"
                           className="sp-card__icon-btn sp-card__icon-btn--danger"
-                          onClick={() => handleDelete(profile.id)}
+                          onClick={() => setPendingDeleteId(profile.id)}
                           onKeyDown={(e) => {
                             if (e.key === 'Enter' || e.key === ' ') {
                               e.preventDefault();
-                              handleDelete(profile.id);
+                              setPendingDeleteId(profile.id);
                             }
                           }}
                           disabled={loadingId !== null}
@@ -803,6 +804,21 @@ export default function ProfilesPage() {
           </div>
         )}
       </div>
+
+      {pendingDeleteId && (
+        <ConfirmDialog
+          title="Delete Profile?"
+          message={`Delete "${profiles.find((p) => p.id === pendingDeleteId)?.name ?? 'this profile'}"? This cannot be undone.`}
+          confirmText="Delete"
+          cancelText="Cancel"
+          danger
+          onConfirm={() => {
+            handleDelete(pendingDeleteId);
+            setPendingDeleteId(null);
+          }}
+          onCancel={() => setPendingDeleteId(null)}
+        />
+      )}
 
       {showRestartDialog && (
         <ConfirmDialog

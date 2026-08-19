@@ -113,3 +113,16 @@
   color: white;
   opacity: 0.88;
 }
+
+/* ── Confirm button (danger) ── */
+.confirm-dialog-actions .confirm-dialog__confirm--danger {
+  border-color: #ef4444;
+  background: #ef4444;
+}
+
+.confirm-dialog-actions .confirm-dialog__confirm--danger:hover {
+  background: #ef4444;
+  border-color: #ef4444;
+  color: white;
+  opacity: 0.88;
+}

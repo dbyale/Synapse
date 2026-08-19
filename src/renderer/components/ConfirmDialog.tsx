@@ -9,6 +9,7 @@ interface ConfirmDialogProps {
   cancelText: string;
   onConfirm: () => void;
   onCancel: () => void;
+  danger?: boolean;
 }
 
 export default function ConfirmDialog({
@@ -18,6 +19,7 @@ export default function ConfirmDialog({
   cancelText,
   onConfirm,
   onCancel,
+  danger,
 }: ConfirmDialogProps) {
   const handleOverlayClick = (e: MouseEvent<HTMLDivElement>) => {
     if (e.target === e.currentTarget) {
@@ -58,7 +60,15 @@ export default function ConfirmDialog({
           <button type="button" className="btn-secondary" onClick={onCancel}>
             {cancelText}
           </button>
-          <button type="button" className="btn-accent" onClick={onConfirm}>
+          <button
+            type="button"
+            className={
+              danger
+                ? 'btn-accent confirm-dialog__confirm--danger'
+                : 'btn-accent'
+            }
+            onClick={onConfirm}
+          >
             {confirmText}
           </button>
         </div>
@@ -66,3 +76,7 @@ export default function ConfirmDialog({
     </div>
   );
 }
+
+ConfirmDialog.defaultProps = {
+  danger: false,
+};
