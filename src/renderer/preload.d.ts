@@ -274,6 +274,10 @@ declare global {
       chatGetSession: (sessionId: string) => Promise<SessionView | null>;
       chatListSessions: (profileId: string) => Promise<SavedSession[]>;
       chatRenameSession: (sessionId: string, title: string) => Promise<void>;
+      chatSetSessionPinned: (
+        sessionId: string,
+        pinned: boolean,
+      ) => Promise<SavedSession | null>;
       chatDeleteSession: (sessionId: string) => Promise<{ success: boolean }>;
       chatRespondInput: (
         sessionId: string,

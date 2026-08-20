@@ -61,6 +61,7 @@ interface SessionStream {
   createdAt: number;
   messages: Message[];
   history: ChatHistoryMsg[];
+  pinned: boolean;
   status: SessionStatus;
   abortController: AbortController | null;
   currentReader: ReadableStreamDefaultReader<Uint8Array> | null;
@@ -150,6 +151,7 @@ function persistSessionState(sessionId: string): void {
     updatedAt: Date.now(),
     messages: store.sanitizeMessagesForStorage(s.messages),
     history: s.history,
+    pinned: s.pinned,
   };
   store.saveSession(saved);
 }
@@ -168,6 +170,7 @@ function getSessionState(sessionId: string): SessionStream | null {
       createdAt: stored.createdAt,
       messages: stored.messages,
       history: stored.history,
+      pinned: !!stored.pinned,
       status: 'idle',
       abortController: null,
       currentReader: null,
@@ -231,6 +234,7 @@ export function startSession(profileId: string, title: string): string {
     createdAt: Date.now(),
     messages: [],
     history: [],
+    pinned: false,
     status: 'idle',
     abortController: null,
     currentReader: null,
@@ -264,6 +268,7 @@ export function getSessionView(sessionId: string) {
       updatedAt: Date.now(),
       messages: s.messages,
       history: s.history,
+      pinned: s.pinned,
     },
     status: s.status,
     streaming: s.status !== 'idle',

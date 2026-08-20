@@ -536,6 +536,13 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     },
   );
 
+  ipcMain.handle(
+    'chat:setSessionPinned',
+    (_event, sessionId: string, pinned: boolean) => {
+      return sessionStore.setSessionPinned(sessionId, pinned);
+    },
+  );
+
   ipcMain.handle('chat:deleteSession', (_event, sessionId: string) => {
     chatService.deleteSession(sessionId);
     return { success: true };

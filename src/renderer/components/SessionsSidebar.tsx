@@ -9,6 +9,7 @@ import {
   Check,
   MessageSquare,
   Loader2,
+  Pin,
 } from 'lucide-react';
 import { sessionsToMarkdown } from '../utils/sessions';
 import type { SavedSession } from '../../shared/chatTypes';
@@ -34,7 +35,7 @@ const GROUP_ORDER = [
   'Older',
 ] as const;
 
-type GroupLabel = (typeof GROUP_ORDER)[number];
+type GroupLabel = 'Pinned' | (typeof GROUP_ORDER)[number];
 
 function getGroupLabel(ts: number): GroupLabel {
   const now = new Date();
@@ -123,14 +124,31 @@ function SessionsSidebar({
     URL.revokeObjectURL(url);
   };
 
+  const togglePin = async (session: SavedSession) => {
+    try {
+      await window.electronAPI.chatSetSessionPinned(
+        session.id,
+        !session.pinned,
+      );
+    } catch {
+      // Ignore pin failures
+    }
+    refresh();
+  };
+
   const q = query.trim().toLowerCase();
   const visible = q
     ? sessions.filter((s) => s.title.toLowerCase().includes(q))
     : sessions;
 
   const groups: { label: GroupLabel; items: SavedSession[] }[] = [];
+  const pinnedItems = visible.filter((s) => s.pinned);
+  if (pinnedItems.length > 0)
+    groups.push({ label: 'Pinned', items: pinnedItems });
   GROUP_ORDER.forEach((label) => {
-    const items = visible.filter((s) => getGroupLabel(s.updatedAt) === label);
+    const items = visible.filter(
+      (s) => !s.pinned && getGroupLabel(s.updatedAt) === label,
+    );
     if (items.length > 0) groups.push({ label, items });
   });
 
@@ -252,6 +270,20 @@ function SessionsSidebar({
                           </div>
                         </button>
                         <div className="sessions-sidebar__item-actions">
+                          <button
+                            type="button"
+                            className={`sessions-sidebar__item-action${session.pinned ? ' sessions-sidebar__item-action--pinned' : ''}`}
+                            onClick={() => togglePin(session)}
+                            title={session.pinned ? 'Unpin' : 'Pin'}
+                            aria-label={
+                              session.pinned ? 'Unpin session' : 'Pin session'
+                            }
+                          >
+                            <Pin
+                              size={13}
+                              fill={session.pinned ? 'currentColor' : 'none'}
+                            />
+                          </button>
                           <button
                             type="button"
                             className="sessions-sidebar__item-action"

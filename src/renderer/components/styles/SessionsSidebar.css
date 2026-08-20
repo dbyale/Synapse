@@ -282,6 +282,15 @@
   color: #f38ba8;
 }
 
+.sessions-sidebar__item-action--pinned {
+  color: var(--accent);
+}
+
+.sessions-sidebar__item-action--pinned:hover {
+  background: var(--bg-primary);
+  color: var(--accent);
+}
+
 .sessions-sidebar__rename {
   flex: 1;
   min-width: 0;

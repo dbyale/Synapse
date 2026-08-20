@@ -75,6 +75,19 @@ export function renameSession(id: string, title: string): SavedSession | null {
   return updated;
 }
 
+export function setSessionPinned(
+  id: string,
+  pinned: boolean,
+): SavedSession | null {
+  const all = load();
+  const session = all[id];
+  if (!session) return null;
+  const updated = { ...session, pinned };
+  all[id] = updated;
+  persist();
+  return updated;
+}
+
 export function sanitizeMessagesForStorage(messages: Message[]): Message[] {
   return messages.map((msg) => ({
     ...msg,

@@ -148,6 +148,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('chat:listSessions', profileId),
   chatRenameSession: (sessionId: string, title: string) =>
     ipcRenderer.invoke('chat:renameSession', sessionId, title),
+  chatSetSessionPinned: (sessionId: string, pinned: boolean) =>
+    ipcRenderer.invoke('chat:setSessionPinned', sessionId, pinned),
   chatDeleteSession: (sessionId: string) =>
     ipcRenderer.invoke('chat:deleteSession', sessionId),
   chatRespondInput: (sessionId: string, response: any) =>

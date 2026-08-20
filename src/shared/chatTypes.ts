@@ -53,6 +53,7 @@ export interface SavedSession {
   updatedAt: number;
   messages: Message[];
   history: ChatHistoryMsg[];
+  pinned?: boolean;
 }
 
 export type SessionStatus =
