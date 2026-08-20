@@ -13,6 +13,8 @@ import type { AppSettings, HardwareStats } from '../preload.d';
 import InfoTooltip from '../components/InfoTooltip';
 import {
   MODELS_DIR_TOOLTIP,
+  BACKEND_DIR_TOOLTIP,
+  PARSER_DIR_TOOLTIP,
   MEMORY_ALLOCATOR_TOOLTIP,
   MAX_LABEL_TOOLTIP,
   RAM_LABEL_TOOLTIP,
@@ -358,6 +360,8 @@ export default function SettingsPage() {
 
         const normalized: AppSettings = {
           modelsDirectory: loaded?.modelsDirectory || '',
+          backendDirectory: loaded?.backendDirectory || '',
+          parserDirectory: loaded?.parserDirectory || '',
           allocatedRAM: loaded?.allocatedRAM,
           allocatedVRAM: loaded?.allocatedVRAM,
           autoOpenThinking: loaded?.autoOpenThinking ?? true,
@@ -475,6 +479,38 @@ export default function SettingsPage() {
     }
   }
 
+  async function handlePickBackendDirectory() {
+    if (!settings) return;
+
+    try {
+      const dir = await window.electronAPI.pickDirectory();
+      if (dir && dir !== settings.backendDirectory) {
+        setSettings((prev) =>
+          prev ? { ...prev, backendDirectory: dir } : prev,
+        );
+        triggerSave({ backendDirectory: dir });
+      }
+    } catch {
+      // Silently fail
+    }
+  }
+
+  async function handlePickParserDirectory() {
+    if (!settings) return;
+
+    try {
+      const dir = await window.electronAPI.pickDirectory();
+      if (dir && dir !== settings.parserDirectory) {
+        setSettings((prev) =>
+          prev ? { ...prev, parserDirectory: dir } : prev,
+        );
+        triggerSave({ parserDirectory: dir });
+      }
+    } catch {
+      // Silently fail
+    }
+  }
+
   const isUnifiedMemory = hardware ? hardware.isUnifiedMemory : false;
   const showVramSection =
     !isUnifiedMemory && (gpuLoading || vramStats.total > 0);
@@ -535,45 +571,6 @@ export default function SettingsPage() {
         <>
           <div className="settings-card">
             <InfoTooltip
-              content="Configure global application paths and directories."
-              side="right"
-              hideIcon
-              title="Application Setup"
-              className="mem-title-tooltip"
-            >
-              <h2 className="settings-card-title">Application Setup</h2>
-            </InfoTooltip>
-
-            <div className="settings-field">
-              <InfoTooltip
-                content={MODELS_DIR_TOOLTIP}
-                side="bottom"
-                hideIcon
-                title="Models Directory"
-                className="models-dir-tooltip"
-              >
-                <span className="settings-label">Models Directory</span>
-                <div className="settings-row">
-                  <input
-                    className="settings-input"
-                    value={settings.modelsDirectory}
-                    readOnly
-                  />
-                  <button
-                    type="button"
-                    className="settings-icon-btn"
-                    onClick={handlePickDirectory}
-                    title="Browse"
-                  >
-                    <FolderOpen size={16} />
-                  </button>
-                </div>
-              </InfoTooltip>
-            </div>
-          </div>
-
-          <div className="settings-card">
-            <InfoTooltip
               content={MEMORY_ALLOCATOR_TOOLTIP}
               side="right"
               hideIcon
@@ -611,6 +608,99 @@ export default function SettingsPage() {
                 />
               </>
             ) : null}
+          </div>
+
+          <div className="settings-card">
+            <InfoTooltip
+              content="Configure global application paths and directories."
+              side="right"
+              hideIcon
+              title="Application Setup"
+              className="mem-title-tooltip"
+            >
+              <h2 className="settings-card-title">Application Setup</h2>
+            </InfoTooltip>
+
+            <div className="settings-field">
+              <InfoTooltip
+                content={MODELS_DIR_TOOLTIP}
+                side="bottom"
+                hideIcon
+                title="Models Directory"
+                className="models-dir-tooltip"
+              >
+                <span className="settings-label">Models Directory</span>
+                <div className="settings-row">
+                  <input
+                    className="settings-input"
+                    value={settings.modelsDirectory}
+                    readOnly
+                  />
+                  <button
+                    type="button"
+                    className="settings-icon-btn"
+                    onClick={handlePickDirectory}
+                    title="Browse"
+                  >
+                    <FolderOpen size={16} />
+                  </button>
+                </div>
+              </InfoTooltip>
+            </div>
+
+            <div className="settings-field">
+              <InfoTooltip
+                content={BACKEND_DIR_TOOLTIP}
+                side="bottom"
+                hideIcon
+                title="Backend Directory"
+                className="backend-dir-tooltip"
+              >
+                <span className="settings-label">Backend Directory</span>
+                <div className="settings-row">
+                  <input
+                    className="settings-input"
+                    value={settings.backendDirectory}
+                    readOnly
+                  />
+                  <button
+                    type="button"
+                    className="settings-icon-btn"
+                    onClick={handlePickBackendDirectory}
+                    title="Browse"
+                  >
+                    <FolderOpen size={16} />
+                  </button>
+                </div>
+              </InfoTooltip>
+            </div>
+
+            <div className="settings-field">
+              <InfoTooltip
+                content={PARSER_DIR_TOOLTIP}
+                side="bottom"
+                hideIcon
+                title="Parser Directory"
+                className="parser-dir-tooltip"
+              >
+                <span className="settings-label">Parser Directory</span>
+                <div className="settings-row">
+                  <input
+                    className="settings-input"
+                    value={settings.parserDirectory}
+                    readOnly
+                  />
+                  <button
+                    type="button"
+                    className="settings-icon-btn"
+                    onClick={handlePickParserDirectory}
+                    title="Browse"
+                  >
+                    <FolderOpen size={16} />
+                  </button>
+                </div>
+              </InfoTooltip>
+            </div>
           </div>
         </>
       )}

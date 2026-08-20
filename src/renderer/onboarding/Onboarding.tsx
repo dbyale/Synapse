@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { X } from 'lucide-react';
 import SetupExperiencePage from './SetupExperiencePage';
 import ProfessionsSetupPage from './ProfessionsSetupPage';
+import BackendSetupPage from './BackendSetupPage';
+import ParserSetupPage from './ParserSetupPage';
 import LlamaSetupPage from './LlamaSetupPage';
+import DownloadManager from '../components/DownloadManager';
 import './onboarding.css';
 
-type Step = 'setup' | 'professions' | 'llamaSetup';
+type Step = 'setup' | 'professions' | 'backend' | 'parser' | 'llamaSetup';
 
 interface PageLayer {
   id: number;
@@ -42,6 +44,11 @@ export default function Onboarding() {
     }, CLOSE_MS);
   }, []);
 
+  useEffect(() => {
+    const unsubscribe = window.electronAPI.onCancelOnboarding(closeOnboarding);
+    return unsubscribe;
+  }, [closeOnboarding]);
+
   const navigate = useCallback((target: Step) => {
     setLayers((prev) => {
       const top = prev[prev.length - 1];
@@ -73,15 +80,31 @@ export default function Onboarding() {
             onContinue={() => navigate('llamaSetup')}
           />
         );
+      case 'backend':
+        return (
+          <BackendSetupPage
+            onBack={() => navigate('setup')}
+            onContinue={() => navigate('parser')}
+          />
+        );
+      case 'parser':
+        return (
+          <ParserSetupPage
+            onBack={() => navigate('backend')}
+            onContinue={() => navigate('professions')}
+          />
+        );
       case 'llamaSetup':
         return <LlamaSetupPage onBack={() => navigate('setup')} />;
       case 'setup':
       default:
         return (
           <SetupExperiencePage
-            onBegin={(id) =>
-              navigate(id === 'simple' ? 'professions' : 'llamaSetup')
-            }
+            onBegin={(id) => {
+              if (id === 'simple') navigate('professions');
+              else if (id === 'custom') navigate('backend');
+              else navigate('llamaSetup');
+            }}
           />
         );
     }
@@ -91,14 +114,9 @@ export default function Onboarding() {
 
   return (
     <div className={`onb-root${closing ? ' onb-root--closing' : ''}`}>
-      <button
-        type="button"
-        aria-label="Close onboarding"
-        className="onb-close"
-        onClick={closeOnboarding}
-      >
-        <X size={20} strokeWidth={2} />
-      </button>
+      <div className="onb-topbar-actions">
+        <DownloadManager />
+      </div>
 
       {layers.map((layer) => (
         <div key={layer.id} className={`onb-layer onb-layer--${layer.phase}`}>

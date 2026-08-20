@@ -65,6 +65,13 @@ export interface GpuMemStats {
 
 export interface AppSettings {
   modelsDirectory: string;
+  backendDirectory: string;
+  customBinaryPaths: string[];
+  parserDirectory: string;
+  parserCustomBinaryPaths: string[];
+  backendDownloads: BackendDownloadRecord[];
+  parserDownloads: ParserDownloadRecord | null;
+  selectedBackend: string;
   allocatedVRAM?: number;
   allocatedRAM?: number;
   autoOpenThinking?: boolean;
@@ -75,7 +82,79 @@ export interface AppSettings {
   corsMethods?: string;
   corsHeaders?: string;
   corsCredentials?: boolean;
-  disableExternalReadmes?: boolean;
+}
+
+export interface BackendDownloadRecord {
+  id: string;
+  label: string;
+  folder: string;
+}
+
+export interface ParserDownloadRecord {
+  id: string;
+  label: string;
+  file: string;
+}
+
+export type BackendIcon =
+  | 'cuda'
+  | 'opencl'
+  | 'vulkan'
+  | 'apple'
+  | 'cpu'
+  | 'openvino'
+  | 'rocm'
+  | 'sycl'
+  | 'android'
+  | 'parser'
+  | 'custom';
+
+export interface BackendDownload {
+  id: string;
+  label: string;
+  sublabel?: string;
+  icon: BackendIcon;
+  url: string;
+  folder: string;
+  files: string[];
+  recommended: boolean;
+  dualIcon?: boolean;
+  warning?: string;
+  experimental?: boolean;
+  tags?: BackendTag[];
+}
+
+export type BackendTag = 'no-gpu' | 'wrong-arch' | 'outdated';
+
+export interface BackendGpuInfo {
+  vendor: string;
+  model: string;
+  vram: number;
+  vramDynamic: boolean;
+  driverVersion: string;
+}
+
+export interface BackendInfo {
+  platform: string;
+  arch: string;
+  isAppleSilicon: boolean;
+  defaultDownloadDir: string;
+  recommended: BackendDownload[];
+  optional: BackendDownload[];
+  others: BackendDownload[];
+  warnings: string[];
+  gpus: BackendGpuInfo[];
+  nvidiaDriverMajor: number | null;
+  distro: string | null;
+}
+
+export interface ParserInfo {
+  platform: string;
+  arch: string;
+  defaultDownloadDir: string;
+  recommended: BackendDownload[];
+  optional: BackendDownload[];
+  others: BackendDownload[];
 }
 
 export interface HardwareGpuInfo {
@@ -134,6 +213,7 @@ declare global {
       removeDownloadProgressListener: () => void;
       onMenuNavigate: (callback: (path: string) => void) => () => void;
       onRestartOnboarding: (callback: () => void) => () => void;
+      onCancelOnboarding: (callback: () => void) => () => void;
       notifyMenuEditState: (state: {
         canCopy: boolean;
         canCut: boolean;
@@ -144,6 +224,20 @@ declare global {
       // Settings & Hardware
       getMemoryStats: () => Promise<SystemMemStats>;
       getVramStats: () => Promise<HardwareStats>;
+      getBackendInfo: () => Promise<BackendInfo>;
+      getParserInfo: () => Promise<ParserInfo>;
+      downloadBinary: (
+        kind: 'backend' | 'parser',
+        download: BackendDownload,
+        dir: string,
+      ) => Promise<string>;
+      cancelBinaryDownload: (id: string) => Promise<boolean>;
+      getBinaryDownloads: () => Promise<{
+        backends: BackendDownloadRecord[];
+        parser: ParserDownloadRecord | null;
+        customBackendPaths: string[];
+        customParserPaths: string[];
+      }>;
       chatMemoryUsage: () => Promise<{
         modelVramUsage: number;
         contextVramUsage: number;

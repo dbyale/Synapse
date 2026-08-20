@@ -10,6 +10,7 @@ import {
   onMemorySettingsChanged,
   getModelsDirectory,
 } from './settings';
+import type { AppSettings } from './settings';
 import type { Profile } from '../renderer/types/profile';
 import { createChatFunctions } from './chatFunctions';
 import { solveMaxConfig, getOrRunOptimizer } from './estimator';
@@ -356,6 +357,58 @@ async function detectBackend(): Promise<string> {
   }
 
   return 'win-cpu-x64';
+}
+
+function getServerBinName(): string {
+  return process.platform === 'win32' ? 'llama-server.exe' : 'llama-server';
+}
+
+// Resolves which llama-server binary to launch. Explicit selection wins, then
+// the "Default" backend (first recommended download, preferring CUDA, then
+// OpenCL/Adreno, then Vulkan), then the first download, then bundled assets.
+async function resolveBackend(
+  settings: AppSettings,
+): Promise<{ backendFolder: string; serverPath: string }> {
+  const serverBin = getServerBinName();
+  const downloads = settings.backendDownloads ?? [];
+  const backendDir =
+    settings.backendDirectory ||
+    path.join(path.dirname(getModelsDirectory()), 'llama');
+  const customPaths = settings.customBinaryPaths ?? [];
+  const pathFor = (folder: string) => path.join(backendDir, folder, serverBin);
+
+  const selected = settings.selectedBackend;
+  if (selected && selected !== 'Default') {
+    if (customPaths.includes(selected) && fs.existsSync(selected)) {
+      return { backendFolder: selected, serverPath: selected };
+    }
+    const match = downloads.find((d) => d.folder === selected);
+    if (match && fs.existsSync(pathFor(match.folder))) {
+      return { backendFolder: match.folder, serverPath: pathFor(match.folder) };
+    }
+  }
+
+  const patterns = [/cuda/i, /opencl|adreno/i, /vulkan/i];
+  const hit = patterns
+    .map((pattern) =>
+      downloads.find(
+        (d) => pattern.test(d.folder) && fs.existsSync(pathFor(d.folder)),
+      ),
+    )
+    .find(Boolean);
+  if (hit) {
+    return { backendFolder: hit.folder, serverPath: pathFor(hit.folder) };
+  }
+
+  const first = downloads.find((d) => fs.existsSync(pathFor(d.folder)));
+  if (first)
+    return { backendFolder: first.folder, serverPath: pathFor(first.folder) };
+
+  const folder = await detectBackend();
+  return {
+    backendFolder: folder,
+    serverPath: getAssetPath('bin', folder, serverBin),
+  };
 }
 
 function getServerUrl(path: string = ''): string {
@@ -922,14 +975,8 @@ export async function loadProfile(
       // Prep work + optimizer run concurrently with old server shutdown
       const settings = loadSettings();
       const fullModelPath = path.join(getModelsDirectory(), profile.model);
-      const backendFolder = await detectBackend();
+      const { backendFolder, serverPath } = await resolveBackend(settings);
       console.log(`Backend: ${backendFolder}`);
-      const serverBin =
-        process.platform === 'win32' ? 'llama-server.exe' : 'llama-server';
-      const serverPath = path.join(
-        getAssetPath('bin', backendFolder),
-        serverBin,
-      );
 
       const vramMB = settings.allocatedVRAM ?? 4096;
       const ramMB = settings.allocatedRAM ?? 8192;

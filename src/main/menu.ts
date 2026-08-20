@@ -272,6 +272,12 @@ export default class MenuBuilder {
             this.mainWindow.webContents.send('onboarding:restart');
           },
         },
+        {
+          label: 'Cancel Onboarding',
+          click: () => {
+            this.mainWindow.webContents.send('onboarding:cancel');
+          },
+        },
       ],
     };
   }

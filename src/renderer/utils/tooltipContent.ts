@@ -279,6 +279,12 @@ export const RAM_LABEL_TOOLTIP =
 export const MODELS_DIR_TOOLTIP =
   'Directory where model files are stored and downloaded. Models are organized by author and name within this directory.';
 
+export const BACKEND_DIR_TOOLTIP =
+  'Directory where the llama.cpp backends (CUDA, Vulkan, CPU) are downloaded and extracted. Defaults to a folder next to the Models Directory.';
+
+export const PARSER_DIR_TOOLTIP =
+  'Directory where the GGUF Parser Go binary is downloaded. It estimates model memory requirements. Defaults to a folder next to the Models Directory.';
+
 export const MEMORY_ALLOCATOR_TOOLTIP = [
   'Controls how much RAM and VRAM Synapse is allowed to reserve for the inference engine.',
   'Setting this too high may cause system instability or out-of-memory errors.',

@@ -1,7 +1,9 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import path from 'path';
+import fs from 'fs';
 import { app } from 'electron';
+import { loadSettings } from './settings';
 import type { Profile } from '../renderer/types/profile';
 
 const execFileAsync = promisify(execFile);
@@ -18,6 +20,21 @@ export interface MemoryEstimation {
 }
 
 function getParserPath(): string {
+  const settings = loadSettings();
+
+  const custom = (settings.parserCustomBinaryPaths ?? []).find((p) =>
+    fs.existsSync(p),
+  );
+  if (custom) return custom;
+
+  if (settings.parserDownloads?.file && settings.parserDirectory) {
+    const downloaded = path.join(
+      settings.parserDirectory,
+      settings.parserDownloads.file,
+    );
+    if (fs.existsSync(downloaded)) return downloaded;
+  }
+
   const isProd = app.isPackaged;
   const { platform, arch } = process;
   let binName: string;
@@ -32,7 +49,8 @@ function getParserPath(): string {
         ? 'gguf-parser-darwin-arm64'
         : 'gguf-parser-darwin-amd64';
   } else {
-    binName = arch === 'arm64' ? 'gguf-parser-linux-arm64' : 'gguf-parser-linux-amd64';
+    binName =
+      arch === 'arm64' ? 'gguf-parser-linux-arm64' : 'gguf-parser-linux-amd64';
   }
   const base = isProd
     ? path.join(process.resourcesPath, 'assets', 'bin', 'utils')

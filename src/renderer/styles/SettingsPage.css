@@ -325,6 +325,22 @@
   align-items: stretch;
 }
 
+.backend-dir-tooltip {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.parser-dir-tooltip {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: stretch;
+}
+
 .mem-max-line {
   width: 2px;
   flex: 1;

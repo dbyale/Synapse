@@ -33,6 +33,7 @@ import {
   Copy,
   MessagesSquare,
   SquarePen,
+  Cpu,
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -1297,6 +1298,11 @@ export default function ChatPage() {
     toolCount: number;
   } | null>(null);
   const [backend, setBackend] = useState<string | null>(null);
+  const [backendOptions, setBackendOptions] = useState<
+    { id: string; label: string; folder: string }[]
+  >([]);
+  const [backendMenuOpen, setBackendMenuOpen] = useState(false);
+  const backendMenuRef = useRef<HTMLDivElement>(null);
   const [streamingTool, setStreamingTool] = useState<{
     name: string;
     text: string;
@@ -1587,7 +1593,59 @@ export default function ChatPage() {
       .loadSettings()
       .then((s) => setSettings(s))
       .catch(() => {});
+    window.electronAPI
+      .getBinaryDownloads()
+      .then((d) => {
+        const list = [
+          ...d.backends.map((b) => ({
+            id: b.id,
+            label: b.label,
+            folder: b.folder,
+          })),
+          ...d.customBackendPaths.map((p) => ({
+            id: p,
+            label: p,
+            folder: '',
+          })),
+        ];
+        setBackendOptions(list);
+      })
+      .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!backendMenuOpen) return undefined;
+    const onDown = (e: MouseEvent) => {
+      if (
+        backendMenuRef.current &&
+        !backendMenuRef.current.contains(e.target as Node)
+      ) {
+        setBackendMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [backendMenuOpen]);
+
+  const handleSelectBackend = async (id: string) => {
+    setBackendMenuOpen(false);
+    if (!settings) return;
+    const next = { ...settings, selectedBackend: id };
+    setSettings(next);
+    try {
+      await window.electronAPI.saveSettingsSilent(next);
+    } catch {
+      // Silently fail
+    }
+    try {
+      const res = await window.electronAPI.chatReloadProfile();
+      if (res && (res as any).success && (res as any).backend) {
+        setBackend((res as any).backend);
+      }
+    } catch {
+      // Silently fail
+    }
+  };
 
   const estimatedCost = totalSavings(usageSummary);
 
@@ -3004,6 +3062,25 @@ export default function ChatPage() {
   else if (tokenRatio >= 0.75)
     tokenCounterClass += ' chat-token-counter--warning';
 
+  const activeBackendId = settings?.selectedBackend ?? '';
+  const selectedBackendOption = backendOptions.find(
+    (opt) => opt.id === activeBackendId,
+  );
+  let backendDisplay = 'Default';
+  if (selectedBackendOption) {
+    backendDisplay =
+      selectedBackendOption.label.includes('\\') ||
+      selectedBackendOption.label.includes('/')
+        ? selectedBackendOption.label.split(/[\\/]/).pop() ||
+          selectedBackendOption.label
+        : selectedBackendOption.label;
+  } else if (backend) {
+    backendDisplay =
+      backend.includes('\\') || backend.includes('/')
+        ? backend.split(/[\\/]/).pop() || backend
+        : formatBackend(backend);
+  }
+
   const pendingProfile = profiles.find((p) => p.id === pendingProfileId);
 
   return (
@@ -3453,9 +3530,45 @@ export default function ChatPage() {
               profileId={selectedProfileId || null}
               onTokensChange={handleThinkingTokensChange}
             />
-            <span className="chat-backend-indicator">
-              {backend ? formatBackend(backend) : ''}
-            </span>
+            <div className="chat-backend-select" ref={backendMenuRef}>
+              <button
+                type="button"
+                className="chat-backend-indicator"
+                title="Select backend"
+                onClick={() => setBackendMenuOpen((v) => !v)}
+              >
+                <Cpu size={12} strokeWidth={2.2} />
+                {backendDisplay || 'Default'}
+                <ChevronDown size={12} strokeWidth={2.2} />
+              </button>
+              {backendMenuOpen && (
+                <div className="chat-backend-menu" role="menu">
+                  <div className="chat-backend-menu__header">Backend</div>
+                  {backendOptions.map((opt) => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      role="menuitem"
+                      className={`chat-backend-menu__item${
+                        opt.id === activeBackendId
+                          ? ' chat-backend-menu__item--active'
+                          : ''
+                      }`}
+                      onClick={() => handleSelectBackend(opt.id)}
+                    >
+                      <span className="chat-backend-menu__label">
+                        {opt.label.includes('\\') || opt.label.includes('/')
+                          ? opt.label.split(/[\\/]/).pop()
+                          : opt.label}
+                      </span>
+                      {opt.id === activeBackendId && (
+                        <Check size={14} strokeWidth={2.2} />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
             <span className="chat-token-counter__stats">
               {loading && tps > 0 && (
                 <InfoTooltip

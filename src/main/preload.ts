@@ -9,6 +9,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('settings:save-silent', settings),
   pickDirectory: () => ipcRenderer.invoke('settings:pick-directory'),
   getVramStats: () => ipcRenderer.invoke('get-vram-stats'),
+  getBackendInfo: () => ipcRenderer.invoke('onboarding:get-backend-info'),
+  getParserInfo: () => ipcRenderer.invoke('onboarding:get-parser-info'),
+  downloadBinary: (kind: string, download: unknown, dir: string) =>
+    ipcRenderer.invoke('binaries:download', kind, download, dir),
+  cancelBinaryDownload: (id: string) =>
+    ipcRenderer.invoke('binaries:cancel', id),
+  getBinaryDownloads: () => ipcRenderer.invoke('binaries:list'),
   chatMemoryUsage: (): Promise<{
     modelVramUsage: number;
     contextVramUsage: number;
@@ -82,6 +89,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     return () => {
       ipcRenderer.removeListener('onboarding:restart', subscription);
+    };
+  },
+  onCancelOnboarding: (callback: () => void) => {
+    const subscription = () => callback();
+
+    ipcRenderer.on('onboarding:cancel', subscription);
+
+    return () => {
+      ipcRenderer.removeListener('onboarding:cancel', subscription);
     };
   },
   notifyMenuEditState: (state: {

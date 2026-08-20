@@ -31,6 +31,9 @@ import {
   getModelMetadata,
 } from './estimator';
 import { registerExtensionIpcHandlers } from './ipcExtensions';
+import { getBackendInfo } from './backendInfo';
+import { getParserInfo } from './parserInfo';
+import * as binaryDownloads from './binaryDownloads';
 import type { SearchFilter } from '../renderer/preload.d';
 import type { CacheType, Profile } from '../renderer/types/profile';
 
@@ -333,6 +336,15 @@ export function registerIpcHandlers(win: BrowserWindow): void {
       try {
         const downloadWin = BrowserWindow.fromWebContents(event.sender);
         if (!downloadWin) throw new Error('No window found');
+        const binary = binaryDownloads.findBinaryById(repoId);
+        if (binary) {
+          return await binaryDownloads.startBinaryDownload(
+            binary.kind,
+            binary.download,
+            binary.dir,
+            downloadWin,
+          );
+        }
         return await downloadModel(repoId, filename, downloadWin);
       } catch (err) {
         console.error('[models:download]', err);
@@ -344,6 +356,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
   ipcMain.handle(
     'models:cancel-download',
     async (_event, repoId: string, filename: string) => {
+      if (binaryDownloads.cancelBinaryDownload(repoId)) return true;
       return cancelDownload(repoId, filename);
     },
   );
@@ -354,6 +367,15 @@ export function registerIpcHandlers(win: BrowserWindow): void {
       try {
         const downloadWin = BrowserWindow.fromWebContents(event.sender);
         if (!downloadWin) throw new Error('No window found');
+        const binary = binaryDownloads.findBinaryById(repoId);
+        if (binary) {
+          return await binaryDownloads.startBinaryDownload(
+            binary.kind,
+            binary.download,
+            binary.dir,
+            downloadWin,
+          );
+        }
         return await downloadModel(repoId, filename, downloadWin, true);
       } catch (err) {
         console.error('[models:resume-download]', err);
@@ -631,6 +653,50 @@ export function registerIpcHandlers(win: BrowserWindow): void {
         selectedGpu: null,
       };
     }
+  });
+
+  ipcMain.handle('onboarding:get-backend-info', async () => {
+    try {
+      return await getBackendInfo();
+    } catch (error) {
+      console.error('[Backend] Failed to detect backends:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('onboarding:get-parser-info', async () => {
+    try {
+      return await getParserInfo();
+    } catch (error) {
+      console.error('[Parser] Failed to detect parser builds:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle(
+    'binaries:download',
+    async (event, kind: 'backend' | 'parser', download: any, dir: string) => {
+      try {
+        const downloadWin = BrowserWindow.fromWebContents(event.sender);
+        return await binaryDownloads.startBinaryDownload(
+          kind,
+          download,
+          dir,
+          downloadWin,
+        );
+      } catch (error) {
+        console.error('[binaries:download]', error);
+        throw error;
+      }
+    },
+  );
+
+  ipcMain.handle('binaries:cancel', async (_event, id: string) => {
+    return binaryDownloads.cancelBinaryDownload(id);
+  });
+
+  ipcMain.handle('binaries:list', async () => {
+    return binaryDownloads.listBinaryDownloads();
   });
 
   refreshPromise = refreshVramStatsCache();

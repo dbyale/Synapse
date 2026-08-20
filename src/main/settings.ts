@@ -4,6 +4,13 @@ import fs from 'fs';
 
 export interface AppSettings {
   modelsDirectory: string;
+  backendDirectory: string;
+  customBinaryPaths: string[];
+  parserDirectory: string;
+  parserCustomBinaryPaths: string[];
+  backendDownloads: { id: string; label: string; folder: string }[];
+  parserDownloads: { id: string; label: string; file: string } | null;
+  selectedBackend: string;
   allocatedVRAM?: number;
   allocatedRAM?: number;
   autoOpenThinking?: boolean;
@@ -19,9 +26,17 @@ export interface AppSettings {
 
 const SETTINGS_FILE = path.join(app.getPath('userData'), 'settings.json');
 const DEFAULT_MODELS_DIR = path.join(app.getPath('userData'), 'models');
+const DEFAULT_BACKEND_DIR = path.join(app.getPath('userData'), 'llama');
 
 const DEFAULT_SETTINGS: AppSettings = {
   modelsDirectory: DEFAULT_MODELS_DIR,
+  backendDirectory: DEFAULT_BACKEND_DIR,
+  customBinaryPaths: [],
+  parserDirectory: '',
+  parserCustomBinaryPaths: [],
+  backendDownloads: [],
+  parserDownloads: null,
+  selectedBackend: 'Default',
   autoOpenThinking: true,
   autoCloseThinkingDone: true,
   host: '127.0.0.1',
