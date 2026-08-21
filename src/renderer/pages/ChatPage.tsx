@@ -9,6 +9,7 @@ import {
   memo,
   ReactNode,
   DragEvent,
+  ClipboardEvent,
 } from 'react';
 import {
   SendHorizonal,
@@ -2758,89 +2759,130 @@ export default function ChatPage() {
     convertDocumentToPending(id, filePath, filename);
   };
 
-  const handlePageDrop = async (e: DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    dragOpenedModal.current = false;
-    setPageDragging(false);
-    setShowImageModal(false);
-    const files = Array.from(e.dataTransfer.files);
-    for (const file of files) {
-      const ext = getExtension(file.name);
-      const isImage =
-        IMAGE_EXTENSIONS_SET.has(ext) || file.type.startsWith('image/');
-      const isVideo =
-        VIDEO_EXTENSIONS_SET.has(ext) || file.type.startsWith('video/');
-      const isDoc = DOC_EXTENSIONS_SET.has(ext);
-      if ((isImage || isVideo) && !canAttachImages) {
-        showErrorToast(
-          `${file.name} needs a loaded vision projector to be attached`,
-        );
-      } else if (isImage) {
-        const reader = new FileReader();
-        reader.onload = (ev) => {
-          const result = ev.target?.result;
-          if (typeof result === 'string') {
-            const id = crypto.randomUUID();
-            setPendingMedia((prev) => [
-              ...prev,
-              { id, type: 'image', dataUrl: result, name: file.name },
-            ]);
-          }
-        };
-        reader.readAsDataURL(file);
-      } else if (isVideo) {
+  const ingestFile = (file: File) => {
+    const ext = getExtension(file.name);
+    const isImage =
+      IMAGE_EXTENSIONS_SET.has(ext) || file.type.startsWith('image/');
+    const isVideo =
+      VIDEO_EXTENSIONS_SET.has(ext) || file.type.startsWith('video/');
+    const isDoc = DOC_EXTENSIONS_SET.has(ext);
+    if ((isImage || isVideo) && !canAttachImages) {
+      showErrorToast(
+        `${file.name} needs a loaded vision projector to be attached`,
+      );
+    } else if (isImage) {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const result = ev.target?.result;
+        if (typeof result === 'string') {
+          const id = crypto.randomUUID();
+          setPendingMedia((prev) => [
+            ...prev,
+            { id, type: 'image', dataUrl: result, name: file.name },
+          ]);
+        }
+      };
+      reader.readAsDataURL(file);
+    } else if (isVideo) {
+      const id = crypto.randomUUID();
+      setPendingMedia((prev) => [
+        ...prev,
+        {
+          id,
+          type: 'video',
+          file,
+          objectUrl: URL.createObjectURL(file),
+        },
+      ]);
+    } else if (isDoc) {
+      const filePath = (file as any).path;
+      if (filePath) {
+        processDroppedDocument(filePath, file.name);
+      } else {
         const id = crypto.randomUUID();
         setPendingMedia((prev) => [
           ...prev,
           {
             id,
-            type: 'video',
-            file,
-            objectUrl: URL.createObjectURL(file),
+            type: 'document',
+            name: file.name,
+            content: '',
+            status: 'waiting',
           },
         ]);
-      } else if (isDoc) {
-        const filePath = (file as any).path;
-        if (filePath) {
-          processDroppedDocument(filePath, file.name);
-        } else {
-          const id = crypto.randomUUID();
-          setPendingMedia((prev) => [
-            ...prev,
-            {
-              id,
-              type: 'document',
-              name: file.name,
-              content: '',
-              status: 'waiting',
-            },
-          ]);
-          (async () => {
-            try {
-              const reader = new FileReader();
-              const result = await new Promise<ArrayBuffer>(
-                (resolve, reject) => {
-                  reader.onload = (ev) =>
-                    resolve(ev.target!.result as ArrayBuffer);
-                  reader.onerror = () =>
-                    reject(new Error('Failed to read file'));
-                  reader.readAsArrayBuffer(file);
-                },
-              );
-              const tempPath = await window.electronAPI.saveBufferToTemp(
-                new Uint8Array(result),
-                file.name,
-              );
-              convertDocumentToPending(id, tempPath, file.name);
-            } catch (err: any) {
-              setPendingMedia((prev) => prev.filter((m) => m.id !== id));
-              showErrorToast(`Error reading ${file.name}: ${err.message}`);
-            }
-          })();
-        }
-      } else {
-        showErrorToast(`${file.name} is unsupported`);
+        (async () => {
+          try {
+            const reader = new FileReader();
+            const result = await new Promise<ArrayBuffer>((resolve, reject) => {
+              reader.onload = (ev) => resolve(ev.target!.result as ArrayBuffer);
+              reader.onerror = () => reject(new Error('Failed to read file'));
+              reader.readAsArrayBuffer(file);
+            });
+            const tempPath = await window.electronAPI.saveBufferToTemp(
+              new Uint8Array(result),
+              file.name,
+            );
+            convertDocumentToPending(id, tempPath, file.name);
+          } catch (err: any) {
+            setPendingMedia((prev) => prev.filter((m) => m.id !== id));
+            showErrorToast(`Error reading ${file.name}: ${err.message}`);
+          }
+        })();
       }
+    } else {
+      showErrorToast(`${file.name} is unsupported`);
+    }
+  };
+
+  const collectClipboardFiles = (dt: DataTransfer | null): File[] => {
+    if (!dt) return [];
+    const files = Array.from(dt.files).filter(Boolean);
+    if (files.length > 0) return files;
+    const fromItems: File[] = [];
+    for (const item of Array.from(dt.items ?? [])) {
+      if (item.kind === 'file') {
+        const f = item.getAsFile();
+        if (f) fromItems.push(f);
+      }
+    }
+    return fromItems;
+  };
+
+  const withPastedName = (file: File): File => {
+    const ext = getExtension(file.name);
+    if (
+      file.name &&
+      (IMAGE_EXTENSIONS_SET.has(ext) ||
+        VIDEO_EXTENSIONS_SET.has(ext) ||
+        DOC_EXTENSIONS_SET.has(ext))
+    ) {
+      return file;
+    }
+    if (file.type.startsWith('image/')) {
+      const imageExt = file.type.split('/')[1] || 'png';
+      return new File([file], `pasted-image-${Date.now()}.${imageExt}`, {
+        type: file.type,
+      });
+    }
+    return file;
+  };
+
+  const handleInputPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
+    const files = collectClipboardFiles(e.clipboardData).map(withPastedName);
+    if (files.length === 0) return;
+    e.preventDefault();
+    for (const file of files) {
+      ingestFile(file);
+    }
+  };
+
+  const handlePageDrop = async (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    dragOpenedModal.current = false;
+    setPageDragging(false);
+    setShowImageModal(false);
+    for (const file of Array.from(e.dataTransfer.files)) {
+      ingestFile(file);
     }
   };
 
@@ -3556,6 +3598,7 @@ export default function ChatPage() {
                 rows={1}
                 onInput={autoResize}
                 onKeyDown={handleKeyDown}
+                onPaste={handleInputPaste}
               />
             </div>
 
