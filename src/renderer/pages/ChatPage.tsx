@@ -34,6 +34,8 @@ import {
   MessagesSquare,
   SquarePen,
   Cpu,
+  Microchip,
+  Database,
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -1303,6 +1305,10 @@ export default function ChatPage() {
   >([]);
   const [backendMenuOpen, setBackendMenuOpen] = useState(false);
   const backendMenuRef = useRef<HTMLDivElement>(null);
+  const [deviceMenuOpen, setDeviceMenuOpen] = useState(false);
+  const deviceMenuRef = useRef<HTMLDivElement>(null);
+  const [stateMenuOpen, setStateMenuOpen] = useState(false);
+  const stateMenuRef = useRef<HTMLDivElement>(null);
   const [streamingTool, setStreamingTool] = useState<{
     name: string;
     text: string;
@@ -1614,7 +1620,7 @@ export default function ChatPage() {
   }, []);
 
   useEffect(() => {
-    if (!backendMenuOpen) return undefined;
+    if (!backendMenuOpen && !deviceMenuOpen && !stateMenuOpen) return undefined;
     const onDown = (e: MouseEvent) => {
       if (
         backendMenuRef.current &&
@@ -1622,10 +1628,22 @@ export default function ChatPage() {
       ) {
         setBackendMenuOpen(false);
       }
+      if (
+        deviceMenuRef.current &&
+        !deviceMenuRef.current.contains(e.target as Node)
+      ) {
+        setDeviceMenuOpen(false);
+      }
+      if (
+        stateMenuRef.current &&
+        !stateMenuRef.current.contains(e.target as Node)
+      ) {
+        setStateMenuOpen(false);
+      }
     };
     document.addEventListener('mousedown', onDown);
     return () => document.removeEventListener('mousedown', onDown);
-  }, [backendMenuOpen]);
+  }, [backendMenuOpen, deviceMenuOpen, stateMenuOpen]);
 
   const handleSelectBackend = async (id: string) => {
     setBackendMenuOpen(false);
@@ -1645,6 +1663,44 @@ export default function ChatPage() {
     } catch {
       // Silently fail
     }
+  };
+
+  const applyOpenvinoSettings = async (
+    device: 'CPU' | 'GPU' | 'NPU',
+    stateful: boolean,
+  ) => {
+    if (!settings) return;
+    // NPU does not support stateful execution — force Stateless
+    const nextStateful = device === 'NPU' ? false : stateful;
+    const next = {
+      ...settings,
+      openvinoDevice: device,
+      openvinoStateful: nextStateful,
+    };
+    setSettings(next);
+    try {
+      await window.electronAPI.saveSettingsSilent(next);
+    } catch {
+      // Silently fail
+    }
+    try {
+      await window.electronAPI.chatReloadProfile();
+    } catch {
+      // Silently fail
+    }
+  };
+
+  const handleSelectOvDevice = async (device: 'CPU' | 'GPU' | 'NPU') => {
+    setDeviceMenuOpen(false);
+    setStateMenuOpen(false);
+    if (!settings) return;
+    await applyOpenvinoSettings(device, settings.openvinoStateful ?? false);
+  };
+
+  const handleSelectOvStateful = async (stateful: boolean) => {
+    setStateMenuOpen(false);
+    if (!settings) return;
+    await applyOpenvinoSettings(settings.openvinoDevice || 'CPU', stateful);
   };
 
   const estimatedCost = totalSavings(usageSummary);
@@ -3081,6 +3137,17 @@ export default function ChatPage() {
         : formatBackend(backend);
   }
 
+  const isOpenvinoBackend = [
+    selectedBackendOption?.id,
+    selectedBackendOption?.folder,
+    selectedBackendOption?.label,
+    backend,
+  ].some((s) => s && /openvino/i.test(s));
+
+  const ovDevice = settings?.openvinoDevice || 'CPU';
+  const ovStateful = settings?.openvinoStateful ?? false;
+  const ovStateForcedOff = ovDevice === 'NPU';
+
   const pendingProfile = profiles.find((p) => p.id === pendingProfileId);
 
   return (
@@ -3530,43 +3597,137 @@ export default function ChatPage() {
               profileId={selectedProfileId || null}
               onTokensChange={handleThinkingTokensChange}
             />
-            <div className="chat-backend-select" ref={backendMenuRef}>
-              <button
-                type="button"
-                className="chat-backend-indicator"
-                title="Select backend"
-                onClick={() => setBackendMenuOpen((v) => !v)}
-              >
-                <Cpu size={12} strokeWidth={2.2} />
-                {backendDisplay || 'Default'}
-                <ChevronDown size={12} strokeWidth={2.2} />
-              </button>
-              {backendMenuOpen && (
-                <div className="chat-backend-menu" role="menu">
-                  <div className="chat-backend-menu__header">Backend</div>
-                  {backendOptions.map((opt) => (
+            <div className="chat-backend-group">
+              <div className="chat-backend-select" ref={backendMenuRef}>
+                <button
+                  type="button"
+                  className="chat-backend-indicator"
+                  title="Select backend"
+                  onClick={() => setBackendMenuOpen((v) => !v)}
+                >
+                  <Cpu size={12} strokeWidth={2.2} />
+                  {backendDisplay || 'Default'}
+                  <ChevronDown size={12} strokeWidth={2.2} />
+                </button>
+                {backendMenuOpen && (
+                  <div className="chat-backend-menu" role="menu">
+                    <div className="chat-backend-menu__header">Backend</div>
+                    {backendOptions.map((opt) => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        role="menuitem"
+                        className={`chat-backend-menu__item${
+                          opt.id === activeBackendId
+                            ? ' chat-backend-menu__item--active'
+                            : ''
+                        }`}
+                        onClick={() => handleSelectBackend(opt.id)}
+                      >
+                        <span className="chat-backend-menu__label">
+                          {opt.label.includes('\\') || opt.label.includes('/')
+                            ? opt.label.split(/[\\/]/).pop()
+                            : opt.label}
+                        </span>
+                        {opt.id === activeBackendId && (
+                          <Check size={14} strokeWidth={2.2} />
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {isOpenvinoBackend && (
+                <>
+                  <div className="chat-backend-select" ref={deviceMenuRef}>
                     <button
-                      key={opt.id}
                       type="button"
-                      role="menuitem"
-                      className={`chat-backend-menu__item${
-                        opt.id === activeBackendId
-                          ? ' chat-backend-menu__item--active'
-                          : ''
-                      }`}
-                      onClick={() => handleSelectBackend(opt.id)}
+                      className="chat-backend-indicator"
+                      title="Select OpenVINO device"
+                      onClick={() => setDeviceMenuOpen((v) => !v)}
                     >
-                      <span className="chat-backend-menu__label">
-                        {opt.label.includes('\\') || opt.label.includes('/')
-                          ? opt.label.split(/[\\/]/).pop()
-                          : opt.label}
-                      </span>
-                      {opt.id === activeBackendId && (
-                        <Check size={14} strokeWidth={2.2} />
-                      )}
+                      <Microchip size={12} strokeWidth={2.2} />
+                      {ovDevice}
+                      <ChevronDown size={12} strokeWidth={2.2} />
                     </button>
-                  ))}
-                </div>
+                    {deviceMenuOpen && (
+                      <div className="chat-backend-menu" role="menu">
+                        <div className="chat-backend-menu__header">Device</div>
+                        {(['CPU', 'GPU', 'NPU'] as const).map((dev) => (
+                          <button
+                            key={dev}
+                            type="button"
+                            role="menuitem"
+                            className={`chat-backend-menu__item${
+                              dev === ovDevice
+                                ? ' chat-backend-menu__item--active'
+                                : ''
+                            }`}
+                            onClick={() => handleSelectOvDevice(dev)}
+                          >
+                            <span className="chat-backend-menu__label">
+                              {dev}
+                            </span>
+                            {dev === ovDevice && (
+                              <Check size={14} strokeWidth={2.2} />
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div
+                    className={`chat-backend-select${
+                      ovStateForcedOff ? ' chat-ov-select--disabled' : ''
+                    }`}
+                    ref={stateMenuRef}
+                  >
+                    <button
+                      type="button"
+                      className="chat-backend-indicator"
+                      title={
+                        ovStateForcedOff
+                          ? 'NPU only supports stateless execution'
+                          : 'Select OpenVINO execution mode'
+                      }
+                      disabled={ovStateForcedOff}
+                      onClick={() => setStateMenuOpen((v) => !v)}
+                    >
+                      <Database size={12} strokeWidth={2.2} />
+                      {ovStateForcedOff || !ovStateful
+                        ? 'Stateless'
+                        : 'Stateful'}
+                      <ChevronDown size={12} strokeWidth={2.2} />
+                    </button>
+                    {stateMenuOpen && (
+                      <div className="chat-backend-menu" role="menu">
+                        <div className="chat-backend-menu__header">
+                          Execution
+                        </div>
+                        {([true, false] as const).map((st) => (
+                          <button
+                            key={String(st)}
+                            type="button"
+                            role="menuitem"
+                            className={`chat-backend-menu__item${
+                              st === ovStateful && !ovStateForcedOff
+                                ? ' chat-backend-menu__item--active'
+                                : ''
+                            }`}
+                            onClick={() => handleSelectOvStateful(st)}
+                          >
+                            <span className="chat-backend-menu__label">
+                              {st ? 'Stateful' : 'Stateless'}
+                            </span>
+                            {st === ovStateful && (
+                              <Check size={14} strokeWidth={2.2} />
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </>
               )}
             </div>
             <span className="chat-token-counter__stats">

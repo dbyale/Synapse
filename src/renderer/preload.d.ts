@@ -72,6 +72,8 @@ export interface AppSettings {
   backendDownloads: BackendDownloadRecord[];
   parserDownloads: ParserDownloadRecord | null;
   selectedBackend: string;
+  openvinoDevice?: 'CPU' | 'GPU' | 'NPU';
+  openvinoStateful?: boolean;
   allocatedVRAM?: number;
   allocatedRAM?: number;
   autoOpenThinking?: boolean;

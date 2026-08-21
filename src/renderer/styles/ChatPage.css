@@ -809,9 +809,25 @@
   justify-self: end;
 }
 
-.chat-backend-select {
+.chat-backend-group {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
   justify-self: center;
+}
+
+.chat-backend-select {
   position: relative;
+}
+
+.chat-ov-select--disabled .chat-backend-indicator {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.chat-ov-select--disabled .chat-backend-indicator:hover {
+  background: transparent;
 }
 
 .chat-backend-indicator {

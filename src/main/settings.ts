@@ -11,6 +11,8 @@ export interface AppSettings {
   backendDownloads: { id: string; label: string; folder: string }[];
   parserDownloads: { id: string; label: string; file: string } | null;
   selectedBackend: string;
+  openvinoDevice?: 'CPU' | 'GPU' | 'NPU';
+  openvinoStateful?: boolean;
   allocatedVRAM?: number;
   allocatedRAM?: number;
   autoOpenThinking?: boolean;
@@ -37,6 +39,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   backendDownloads: [],
   parserDownloads: null,
   selectedBackend: 'Default',
+  openvinoDevice: 'CPU',
+  openvinoStateful: false,
   autoOpenThinking: true,
   autoCloseThinkingDone: true,
   host: '127.0.0.1',

@@ -1095,9 +1095,32 @@ export async function loadProfile(
         await unloadModel();
       }
 
-      serverProcess = spawn(serverPath, spawnArgs);
+      // OpenVINO runtime tuning: expose device selection and stateful
+      // execution via GGML_* environment variables (no-op on other backends)
+      const spawnEnv: Record<string, string | undefined> = { ...process.env };
+      if (/openvino/i.test(backendFolder)) {
+        const ovDevice = settings.openvinoDevice || 'CPU';
+        spawnEnv.GGML_OPENVINO_DEVICE = ovDevice;
+        if (settings.openvinoStateful && ovDevice !== 'NPU') {
+          spawnEnv.GGML_OPENVINO_STATEFUL_EXECUTION = '1';
+        }
+      }
 
-      serverProcess.stderr?.on('data', (d) => {
+      const proc = spawn(serverPath, spawnArgs, { env: spawnEnv });
+      serverProcess = proc;
+
+      // Self-heal: if the server crashes or exits on its own, clear the
+      // stale handle so future loads don't try to unload a dead process.
+      // Identity guard prevents a late-fired exit from clobbering a
+      // freshly spawned replacement (unloadModel nulls before killing).
+      proc.once('exit', () => {
+        if (serverProcess === proc) {
+          serverProcess = null;
+          currentProjector = null;
+        }
+      });
+
+      proc.stderr?.on('data', (d) => {
         serverErrorLog += d.toString();
       });
 
@@ -1900,9 +1923,21 @@ export async function unloadModel() {
       emitSessionChanged(s.sessionId);
     });
     proc.kill();
-    await new Promise<void>((resolve) => {
-      proc.on('exit', () => resolve());
-    });
+    // 'exit' only ever emits once — a process that already crashed
+    // (or failed to spawn) would leave this await hanging forever
+    if (proc.exitCode === null && proc.signalCode === null) {
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, 5000);
+        proc.once('exit', () => {
+          clearTimeout(timer);
+          resolve();
+        });
+        proc.once('error', () => {
+          clearTimeout(timer);
+          resolve();
+        });
+      });
+    }
   }
   currentContextSize = null;
   lastUsage = null;
