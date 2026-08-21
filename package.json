@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "binaryVersions": {
     "llama": "b10375",
-    "parser": "v0.25.0"
+    "parser": "v0.26.0"
   },
   "description": "A local AI platform",
   "keywords": [
