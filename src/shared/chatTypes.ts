@@ -45,6 +45,12 @@ export interface ChatHistoryMsg {
   tool_call_id?: string;
 }
 
+export interface Source {
+  title: string;
+  url: string;
+  kind?: 'top' | 'other';
+}
+
 export interface SavedSession {
   id: string;
   profileId: string;
@@ -54,6 +60,33 @@ export interface SavedSession {
   messages: Message[];
   history: ChatHistoryMsg[];
   pinned?: boolean;
+  sources?: Source[];
+}
+
+// Merges incoming sources into an existing list, deduped by URL, with new
+// entries prepended and 'top' entries promoted.
+export function mergeSources(existing: Source[], incoming: Source[]): Source[] {
+  const existingUrls = new Set<string>();
+  const kept = existing.filter((s) => {
+    if (existingUrls.has(s.url)) return false;
+    existingUrls.add(s.url);
+    return true;
+  });
+  const seen = new Set(existingUrls);
+  const toPrepend = incoming.filter((s) => {
+    if (seen.has(s.url)) return false;
+    seen.add(s.url);
+    return true;
+  });
+  return [
+    ...toPrepend,
+    ...kept.map((k) => {
+      const promoted = incoming.find(
+        (s) => s.url === k.url && s.kind === 'top',
+      );
+      return promoted ? { ...k, kind: 'top' as const } : k;
+    }),
+  ];
 }
 
 export type SessionStatus =

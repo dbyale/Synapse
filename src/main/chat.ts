@@ -25,10 +25,12 @@ import type {
   MessageSegment,
   SavedSession,
   SessionStatus,
+  Source,
   StreamEventPayload,
   UserInputRequest,
   UserInputResponse,
 } from '../shared/chatTypes';
+import { mergeSources } from '../shared/chatTypes';
 
 export interface GenerationStats {
   tokens: number;
@@ -62,6 +64,7 @@ interface SessionStream {
   messages: Message[];
   history: ChatHistoryMsg[];
   pinned: boolean;
+  sources: Source[];
   status: SessionStatus;
   abortController: AbortController | null;
   currentReader: ReadableStreamDefaultReader<Uint8Array> | null;
@@ -152,6 +155,7 @@ function persistSessionState(sessionId: string): void {
     messages: store.sanitizeMessagesForStorage(s.messages),
     history: s.history,
     pinned: s.pinned,
+    sources: s.sources,
   };
   store.saveSession(saved);
 }
@@ -171,6 +175,7 @@ function getSessionState(sessionId: string): SessionStream | null {
       messages: stored.messages,
       history: stored.history,
       pinned: !!stored.pinned,
+      sources: stored.sources ?? [],
       status: 'idle',
       abortController: null,
       currentReader: null,
@@ -235,6 +240,7 @@ export function startSession(profileId: string, title: string): string {
     messages: [],
     history: [],
     pinned: false,
+    sources: [],
     status: 'idle',
     abortController: null,
     currentReader: null,
@@ -269,6 +275,7 @@ export function getSessionView(sessionId: string) {
       messages: s.messages,
       history: s.history,
       pinned: s.pinned,
+      sources: s.sources,
     },
     status: s.status,
     streaming: s.status !== 'idle',
@@ -1790,6 +1797,7 @@ export async function sendMessage(
           modelContent = result._response;
           imageData = result._image ?? null;
         }
+        /* eslint-disable no-underscore-dangle */
         const sourcesData =
           result && typeof result === 'object' && '_sources' in result
             ? result._sources
@@ -1798,6 +1806,37 @@ export async function sendMessage(
           result && typeof result === 'object' && '_top_sources' in result
             ? result._top_sources
             : undefined;
+        /* eslint-enable no-underscore-dangle */
+
+        const toolTags = chatFunctions[tc.name]?.tags;
+        if (sourcesData || topSourcesData) {
+          const incoming: Source[] = [];
+          if (Array.isArray(sourcesData)) {
+            incoming.push(
+              ...sourcesData.map((src) => ({
+                title: src.title,
+                url: src.url,
+                kind: 'other' as const,
+              })),
+            );
+          }
+          if (
+            Array.isArray(topSourcesData) &&
+            toolTags?.includes('top_source')
+          ) {
+            incoming.push(
+              ...topSourcesData.map((src) => ({
+                title: src.title,
+                url: src.url,
+                kind: 'top' as const,
+              })),
+            );
+          }
+          if (incoming.length > 0) {
+            s.sources = mergeSources(s.sources, incoming);
+            persistSessionState(sessionId);
+          }
+        }
 
         const resultStr = JSON.stringify(modelContent);
         if (lastUsage) {

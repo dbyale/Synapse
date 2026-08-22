@@ -1386,7 +1386,10 @@ export default function ChatPage() {
 
   const {
     addSources,
-    clearSources,
+    setActiveSession,
+    setSources,
+    removeSessionSources,
+    clearAllSources,
     closeSources,
     toggleSources,
     isOpen: isSourcesOpen,
@@ -1570,24 +1573,28 @@ export default function ChatPage() {
 
   // Sync a session's messages/state from the main process after status
   // transitions, so the renderer stays a pure consumer of authoritative state.
-  const syncSessionFromMain = useCallback(async (sessionId: string) => {
-    const view = await window.electronAPI.chatGetSession(sessionId);
-    if (!view) return;
-    sessionMessagesRef.current[sessionId] = view.session.messages;
-    messageCountersRef.current[sessionId] = view.session.messages.reduce(
-      (max, m) => Math.max(max, m.id + 1),
-      0,
-    );
-    setLoadingSessions((prev) => ({
-      ...prev,
-      [sessionId]: view.status !== 'idle',
-    }));
-    if (sessionId === activeSessionIdRef.current) {
-      setMessages(view.session.messages);
-      setStreamingTool(view.streamingTool);
-      setProgressPercent(view.progress);
-    }
-  }, []);
+  const syncSessionFromMain = useCallback(
+    async (sessionId: string) => {
+      const view = await window.electronAPI.chatGetSession(sessionId);
+      if (!view) return;
+      sessionMessagesRef.current[sessionId] = view.session.messages;
+      messageCountersRef.current[sessionId] = view.session.messages.reduce(
+        (max, m) => Math.max(max, m.id + 1),
+        0,
+      );
+      setLoadingSessions((prev) => ({
+        ...prev,
+        [sessionId]: view.status !== 'idle',
+      }));
+      setSources(sessionId, view.session.sources ?? []);
+      if (sessionId === activeSessionIdRef.current) {
+        setMessages(view.session.messages);
+        setStreamingTool(view.streamingTool);
+        setProgressPercent(view.progress);
+      }
+    },
+    [setSources],
+  );
 
   const queueSessionSync = useCallback(
     (sessionId: string) => {
@@ -1757,7 +1764,8 @@ export default function ChatPage() {
 
   useEffect(() => {
     activeSessionIdRef.current = activeSessionId;
-  }, [activeSessionId]);
+    setActiveSession(activeSessionId);
+  }, [activeSessionId, setActiveSession]);
 
   const profileHasProjector = !!selectedProfile?.projector;
   const canAttachImages = !!(
@@ -1917,7 +1925,7 @@ export default function ChatPage() {
     messageCountersRef.current = {};
     segmentCountersRef.current = {};
     setMessages([]);
-    clearSources();
+    clearAllSources();
     setStreamingTool(null);
     setProgressPercent(0);
     setUsedTokens(0);
@@ -2024,7 +2032,7 @@ export default function ChatPage() {
       setUsedTokens(0);
       setMaxTokens(null);
       setMessages([]);
-      clearSources();
+      clearAllSources();
       setStreamingTool(null);
       setProgressPercent(0);
       activeSessionIdRef.current = null;
@@ -2105,7 +2113,7 @@ export default function ChatPage() {
     return () => {
       abortController.cancelled = true;
     };
-  }, [selectedProfileId, clearSources]);
+  }, [selectedProfileId, clearAllSources]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -2172,6 +2180,7 @@ export default function ChatPage() {
 
   const addSourcesFromToolResult = useCallback(
     (
+      sessionId: string,
       sources?: { title: string; url: string }[],
       topSources?: { title: string; url: string }[],
     ) => {
@@ -2199,7 +2208,7 @@ export default function ChatPage() {
         );
       }
       if (newSources.length > 0) {
-        addSources(newSources);
+        addSources(sessionId, newSources);
       }
     },
     [addSources],
@@ -2488,6 +2497,7 @@ export default function ChatPage() {
           /* eslint-disable no-underscore-dangle */
           if (tags.includes('sources')) {
             addSourcesFromToolResult(
+              sessionId,
               payload._sources,
               tags.includes('top_source') ? payload._top_sources : undefined,
             );
@@ -3130,9 +3140,9 @@ export default function ChatPage() {
         [sessionId]: view.status !== 'idle',
       }));
       setProcessingSessions((prev) => ({ ...prev, [sessionId]: false }));
-      clearSources();
+      setSources(sessionId, view.session.sources ?? []);
     },
-    [modelLoading, loadError, clearSources],
+    [modelLoading, loadError, setSources],
   );
 
   const handleNewChat = useCallback(async () => {
@@ -3143,7 +3153,7 @@ export default function ChatPage() {
     activeSessionIdRef.current = null;
     setActiveSessionId(null);
     setMessages([]);
-    clearSources();
+    clearAllSources();
     setStreamingTool(null);
     setProgressPercent(0);
     setUsedTokens(0);
@@ -3154,17 +3164,21 @@ export default function ChatPage() {
       if (m.type === 'video') URL.revokeObjectURL(m.objectUrl);
     });
     setPendingMedia([]);
-  }, [pendingMedia, clearSources]);
+  }, [pendingMedia, clearAllSources]);
 
-  const handleDeleteSession = useCallback((id: string) => {
-    window.electronAPI.chatDeleteSession(id).catch(() => {});
-    if (activeSessionIdRef.current === id) {
-      activeSessionIdRef.current = null;
-      setActiveSessionId(null);
-      setMessages([]);
-      delete sessionMessagesRef.current[id];
-    }
-  }, []);
+  const handleDeleteSession = useCallback(
+    (id: string) => {
+      window.electronAPI.chatDeleteSession(id).catch(() => {});
+      removeSessionSources(id);
+      if (activeSessionIdRef.current === id) {
+        activeSessionIdRef.current = null;
+        setActiveSessionId(null);
+        setMessages([]);
+        delete sessionMessagesRef.current[id];
+      }
+    },
+    [removeSessionSources],
+  );
 
   const toggleSidebarCollapsed = useCallback(() => {
     setSidebarCollapsed((v) => !v);

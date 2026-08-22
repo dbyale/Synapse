@@ -1,11 +1,8 @@
 import { useState, useMemo } from 'react';
 import { FileText, Globe, X, Search } from 'lucide-react';
+import type { Source } from '../../shared/chatTypes';
 
-export interface Source {
-  title: string;
-  url: string;
-  kind?: 'top' | 'other';
-}
+export type { Source };
 
 function getDomain(url: string): string {
   try {
