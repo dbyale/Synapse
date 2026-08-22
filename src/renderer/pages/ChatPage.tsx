@@ -1046,11 +1046,18 @@ const DOC_EXTENSIONS = [
 ];
 const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp'];
 const VIDEO_EXTENSIONS = ['mp4', 'webm'];
-
 const DOC_EXTENSIONS_SET = new Set(DOC_EXTENSIONS);
+
 const IMAGE_EXTENSIONS_SET = new Set(IMAGE_EXTENSIONS);
+
 const VIDEO_EXTENSIONS_SET = new Set(VIDEO_EXTENSIONS);
 
+let pastedNameCounter = 0;
+
+const MIME_TO_VIDEO_EXT: Record<string, string> = {
+  quicktime: 'mov',
+  'x-matroska': 'mkv',
+};
 function getExtension(filePath: string): string {
   return filePath.split('.').pop()?.toLowerCase() ?? '';
 }
@@ -2859,8 +2866,17 @@ export default function ChatPage() {
       return file;
     }
     if (file.type.startsWith('image/')) {
+      pastedNameCounter += 1;
       const imageExt = file.type.split('/')[1] || 'png';
-      return new File([file], `pasted-image-${Date.now()}.${imageExt}`, {
+      return new File([file], `pasted-image-${pastedNameCounter}.${imageExt}`, {
+        type: file.type,
+      });
+    }
+    if (file.type.startsWith('video/')) {
+      pastedNameCounter += 1;
+      const subtype = file.type.split('/')[1] || 'mp4';
+      const videoExt = MIME_TO_VIDEO_EXT[subtype] ?? subtype;
+      return new File([file], `pasted-video-${pastedNameCounter}.${videoExt}`, {
         type: file.type,
       });
     }
