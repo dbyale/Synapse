@@ -88,6 +88,32 @@
   white-space: pre-wrap;
 }
 
+/* ── Markdown-rendered content (Ask Question) ── */
+
+.uim-prompt--md {
+  white-space: normal;
+  min-width: 0;
+}
+
+.uim-option-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.uim-prompt--md .md,
+.uim-option-label .md {
+  gap: 4px;
+  line-height: 1.45;
+}
+
+.uim-prompt--md .md-code-block,
+.uim-option-label .md-code-block,
+.uim-prompt--md .md-table-wrapper,
+.uim-option-label .md-table-wrapper {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
 .uim-command {
   margin: 0;
   font-size: 13px;

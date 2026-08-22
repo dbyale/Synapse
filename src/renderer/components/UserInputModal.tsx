@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, KeyboardEvent, MouseEvent } from 'react';
 import { AlertTriangle, ListChecks, HelpCircle, X } from 'lucide-react';
+import MarkdownRenderer from './MarkdownRenderer';
 import './styles/UserInputModal.css';
 
 interface UserInputModalProps {
@@ -144,7 +145,9 @@ export default function UserInputModal({
             </button>
           </div>
           <div className="uim-body">
-            <p className="uim-prompt">{prompt}</p>
+            <div className="uim-prompt uim-prompt--md">
+              <MarkdownRenderer content={prompt} />
+            </div>
             {options && options.length > 0 && (
               <div className="uim-options">
                 {options.map((opt, idx) => (
@@ -171,7 +174,9 @@ export default function UserInputModal({
                         setShowCustomInput(false);
                       }}
                     />
-                    <span>{opt}</span>
+                    <div className="uim-option-label">
+                      <MarkdownRenderer content={opt} />
+                    </div>
                   </label>
                 ))}
                 <label
