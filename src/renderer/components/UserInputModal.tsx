@@ -31,16 +31,17 @@ export default function UserInputModal({
   const overlayRef = useRef<HTMLDivElement>(null);
   const optionRefs = useRef<(HTMLInputElement | null)[]>([]);
 
+  const hasOptions = !!options && options.length > 0;
+  const freeTextInput = !hasOptions;
+
   useEffect(() => {
-    if (type === 'select' && options && options.length > 0) {
+    if (type === 'select' && !!options && options.length > 0) {
       optionRefs.current[0]?.focus();
-    } else if (type === 'select') {
-      overlayRef.current?.focus();
     }
   }, [type, options]);
 
   const handleSubmit = () => {
-    if (showCustomInput && customValue.trim()) {
+    if ((showCustomInput || freeTextInput) && customValue.trim()) {
       onResponse({ action: 'selected', value: customValue.trim() });
     } else if (selectedOption) {
       onResponse({ action: 'selected', value: selectedOption });
@@ -199,17 +200,7 @@ export default function UserInputModal({
                 </label>
               </div>
             )}
-            {showCustomInput && (
-              <input
-                type="text"
-                className="uim-custom-input"
-                placeholder="Type your answer..."
-                value={customValue}
-                onChange={(e) => setCustomValue(e.target.value)}
-                autoFocus
-              />
-            )}
-            {type === 'freeform' && !options && (
+            {(showCustomInput || freeTextInput) && (
               <input
                 type="text"
                 className="uim-custom-input"
@@ -234,8 +225,7 @@ export default function UserInputModal({
               onClick={handleSubmit}
               disabled={
                 !selectedOption &&
-                !(showCustomInput && customValue.trim()) &&
-                !(type === 'freeform' && !options && !customValue.trim())
+                !((showCustomInput || freeTextInput) && customValue.trim())
               }
             >
               Submit
