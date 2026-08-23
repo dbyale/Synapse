@@ -9,6 +9,7 @@ import {
   getSavedEnvironments,
   sandboxExec,
   sandboxReadFile,
+  sandboxReadImageAsDataUrl,
   sandboxWriteFile,
   sandboxEditFile,
   sandboxListDirectory,
@@ -364,6 +365,52 @@ export const tools: Record<string, ExtensionToolDef> = {
     },
     async handler(params: { path: string }) {
       return await sandboxReadFile(params.path);
+    },
+  },
+
+  sandbox_display_image: {
+    meta: {
+      name: 'sandbox_display_image',
+      label: 'Display Sandbox Image',
+      description:
+        'Display an image file from inside the sandbox container inline in the chat.',
+      descriptionForHuman:
+        'Requires a vision model (with projector) for image processing.',
+      descriptionForModel:
+        'Reads an image file from inside the sandbox container and displays it inline. The model can see the image through the projector.',
+      icon: 'Image',
+      displayType: 'projector',
+      tags: ['sources', 'top_source'],
+    },
+    params: {
+      type: 'object',
+      properties: {
+        path: {
+          type: 'string',
+          description:
+            'Path to the image file inside the container (e.g., /workspace/image.png).',
+        },
+        alt_text: {
+          type: 'string',
+          description: 'Optional descriptive text for the image.',
+        },
+      },
+      required: ['path'],
+    },
+    async handler(params: { path: string; alt_text?: string }) {
+      const result = await sandboxReadImageAsDataUrl(params.path);
+      if (!result.success || !result.dataUrl || !result.mimeType) {
+        return { _response: `Error: ${result.error || 'Unknown error'}` };
+      }
+      const filename = params.path.split(/[/\\]/).pop() || params.path;
+      return {
+        _response: `Displayed image: ${params.path} (${result.mimeType})`,
+        _image: {
+          url: result.dataUrl,
+          altText: params.alt_text || params.path,
+        },
+        _top_sources: [{ title: `Image: ${filename}`, url: params.path }],
+      };
     },
   },
 

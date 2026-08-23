@@ -802,6 +802,57 @@ export async function sandboxReadFile(
   }
 }
 
+const IMAGE_MIME_TYPES: Record<string, string> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.bmp': 'image/bmp',
+  '.tiff': 'image/tiff',
+  '.tif': 'image/tiff',
+};
+
+export interface SandboxImageResult {
+  success: boolean;
+  dataUrl?: string;
+  mimeType?: string;
+  error?: string;
+}
+
+export async function sandboxReadImageAsDataUrl(
+  filePath: string,
+  containerName?: string,
+): Promise<SandboxImageResult> {
+  const env = getActiveEnvironment(containerName);
+  if (!env) return { success: false, error: 'No active sandbox environment.' };
+
+  const mimeType = IMAGE_MIME_TYPES[path.extname(filePath).toLowerCase()];
+  if (!mimeType) {
+    return {
+      success: false,
+      error: `Not a recognized image file: ${filePath} (supported extensions: png, jpg, jpeg, gif, webp, bmp, tiff)`,
+    };
+  }
+
+  const bin = getDockerBin();
+  try {
+    const { stdout } = await execFileAsync(
+      bin,
+      ['exec', env.containerName, 'base64', filePath],
+      { timeout: 30000, maxBuffer: 200 * 1024 * 1024 },
+    );
+    const base64 = stdout.replace(/\s+/g, '');
+    return {
+      success: true,
+      dataUrl: `data:${mimeType};base64,${base64}`,
+      mimeType,
+    };
+  } catch (err: any) {
+    return { success: false, error: err.stderr || err.message || String(err) };
+  }
+}
+
 function generateDiff(oldText: string, newText: string): string {
   const oldLines = oldText.split('\n');
   const newLines = newText.split('\n');
