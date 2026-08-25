@@ -40,14 +40,17 @@ export default function InfoTooltip({
 
   useEffect(() => {
     if (!portal || !rect) return undefined;
-    const update = () => {
+    const dismiss = () => {
+      setRect(null);
+    };
+    const reposition = () => {
       setRect(getRect());
     };
-    window.addEventListener('resize', update);
-    window.addEventListener('scroll', update, true);
+    window.addEventListener('resize', reposition);
+    window.addEventListener('scroll', dismiss, true);
     return () => {
-      window.removeEventListener('resize', update);
-      window.removeEventListener('scroll', update, true);
+      window.removeEventListener('resize', reposition);
+      window.removeEventListener('scroll', dismiss, true);
     };
   }, [portal, rect]);
 
