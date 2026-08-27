@@ -1372,6 +1372,8 @@ export default function ChatPage() {
   const loadAbortController = useRef<{ cancelled: boolean }>({
     cancelled: false,
   });
+  const sendingRef = useRef(false);
+  const [sendingState, setSendingState] = useState(false);
   const unloadInProgress = useRef(false);
   const profilesRef = useRef<Profile[]>([]);
   const generationBaselineTokens = useRef<number | null>(null);
@@ -1759,6 +1761,7 @@ export default function ChatPage() {
     profiles.find((p) => p.id === selectedProfileId) ?? null;
 
   const loading = !!activeSessionId && !!loadingSessions[activeSessionId];
+  const sending = sendingState && !loading;
   const processing = !!activeSessionId && !!processingSessions[activeSessionId];
   messagesRef.current = messages;
 
@@ -2917,6 +2920,7 @@ export default function ChatPage() {
     if (
       !text ||
       loading ||
+      sendingRef.current ||
       modelLoading ||
       persistentModelLoading ||
       !selectedProfileId ||
@@ -2929,140 +2933,146 @@ export default function ChatPage() {
       )
     )
       return;
+    sendingRef.current = true;
+    setSendingState(true);
+    try {
+      const contentParts: ContentPart[] = [];
+      const mediaItems: MediaDisplayItem[] = [];
+      let videoExtractError: string | null = null;
 
-    const contentParts: ContentPart[] = [];
-    const mediaItems: MediaDisplayItem[] = [];
-    let videoExtractError: string | null = null;
-
-    for (const item of pendingMedia) {
-      if (item.type === 'image') {
-        if (item.name)
-          contentParts.push({ kind: 'text', text: `[${item.name}]` });
-        contentParts.push({ kind: 'image_url', url: item.dataUrl });
-        mediaItems.push({ type: 'image', url: item.dataUrl });
-      } else if (item.type === 'video') {
-        contentParts.push({ kind: 'text', text: `[${item.file.name}]` });
-        const vs = selectedProfile?.videoSettings;
-        try {
-          const result = await extractVideoFrames(
-            item.file,
-            vs?.fps,
-            vs?.unlimitedMaxFrames ? undefined : (vs?.maxFrames ?? 15),
-            vs?.quality,
-            vs?.maxWidth,
-          );
-          if (!result.frames || result.frames.length === 0) {
-            throw new Error('Could not extract any frames from this video');
-          }
-          result.frames.forEach((frame, i) => {
-            contentParts.push({ kind: 'image_url', url: frame });
-            const secs = i / result.fps;
-            const mins = Math.floor(secs / 60);
-            const secsOnly = Math.floor(secs % 60);
-            contentParts.push({
-              kind: 'text',
-              text: `[${String(mins).padStart(2, '0')}:${String(secsOnly).padStart(2, '0')}]`,
+      for (const item of pendingMedia) {
+        if (item.type === 'image') {
+          if (item.name)
+            contentParts.push({ kind: 'text', text: `[${item.name}]` });
+          contentParts.push({ kind: 'image_url', url: item.dataUrl });
+          mediaItems.push({ type: 'image', url: item.dataUrl });
+        } else if (item.type === 'video') {
+          contentParts.push({ kind: 'text', text: `[${item.file.name}]` });
+          const vs = selectedProfile?.videoSettings;
+          try {
+            const result = await extractVideoFrames(
+              item.file,
+              vs?.fps,
+              vs?.unlimitedMaxFrames ? undefined : (vs?.maxFrames ?? 15),
+              vs?.quality,
+              vs?.maxWidth,
+            );
+            if (!result.frames || result.frames.length === 0) {
+              throw new Error('Could not extract any frames from this video');
+            }
+            result.frames.forEach((frame, i) => {
+              contentParts.push({ kind: 'image_url', url: frame });
+              const secs = i / result.fps;
+              const mins = Math.floor(secs / 60);
+              const secsOnly = Math.floor(secs % 60);
+              contentParts.push({
+                kind: 'text',
+                text: `[${String(mins).padStart(2, '0')}:${String(secsOnly).padStart(2, '0')}]`,
+              });
             });
+            mediaItems.push({ type: 'video', url: item.objectUrl });
+          } catch (err: any) {
+            videoExtractError = err.message;
+            URL.revokeObjectURL(item.objectUrl);
+            break;
+          }
+        } else if (item.type === 'document') {
+          contentParts.push({
+            kind: 'text',
+            text: `[${item.name}]\n${item.content}`,
           });
-          mediaItems.push({ type: 'video', url: item.objectUrl });
-        } catch (err: any) {
-          videoExtractError = err.message;
-          URL.revokeObjectURL(item.objectUrl);
-          break;
+          mediaItems.push({ type: 'document', name: item.name });
         }
-      } else if (item.type === 'document') {
-        contentParts.push({
-          kind: 'text',
-          text: `[${item.name}]\n${item.content}`,
-        });
-        mediaItems.push({ type: 'document', name: item.name });
       }
-    }
 
-    if (videoExtractError) {
+      if (videoExtractError) {
+        setPendingMedia([]);
+        showErrorToast(`Failed to process video: ${videoExtractError}`);
+        return;
+      }
+
+      // Ensure a session exists (lazily created on first message).
+      let sessionId = activeSessionIdRef.current;
+      if (!sessionId) {
+        sessionId = await window.electronAPI.chatStartSession(
+          selectedProfileId,
+          text.slice(0, 40) || 'Untitled session',
+        );
+        activeSessionIdRef.current = sessionId;
+        setActiveSessionId(sessionId);
+      }
+
       setPendingMedia([]);
-      showErrorToast(`Failed to process video: ${videoExtractError}`);
-      return;
-    }
 
-    // Ensure a session exists (lazily created on first message).
-    let sessionId = activeSessionIdRef.current;
-    if (!sessionId) {
-      sessionId = await window.electronAPI.chatStartSession(
-        selectedProfileId,
-        text.slice(0, 40) || 'Untitled session',
+      setLoadingSessions((prev) => ({ ...prev, [sessionId]: true }));
+      setProcessingSessions((prev) => ({ ...prev, [sessionId]: true }));
+      setStreamingTool(null);
+
+      const counters = messageCountersRef.current;
+      const uid = counters[sessionId] ?? 0;
+      counters[sessionId] = uid + 1;
+      const segCounters = segmentCountersRef.current;
+      segCounters[sessionId] = (segCounters[sessionId] ?? 0) + 1;
+
+      const userMessage: Message = {
+        id: uid,
+        role: 'user',
+        content: [
+          {
+            id: `seg-${Date.now()}-${segCounters[sessionId]}`,
+            text,
+            type: 'normal',
+            mediaItems,
+          },
+        ],
+        collapsed: text.length >= 20 && text.split('\n').length > 5,
+      };
+
+      setMessages((prev) => {
+        const updated = [...prev];
+        if (systemPromptDone && !updated.some((m) => m.role === 'system')) {
+          const sysId = counters[sessionId] ?? 0;
+          counters[sessionId] = (counters[sessionId] ?? 0) + 1;
+          updated.push({
+            id: sysId,
+            role: 'system',
+            content: [
+              {
+                id: `seg-sys-${Date.now()}`,
+                text:
+                  systemPromptDone.toolCount > 0
+                    ? `System Prompt with ${systemPromptDone.toolCount} tools`
+                    : 'System Prompt',
+                type: 'normal',
+              },
+            ],
+            promptStats: systemPromptDone.stats,
+          });
+        }
+        updated.push(userMessage);
+        sessionMessagesRef.current[sessionId] = updated;
+        return updated;
+      });
+      setInputText('');
+
+      const textarea = document.querySelector('textarea');
+      if (textarea) textarea.style.height = 'auto';
+
+      generationBaselineTokens.current = null;
+      lastTokenSnapshot.current = null;
+      setTps(0);
+
+      await window.electronAPI.chatSend(
+        sessionId,
+        text,
+        contentParts,
+        mediaItems,
+        readThinkingTokens(selectedProfileId),
       );
-      activeSessionIdRef.current = sessionId;
-      setActiveSessionId(sessionId);
+    } finally {
+      sendingRef.current = false;
+      setSendingState(false);
     }
-
-    setPendingMedia([]);
-
-    setLoadingSessions((prev) => ({ ...prev, [sessionId]: true }));
-    setProcessingSessions((prev) => ({ ...prev, [sessionId]: true }));
-    setStreamingTool(null);
-
-    const counters = messageCountersRef.current;
-    const uid = counters[sessionId] ?? 0;
-    counters[sessionId] = uid + 1;
-    const segCounters = segmentCountersRef.current;
-    segCounters[sessionId] = (segCounters[sessionId] ?? 0) + 1;
-
-    const userMessage: Message = {
-      id: uid,
-      role: 'user',
-      content: [
-        {
-          id: `seg-${Date.now()}-${segCounters[sessionId]}`,
-          text,
-          type: 'normal',
-          mediaItems,
-        },
-      ],
-      collapsed: text.length >= 20 && text.split('\n').length > 5,
-    };
-
-    setMessages((prev) => {
-      const updated = [...prev];
-      if (systemPromptDone && !updated.some((m) => m.role === 'system')) {
-        const sysId = counters[sessionId] ?? 0;
-        counters[sessionId] = (counters[sessionId] ?? 0) + 1;
-        updated.push({
-          id: sysId,
-          role: 'system',
-          content: [
-            {
-              id: `seg-sys-${Date.now()}`,
-              text:
-                systemPromptDone.toolCount > 0
-                  ? `System Prompt with ${systemPromptDone.toolCount} tools`
-                  : 'System Prompt',
-              type: 'normal',
-            },
-          ],
-          promptStats: systemPromptDone.stats,
-        });
-      }
-      updated.push(userMessage);
-      sessionMessagesRef.current[sessionId] = updated;
-      return updated;
-    });
-    setInputText('');
-
-    const textarea = document.querySelector('textarea');
-    if (textarea) textarea.style.height = 'auto';
-
-    generationBaselineTokens.current = null;
-    lastTokenSnapshot.current = null;
-    setTps(0);
-
-    await window.electronAPI.chatSend(
-      sessionId,
-      text,
-      contentParts,
-      mediaItems,
-      readThinkingTokens(selectedProfileId),
-    );
   };
 
   const handleAbort = () =>
@@ -3640,6 +3650,15 @@ export default function ChatPage() {
                 title="Stop generation"
               >
                 <Square size={20} strokeWidth={2.2} fill="white" />
+              </button>
+            ) : sending ? (
+              <button
+                type="button"
+                className="chat-send-button chat-send-button--sending"
+                disabled
+                title="Sending…"
+              >
+                <div className="chat-send-button__spinner" />
               </button>
             ) : (
               <button

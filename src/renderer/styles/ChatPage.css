@@ -793,6 +793,19 @@
   opacity: 0.9 !important;
 }
 
+.chat-send-button--sending {
+  cursor: wait;
+}
+
+.chat-send-button__spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: chat-spin 0.75s linear infinite;
+}
+
 /* ── Token counter ── */
 
 .chat-token-counter {
