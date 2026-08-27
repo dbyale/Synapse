@@ -1133,6 +1133,10 @@ export async function loadProfile(
 
       let ready = false;
       for (let i = 0; i < 45; i++) {
+        // Abort immediately if server was shut down while still loading (all phases)
+        if (serverProcess !== proc) {
+          throw new Error('Server shutdown requested');
+        }
         try {
           const host = (profile as any).host ?? '127.0.0.1';
           const port = (profile as any).port ?? 9931;

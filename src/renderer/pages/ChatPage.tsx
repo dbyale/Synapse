@@ -37,6 +37,7 @@ import {
   Cpu,
   Microchip,
   Database,
+  Power,
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -1412,6 +1413,16 @@ export default function ChatPage() {
   const [copiedMsgId, setCopiedMsgId] = useState<number | null>(null);
   const copiedMsgTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // ── Server online/offline ──────────────────────────────────────────────
+  const [isServerOnline, setIsServerOnline] = useState<boolean>(true);
+  const [serverToggling, setServerToggling] = useState(false);
+  const hasCheckedStartupRef = useRef(false);
+  const manualStartRequestedRef = useRef(false);
+  const preserveSessionOnNextLoadRef = useRef(false);
+  // One pending send queued via Enter while offline — stays until drained
+  const pendingQueuedRef = useRef(false);
+  const [isQueued, setIsQueued] = useState(false);
+
   const toggleMessageCollapsed = useCallback((id: number) => {
     setMessages((prev) => {
       const updated = [...prev];
@@ -1475,7 +1486,20 @@ export default function ChatPage() {
   }, []);
 
   useEffect(() => {
-    if (systemPhase !== 'ready' || modelLoading) return;
+    // Defer all projector checks until after a full server load — not just banner
+    if (
+      systemPhase !== 'ready' ||
+      modelLoading ||
+      persistentModelLoading ||
+      !isServerOnline ||
+      loadError ||
+      !persistentLoadedProfileId ||
+      persistentLoadedProfileId !== selectedProfileId ||
+      isQueued
+    ) {
+      hideProjectorWarning();
+      return;
+    }
     const profile = profilesRef.current.find((p) => p.id === selectedProfileId);
     if (!profile?.tools) {
       hideProjectorWarning();
@@ -1502,6 +1526,9 @@ export default function ChatPage() {
     projectorChecked,
     projectorLoaded,
     modelLoading,
+    isServerOnline,
+    loadError,
+    isQueued,
     hideProjectorWarning,
   ]);
 
@@ -1720,6 +1747,121 @@ export default function ChatPage() {
     await applyOpenvinoSettings(settings.openvinoDevice || 'CPU', stateful);
   };
 
+  // ── Server online/offline startup gating & polling ─────────────────────
+  useEffect(() => {
+    if (!settings || hasCheckedStartupRef.current) return;
+    // Only gate on startup: if server already running, stay online (don't kill).
+    // Otherwise obey launchServerAutomatically.
+    let cancelled = false;
+    hasCheckedStartupRef.current = true;
+    window.electronAPI
+      .chatIsRunning()
+      .then((running) => {
+        if (cancelled) return;
+        if (running) {
+          setIsServerOnline(true);
+        } else if ((settings.launchServerAutomatically ?? true) === false) {
+          setIsServerOnline(false);
+        } else {
+          setIsServerOnline(true);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [settings]);
+
+  // Keep pill in sync with actual backend (handles external unload/crash)
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      window.electronAPI
+        .chatIsRunning()
+        .then((running) => {
+          // Don't overwrite a manual offline intent before first load finishes.
+          // Once model is loaded at least once, running is source of truth.
+          if (persistentLoadedProfileId || running) {
+            setIsServerOnline(running);
+          } else if (!running && modelLoading) {
+            // Stay online while loading
+          } else if (!running && !modelLoading) {
+            // If we are offline by user choice, keep it; otherwise reflect.
+            // When launchServerAutomatically is false we keep offline until manual start.
+            if (
+              (settings?.launchServerAutomatically ?? true) === false &&
+              !manualStartRequestedRef.current
+            ) {
+              setIsServerOnline(false);
+            } else {
+              setIsServerOnline(running);
+            }
+          }
+        })
+        .catch(() => {});
+    }, 2500);
+    return () => window.clearInterval(id);
+  }, [settings, modelLoading]);
+
+  // Reflect unload/loadError into pill
+  useEffect(() => {
+    if (loadError) setIsServerOnline(false);
+  }, [loadError]);
+  useEffect(() => {
+    if (modelLoading) setIsServerOnline(true);
+  }, [modelLoading]);
+
+  // Clear queued flag if server fails to start — keep text so user can retry
+  useEffect(() => {
+    if (loadError && pendingQueuedRef.current) {
+      pendingQueuedRef.current = false;
+      setIsQueued(false);
+    }
+  }, [loadError]);
+
+  const triggerServerStart = useCallback(async () => {
+    if (!selectedProfileId) return;
+    manualStartRequestedRef.current = true;
+    preserveSessionOnNextLoadRef.current = true;
+    setIsServerOnline(true);
+    setLoadError(null);
+    // Re-trigger the profile load effect by toggling the selected id
+    const id = selectedProfileId;
+    setSelectedProfileId('');
+    setTimeout(() => setSelectedProfileId(id), 30);
+  }, [selectedProfileId]);
+
+  const handleToggleServer = useCallback(async () => {
+    if (serverToggling) return;
+    setServerToggling(true);
+    try {
+      if (isServerOnline) {
+        // Stop server — immediate UI reset for all loading phases
+        if (loadAbortController.current)
+          loadAbortController.current.cancelled = true;
+        persistentModelLoading = false;
+        persistentLastLoadId += 1;
+        preserveSessionOnNextLoadRef.current = false;
+        pendingQueuedRef.current = false;
+        setIsQueued(false);
+        setModelLoading(false);
+        setSystemPhase('ready');
+        setSystemProgress(0);
+        setSystemStatusMessage('');
+        setSystemPromptDone(null);
+        setProgressPercent(0);
+        setLoadError(null);
+        persistentLoadedProfileId = '';
+        setIsServerOnline(false);
+        manualStartRequestedRef.current = false;
+        await window.electronAPI.chatUnload();
+      } else {
+        await triggerServerStart();
+      }
+    } finally {
+      setServerToggling(false);
+    }
+  }, [isServerOnline, serverToggling, triggerServerStart]);
+
   const estimatedCost = totalSavings(usageSummary);
 
   const openSavingsModal = useCallback(
@@ -1801,7 +1943,18 @@ export default function ChatPage() {
   }, []);
 
   useEffect(() => {
-    if (!selectedProfileId || modelLoading || loadError) {
+    // Don't probe projector until server is fully ready — avoids spurious warning when offline
+    if (
+      !selectedProfileId ||
+      modelLoading ||
+      persistentModelLoading ||
+      loadError ||
+      !isServerOnline ||
+      systemPhase !== 'ready' ||
+      !persistentLoadedProfileId ||
+      persistentLoadedProfileId !== selectedProfileId ||
+      isQueued
+    ) {
       setProjectorLoaded(false);
       setProjectorChecked(false);
       return;
@@ -1817,7 +1970,14 @@ export default function ChatPage() {
         setProjectorLoaded(false);
         setProjectorChecked(true);
       });
-  }, [selectedProfileId, modelLoading, loadError]);
+  }, [
+    selectedProfileId,
+    modelLoading,
+    loadError,
+    isServerOnline,
+    systemPhase,
+    isQueued,
+  ]);
 
   const unloadModel = async (): Promise<void> => {
     if (unloadInProgress.current) {
@@ -1997,6 +2157,34 @@ export default function ChatPage() {
         return;
       }
 
+      // Wait for settings to be known before deciding to auto-boot.
+      // Prevents an early load (settings === null) from bypassing the toggle.
+      if (settings === null) {
+        return;
+      }
+
+      // ── Launch Server Automatically gating (only when server not already running)
+      // If setting is off and user hasn't manually requested a start, don't auto-boot.
+      if (
+        (settings.launchServerAutomatically ?? true) === false &&
+        !manualStartRequestedRef.current
+      ) {
+        const running = await window.electronAPI
+          .chatIsRunning()
+          .catch(() => false);
+        if (!running && !persistentLoadedProfileId) {
+          // Stay offline until user presses Power / Server Online
+          if (!abortController.cancelled && myLoadId === persistentLastLoadId) {
+            setModelLoading(false);
+            persistentModelLoading = false;
+            setLoadError(null);
+            setIsServerOnline(false);
+          }
+          return;
+        }
+        // Existing server is running — respect it (don't kill), fall through to normal load handling
+      }
+
       const profile =
         profilesRef.current.find((p) => p.id === selectedProfileId) ?? null;
 
@@ -2029,23 +2217,32 @@ export default function ChatPage() {
         }
       }
 
+      const shouldPreserveSession = preserveSessionOnNextLoadRef.current;
+      preserveSessionOnNextLoadRef.current = false;
+
       persistentModelLoading = true;
       setModelLoading(true);
       setLoadError(null);
-      setUsedTokens(0);
-      setMaxTokens(null);
-      setMessages([]);
-      clearAllSources();
-      setStreamingTool(null);
-      setProgressPercent(0);
-      activeSessionIdRef.current = null;
-      setActiveSessionId(null);
-      systemMessageInsertedRef.current = false;
-      setSystemPromptDone(null);
-      pendingMedia.forEach((m) => {
-        if (m.type === 'video') URL.revokeObjectURL(m.objectUrl);
-      });
-      setPendingMedia([]);
+      if (shouldPreserveSession) {
+        // Preserve current session — only reset transient loading state.
+        setStreamingTool(null);
+        setProgressPercent(0);
+      } else {
+        setUsedTokens(0);
+        setMaxTokens(null);
+        setMessages([]);
+        clearAllSources();
+        setStreamingTool(null);
+        setProgressPercent(0);
+        activeSessionIdRef.current = null;
+        setActiveSessionId(null);
+        systemMessageInsertedRef.current = false;
+        setSystemPromptDone(null);
+        pendingMedia.forEach((m) => {
+          if (m.type === 'video') URL.revokeObjectURL(m.objectUrl);
+        });
+        setPendingMedia([]);
+      }
 
       if (persistentLoadedProfileId) {
         await unloadModel();
@@ -2077,6 +2274,9 @@ export default function ChatPage() {
           }
 
           persistentLoadedProfileId = selectedProfileId;
+          if (!abortController.cancelled && myLoadId === persistentLastLoadId) {
+            setIsServerOnline(true);
+          }
 
           const { contextSize } = await window.electronAPI.chatContextSize();
 
@@ -2090,19 +2290,42 @@ export default function ChatPage() {
                 'Profile loaded but context is invalid. Try reloading.',
               );
               await unloadModel();
+              if (
+                !abortController.cancelled &&
+                myLoadId === persistentLastLoadId
+              )
+                setIsServerOnline(false);
             }
           }
         } else {
           persistentLoadedProfileId = '';
-          setLoadError(res.error || 'Failed to load profile');
+          // Don't show error toast if load was intentionally aborted (shutdown during any loading phase)
+          if (
+            !abortController.cancelled &&
+            myLoadId === persistentLastLoadId &&
+            res.error !== 'Server shutdown requested'
+          ) {
+            setLoadError(res.error || 'Failed to load profile');
+          }
           await unloadModel();
+          if (!abortController.cancelled && myLoadId === persistentLastLoadId)
+            setIsServerOnline(false);
         }
       } catch (error) {
         persistentLoadedProfileId = '';
-        setLoadError(
-          error instanceof Error ? error.message : 'Unknown error occurred',
-        );
+        const msg =
+          error instanceof Error ? error.message : 'Unknown error occurred';
+        // Ignore intentional shutdown abort — UI already reset immediately
+        if (
+          !abortController.cancelled &&
+          myLoadId === persistentLastLoadId &&
+          msg !== 'Server shutdown requested'
+        ) {
+          setLoadError(msg);
+        }
         await unloadModel();
+        if (!abortController.cancelled && myLoadId === persistentLastLoadId)
+          setIsServerOnline(false);
       } finally {
         if (myLoadId === persistentLastLoadId) {
           persistentModelLoading = false;
@@ -2116,7 +2339,7 @@ export default function ChatPage() {
     return () => {
       abortController.cancelled = true;
     };
-  }, [selectedProfileId, clearAllSources]);
+  }, [selectedProfileId, clearAllSources, settings]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -2677,12 +2900,21 @@ export default function ChatPage() {
   }, [messages, loading, processing]);
 
   useEffect(() => {
-    if (modelLoading) setPlaceholder('Loading profile...');
+    if (isQueued) {
+      setPlaceholder('Queued — starting server…');
+    } else if (
+      !isServerOnline &&
+      !modelLoading &&
+      !loadError &&
+      selectedProfileId
+    ) {
+      setPlaceholder('Server offline — press Power to start');
+    } else if (modelLoading) setPlaceholder('Loading profile...');
     else if (loadError) setPlaceholder('Profile failed to load');
     else if (selectedProfileId)
       setPlaceholder('Send a message... (Shift+Enter for new line)');
     else setPlaceholder('Select a profile first...');
-  }, [modelLoading, selectedProfileId, loadError]);
+  }, [modelLoading, selectedProfileId, loadError, isServerOnline, isQueued]);
 
   const autoResize = (e: FormEvent<HTMLTextAreaElement>) => {
     const t = e.currentTarget;
@@ -2917,6 +3149,32 @@ export default function ChatPage() {
 
   const handleSend = async () => {
     const text = inputText.trim();
+    const hasContent = !!text || pendingMedia.length > 0;
+    // Offline → queue via Enter (Power stays start-only). Text stays until drained.
+    if (!isServerOnline) {
+      if (!hasContent) return;
+      if (!selectedProfileId || loadError) return;
+      if (
+        pendingMedia.some(
+          (m) =>
+            m.type === 'document' &&
+            (m.status === 'waiting' || m.status === 'converting'),
+        )
+      )
+        return;
+      if (pendingQueuedRef.current) return;
+      pendingQueuedRef.current = true;
+      setIsQueued(true);
+      // Start server without switching session
+      manualStartRequestedRef.current = true;
+      preserveSessionOnNextLoadRef.current = true;
+      setIsServerOnline(true);
+      setLoadError(null);
+      const qid = selectedProfileId;
+      setSelectedProfileId('');
+      setTimeout(() => setSelectedProfileId(qid), 30);
+      return;
+    }
     if (
       !text ||
       loading ||
@@ -3085,6 +3343,34 @@ export default function ChatPage() {
     }
   };
 
+  // Drain queued Enter send once server becomes ready
+  useEffect(() => {
+    if (!pendingQueuedRef.current) return;
+    if (loadError) return; // cleared by loadError effect above
+    if (
+      isServerOnline &&
+      !modelLoading &&
+      !persistentModelLoading &&
+      systemPhase === 'ready' &&
+      !loadError
+    ) {
+      pendingQueuedRef.current = false;
+      setIsQueued(false);
+      // Defer to next tick so state settles and handleSend sees ready state
+      setTimeout(() => {
+        handleSend();
+      }, 30);
+    }
+  }, [
+    isServerOnline,
+    modelLoading,
+    persistentModelLoading,
+    systemPhase,
+    loadError,
+    isQueued,
+    handleSend,
+  ]);
+
   const handleProfileChange = async (newProfileId: string) => {
     if (newProfileId === selectedProfileId) return;
 
@@ -3093,6 +3379,8 @@ export default function ChatPage() {
     }
 
     setLoadError(null);
+    pendingQueuedRef.current = false;
+    setIsQueued(false);
 
     if (messages.length > 0) {
       setPendingProfileId(newProfileId);
@@ -3111,6 +3399,9 @@ export default function ChatPage() {
 
   const handleRetry = async () => {
     setLoadError(null);
+    manualStartRequestedRef.current = true;
+    preserveSessionOnNextLoadRef.current = true;
+    setIsServerOnline(true);
 
     if (persistentLoadedProfileId) {
       await unloadModel();
@@ -3642,14 +3933,35 @@ export default function ChatPage() {
               />
             </div>
 
-            {loading ? (
+            {isQueued ? (
+              <button
+                type="button"
+                className="chat-send-button chat-send-button--sending"
+                disabled
+                title="Queued — waiting for server…"
+              >
+                <div className="chat-send-button__spinner" />
+              </button>
+            ) : !isServerOnline && !loading ? (
+              <button
+                type="button"
+                className="chat-send-button chat-send-button--power"
+                onClick={handleToggleServer}
+                disabled={serverToggling || !selectedProfileId}
+                title={
+                  selectedProfileId ? 'Start server' : 'Select a profile first'
+                }
+              >
+                <Power size={16} strokeWidth={2.2} />
+              </button>
+            ) : loading ? (
               <button
                 type="button"
                 className="chat-send-button chat-send-button--stop"
                 onClick={handleAbort}
                 title="Stop generation"
               >
-                <Square size={20} strokeWidth={2.2} fill="white" />
+                <Square size={16} strokeWidth={2.2} />
               </button>
             ) : sending ? (
               <button
@@ -3670,6 +3982,7 @@ export default function ChatPage() {
                   modelLoading ||
                   persistentModelLoading ||
                   !!loadError ||
+                  !isServerOnline ||
                   pendingMedia.some(
                     (m) =>
                       m.type === 'document' &&
@@ -3855,16 +4168,33 @@ export default function ChatPage() {
           </div>
         </div>
 
-        {estimatedCost > 0 && (
+        <div className="chat-bottom-bar">
+          {estimatedCost > 0 && (
+            <button
+              type="button"
+              className="chat-cost-display"
+              onClick={() => openSavingsModal('total', 'Estimated savings')}
+              title="Estimated savings"
+            >
+              {`Estimated savings: ${formatMoney(estimatedCost)}`}
+            </button>
+          )}
           <button
             type="button"
-            className="chat-cost-display"
-            onClick={() => openSavingsModal('total', 'Estimated savings')}
-            title="Estimated savings"
+            className={`chat-server-status ${isServerOnline ? 'chat-server-status--online' : 'chat-server-status--offline'}${serverToggling ? ' chat-server-status--toggling' : ''}`}
+            onClick={handleToggleServer}
+            disabled={serverToggling}
+            title={
+              isServerOnline
+                ? 'Server is online — click to stop'
+                : 'Server is offline — click to start'
+            }
+            aria-label={isServerOnline ? 'Server Online' : 'Server Offline'}
           >
-            {`Estimated savings: ${formatMoney(estimatedCost)}`}
+            <span className="chat-server-status__dot" aria-hidden="true" />
+            <span>{isServerOnline ? 'Server Online' : 'Server Offline'}</span>
           </button>
-        )}
+        </div>
 
         {showImageModal && (
           <MediaAttachModal

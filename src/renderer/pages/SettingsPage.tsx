@@ -362,6 +362,13 @@ export default function SettingsPage() {
           modelsDirectory: loaded?.modelsDirectory || '',
           backendDirectory: loaded?.backendDirectory || '',
           parserDirectory: loaded?.parserDirectory || '',
+          customBinaryPaths: loaded?.customBinaryPaths ?? [],
+          parserCustomBinaryPaths: loaded?.parserCustomBinaryPaths ?? [],
+          backendDownloads: loaded?.backendDownloads ?? [],
+          parserDownloads: loaded?.parserDownloads ?? null,
+          selectedBackend: loaded?.selectedBackend ?? 'Default',
+          openvinoDevice: loaded?.openvinoDevice ?? 'CPU',
+          openvinoStateful: loaded?.openvinoStateful ?? false,
           allocatedRAM: loaded?.allocatedRAM,
           allocatedVRAM: loaded?.allocatedVRAM,
           autoOpenThinking: loaded?.autoOpenThinking ?? true,
@@ -371,6 +378,7 @@ export default function SettingsPage() {
           corsHeaders: loaded?.corsHeaders ?? '',
           corsCredentials: loaded?.corsCredentials ?? true,
           disableExternalReadmes: loaded?.disableExternalReadmes ?? false,
+          launchServerAutomatically: loaded?.launchServerAutomatically ?? true,
           host: loaded?.host ?? '127.0.0.1',
           port: loaded?.port ?? 9931,
         };
@@ -706,69 +714,124 @@ export default function SettingsPage() {
       )}
 
       {tab === 'chat' && (
-        <div className="settings-card">
-          <h2 className="settings-card-title">Thinking</h2>
+        <>
+          <div className="settings-card">
+            <h2 className="settings-card-title">Thinking</h2>
 
-          <div className="settings-field">
-            <label className="settings-toggle-row">
-              <span className="settings-label">
-                Automatically open thinking segments
-              </span>
-              <div
-                className={`epm-toggle-switch${settings.autoOpenThinking ? ' epm-toggle-switch--on' : ''}`}
-                onClick={() =>
-                  triggerSave({ autoOpenThinking: !settings.autoOpenThinking })
-                }
-                role="switch"
-                aria-checked={settings.autoOpenThinking}
-                tabIndex={0}
-                onKeyDown={(e) => {
-                  if (e.key === ' ' || e.key === 'Enter') {
-                    e.preventDefault();
+            <div className="settings-field">
+              <label className="settings-toggle-row">
+                <span className="settings-label">
+                  Automatically open thinking segments
+                </span>
+                <div
+                  className={`epm-toggle-switch${settings.autoOpenThinking ? ' epm-toggle-switch--on' : ''}`}
+                  onClick={() =>
                     triggerSave({
                       autoOpenThinking: !settings.autoOpenThinking,
-                    });
+                    })
                   }
-                }}
-              >
-                <div className="epm-toggle-switch__knob" />
-              </div>
-            </label>
-          </div>
+                  role="switch"
+                  aria-checked={settings.autoOpenThinking}
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === ' ' || e.key === 'Enter') {
+                      e.preventDefault();
+                      triggerSave({
+                        autoOpenThinking: !settings.autoOpenThinking,
+                      });
+                    }
+                  }}
+                >
+                  <div className="epm-toggle-switch__knob" />
+                </div>
+              </label>
+            </div>
 
-          <div className="settings-field">
-            <label
-              className={`settings-toggle-row${!settings.autoOpenThinking ? ' settings-toggle-row--disabled' : ''}`}
-            >
-              <span className="settings-label">
-                Automatically close thinking segments when finished
-              </span>
-              <div
-                className={`epm-toggle-switch${settings.autoCloseThinkingDone ? ' epm-toggle-switch--on' : ''}${!settings.autoOpenThinking ? ' epm-toggle-switch--disabled' : ''}`}
-                onClick={() => {
-                  if (!settings.autoOpenThinking) return;
-                  triggerSave({
-                    autoCloseThinkingDone: !settings.autoCloseThinkingDone,
-                  });
-                }}
-                role="switch"
-                aria-checked={settings.autoCloseThinkingDone}
-                tabIndex={settings.autoOpenThinking ? 0 : -1}
-                onKeyDown={(e) => {
-                  if (!settings.autoOpenThinking) return;
-                  if (e.key === ' ' || e.key === 'Enter') {
-                    e.preventDefault();
+            <div className="settings-field">
+              <label
+                className={`settings-toggle-row${!settings.autoOpenThinking ? ' settings-toggle-row--disabled' : ''}`}
+              >
+                <span className="settings-label">
+                  Automatically close thinking segments when finished
+                </span>
+                <div
+                  className={`epm-toggle-switch${settings.autoCloseThinkingDone ? ' epm-toggle-switch--on' : ''}${!settings.autoOpenThinking ? ' epm-toggle-switch--disabled' : ''}`}
+                  onClick={() => {
+                    if (!settings.autoOpenThinking) return;
                     triggerSave({
                       autoCloseThinkingDone: !settings.autoCloseThinkingDone,
                     });
+                  }}
+                  role="switch"
+                  aria-checked={settings.autoCloseThinkingDone}
+                  tabIndex={settings.autoOpenThinking ? 0 : -1}
+                  onKeyDown={(e) => {
+                    if (!settings.autoOpenThinking) return;
+                    if (e.key === ' ' || e.key === 'Enter') {
+                      e.preventDefault();
+                      triggerSave({
+                        autoCloseThinkingDone: !settings.autoCloseThinkingDone,
+                      });
+                    }
+                  }}
+                >
+                  <div className="epm-toggle-switch__knob" />
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <div className="settings-card">
+            <h2 className="settings-card-title">Server</h2>
+
+            <div className="settings-field">
+              <label className="settings-toggle-row">
+                <span className="settings-label">
+                  Launch Server Automatically
+                </span>
+                <div
+                  className={`epm-toggle-switch${(settings.launchServerAutomatically ?? true) ? ' epm-toggle-switch--on' : ''}`}
+                  onClick={() =>
+                    triggerSave({
+                      launchServerAutomatically: !(
+                        settings.launchServerAutomatically ?? true
+                      ),
+                    })
                   }
+                  role="switch"
+                  aria-checked={settings.launchServerAutomatically ?? true}
+                  aria-label="Launch Server Automatically"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === ' ' || e.key === 'Enter') {
+                      e.preventDefault();
+                      triggerSave({
+                        launchServerAutomatically: !(
+                          settings.launchServerAutomatically ?? true
+                        ),
+                      });
+                    }
+                  }}
+                >
+                  <div className="epm-toggle-switch__knob" />
+                </div>
+              </label>
+              <p
+                style={{
+                  fontSize: '13px',
+                  color: 'var(--text-secondary)',
+                  lineHeight: 1.5,
+                  margin: 0,
                 }}
               >
-                <div className="epm-toggle-switch__knob" />
-              </div>
-            </label>
+                When enabled, the inference server starts automatically if none
+                is running when you open Chat. When disabled, the server stays
+                offline until you press Server Online or the Power button. This
+                does not stop an already-running server.
+              </p>
+            </div>
           </div>
-        </div>
+        </>
       )}
 
       {tab === 'security' && (

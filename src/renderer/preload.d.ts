@@ -84,6 +84,8 @@ export interface AppSettings {
   corsMethods?: string;
   corsHeaders?: string;
   corsCredentials?: boolean;
+  disableExternalReadmes?: boolean;
+  launchServerAutomatically?: boolean;
 }
 
 export interface BackendDownloadRecord {

@@ -1943,13 +1943,21 @@
   margin-bottom: 8px; /* Extra breathing room between messages */
 }
 
+.chat-bottom-bar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-top: -4px;
+  margin-bottom: -12px;
+}
+
 .chat-cost-display {
   text-align: center;
   font-size: 11px;
   color: var(--text-secondary, #888);
   opacity: 0.6;
-  margin-top: -8px;
-  margin-bottom: -20px;
   padding: 0;
   background: transparent;
   border: none;
@@ -1964,6 +1972,72 @@
   opacity: 1;
   color: var(--text-primary);
   text-decoration: underline;
+}
+
+/* ── Server status pill (theme-matched) ── */
+.chat-server-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease,
+    opacity 0.15s ease;
+  line-height: 1;
+}
+
+.chat-server-status:hover {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
+.chat-server-status:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.chat-server-status__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  transition: background 0.15s ease;
+}
+
+.chat-server-status--online .chat-server-status__dot {
+  background: #a6e3a1;
+  box-shadow: 0 0 6px rgba(166, 227, 161, 0.55);
+}
+
+.chat-server-status--offline .chat-server-status__dot {
+  background: #f38ba8;
+}
+
+.chat-server-status--toggling {
+  opacity: 0.7;
+}
+
+.chat-send-button--power {
+  background: var(--accent) !important;
+  color: #11111b !important;
+}
+
+.chat-send-button--power:hover:not(:disabled) {
+  background: var(--accent-hover) !important;
+  color: #11111b !important;
 }
 
 /* ============================================================================
