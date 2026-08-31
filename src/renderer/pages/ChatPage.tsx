@@ -38,6 +38,7 @@ import {
   Microchip,
   Database,
   Power,
+  ArrowDown,
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -1422,6 +1423,22 @@ export default function ChatPage() {
   // One pending send queued via Enter while offline — stays until drained
   const pendingQueuedRef = useRef(false);
   const [isQueued, setIsQueued] = useState(false);
+
+  // ── Scroll to bottom button ────────────────────────────────────────────
+  const [showScrollButton, setShowScrollButton] = useState(false);
+  const SCROLL_THRESHOLD_PX = 200;
+
+  const scrollToBottom = useCallback(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, []);
+
+  const handleScroll = useCallback(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+    const distanceFromBottom =
+      container.scrollHeight - container.scrollTop - container.clientHeight;
+    setShowScrollButton(distanceFromBottom > SCROLL_THRESHOLD_PX);
+  }, [SCROLL_THRESHOLD_PX]);
 
   const toggleMessageCollapsed = useCallback((id: number) => {
     setMessages((prev) => {
@@ -2900,6 +2917,17 @@ export default function ChatPage() {
   }, [messages, loading, processing]);
 
   useEffect(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return undefined;
+    container.addEventListener('scroll', handleScroll, { passive: true });
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, [handleScroll]);
+
+  useEffect(() => {
+    handleScroll();
+  }, [handleScroll, messages]);
+
+  useEffect(() => {
     if (isQueued) {
       setPlaceholder('Queued — starting server…');
     } else if (
@@ -3676,7 +3704,8 @@ export default function ChatPage() {
           />
         )}
 
-        <div className="chat-messages" ref={messagesContainerRef}>
+        <div className="chat-messages-wrapper">
+          <div className="chat-messages" ref={messagesContainerRef}>
           {loadError && (
             <div className="chat-error">
               <AlertCircle size={32} style={{ marginBottom: 4 }} />
@@ -3772,6 +3801,18 @@ export default function ChatPage() {
             )}
 
           <div ref={messagesEndRef} />
+          </div>
+          {showScrollButton && messages.length > 0 && (
+            <button
+              type="button"
+              className="chat-scroll-to-bottom"
+              onClick={scrollToBottom}
+              aria-label="Scroll to bottom"
+              title="Scroll to bottom"
+            >
+              <ArrowDown size={18} strokeWidth={2.2} />
+            </button>
+          )}
         </div>
 
         {systemPhase !== 'ready' && (
