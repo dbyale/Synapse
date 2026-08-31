@@ -1066,7 +1066,8 @@
 
 .info-tooltip-wrapper--chat-sessions:hover,
 .info-tooltip-wrapper--chat-sessions-new:hover,
-.info-tooltip-wrapper--chat-sources:hover {
+.info-tooltip-wrapper--chat-sources:hover,
+.info-tooltip-wrapper--chat-search:hover {
   z-index: 20;
 }
 
@@ -1128,6 +1129,191 @@
   background: var(--bg-hover);
   color: var(--accent);
   border-color: var(--accent);
+}
+
+/* ============================================================================
+   SEARCH BUTTON ( Beneath Sources, absolute top-right second row )
+   ============================================================================ */
+
+.info-tooltip-wrapper--chat-search {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 36px;
+  height: 36px;
+}
+
+.info-tooltip-wrapper--chat-search--with-sources {
+  top: 44px;
+}
+
+.chat-search-button {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+  z-index: 10;
+}
+
+.chat-search-button:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--accent);
+}
+
+.chat-search-button--active {
+  background: var(--bg-hover);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* ============================================================================
+   CHAT SEARCH BAR ( minimal find widget at top of view )
+   ============================================================================ */
+
+.chat-search-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 8px 10px;
+  flex-shrink: 0;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  animation: chat-search-bar-in 0.18s ease;
+}
+
+@keyframes chat-search-bar-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.chat-search-bar__icon {
+  color: var(--text-secondary);
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+.chat-search-bar__input {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: inherit;
+  padding: 6px 10px;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.chat-search-bar__input::placeholder {
+  color: var(--text-secondary);
+  opacity: 0.6;
+}
+
+.chat-search-bar__input:focus {
+  border-color: var(--accent);
+}
+
+.chat-search-bar__count {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  min-width: 64px;
+  text-align: right;
+  user-select: none;
+}
+
+.chat-search-bar__count--empty {
+  color: #f38ba8;
+}
+
+.chat-search-bar__actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.chat-search-bar__nav,
+.chat-search-bar__close {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.chat-search-bar__nav:hover:not(:disabled),
+.chat-search-bar__close:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--accent);
+}
+
+.chat-search-bar__nav:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.chat-search-bar__close {
+  border-color: transparent;
+  background: transparent;
+}
+
+.chat-search-bar__close:hover {
+  background: var(--bg-hover);
+  border-color: var(--border);
+}
+
+/* ── Highlights (CSS Custom Highlight API + fallback <mark>) ── */
+
+::highlight(chat-search) {
+  background-color: rgba(249, 226, 175, 0.45);
+  color: inherit;
+}
+
+::highlight(chat-search-current) {
+  background-color: rgba(250, 179, 135, 0.9);
+  color: #1e1e2e;
+}
+
+.chat-search-highlight {
+  background: rgba(249, 226, 175, 0.45);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+  box-decoration-break: clone;
+}
+
+.chat-search-highlight--current {
+  background: rgba(250, 179, 135, 0.9) !important;
+  color: #1e1e2e !important;
+  outline: 1px solid var(--accent);
+  border-radius: 2px;
 }
 
 /* ============================================================================

@@ -39,6 +39,7 @@ import {
   Database,
   Power,
   ArrowDown,
+  Search,
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -54,6 +55,7 @@ import ThinkingDropdown, {
   readThinkingTokens,
 } from '../components/ThinkingDropdown';
 import SavingsModal from '../components/SavingsModal';
+import ChatSearchBar from '../components/ChatSearchBar';
 import { useSourcesContext } from '../context/SourcesContext';
 import type { Profile } from '../types/profile';
 import type { AppSettings, ContentPart } from '../preload.d';
@@ -1423,6 +1425,9 @@ export default function ChatPage() {
   // One pending send queued via Enter while offline — stays until drained
   const pendingQueuedRef = useRef(false);
   const [isQueued, setIsQueued] = useState(false);
+
+  // ── Search (find in chat) ─────────────────────────────────────────────
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
 
   // ── Scroll to bottom button ────────────────────────────────────────────
   const [showScrollButton, setShowScrollButton] = useState(false);
@@ -2933,6 +2938,46 @@ export default function ChatPage() {
     handleScroll();
   }, [handleScroll, messages]);
 
+  // ── Search keyboard shortcuts (Ctrl/Cmd+F to open, Esc to close) ─────────
+  useEffect(() => {
+    // eslint-disable-next-line no-undef
+    const onKeyDown = (e: globalThis.KeyboardEvent) => {
+      const key = (e.key || '').toLowerCase();
+      const code = (e as any).code as string | undefined;
+      const isFind =
+        (e.ctrlKey || e.metaKey) &&
+        (key === 'f' || code === 'KeyF' || (e as any).keyCode === 70);
+      if (isFind) {
+        // Chat is mounted at '/' (index) and historically '/chat'
+        if (location.pathname !== '/' && location.pathname !== '/chat') return;
+        e.preventDefault();
+        (e as any).stopPropagation?.();
+        setIsSearchOpen(true);
+        // If already open, re-focus input
+        setTimeout(() => {
+          const inp = document.querySelector<HTMLInputElement>(
+            '.chat-search-bar__input',
+          );
+          if (inp) {
+            inp.focus();
+            inp.select();
+          }
+        }, 30);
+        return;
+      }
+      if (e.key === 'Escape' && isSearchOpen) {
+        setIsSearchOpen(false);
+      }
+    };
+    // Capture phase to precede any inner handlers; listen on both window & document
+    window.addEventListener('keydown', onKeyDown, true);
+    document.addEventListener('keydown', onKeyDown, true);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown, true);
+      document.removeEventListener('keydown', onKeyDown, true);
+    };
+  }, [isSearchOpen, location.pathname]);
+
   useEffect(() => {
     if (isQueued) {
       setPlaceholder('Queued — starting server…');
@@ -3642,6 +3687,25 @@ export default function ChatPage() {
         )}
 
         <InfoTooltip
+          content={isSearchOpen ? 'Close search (Esc)' : 'Search chat (Ctrl+F)'}
+          hideIcon
+          className={`info-tooltip-wrapper--chat-search${showSourcesButton ? ' info-tooltip-wrapper--chat-search--with-sources' : ''}`}
+        >
+          <button
+            type="button"
+            className={`chat-search-button${isSearchOpen ? ' chat-search-button--active' : ''}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsSearchOpen((v) => !v);
+            }}
+            aria-label={isSearchOpen ? 'Close search' : 'Search chat'}
+            title={isSearchOpen ? 'Close search' : 'Search (Ctrl+F)'}
+          >
+            <Search size={18} />
+          </button>
+        </InfoTooltip>
+
+        <InfoTooltip
           content="Sessions"
           hideIcon
           className="info-tooltip-wrapper--chat-sessions"
@@ -3707,6 +3771,14 @@ export default function ChatPage() {
             selectedProfileId={selectedProfileId}
             onSelect={handleProfileChange}
             onClose={() => setShowProfileModal(false)}
+          />
+        )}
+
+        {isSearchOpen && (
+          <ChatSearchBar
+            containerRef={messagesContainerRef}
+            onClose={() => setIsSearchOpen(false)}
+            messageCount={messages.length}
           />
         )}
 
