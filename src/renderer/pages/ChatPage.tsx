@@ -1929,6 +1929,12 @@ export default function ChatPage() {
     setActiveSession(activeSessionId);
   }, [activeSessionId, setActiveSession]);
 
+  // Reset double-click guard on session switch – prevents bleed to idle sessions
+  useEffect(() => {
+    sendingRef.current = false;
+    setSendingState(false);
+  }, [activeSessionId]);
+
   const profileHasProjector = !!selectedProfile?.projector;
   const canAttachImages = !!(
     projectorLoaded ||
