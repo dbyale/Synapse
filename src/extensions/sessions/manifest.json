@@ -1,0 +1,9 @@
+{
+  "id": "sessions",
+  "name": "Sessions",
+  "description": "Manage chat sessions — rename current/previous sessions and load previous session history",
+  "author": "Synapse",
+  "version": "1.0.0",
+  "icon": "MessagesSquare",
+  "builtIn": true
+}

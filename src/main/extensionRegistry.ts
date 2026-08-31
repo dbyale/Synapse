@@ -44,6 +44,11 @@ import {
   tools as githubTools,
   manifest as githubManifest,
 } from '../extensions/github';
+// eslint-disable-next-line import/no-cycle
+import {
+  tools as sessionsTools,
+  manifest as sessionsManifest,
+} from '../extensions/sessions';
 
 const BUILT_IN_EXTENSIONS: Array<{
   tools: Record<string, ExtensionToolDef>;
@@ -62,6 +67,7 @@ const BUILT_IN_EXTENSIONS: Array<{
   { tools: ddgSearchTools, manifest: ddgSearchManifest as ExtensionManifest },
   { tools: sandboxTools, manifest: sandboxManifest as ExtensionManifest },
   { tools: githubTools, manifest: githubManifest as ExtensionManifest },
+  { tools: sessionsTools, manifest: sessionsManifest as ExtensionManifest },
 ];
 
 class ExtensionRegistry {

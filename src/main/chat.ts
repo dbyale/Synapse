@@ -12,6 +12,7 @@ import {
 } from './settings';
 import type { AppSettings } from './settings';
 import type { Profile } from '../renderer/types/profile';
+// eslint-disable-next-line import/no-cycle
 import { createChatFunctions } from './chatFunctions';
 import { solveMaxConfig, getOrRunOptimizer } from './estimator';
 import { addTokenUsage, addWebSearch, getUsage } from './usage';
@@ -90,6 +91,10 @@ let activeTools: any[] = [];
 let emitStreamEvent: ((payload: StreamEventPayload) => void) | null = null;
 
 const sessions = new Map<string, SessionStream>();
+
+// Provide live session access to sessionStore for extension use without circular import
+store.setLiveSessionsProvider(() => sessions);
+store.setSessionChangedCallback((id: string) => emitSessionChanged(id));
 
 let currentSystemPrompt = '';
 let lastPreloadStats: { stats: GenerationStatsData; toolCount: number } | null =
@@ -295,6 +300,75 @@ export function deleteSession(sessionId: string): void {
   }
   store.deleteSession(sessionId);
   emitSessionChanged(sessionId);
+}
+
+export function getSessionForTool(
+  sessionId: string,
+): SavedSession | null {
+  const s = getSessionState(sessionId);
+  if (s) {
+    return {
+      id: s.sessionId,
+      profileId: s.profileId,
+      title: s.title,
+      createdAt: s.createdAt,
+      updatedAt: Date.now(),
+      messages: s.messages,
+      history: s.history,
+      pinned: s.pinned,
+      sources: s.sources,
+    };
+  }
+  return store.getSession(sessionId);
+}
+
+export function listSessionsForTool(profileId: string): SavedSession[] {
+  // Return sessions for profileId; prefer in-memory state when available
+  // to get live messages/titles, falling back to persisted store.
+  const persisted = store.listSessions(profileId);
+  const merged = persisted.map((saved) => {
+    const live = sessions.get(saved.id);
+    if (!live) return saved;
+    return {
+      ...saved,
+      title: live.title,
+      messages: live.messages,
+      history: live.history,
+      pinned: live.pinned,
+      sources: live.sources,
+    };
+  });
+  // Sort by updatedAt; live sessions use current time approximation
+  // Already sorted by store, but re-sort after merging live titles
+  return merged.sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+export function renameSessionSynced(
+  id: string,
+  title: string,
+): SavedSession | null {
+  const trimmed = title.trim();
+  if (!trimmed) return null;
+  const s = sessions.get(id);
+  if (s) {
+    s.title = trimmed;
+    persistSessionState(id);
+    emitSessionChanged(id);
+    return {
+      id: s.sessionId,
+      profileId: s.profileId,
+      title: s.title,
+      createdAt: s.createdAt,
+      updatedAt: Date.now(),
+      messages: s.messages,
+      history: s.history,
+      pinned: s.pinned,
+      sources: s.sources,
+    };
+  }
+  const updated = store.renameSession(id, trimmed);
+  if (updated) emitSessionChanged(id);
+  return updated;
 }
 
 async function getNvidiaDriverVersion(): Promise<number | null> {
@@ -1748,7 +1822,8 @@ export async function sendMessage(
           params: tc.args,
           tags: chatFunctions[tc.name]?.tags,
         });
-        let result = await handler(JSON.parse(tc.args));
+        const toolContext = { sessionId, profileId: s.profileId };
+        let result = await handler(JSON.parse(tc.args), toolContext);
 
         // Check if tool requests user input
         const userInput =
@@ -1778,10 +1853,13 @@ export async function sendMessage(
           if (inputReq.type === 'confirm') {
             if (userResponse.action === 'confirmed') {
               // Re-call handler with confirmation
-              result = await handler({
-                ...JSON.parse(tc.args),
-                _confirmed: true,
-              });
+              result = await handler(
+                {
+                  ...JSON.parse(tc.args),
+                  _confirmed: true,
+                },
+                toolContext,
+              );
             } else {
               result = { _denied: true, message: 'User denied this action.' };
             }

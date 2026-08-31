@@ -21,10 +21,15 @@ export interface ExtensionToolMeta {
   tags?: string[];
 }
 
+export interface ExtensionToolContext {
+  sessionId: string;
+  profileId: string;
+}
+
 export interface ExtensionToolDef {
   meta: ExtensionToolMeta;
   params: Record<string, any>;
-  handler: (params: any) => any;
+  handler: (params: any, context?: ExtensionToolContext) => any;
 }
 
 export interface Extension {
