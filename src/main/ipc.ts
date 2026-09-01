@@ -646,6 +646,16 @@ export function registerIpcHandlers(win: BrowserWindow): void {
       }
       return vramStatsCache;
     }
+    // If a background refresh is already in-flight (started at app launch),
+    // reuse it instead of spawning a duplicate si.graphics / nvidia-smi scan.
+    if (refreshPromise) {
+      try {
+        await refreshPromise;
+      } catch {
+        // fall through to direct compute
+      }
+      if (vramStatsCache) return vramStatsCache;
+    }
     try {
       const result = await computeVramStats();
       vramStatsCache = result;

@@ -394,7 +394,10 @@ export default function SettingsPage() {
       }
 
       if (mounted) {
-        await fetchHardware();
+        // Detect RAM/VRAM in background — do not block page/tab rendering.
+        // The RAM bar shows "Detecting hardware…" via ramLoading until resolved.
+        // VRAM bar stays hidden until resolved (see showVramSection).
+        fetchHardware().catch(() => {});
       }
     }
 
@@ -520,8 +523,11 @@ export default function SettingsPage() {
   }
 
   const isUnifiedMemory = hardware ? hardware.isUnifiedMemory : false;
+  // Hide VRAM until hardware detection resolves — not all machines have VRAM.
+  // Previously this showed a loading placeholder; now it stays hidden until
+  // gpuLoading is false and we know vramStats.total > 0 and not unified.
   const showVramSection =
-    !isUnifiedMemory && (gpuLoading || vramStats.total > 0);
+    !gpuLoading && !isUnifiedMemory && vramStats.total > 0;
 
   const ramTitle = isUnifiedMemory ? 'Unified Memory' : 'System Memory (RAM)';
   const vramTitle =
@@ -601,20 +607,17 @@ export default function SettingsPage() {
             />
 
             {showVramSection ? (
-              <>
-                <div style={{ height: 32 }} />
-                <MemorySlider
-                  title={vramTitle}
-                  stats={vramStats}
-                  onChange={(newVal) =>
-                    setVramStats((prev) => ({ ...prev, appAllocated: newVal }))
-                  }
-                  onSave={(newVal) => triggerSave({ allocatedVRAM: newVal })}
-                  onRefresh={fetchHardware}
-                  loading={gpuLoading}
-                  unavailableMessage="GPU memory information unavailable"
-                />
-              </>
+              <MemorySlider
+                title={vramTitle}
+                stats={vramStats}
+                onChange={(newVal) =>
+                  setVramStats((prev) => ({ ...prev, appAllocated: newVal }))
+                }
+                onSave={(newVal) => triggerSave({ allocatedVRAM: newVal })}
+                onRefresh={fetchHardware}
+                loading={gpuLoading}
+                unavailableMessage="GPU memory information unavailable"
+              />
             ) : null}
           </div>
 
