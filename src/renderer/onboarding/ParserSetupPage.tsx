@@ -151,30 +151,50 @@ function ParserCard({
 export default function ParserSetupPage({
   onBack,
   onContinue,
+  preloaded,
+  preloadedLoading,
 }: {
   onBack: () => void;
   onContinue: () => void;
+  preloaded?: ParserInfo | null;
+  preloadedLoading?: boolean;
 }) {
-  const [info, setInfo] = useState<ParserInfo | null>(null);
+  const [info, setInfo] = useState<ParserInfo | null>(preloaded ?? null);
   const [downloadDir, setDownloadDir] = useState('');
   const [customBinaries, setCustomBinaries] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [othersOpen, setOthersOpen] = useState(false);
   const [dlStatus, setDlStatus] = useState<Record<string, DownloadStatus>>({});
 
+  // Adopt preloaded value when background fetch completes after mount.
+  useEffect(() => {
+    if (preloaded) {
+      setInfo((prev) => prev ?? preloaded);
+    }
+  }, [preloaded]);
+
   useEffect(() => {
     let mounted = true;
 
     (async () => {
       try {
-        const [parser, settings] = await Promise.all([
-          window.electronAPI.getParserInfo(),
-          window.electronAPI.loadSettings(),
-        ]);
+        // Prefer session-prefetched parser info. While parent is still
+        // fetching, wait for prop update instead of duplicate IPC.
+        let parser: ParserInfo | null = preloaded ?? null;
+        if (!parser && !preloadedLoading) {
+          parser = await window.electronAPI.getParserInfo();
+        }
+        const settings = await window.electronAPI.loadSettings();
         if (!mounted) return;
-        setInfo(parser);
-        setDownloadDir(settings.parserDirectory || parser.defaultDownloadDir);
-        setCustomBinaries(settings.parserCustomBinaryPaths ?? []);
+        if (parser) {
+          setInfo((prev) => prev ?? parser);
+          setDownloadDir(settings.parserDirectory || parser.defaultDownloadDir);
+        } else if (settings.parserDirectory) {
+          setDownloadDir(settings.parserDirectory);
+        }
+        if (parser || settings.parserCustomBinaryPaths) {
+          setCustomBinaries(settings.parserCustomBinaryPaths ?? []);
+        }
         setDlStatus((prev) => {
           const next = { ...prev };
           if (settings.parserDownloads) {
@@ -190,7 +210,15 @@ export default function ParserSetupPage({
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [preloaded, preloadedLoading]);
+
+  useEffect(() => {
+    if (preloaded && !downloadDir) {
+      window.electronAPI.loadSettings().then((settings) => {
+        setDownloadDir(settings.parserDirectory || preloaded.defaultDownloadDir);
+      });
+    }
+  }, [preloaded, downloadDir]);
 
   useEffect(() => {
     if (!othersOpen) return undefined;

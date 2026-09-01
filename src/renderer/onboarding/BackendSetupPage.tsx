@@ -158,30 +158,58 @@ function BackendCard({
 export default function BackendSetupPage({
   onBack,
   onContinue,
+  preloaded,
+  preloadedLoading,
 }: {
   onBack: () => void;
   onContinue: () => void;
+  preloaded?: BackendInfo | null;
+  preloadedLoading?: boolean;
 }) {
-  const [info, setInfo] = useState<BackendInfo | null>(null);
+  const [info, setInfo] = useState<BackendInfo | null>(preloaded ?? null);
   const [downloadDir, setDownloadDir] = useState('');
   const [customBinaries, setCustomBinaries] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [othersOpen, setOthersOpen] = useState(false);
   const [dlStatus, setDlStatus] = useState<Record<string, DownloadStatus>>({});
 
+  // If preloaded arrives after mount (background fetch finishes),
+  // adopt it immediately without issuing a second IPC.
+  useEffect(() => {
+    if (preloaded) {
+      setInfo((prev) => prev ?? preloaded);
+    }
+  }, [preloaded]);
+
   useEffect(() => {
     let mounted = true;
 
     (async () => {
       try {
-        const [backend, settings] = await Promise.all([
-          window.electronAPI.getBackendInfo(),
-          window.electronAPI.loadSettings(),
-        ]);
+        // Prefer session-prefetched hardware. While the parent is still
+        // fetching (preloaded===null && preloadedLoading===true) we wait
+        // for the prop update instead of spawning a duplicate IPC that
+        // would block the main process a second time and jank the UI.
+        let backend: BackendInfo | null = preloaded ?? null;
+        if (!backend && !preloadedLoading) {
+          backend = await window.electronAPI.getBackendInfo();
+        }
+        const settings = await window.electronAPI.loadSettings();
         if (!mounted) return;
-        setInfo(backend);
-        setDownloadDir(settings.backendDirectory || backend.defaultDownloadDir);
-        setCustomBinaries(settings.customBinaryPaths ?? []);
+        if (backend) {
+          setInfo((prev) => prev ?? backend);
+          setDownloadDir(
+            settings.backendDirectory || backend.defaultDownloadDir,
+          );
+          setCustomBinaries(settings.customBinaryPaths ?? []);
+        } else {
+          // No backend yet (prefetch in flight) — seed what we can from
+          // settings; downloadDir default will be filled when preloaded arrives
+          setCustomBinaries(settings.customBinaryPaths ?? []);
+          if (settings.backendDirectory) {
+            setDownloadDir(settings.backendDirectory);
+          }
+        }
         setDlStatus((prev) => {
           const next = { ...prev };
           (settings.backendDownloads ?? []).forEach((d) => {
@@ -197,7 +225,18 @@ export default function BackendSetupPage({
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [preloaded, preloadedLoading]);
+
+  // When preloaded arrives late, ensure downloadDir is filled if still empty
+  useEffect(() => {
+    if (preloaded && !downloadDir) {
+      window.electronAPI.loadSettings().then((settings) => {
+        setDownloadDir(
+          settings.backendDirectory || preloaded.defaultDownloadDir,
+        );
+      });
+    }
+  }, [preloaded, downloadDir]);
 
   useEffect(() => {
     if (!othersOpen) return undefined;

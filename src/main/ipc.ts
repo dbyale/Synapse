@@ -662,22 +662,49 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     }
   });
 
+  // Dedup concurrent onboarding probes so the second navigate-before-ready
+  // does not spawn duplicate si.graphics / nvidia-smi / registry scans.
+  let backendInfoPromise: Promise<import('../renderer/preload.d').BackendInfo> | null =
+    null;
+
   ipcMain.handle('onboarding:get-backend-info', async () => {
-    try {
-      return await getBackendInfo();
-    } catch (error) {
-      console.error('[Backend] Failed to detect backends:', error);
-      throw error;
-    }
+    if (backendInfoPromise) return backendInfoPromise;
+    backendInfoPromise = (async () => {
+      try {
+        return await getBackendInfo();
+      } catch (error) {
+        console.error('[Backend] Failed to detect backends:', error);
+        throw error;
+      } finally {
+        // Keep dedup for a tick to coalesce bursts; then allow fresh probe
+        // on next onboarding session without stale cache.
+        setTimeout(() => {
+          backendInfoPromise = null;
+        }, 1000);
+      }
+    })();
+    return backendInfoPromise;
   });
 
+  let parserInfoPromise: Promise<
+    import('../renderer/preload.d').ParserInfo
+  > | null = null;
+
   ipcMain.handle('onboarding:get-parser-info', async () => {
-    try {
-      return await getParserInfo();
-    } catch (error) {
-      console.error('[Parser] Failed to detect parser builds:', error);
-      throw error;
-    }
+    if (parserInfoPromise) return parserInfoPromise;
+    parserInfoPromise = (async () => {
+      try {
+        return await getParserInfo();
+      } catch (error) {
+        console.error('[Parser] Failed to detect parser builds:', error);
+        throw error;
+      } finally {
+        setTimeout(() => {
+          parserInfoPromise = null;
+        }, 1000);
+      }
+    })();
+    return parserInfoPromise;
   });
 
   ipcMain.handle(

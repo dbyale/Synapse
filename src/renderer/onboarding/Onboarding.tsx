@@ -5,6 +5,7 @@ import BackendSetupPage from './BackendSetupPage';
 import ParserSetupPage from './ParserSetupPage';
 import LlamaSetupPage from './LlamaSetupPage';
 import DownloadManager from '../components/DownloadManager';
+import type { BackendInfo, ParserInfo } from '../preload.d';
 import './onboarding.css';
 
 type Step = 'setup' | 'professions' | 'backend' | 'parser' | 'llamaSetup';
@@ -24,12 +25,63 @@ export default function Onboarding() {
   const [layers, setLayers] = useState<PageLayer[]>([]);
   const idRef = useRef(0);
 
+  // Temporary session-only cache — lives only while onboarding is open.
+  // Prefetched when the first onboarding page opens so Backend/Parser
+  // pages can reuse it instead of re-issuing IPC.
+  const [preloadedBackend, setPreloadedBackend] = useState<BackendInfo | null>(
+    null,
+  );
+  const [preloadedParser, setPreloadedParser] = useState<ParserInfo | null>(
+    null,
+  );
+  const [hwLoading, setHwLoading] = useState(false);
+  const hwPromiseRef = useRef<Promise<void> | null>(null);
+
+  const fetchHardware = useCallback(() => {
+    if (hwPromiseRef.current) return hwPromiseRef.current;
+    setHwLoading(true);
+    // Defer to next idle period so the first paint / transition is not janked.
+    // Using setTimeout yields to the browser's render cycle before IPC
+    // hits the main process's heavy si.graphics / exec work.
+    hwPromiseRef.current = new Promise<void>((resolve) => {
+      const run = () => {
+        Promise.all([
+          window.electronAPI
+            .getBackendInfo()
+            .then((info) => setPreloadedBackend(info))
+            .catch(() => {}),
+          window.electronAPI
+            .getParserInfo()
+            .then((info) => setPreloadedParser(info))
+            .catch(() => {}),
+        ]).finally(() => {
+          setHwLoading(false);
+          resolve();
+        });
+      };
+      if (typeof window.requestIdleCallback === 'function') {
+        window.requestIdleCallback(run, { timeout: 300 });
+      } else {
+        // 150ms lets EXIT_MS animation + first frame settle
+        window.setTimeout(run, 150);
+      }
+    });
+    return hwPromiseRef.current;
+  }, []);
+
   const openOnboarding = useCallback(() => {
     idRef.current += 1;
     setLayers([{ id: idRef.current, step: 'setup', phase: 'enter' }]);
     setClosing(false);
     setOpen(true);
-  }, []);
+    // Clear any stale session data and start background detection
+    setPreloadedBackend(null);
+    setPreloadedParser(null);
+    setHwLoading(false);
+    hwPromiseRef.current = null;
+    // Defer so SetupExperiencePage paints before heavy IPC
+    fetchHardware();
+  }, [fetchHardware]);
 
   useEffect(() => {
     const unsubscribe = window.electronAPI.onRestartOnboarding(openOnboarding);
@@ -41,6 +93,11 @@ export default function Onboarding() {
     setTimeout(() => {
       setOpen(false);
       setClosing(false);
+      // Discard temporary session cache
+      setPreloadedBackend(null);
+      setPreloadedParser(null);
+      setHwLoading(false);
+      hwPromiseRef.current = null;
     }, CLOSE_MS);
   }, []);
 
@@ -83,6 +140,8 @@ export default function Onboarding() {
       case 'backend':
         return (
           <BackendSetupPage
+            preloaded={preloadedBackend}
+            preloadedLoading={hwLoading}
             onBack={() => navigate('setup')}
             onContinue={() => navigate('parser')}
           />
@@ -90,6 +149,8 @@ export default function Onboarding() {
       case 'parser':
         return (
           <ParserSetupPage
+            preloaded={preloadedParser}
+            preloadedLoading={hwLoading}
             onBack={() => navigate('backend')}
             onContinue={() => navigate('professions')}
           />
