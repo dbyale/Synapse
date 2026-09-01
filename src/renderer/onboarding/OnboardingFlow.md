@@ -49,6 +49,7 @@
 ## SystemSetupPage.tsx
   * Show model install location from Settings Page
   * Show system resource allocator from Settings Page
+  * Also show security settings
 
 ## ProfessionsSetupPage.tsx
   * List of use-cases for AI
@@ -98,7 +99,8 @@
   2. ProfessionsSetupPage
   3. ProfileSelectionPage
   4. ModelDownloadPage
-  5. FinalInstallPage
+  5. ChatSetupPage
+  6. FinalInstallPage
   * Install backends in background (macOs || CUDA/OpenCL + Vulkan || Vulkan)
   * Install GGUF-Parser-Go in background
 
