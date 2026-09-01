@@ -15,6 +15,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('binaries:download', kind, download, dir),
   cancelBinaryDownload: (id: string) =>
     ipcRenderer.invoke('binaries:cancel', id),
+  uninstallBinary: (kind: string, download: unknown, dir: string) =>
+    ipcRenderer.invoke('binaries:uninstall', kind, download, dir),
   getBinaryDownloads: () => ipcRenderer.invoke('binaries:list'),
   chatMemoryUsage: (): Promise<{
     modelVramUsage: number;

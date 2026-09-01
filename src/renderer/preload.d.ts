@@ -236,6 +236,11 @@ declare global {
         dir: string,
       ) => Promise<string>;
       cancelBinaryDownload: (id: string) => Promise<boolean>;
+      uninstallBinary: (
+        kind: 'backend' | 'parser',
+        download: BackendDownload,
+        dir: string,
+      ) => Promise<{ success: boolean; error?: string }>;
       getBinaryDownloads: () => Promise<{
         backends: BackendDownloadRecord[];
         parser: ParserDownloadRecord | null;

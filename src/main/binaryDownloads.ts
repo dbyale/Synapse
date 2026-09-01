@@ -437,6 +437,70 @@ export function findBinaryById(id: string): LastStarted | null {
   return lastStarted.get(id) ?? null;
 }
 
+export function uninstallBinary(
+  kind: 'backend' | 'parser',
+  download: BackendDownload,
+  dir: string,
+): { success: boolean; error?: string } {
+  const targetDir = resolveTargetDir(kind, dir);
+
+  // Cannot uninstall while actively downloading
+  if (activeDownloads.has(download.id)) {
+    return { success: false, error: 'Cannot uninstall while download is in progress' };
+  }
+
+  const folder = download.folder;
+  if (!folder || folder.includes('..') || folder.includes('/') || folder.includes('\\')) {
+    return { success: false, error: 'Invalid folder name' };
+  }
+
+  const isZip = download.url.endsWith('.zip');
+  const isTarGz = download.url.endsWith('.tar.gz');
+  // For archive kinds dest is a folder; for raw parser binary it's a file.
+  const targetPath = isZip || isTarGz ? path.join(targetDir, folder) : path.join(targetDir, folder);
+
+  // Safety: ensure targetPath is inside targetDir
+  const normalizedTarget = path.resolve(targetPath);
+  const normalizedDir = path.resolve(targetDir);
+  if (!normalizedTarget.startsWith(normalizedDir)) {
+    return { success: false, error: 'Invalid target path' };
+  }
+
+  try {
+    if (fs.existsSync(targetPath)) {
+      fs.rmSync(targetPath, { recursive: true, force: true });
+      log('uninstall', kind, download.id, `removed ${targetPath}`);
+    } else {
+      log('uninstall', kind, download.id, `nothing to remove at ${targetPath}`);
+    }
+  } catch (e: any) {
+    log('uninstall', kind, download.id, 'failed:', e?.message ?? e);
+    return { success: false, error: e?.message ?? 'Failed to remove files' };
+  }
+
+  // Update settings persistence
+  try {
+    const settings = loadSettings();
+    if (kind === 'backend') {
+      const before = settings.backendDownloads ?? [];
+      settings.backendDownloads = before.filter(
+        (d) => d.id !== download.id && d.folder !== folder,
+      );
+    } else {
+      if (settings.parserDownloads?.id === download.id || settings.parserDownloads?.file === folder) {
+        settings.parserDownloads = null;
+      }
+    }
+    saveSettings(settings);
+  } catch (e: any) {
+    log('uninstall', kind, download.id, 'settings update failed:', e?.message ?? e);
+    return { success: false, error: 'Failed to update settings' };
+  }
+
+  lastStarted.delete(download.id);
+  return { success: true };
+}
+
 export function listBinaryDownloads(): {
   backends: BackendDownloadRecord[];
   parser: ParserDownloadRecord | null;

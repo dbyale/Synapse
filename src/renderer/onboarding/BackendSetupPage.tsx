@@ -4,7 +4,6 @@ import {
   ArrowLeft,
   ArrowRight,
   Binary,
-  Check,
   Cpu,
   Download,
   FolderOpen,
@@ -21,6 +20,7 @@ import {
   TriangleAlert,
   X,
 } from 'lucide-react';
+import ConfirmDialog from '../components/ConfirmDialog';
 import type { LucideIcon } from 'lucide-react';
 import { ReactComponent as NvidiaLogo } from '../../../assets/logos/nvidia.svg';
 import type {
@@ -72,7 +72,7 @@ function BackendCardIcon({ download }: { download: BackendDownload }) {
 type DownloadStatus = 'downloading' | 'completed' | 'failed' | 'cancelled';
 
 function DownloadIcon({ status }: { status: DownloadStatus | undefined }) {
-  if (status === 'completed') return <Check size={18} strokeWidth={2} />;
+  if (status === 'completed') return <X size={18} strokeWidth={2} />;
   if (status === 'downloading') {
     return (
       <Loader2 size={18} strokeWidth={2} className="onb-backend-spinner" />
@@ -84,11 +84,13 @@ function DownloadIcon({ status }: { status: DownloadStatus | undefined }) {
 function BackendCard({
   download,
   onDownload,
+  onUninstall,
   status,
   disabled,
 }: {
   download: BackendDownload;
   onDownload: (download: BackendDownload) => void;
+  onUninstall: (download: BackendDownload) => void;
   status: DownloadStatus | undefined;
   disabled: boolean;
 }) {
@@ -139,13 +141,13 @@ function BackendCard({
       {download.url && (
         <button
           type="button"
-          className="onb-backend-download"
+          className={`onb-backend-download ${isCompleted ? 'onb-backend-download--uninstall' : ''}`}
           title={
             isCompleted
-              ? `${download.label} — downloaded`
+              ? `Uninstall ${download.label}`
               : `Download ${download.label}`
           }
-          onClick={() => onDownload(download)}
+          onClick={() => (isCompleted ? onUninstall(download) : onDownload(download))}
           disabled={isDownloading || disabled}
         >
           <DownloadIcon status={status} />
@@ -305,6 +307,7 @@ export default function BackendSetupPage({
 
   const handleDownload = async (download: BackendDownload) => {
     if (!download.url) return;
+    if (dlStatus[download.id] === 'completed') return;
     setDlStatus((prev) => ({ ...prev, [download.id]: 'downloading' }));
     window.dispatchEvent(
       new CustomEvent('open-download-manager', {
@@ -318,6 +321,34 @@ export default function BackendSetupPage({
       // Status events from the main process drive the final state
     }
   };
+
+  const [pendingUninstall, setPendingUninstall] =
+    useState<BackendDownload | null>(null);
+
+  const requestUninstall = (download: BackendDownload) => {
+    if (dlStatus[download.id] !== 'completed') return;
+    setPendingUninstall(download);
+  };
+
+  const handleUninstallConfirm = async () => {
+    const target = pendingUninstall;
+    if (!target) return;
+    setPendingUninstall(null);
+    const result = await window.electronAPI.uninstallBinary(
+      'backend',
+      target,
+      downloadDir,
+    );
+    if (result.success) {
+      setDlStatus((prev) => {
+        const next = { ...prev };
+        delete next[target.id];
+        return next;
+      });
+    }
+  };
+
+  const handleUninstallCancel = () => setPendingUninstall(null);
 
   const handleContinue = async () => {
     if (saving) return;
@@ -341,6 +372,14 @@ export default function BackendSetupPage({
   const allBackends = info ? [...others, ...info.others] : [];
   const completedAny = Object.values(dlStatus).some((s) => s === 'completed');
   const canContinue = !!info && (completedAny || customBinaries.length > 0);
+  const continueReason = (() => {
+    if (!info) return 'Detecting system hardware — please wait…';
+    if (saving) return 'Saving configuration…';
+    if (!completedAny && customBinaries.length === 0)
+      return 'Download at least one backend or add a custom binary to continue.';
+    return null;
+  })();
+  const isContinueDisabled = !canContinue || saving;
 
   return (
     <div className="onb-page onb-backend-page">
@@ -419,6 +458,7 @@ export default function BackendSetupPage({
                       key={download.id}
                       download={download}
                       onDownload={handleDownload}
+                      onUninstall={requestUninstall}
                       status={dlStatus[download.id]}
                       disabled={false}
                     />
@@ -435,6 +475,7 @@ export default function BackendSetupPage({
                         key={download.id}
                         download={download}
                         onDownload={handleDownload}
+                        onUninstall={requestUninstall}
                         status={dlStatus[download.id]}
                         disabled={false}
                       />
@@ -527,11 +568,27 @@ export default function BackendSetupPage({
       </div>
 
       <div className="onb-professions-footer onb-rise onb-delay-4">
+        {isContinueDisabled && continueReason && (
+          <p
+            id="backend-continue-reason"
+            className="onb-continue-reason"
+            role="status"
+            aria-live="polite"
+          >
+            {continueReason}
+          </p>
+        )}
         <button
           type="button"
           className="onb-continue"
           onClick={handleContinue}
-          disabled={!canContinue || saving}
+          disabled={isContinueDisabled}
+          aria-disabled={isContinueDisabled}
+          aria-describedby={
+            isContinueDisabled && continueReason
+              ? 'backend-continue-reason'
+              : undefined
+          }
         >
           Continue
           <ArrowRight size={20} strokeWidth={2} />
@@ -574,6 +631,7 @@ export default function BackendSetupPage({
                   key={download.id}
                   download={download}
                   onDownload={handleDownload}
+                  onUninstall={requestUninstall}
                   status={dlStatus[download.id]}
                   disabled={false}
                 />
@@ -581,6 +639,17 @@ export default function BackendSetupPage({
             </div>
           </div>
         </div>
+      )}
+      {pendingUninstall && (
+        <ConfirmDialog
+          title={`Uninstall ${pendingUninstall.label}?`}
+          message={`This will delete ${pendingUninstall.label} from ${downloadDir || 'the install folder'} and remove it from your setup. You can re-download it later.`}
+          confirmText="Uninstall"
+          cancelText="Cancel"
+          danger
+          onConfirm={handleUninstallConfirm}
+          onCancel={handleUninstallCancel}
+        />
       )}
     </div>
   );

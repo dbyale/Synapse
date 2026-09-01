@@ -729,6 +729,13 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     return binaryDownloads.cancelBinaryDownload(id);
   });
 
+  ipcMain.handle(
+    'binaries:uninstall',
+    async (_event, kind: 'backend' | 'parser', download: any, dir: string) => {
+      return binaryDownloads.uninstallBinary(kind, download, dir);
+    },
+  );
+
   ipcMain.handle('binaries:list', async () => {
     return binaryDownloads.listBinaryDownloads();
   });
