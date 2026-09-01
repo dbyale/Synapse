@@ -1,4 +1,4 @@
-import type { ComponentType, CSSProperties, ReactNode } from 'react';
+import { memo, type ComponentType, type CSSProperties, type ReactNode } from 'react';
 import { Zap, HardDrive, CodeXml, ArrowRight } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { ReactComponent as SynapseMark } from '../../../assets/icon.svg';
@@ -45,7 +45,7 @@ const SETUP_OPTIONS: SetupOption[] = [
   },
 ];
 
-export default function SetupExperiencePage({
+function SetupExperiencePageImpl({
   onBegin,
 }: {
   onBegin: (id: string) => void;
@@ -76,13 +76,23 @@ export default function SetupExperiencePage({
               strokeWidth?: number;
             }> = option.icon;
             return (
-              <button
-                type="button"
+              <div
                 key={option.id}
-                className={`onb-option onb-rise onb-delay-${index + 2}`}
-                style={{ '--onb-color': option.color } as CSSProperties}
-                onClick={() => onBegin(option.id)}
+                className={`onb-rise onb-delay-${index + 2}`}
+                style={{ display: 'flex', width: '100%' } as CSSProperties}
               >
+                <button
+                  type="button"
+                  className="onb-option"
+                  style={
+                    {
+                      '--onb-color': option.color,
+                      flex: 1,
+                      width: '100%',
+                    } as CSSProperties
+                  }
+                  onClick={() => onBegin(option.id)}
+                >
                 <span
                   className="onb-option-icon"
                   style={{
@@ -102,7 +112,8 @@ export default function SetupExperiencePage({
                 >
                   <ArrowRight size={20} strokeWidth={2} />
                 </span>
-              </button>
+                </button>
+              </div>
             );
           })}
         </div>
@@ -110,3 +121,5 @@ export default function SetupExperiencePage({
     </div>
   );
 }
+
+export default memo(SetupExperiencePageImpl);

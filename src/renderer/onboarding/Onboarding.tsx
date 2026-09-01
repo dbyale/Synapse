@@ -26,8 +26,8 @@ export default function Onboarding() {
   const idRef = useRef(0);
 
   // Temporary session-only cache — lives only while onboarding is open.
-  // Prefetched when the first onboarding page opens so Backend/Parser
-  // pages can reuse it instead of re-issuing IPC.
+  // Hardware is probed before the first page mounts; nothing interactive
+  // renders until it resolves so hover never contends with si.graphics.
   const [preloadedBackend, setPreloadedBackend] = useState<BackendInfo | null>(
     null,
   );
@@ -35,52 +35,49 @@ export default function Onboarding() {
     null,
   );
   const [hwLoading, setHwLoading] = useState(false);
+  const [hwReady, setHwReady] = useState(false);
   const hwPromiseRef = useRef<Promise<void> | null>(null);
 
   const fetchHardware = useCallback(() => {
     if (hwPromiseRef.current) return hwPromiseRef.current;
     setHwLoading(true);
-    // Defer to next idle period so the first paint / transition is not janked.
-    // Using setTimeout yields to the browser's render cycle before IPC
-    // hits the main process's heavy si.graphics / exec work.
-    hwPromiseRef.current = new Promise<void>((resolve) => {
-      const run = () => {
-        Promise.all([
-          window.electronAPI
-            .getBackendInfo()
-            .then((info) => setPreloadedBackend(info))
-            .catch(() => {}),
-          window.electronAPI
-            .getParserInfo()
-            .then((info) => setPreloadedParser(info))
-            .catch(() => {}),
-        ]).finally(() => {
-          setHwLoading(false);
-          resolve();
-        });
-      };
-      if (typeof window.requestIdleCallback === 'function') {
-        window.requestIdleCallback(run, { timeout: 300 });
-      } else {
-        // 150ms lets EXIT_MS animation + first frame settle
-        window.setTimeout(run, 150);
-      }
-    });
+    setHwReady(false);
+    hwPromiseRef.current = Promise.all([
+      window.electronAPI
+        .getBackendInfo()
+        .then((info) => setPreloadedBackend(info))
+        .catch(() => {}),
+      window.electronAPI
+        .getParserInfo()
+        .then((info) => setPreloadedParser(info))
+        .catch(() => {}),
+    ])
+      .then(() => undefined)
+      .catch(() => undefined)
+      .finally(() => {
+        setHwLoading(false);
+        setHwReady(true);
+      });
+    // Safety timeout: never leave spinner stuck if probe hangs
+    const timeout = window.setTimeout(() => setHwReady(true), 8000);
+    hwPromiseRef.current.finally(() => window.clearTimeout(timeout));
     return hwPromiseRef.current;
   }, []);
 
   const openOnboarding = useCallback(() => {
-    idRef.current += 1;
-    setLayers([{ id: idRef.current, step: 'setup', phase: 'enter' }]);
     setClosing(false);
     setOpen(true);
-    // Clear any stale session data and start background detection
+    // Clear any stale session data and block first render until probe resolves
     setPreloadedBackend(null);
     setPreloadedParser(null);
     setHwLoading(false);
+    setHwReady(false);
+    setLayers([]);
     hwPromiseRef.current = null;
-    // Defer so SetupExperiencePage paints before heavy IPC
-    fetchHardware();
+    fetchHardware().finally(() => {
+      idRef.current += 1;
+      setLayers([{ id: idRef.current, step: 'setup', phase: 'enter' }]);
+    });
   }, [fetchHardware]);
 
   useEffect(() => {
@@ -97,7 +94,9 @@ export default function Onboarding() {
       setPreloadedBackend(null);
       setPreloadedParser(null);
       setHwLoading(false);
+      setHwReady(false);
       hwPromiseRef.current = null;
+      setLayers([]);
     }, CLOSE_MS);
   }, []);
 
@@ -127,6 +126,15 @@ export default function Onboarding() {
       });
     }, EXIT_MS);
   }, []);
+
+  const handleBegin = useCallback(
+    (id: string) => {
+      if (id === 'simple') navigate('professions');
+      else if (id === 'custom') navigate('backend');
+      else navigate('llamaSetup');
+    },
+    [navigate],
+  );
 
   const renderPage = (layer: PageLayer) => {
     switch (layer.step) {
@@ -159,19 +167,13 @@ export default function Onboarding() {
         return <LlamaSetupPage onBack={() => navigate('setup')} />;
       case 'setup':
       default:
-        return (
-          <SetupExperiencePage
-            onBegin={(id) => {
-              if (id === 'simple') navigate('professions');
-              else if (id === 'custom') navigate('backend');
-              else navigate('llamaSetup');
-            }}
-          />
-        );
+        return <SetupExperiencePage onBegin={handleBegin} />;
     }
   };
 
   if (!open) return null;
+
+  const showLoading = !hwReady && layers.length === 0;
 
   return (
     <div className={`onb-root${closing ? ' onb-root--closing' : ''}`}>
@@ -179,11 +181,18 @@ export default function Onboarding() {
         <DownloadManager />
       </div>
 
-      {layers.map((layer) => (
-        <div key={layer.id} className={`onb-layer onb-layer--${layer.phase}`}>
-          {renderPage(layer)}
+      {showLoading ? (
+        <div className="onb-loading">
+          <span className="onb-loading-spinner" aria-hidden="true" />
+          <p className="onb-loading-text">Detecting hardware…</p>
         </div>
-      ))}
+      ) : (
+        layers.map((layer) => (
+          <div key={layer.id} className={`onb-layer onb-layer--${layer.phase}`}>
+            {renderPage(layer)}
+          </div>
+        ))
+      )}
     </div>
   );
 }

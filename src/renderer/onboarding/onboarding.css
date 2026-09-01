@@ -17,6 +17,33 @@
   animation: onb-overlay-out 0.26s ease both;
 }
 
+.onb-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  min-height: 100%;
+  width: 100%;
+  animation: onb-fade-in 0.25s ease both;
+}
+
+.onb-loading-spinner {
+  width: 32px;
+  height: 32px;
+  border: 2.5px solid rgba(255, 255, 255, 0.12);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: onb-spin 0.8s linear infinite;
+}
+
+.onb-loading-text {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  letter-spacing: 0.02em;
+}
+
 .onb-layer {
   position: absolute;
   inset: 0;
@@ -28,6 +55,10 @@
 
 .onb-layer--enter {
   animation: onb-fade-in 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.onb-layer--settle {
+  pointer-events: auto;
 }
 
 .onb-layer--exit {
@@ -55,6 +86,22 @@
 
 .onb-rise {
   animation: onb-rise-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+  /* Ensure hover highlights are hit-testable even while the rise
+     animation is running; without this the compositor can defer
+     pointer events until the animation finishes. */
+  pointer-events: auto;
+  will-change: transform, opacity;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .onb-rise,
+  .onb-layer--enter,
+  .onb-layer--exit {
+    animation: none !important;
+  }
+  .onb-layer--enter {
+    pointer-events: auto;
+  }
 }
 
 .onb-delay-1 {
@@ -164,6 +211,7 @@
   cursor: pointer;
   text-align: left;
   font-family: inherit;
+  pointer-events: auto;
   transition:
     transform 0.16s ease,
     border-color 0.16s ease,
