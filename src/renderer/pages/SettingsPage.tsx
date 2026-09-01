@@ -172,6 +172,7 @@ function MemorySlider({
           content={`${otherGB} GB In Use`}
           side="bottom"
           hideIcon
+          portal
           className="mem-segment-other"
           style={{ right: 0, left: 'auto', width: `${otherPct}%` }}
         />
@@ -182,6 +183,7 @@ function MemorySlider({
           content={`${freeGB} GB Available`}
           side="bottom"
           hideIcon
+          portal
           className="mem-segment-free"
           style={{ left: `${appPct}%`, width: `${freePct}%` }}
         />
@@ -192,6 +194,7 @@ function MemorySlider({
           content={`${appGB} GB Reserved`}
           side="bottom"
           hideIcon
+          portal
           className={`mem-segment-app${isExceeded ? ' exceeded' : ''}`}
           style={{ left: 0, width: `${appPct}%` }}
         />
@@ -203,6 +206,7 @@ function MemorySlider({
             side="top"
             iconSize={10}
             title="Maximum"
+            portal
           >
             <div className="mem-max-label">MAX</div>
           </InfoTooltip>
