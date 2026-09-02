@@ -32,232 +32,8 @@ import {
 } from '../utils/tooltipContent';
 import ConfirmDialog from '../components/ConfirmDialog';
 import '../styles/SettingsPage.css';
-
-// Minimal buffer — VRAM overflow is preferable to RAM overflow.
-// At this point all other allocations (weights, KV cache, other processes)
-// are already accounted for, so this only guards against sudden spikes
-// and allocator fragmentation.
-const VRAM_SAFETY_BUFFER_MB = 300;
-
-// More conservative buffer — RAM overflow causes system-wide instability
-// and can crash the OS, not just the inference process.
-const RAM_SAFETY_BUFFER_MB = 2048;
-
-interface MemoryStats {
-  total: number;
-  appAllocated: number;
-  otherUsed: number;
-  maxRecommended: number;
-}
-
-const EMPTY_MEMORY: MemoryStats = {
-  total: 0,
-  appAllocated: 0,
-  otherUsed: 0,
-  maxRecommended: 0,
-};
-
-const formatGB = (mb: number) => (mb / 1024).toFixed(1);
-
-type MemorySliderProps = {
-  title: string;
-  stats: MemoryStats;
-  loading: boolean;
-  unavailableMessage: string;
-  onChange: (newVal: number) => void;
-  onSave: (newVal: number) => void;
-  onRefresh: () => void;
-};
-
-function MemorySlider({
-  title,
-  stats,
-  loading,
-  unavailableMessage,
-  onChange,
-  onSave,
-  onRefresh,
-}: MemorySliderProps) {
-  const titleTooltip =
-    title.includes('Video') || title.includes('GPU')
-      ? VRAM_LABEL_TOOLTIP
-      : RAM_LABEL_TOOLTIP;
-
-  const TitleNode = (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-      <InfoTooltip
-        content={titleTooltip}
-        side="right"
-        hideIcon
-        title={title}
-        className="mem-title-tooltip"
-      >
-        <div className="mem-title">{title}</div>
-      </InfoTooltip>
-      <InfoTooltip content="Refresh memory usage" side="bottom" hideIcon>
-        <button
-          type="button"
-          className={`mem-refresh-btn ${loading ? 'loading' : ''}`}
-          onClick={onRefresh}
-          disabled={loading}
-        >
-          <RefreshCw size={14} />
-        </button>
-      </InfoTooltip>
-    </div>
-  );
-
-  if (loading) {
-    return (
-      <div className="mem-container">
-        <div className="mem-header">
-          {TitleNode}
-          <div className="mem-usage-row">Detecting hardware…</div>
-        </div>
-        <div className="mem-bar-wrapper" style={{ opacity: 0.45 }} />
-      </div>
-    );
-  }
-
-  if (stats.total <= 0 || Number.isNaN(stats.total)) {
-    return (
-      <div className="mem-container">
-        <div className="mem-header">
-          {TitleNode}
-          <div className="mem-usage-row">{unavailableMessage}</div>
-        </div>
-      </div>
-    );
-  }
-
-  const appPct = Math.min((stats.appAllocated / stats.total) * 100, 100);
-  const otherPct = Math.min((stats.otherUsed / stats.total) * 100, 100);
-  const freePct = Math.max(0, 100 - appPct - otherPct);
-  const maxPct = Math.min((stats.maxRecommended / stats.total) * 100, 100);
-
-  const freeSpace = Math.max(
-    0,
-    stats.total - stats.appAllocated - stats.otherUsed,
-  );
-  const isExceeded = stats.appAllocated > stats.maxRecommended;
-
-  const appGB = formatGB(stats.appAllocated);
-  const otherGB = formatGB(stats.otherUsed);
-  const freeGB = formatGB(freeSpace);
-  const totalGB = formatGB(stats.total);
-  const displayUsedGB = formatGB(stats.appAllocated);
-
-  const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    onChange(parseInt(e.target.value, 10));
-  };
-
-  const handleSliderCommit = () => {
-    onSave(stats.appAllocated);
-  };
-
-  return (
-    <div className="mem-container">
-      <div className="mem-header">
-        {TitleNode}
-        <div className="mem-usage-row">
-          <span className="mem-value">{displayUsedGB}</span>
-          <span className="mem-unit"> / {totalGB} GB</span>
-        </div>
-      </div>
-
-      <div className="mem-bar-wrapper">
-        {/* OTHER — pinned to right edge, always at the same position */}
-        <InfoTooltip
-          title="OS & Other Apps"
-          content={`${otherGB} GB In Use`}
-          side="bottom"
-          hideIcon
-          portal
-          className="mem-segment-other"
-          style={{ right: 0, left: 'auto', width: `${otherPct}%` }}
-        />
-
-        {/* FREE — fills gap between APP and OTHER */}
-        <InfoTooltip
-          title="Free Space"
-          content={`${freeGB} GB Available`}
-          side="bottom"
-          hideIcon
-          portal
-          className="mem-segment-free"
-          style={{ left: `${appPct}%`, width: `${freePct}%` }}
-        />
-
-        {/* APP — grows from left edge, renders on top of OTHER when overlapping */}
-        <InfoTooltip
-          title="Synapse Allocation"
-          content={`${appGB} GB Reserved`}
-          side="bottom"
-          hideIcon
-          portal
-          className={`mem-segment-app${isExceeded ? ' exceeded' : ''}`}
-          style={{ left: 0, width: `${appPct}%` }}
-        />
-
-        {/* MAX line — fixed at maxRecommended / total */}
-        <div className="mem-max-wrapper" style={{ left: `${maxPct}%` }}>
-          <InfoTooltip
-            content={MAX_LABEL_TOOLTIP}
-            side="top"
-            iconSize={10}
-            title="Maximum"
-            portal
-          >
-            <div className="mem-max-label">MAX</div>
-          </InfoTooltip>
-          <div className="mem-max-line" />
-        </div>
-
-        {/* Slider — full width, sits on top of all segments */}
-        <input
-          type="range"
-          min={0}
-          max={stats.total}
-          value={stats.appAllocated}
-          onChange={handleSliderChange}
-          onMouseUp={handleSliderCommit}
-          onTouchEnd={handleSliderCommit}
-          onKeyUp={(e) => {
-            if (e.key === 'ArrowLeft' || e.key === 'ArrowRight')
-              handleSliderCommit();
-          }}
-          className={`mem-slider ${isExceeded ? 'slider-exceeded' : ''}`}
-          style={{ left: 0, width: '100%' }}
-        />
-      </div>
-
-      <div className="mem-legend-row">
-        <div className={`mem-legend-box ${isExceeded ? 'exceeded' : ''}`} />
-        <InfoTooltip
-          content={MEMORY_ALLOCATOR_TOOLTIP}
-          side="right"
-          hideIcon
-          title="Synapse Allocation"
-        >
-          <span>
-            Synapse Allocation:{' '}
-            <strong className="mem-value-small">{appGB} GB</strong>
-          </span>
-        </InfoTooltip>
-      </div>
-
-      {isExceeded ? (
-        <div className="mem-warning">
-          <AlertTriangle size={14} />
-          <span>
-            Exceeding recommended limits may cause system instability or severe
-            performance drops.
-          </span>
-        </div>
-      ) : null}
-    </div>
-  );
-}
+import { MemorySlider } from '../components/settingsShared/MemorySlider';
+import { useHardwareStats } from '../components/settingsShared/useHardwareStats';
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
@@ -265,12 +41,6 @@ export default function SettingsPage() {
     'idle',
   );
 
-  const [hardware, setHardware] = useState<HardwareStats | null>(null);
-  const [ramLoading, setRamLoading] = useState(true);
-  const [gpuLoading, setGpuLoading] = useState(true);
-
-  const [ramStats, setRamStats] = useState<MemoryStats>(EMPTY_MEMORY);
-  const [vramStats, setVramStats] = useState<MemoryStats>(EMPTY_MEMORY);
   const [showRestartDialog, setShowRestartDialog] = useState(false);
   const [tab, setTab] = useState<'system' | 'chat' | 'security' | 'server'>(
     'chat',
@@ -281,78 +51,19 @@ export default function SettingsPage() {
     allocatedVRAM?: number;
   }>({});
 
-  const fetchHardware = useCallback(async () => {
-    setRamLoading(true);
-    setGpuLoading(true);
-
-    try {
-      const hw = await window.electronAPI.getVramStats();
-
-      if (!hw) return;
-
-      setHardware(hw);
-
-      // NOTE: llama-server's own memory is already excluded from
-      // hw.ram.otherUsed and hw.vram.otherUsed at the source
-      // (computeVramStats reads the server process directly).
-
-      // -- SYSTEM RAM --
-      if (hw.ram && hw.ram.total > 0) {
-        const savedRam = savedAllocationsRef.current.allocatedRAM;
-
-        // MAX = everything except other processes and the safety buffer.
-        // RAM_SAFETY_BUFFER_MB is intentionally generous — RAM overflow
-        // destabilises the entire OS, not just the inference process.
-        const adjustedMaxRam = Math.max(
-          0,
-          hw.ram.total - hw.ram.otherUsed - RAM_SAFETY_BUFFER_MB,
-        );
-
-        setRamStats((prev) => ({
-          total: hw.ram.total,
-          appAllocated:
-            prev.appAllocated > 0
-              ? prev.appAllocated
-              : savedRam || Math.floor(hw.ram.total / 2),
-          otherUsed: hw.ram.otherUsed,
-          maxRecommended: adjustedMaxRam,
-        }));
-      } else {
-        setRamStats(EMPTY_MEMORY);
-      }
-
-      // -- VRAM (GPU) --
-      if (hw.vram && hw.vram.total > 0) {
-        const savedVram = savedAllocationsRef.current.allocatedVRAM;
-        const { vram } = hw;
-
-        // MAX = everything except other processes and the safety buffer.
-        // VRAM_SAFETY_BUFFER_MB is intentionally tight — VRAM overflow only
-        // slows inference via CPU offload, it does not crash the system.
-        const adjustedMaxVram = Math.max(
-          0,
-          vram.total - vram.otherUsed - VRAM_SAFETY_BUFFER_MB,
-        );
-
-        setVramStats((prev) => ({
-          total: vram.total,
-          appAllocated:
-            prev.appAllocated > 0
-              ? prev.appAllocated
-              : savedVram || vram.maxRecommended,
-          otherUsed: vram.otherUsed,
-          maxRecommended: adjustedMaxVram,
-        }));
-      } else {
-        setVramStats(EMPTY_MEMORY);
-      }
-    } catch {
-      // Silently fail
-    } finally {
-      setRamLoading(false);
-      setGpuLoading(false);
-    }
-  }, []);
+  const {
+    hardware,
+    ramLoading,
+    gpuLoading,
+    ramStats,
+    vramStats,
+    setRamStats,
+    setVramStats,
+    showVramSection,
+    ramTitle,
+    vramTitle,
+    fetchHardware,
+  } = useHardwareStats(savedAllocationsRef);
 
   useEffect(() => {
     let mounted = true;
@@ -526,18 +237,7 @@ export default function SettingsPage() {
     }
   }
 
-  const isUnifiedMemory = hardware ? hardware.isUnifiedMemory : false;
-  // Hide VRAM until hardware detection resolves — not all machines have VRAM.
-  // Previously this showed a loading placeholder; now it stays hidden until
-  // gpuLoading is false and we know vramStats.total > 0 and not unified.
-  const showVramSection =
-    !gpuLoading && !isUnifiedMemory && vramStats.total > 0;
 
-  const ramTitle = isUnifiedMemory ? 'Unified Memory' : 'System Memory (RAM)';
-  const vramTitle =
-    hardware && hardware.selectedGpu
-      ? `Video Memory (GPU) — ${hardware.selectedGpu.model}`
-      : 'Video Memory (GPU)';
 
   if (!settings) {
     return null;

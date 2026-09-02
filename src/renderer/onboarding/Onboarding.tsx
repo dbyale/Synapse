@@ -3,12 +3,25 @@ import SetupExperiencePage from './SetupExperiencePage';
 import ProfessionsSetupPage from './ProfessionsSetupPage';
 import BackendSetupPage from './BackendSetupPage';
 import ParserSetupPage from './ParserSetupPage';
+import SystemSetupPage from './SystemSetupPage';
+import ServerSetupPage from './ServerSetupPage';
+import SecuritySetupPage from './SecuritySetupPage';
+import ChatSetupPage from './ChatSetupPage';
 import LlamaSetupPage from './LlamaSetupPage';
 import DownloadManager from '../components/DownloadManager';
 import type { BackendInfo, ParserInfo } from '../preload.d';
 import './onboarding.css';
 
-type Step = 'setup' | 'professions' | 'backend' | 'parser' | 'llamaSetup';
+type Step =
+  | 'setup'
+  | 'professions'
+  | 'backend'
+  | 'parser'
+  | 'system'
+  | 'server'
+  | 'security'
+  | 'chatSetup'
+  | 'llamaSetup';
 
 interface PageLayer {
   id: number;
@@ -37,6 +50,7 @@ export default function Onboarding() {
   const [hwLoading, setHwLoading] = useState(false);
   const [hwReady, setHwReady] = useState(false);
   const hwPromiseRef = useRef<Promise<void> | null>(null);
+  const [activePath, setActivePath] = useState<'simple' | 'advanced' | 'custom' | null>(null);
 
   const fetchHardware = useCallback(() => {
     if (hwPromiseRef.current) return hwPromiseRef.current;
@@ -72,6 +86,7 @@ export default function Onboarding() {
     setPreloadedParser(null);
     setHwLoading(false);
     setHwReady(false);
+    setActivePath(null);
     setLayers([]);
     hwPromiseRef.current = null;
     fetchHardware().finally(() => {
@@ -95,6 +110,7 @@ export default function Onboarding() {
       setPreloadedParser(null);
       setHwLoading(false);
       setHwReady(false);
+      setActivePath(null);
       hwPromiseRef.current = null;
       setLayers([]);
     }, CLOSE_MS);
@@ -129,20 +145,36 @@ export default function Onboarding() {
 
   const handleBegin = useCallback(
     (id: string) => {
-      if (id === 'simple') navigate('professions');
-      else if (id === 'custom') navigate('backend');
-      else navigate('llamaSetup');
+      if (id === 'simple') {
+        setActivePath('simple');
+        navigate('professions');
+      } else if (id === 'custom') {
+        setActivePath('custom');
+        navigate('backend');
+      } else {
+        // 'advanced'
+        setActivePath('advanced');
+        navigate('system');
+      }
     },
     [navigate],
   );
 
   const renderPage = (layer: PageLayer) => {
+    const isAdvanced = activePath === 'advanced';
+    const isCustom = activePath === 'custom';
     switch (layer.step) {
       case 'professions':
         return (
           <ProfessionsSetupPage
-            onBack={() => navigate('setup')}
-            onContinue={() => navigate('llamaSetup')}
+            onBack={() =>
+              navigate(
+                isCustom ? 'security' : isAdvanced ? 'system' : 'setup',
+              )
+            }
+            onContinue={() =>
+              navigate(isAdvanced || isCustom ? 'chatSetup' : 'llamaSetup')
+            }
           />
         );
       case 'backend':
@@ -160,11 +192,49 @@ export default function Onboarding() {
             preloaded={preloadedParser}
             preloadedLoading={hwLoading}
             onBack={() => navigate('backend')}
+            onContinue={() => navigate('system')}
+          />
+        );
+      case 'system':
+        return (
+          <SystemSetupPage
+            onBack={() => navigate(isCustom ? 'parser' : 'setup')}
+            onContinue={() =>
+              navigate(isCustom ? 'server' : 'professions')
+            }
+          />
+        );
+      case 'server':
+        return (
+          <ServerSetupPage
+            onBack={() => navigate('system')}
+            onContinue={() => navigate('security')}
+          />
+        );
+      case 'security':
+        return (
+          <SecuritySetupPage
+            onBack={() => navigate('server')}
             onContinue={() => navigate('professions')}
           />
         );
+      case 'chatSetup':
+        return (
+          <ChatSetupPage
+            onBack={() => navigate('professions')}
+            onContinue={() => navigate('llamaSetup')}
+          />
+        );
       case 'llamaSetup':
-        return <LlamaSetupPage onBack={() => navigate('setup')} />;
+        return (
+          <LlamaSetupPage
+            onBack={() =>
+              navigate(
+                isAdvanced || isCustom ? 'chatSetup' : 'professions',
+              )
+            }
+          />
+        );
       case 'setup':
       default:
         return <SetupExperiencePage onBegin={handleBegin} />;

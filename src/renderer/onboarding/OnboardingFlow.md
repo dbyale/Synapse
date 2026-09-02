@@ -47,9 +47,11 @@
     * windows/linux/darwin (macOs)
 
 ## SystemSetupPage.tsx
-  * Show model install location from Settings Page
-  * Show system resource allocator from Settings Page
-  * Also show security settings
+  * Show install locations from Settings Page (Models / Backend / Parser directories) — exact parity with Settings → System → Application Setup
+  * Show system resource allocator from Settings Page (RAM + VRAM MemorySlider, buffered save on Continue)
+
+## SecuritySetupPage.tsx
+  * Show Security Settings from Settings Page (disableExternalReadmes)
 
 ## ProfessionsSetupPage.tsx
   * List of use-cases for AI
@@ -67,10 +69,10 @@
   * Users without adequate space will be shown a warning to free up space
 
 ## ServerSetupPage.tsx
-  * Host/Port/CORS Settings from Settings Page
+  * Host/Port/CORS Settings from Settings Page (Host, Port, CORS Origins/Methods/Headers/Credentials — exact parity with Settings → Server)
 
 ## ChatSetupPage.tsx
-  * Show Chat Settings from Settings Page
+  * Show Chat Settings from Settings Page (autoOpenThinking / autoCloseThinkingDone + launchServerAutomatically)
 
 ## FinalInstallPage.tsx
   * Show llama binary install progress
@@ -94,23 +96,18 @@
   * Install backends in background (macOs || CUDA/OpenCL + Vulkan || Vulkan)
   * Install GGUF-Parser-Go in background
 
-# Advanced Path
+# Advanced Path (Simple sees none of these — per spec)
   1. SystemSetupPage
   2. ProfessionsSetupPage
-  3. ProfileSelectionPage
-  4. ModelDownloadPage
-  5. ChatSetupPage
-  6. FinalInstallPage
-  * Install backends in background (macOs || CUDA/OpenCL + Vulkan || Vulkan)
-  * Install GGUF-Parser-Go in background
+  3. ChatSetupPage
+  4. LlamaSetup (placeholder — currently LlamaSetupPage.tsx)
 
 # Custom Path
   1. BackendSetupPage
   2. ParserSetupPage
   3. SystemSetupPage
-  4. ProfessionsSetupPage
-  5. ProfileSelectionPage
-  6. ModelDownloadPage
-  7. ServerSetupPage
-  8. ChatSetupPage
-  9. FinalInstallPage
+  4. ServerSetupPage
+  5. SecuritySetupPage
+  6. ProfessionsSetupPage
+  7. ChatSetupPage
+  8. LlamaSetup (placeholder — currently LlamaSetupPage.tsx)
