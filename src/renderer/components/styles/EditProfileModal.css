@@ -1305,3 +1305,120 @@
   color: #ef4444;
   font-weight: 600;
 }
+
+/* ── Custom Flags (submenu) ── */
+
+.epm-custom-flags-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.epm-custom-flag-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.epm-custom-flag-row .info-tooltip-stretch--row {
+  flex: 1;
+}
+
+.epm-custom-flag-input {
+  flex: 1;
+  font-family: 'Cascadia Code', 'JetBrains Mono', monospace;
+  font-size: 13px;
+}
+
+.epm-custom-flag-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 38px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+.epm-custom-flag-remove:hover {
+  border-color: #ef4444;
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.epm-custom-flag-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.epm-custom-flag-add:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(37, 99, 235, 0.06);
+}
+
+.epm-launch-args--editable {
+  min-height: 140px;
+  font-family: 'Cascadia Code', 'JetBrains Mono', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+/* ── Launch Args Copy (matches ChatPage message copy) ── */
+
+.epm-launch-args__copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-family: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.epm-launch-args__copy:hover {
+  color: var(--text-primary);
+  border-color: var(--text-secondary);
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.epm-launch-args__copy:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.epm-launch-args__copy--copied,
+.epm-launch-args__copy--copied:hover {
+  color: #a6e3a1;
+  border-color: #a6e3a1;
+  background: rgba(166, 227, 161, 0.08);
+}
+
+.epm-launch-args__copy svg {
+  flex-shrink: 0;
+}

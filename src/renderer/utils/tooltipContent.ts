@@ -363,6 +363,27 @@ export const PORT_TOOLTIP = [
   'Default: 9931',
 ];
 
+// ── Custom Flags / Manual Launch (Server Settings) ──
+
+export const CUSTOM_FLAGS_TOOLTIP = [
+  'One flag line per row — each row is a raw llama-server argument string.',
+  'Examples: "--verbose" (no value), "--threads 4" (flag with value), \'--foo "bar baz"\' (quoted value).',
+  'Rows are split with shell-like quoting; empty rows are ignored. Appended after all auto-generated flags.',
+];
+
+export const MANUAL_LAUNCH_TOOLTIP = [
+  'When enabled, the full launch command you type completely replaces Synapse’s automatic argument generation.',
+  'Include everything needed: --model, --ctx-size, --n-gpu-layers, --host, --port, etc. No automatic injection is done.',
+  'You may paste "llama-server ..." or just the arguments. The preview shows “Manual” with the model filename.',
+  'Invalid commands will cause the server to fail to start — this is intentional; fix the command and reload.',
+];
+
+export const CUSTOM_FLAGS_PAGE_TOOLTIP = [
+  'Add arbitrary llama-server flags not exposed elsewhere in the UI.',
+  'Each row is one logical flag entry. Rows without values (e.g. --verbose) are valid.',
+  'Values with spaces must be quoted. Each row is appended verbatim before --metrics --no-ui.',
+];
+
 // ── CORS (Server Settings) ──
 
 export const CORS_ORIGINS_TOOLTIP = [

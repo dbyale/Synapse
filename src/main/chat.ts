@@ -514,10 +514,87 @@ export interface LlamaServerLaunchConfig {
   ctx: number;
 }
 
+/**
+ * Quote-aware arg splitter for custom flags / manual command.
+ * Handles single + double quotes and backslash escaping. Value-less flags (e.g. --verbose) become one token.
+ * Shell metachars like ; | & are treated as literal chars (spawn has no shell) – allowed, let server fail.
+ * Exported for preview IPC & tests.
+ */
+export function splitShellArgs(input: string): string[] {
+  const out: string[] = [];
+  let cur = '';
+  let inSingle = false;
+  let inDouble = false;
+  let escaped = false;
+  for (let i = 0; i < input.length; i += 1) {
+    const ch = input[i];
+    if (escaped) {
+      cur += ch;
+      escaped = false;
+      continue;
+    }
+    if (ch === '\\' && !inSingle) {
+      const next = input[i + 1];
+      // Preserve Windows path backslashes: only treat as escape when escaping quote/backslash/space
+      if (inDouble) {
+        if (next === '"' || next === '\\') {
+          escaped = true;
+          continue;
+        }
+        cur += ch;
+        continue;
+      }
+      if (next === '"' || next === "'" || next === '\\' || next === ' ' || next === '\t') {
+        escaped = true;
+        continue;
+      }
+      cur += ch;
+      continue;
+    }
+    if (ch === "'" && !inDouble) {
+      inSingle = !inSingle;
+      continue;
+    }
+    if (ch === '"' && !inSingle) {
+      inDouble = !inDouble;
+      continue;
+    }
+    if (!inSingle && !inDouble && /\s/.test(ch)) {
+      if (cur.length > 0) {
+        out.push(cur);
+        cur = '';
+      }
+      continue;
+    }
+    cur += ch;
+  }
+  if (cur.length > 0) out.push(cur);
+  // If quotes were left unclosed, we still return what we have – let it crash, per spec allow saving anything
+  return out;
+}
+
+export function stripBinaryPrefix(args: string[]): string[] {
+  if (args.length === 0) return args;
+  const first = args[0];
+  const base = first.split(/[\\/]/).pop()?.toLowerCase() ?? '';
+  if (base === 'llama-server' || base === 'llama-server.exe') {
+    return args.slice(1);
+  }
+  return args;
+}
+
 export function buildLlamaServerArgs(
   profile: Partial<Profile>,
   config: LlamaServerLaunchConfig,
 ): string[] {
+  // Manual full replace – no injection, fully user-controlled
+  if ((profile as any).useCustomLaunch) {
+    const raw = ((profile as any).customLaunchCommand ?? '').trim();
+    // Allow empty manual to surface as empty args (will let server fail, per spec)
+    if (raw.length === 0) return [];
+    const tokens = splitShellArgs(raw);
+    return stripBinaryPrefix(tokens);
+  }
   // Model Arguments
   const spawnArgs = ['--model', config.modelPath];
   spawnArgs.push(
@@ -729,6 +806,16 @@ export function buildLlamaServerArgs(
   }
   if ((profile as any).corsHeaders && (profile as any).corsHeaders !== '*') {
     spawnArgs.push('--cors-headers', (profile as any).corsHeaders);
+  }
+
+  // Custom Flags – one string per row, each row may be "--flag" (no value) or "--flag value"
+  // Split each row with quote awareness so "--foo 'bar baz'" works, then append tokens verbatim.
+  if (Array.isArray((profile as any).customFlags)) {
+    for (const line of (profile as any).customFlags as string[]) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      spawnArgs.push(...splitShellArgs(trimmed));
+    }
   }
 
   // Static Server Arguments

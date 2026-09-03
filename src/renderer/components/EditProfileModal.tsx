@@ -25,6 +25,11 @@ import {
   Puzzle,
   Server,
   Shield,
+  Plus,
+  Trash2,
+  Flag,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { Profile, CacheType } from '../types/profile';
 import type { LocalModel } from '../preload.d';
@@ -98,6 +103,8 @@ import {
   HOST_TOOLTIP,
   PORT_TOOLTIP,
   DRY_PENALTY_ENABLED,
+  MANUAL_LAUNCH_TOOLTIP,
+  CUSTOM_FLAGS_PAGE_TOOLTIP,
 } from '../utils/tooltipContent';
 import ModelSelectModal from './ModelSelectModal';
 import ProjectorSelectModal from './ProjectorSelectModal';
@@ -191,6 +198,7 @@ const PAGE_DEPTH: Record<string, number> = {
   'moe-options': 2,
   'server-settings': 1,
   'cors-settings': 2,
+  'custom-flags': 2,
 };
 
 const BREADCRUMB_MAP: Record<string, { label: string; parent: string | null }> =
@@ -217,6 +225,7 @@ const BREADCRUMB_MAP: Record<string, { label: string; parent: string | null }> =
     'moe-options': { label: 'Mixture of Experts', parent: 'performance' },
     'server-settings': { label: 'Server Settings', parent: 'main' },
     'cors-settings': { label: 'CORS', parent: 'server-settings' },
+    'custom-flags': { label: 'Custom Flags', parent: 'server-settings' },
   };
 
 function buildBreadcrumb(page: string): Array<{ key: string; label: string }> {
@@ -641,6 +650,7 @@ function ToolsPage({
       manifest: {
         id: string;
         name: string;
+        description: string;
         icon: string;
         iconSvgData?: string;
       };
@@ -3432,6 +3442,12 @@ function ServerSettingsPage({
   hasModel,
   condensed,
   onToggleCondensed,
+  editUseCustomLaunch,
+  setEditUseCustomLaunch,
+  editCustomLaunchCommand,
+  setEditCustomLaunchCommand,
+  customFlagsCount,
+  modelFilename,
 }: {
   editHost: string;
   setEditHost: (v: string) => void;
@@ -3445,6 +3461,12 @@ function ServerSettingsPage({
   hasModel: boolean;
   condensed: boolean;
   onToggleCondensed: (v: boolean) => void;
+  editUseCustomLaunch: boolean;
+  setEditUseCustomLaunch: (v: boolean) => void;
+  editCustomLaunchCommand: string;
+  setEditCustomLaunchCommand: (v: string) => void;
+  customFlagsCount: number;
+  modelFilename: string;
 }) {
   let emptyMessage = 'Launch arguments unavailable.';
   if (launchArgsLoading) {
@@ -3452,6 +3474,29 @@ function ServerSettingsPage({
   } else if (!hasModel) {
     emptyMessage = 'Select a model to preview its launch arguments.';
   }
+  void modelFilename;
+
+  const [copied, setCopied] = useState(false);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleCopy = useCallback(async () => {
+    if (!launchArgs || launchArgs.length === 0) return;
+    const text =
+      'llama-server ' +
+      launchArgs
+        .map((a) => (a.includes(' ') || a.includes('"') ? `"${a.replace(/"/g, '\\"')}"` : a))
+        .join(' ');
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = setTimeout(() => setCopied(false), 2000);
+    } catch {}
+  }, [launchArgs]);
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    };
+  }, []);
 
   return (
     <>
@@ -3467,154 +3512,303 @@ function ServerSettingsPage({
         Advanced settings for llama-server.
       </p>
 
+      {/* Manual Launch Toggle */}
       <div className="epm-section" style={{ marginTop: '20px' }}>
-        <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="epm-section__label">Host</div>
-            <InfoTooltip
-              content={HOST_TOOLTIP}
-              side="bottom"
-              stretch
-              className="info-tooltip-stretch--col"
-              title="Host"
-            >
-              <input
-                type="text"
-                className="epm-input"
-                value={editHost}
-                onChange={(e) => setEditHost(e.target.value)}
-                placeholder="127.0.0.1"
-                style={{ marginTop: '8px' }}
-              />
-            </InfoTooltip>
-          </div>
-          <div style={{ flex: 1, minWidth: 0, maxWidth: '240px' }}>
-            <div className="epm-section__label">Port</div>
-            <InfoTooltip
-              content={PORT_TOOLTIP}
-              side="bottom"
-              stretch
-              className="info-tooltip-stretch--col"
-              title="Port"
-            >
-              <input
-                type="number"
-                className="epm-input"
-                value={editPort}
-                onChange={(e) => setEditPort(e.target.value)}
-                placeholder="9931"
-                min="1"
-                max="65535"
-                style={{ marginTop: '8px' }}
-              />
-            </InfoTooltip>
-          </div>
-        </div>
-      </div>
-
-      <div className="epm-section" style={{ marginTop: '20px' }}>
-        <div className="epm-number-grid">
-          <NumberField
-            label="Parallel Server Slot Count"
-            value={editParallel}
-            onChange={setEditParallel}
-            min="-1"
-            max="999"
-            step="1"
-            helper="Default: 1 (-1 = auto)"
-            tooltip={[
-              'Controls how many concurrent requests the server can handle at once.',
-              'More slots allow multiple users or simultaneous conversations but use more memory.',
-              'Set to -1 to let the server choose automatically based on available resources.',
-            ]}
-            tooltipTitle="Parallel Server Slots"
-          />
-        </div>
-      </div>
-
-      {/* Submenu SectionCards */}
-      <div className="epm-section" style={{ marginTop: '20px' }}>
-        <div className="epm-section__label">Advanced Options</div>
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '8px',
-            marginTop: '10px',
-          }}
-        >
-          <button
-            type="button"
-            className="epm-section-card"
-            onClick={() => onNavigate('cors-settings')}
+        <label className="epm-perf-toggle-row" style={{ paddingTop: 0 }}>
+          <InfoTooltip
+            content={MANUAL_LAUNCH_TOOLTIP}
+            side="right"
+            stretch
+            className="info-tooltip-stretch--row"
+            title="Manual Launch Command"
           >
-            <div className="epm-section-card__icon">
-              <Shield size={18} />
-            </div>
-            <div className="epm-section-card__body">
-              <div className="epm-section-card__title">CORS</div>
-              <div className="epm-section-card__preview">
-                Configure cross-origin access for the llama-server API.
-              </div>
-            </div>
-            <ChevronRight size={16} className="epm-section-card__chevron" />
-          </button>
-        </div>
-      </div>
-
-      {/* Launch Arguments Preview */}
-      <div className="epm-section" style={{ marginTop: '20px' }}>
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: '12px',
-            marginBottom: '8px',
-          }}
-        >
-          <div className="epm-section__label" style={{ marginBottom: 0 }}>
-            Launch Arguments
-          </div>
-          <div className="epm-perf-toggle-row" style={{ padding: 0 }}>
-            <span className="epm-perf-toggle-label">Condensed view</span>
-            <button
-              type="button"
+            <span className="epm-perf-toggle-label">Manual Launch Command</span>
+            <div
+              className={`epm-toggle-switch${editUseCustomLaunch ? ' epm-toggle-switch--on' : ''}`}
+              onClick={() => setEditUseCustomLaunch(!editUseCustomLaunch)}
               role="switch"
-              aria-checked={condensed}
-              aria-label="Condensed view"
-              className={`epm-toggle-switch${condensed ? ' epm-toggle-switch--on' : ''}`}
-              onClick={() => onToggleCondensed(!condensed)}
+              aria-checked={editUseCustomLaunch}
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === ' ' || e.key === 'Enter') {
+                  e.preventDefault();
+                  setEditUseCustomLaunch(!editUseCustomLaunch);
+                }
+              }}
             >
               <div className="epm-toggle-switch__knob" />
-            </button>
-          </div>
-        </div>
-        <div className="epm-launch-args__desc">
-          Preview of the exact command line passed to llama-server when this
-          profile is loaded.
-        </div>
+            </div>
+          </InfoTooltip>
+        </label>
         <div
-          className={`epm-launch-args${condensed ? ' epm-launch-args--condensed' : ''}`}
+          style={{
+            fontSize: '12px',
+            color: 'var(--text-secondary)',
+            marginTop: '4px',
+            lineHeight: 1.4,
+          }}
         >
-          {launchArgs ? (
-            <>
-              <span className="epm-launch-args__binary">llama-server</span>
-              {groupLaunchArgs(launchArgs).map((line) => (
-                <div key={line.lineKey} className="epm-launch-args__line">
-                  {line.tokens.map((token) => (
-                    <span key={token.text} className={token.cls}>
-                      {token.text}
-                    </span>
-                  ))}
-                </div>
-              ))}
-            </>
-          ) : (
-            <span className="epm-launch-args__empty">{emptyMessage}</span>
-          )}
+          {editUseCustomLaunch
+            ? 'Full replace: the command below is passed verbatim to llama-server. Include --model, --host, --port, etc. No automatic injection.'
+            : 'Automatic mode: Synapse builds the command from your settings. Add extra flags via Custom Flags submenu.'}
         </div>
       </div>
+
+      {!editUseCustomLaunch ? (
+        <>
+          <div className="epm-section" style={{ marginTop: '20px' }}>
+            <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="epm-section__label">Host</div>
+                <InfoTooltip
+                  content={HOST_TOOLTIP}
+                  side="bottom"
+                  stretch
+                  className="info-tooltip-stretch--col"
+                  title="Host"
+                >
+                  <input
+                    type="text"
+                    className="epm-input"
+                    value={editHost}
+                    onChange={(e) => setEditHost(e.target.value)}
+                    placeholder="127.0.0.1"
+                    style={{ marginTop: '8px' }}
+                  />
+                </InfoTooltip>
+              </div>
+              <div style={{ flex: 1, minWidth: 0, maxWidth: '240px' }}>
+                <div className="epm-section__label">Port</div>
+                <InfoTooltip
+                  content={PORT_TOOLTIP}
+                  side="bottom"
+                  stretch
+                  className="info-tooltip-stretch--col"
+                  title="Port"
+                >
+                  <input
+                    type="number"
+                    className="epm-input"
+                    value={editPort}
+                    onChange={(e) => setEditPort(e.target.value)}
+                    placeholder="9931"
+                    min="1"
+                    max="65535"
+                    style={{ marginTop: '8px' }}
+                  />
+                </InfoTooltip>
+              </div>
+            </div>
+          </div>
+
+          <div className="epm-section" style={{ marginTop: '20px' }}>
+            <div className="epm-number-grid">
+              <NumberField
+                label="Parallel Server Slot Count"
+                value={editParallel}
+                onChange={setEditParallel}
+                min="-1"
+                max="999"
+                step="1"
+                helper="Default: 1 (-1 = auto)"
+                tooltip={[
+                  'Controls how many concurrent requests the server can handle at once.',
+                  'More slots allow multiple users or simultaneous conversations but use more memory.',
+                  'Set to -1 to let the server choose automatically based on available resources.',
+                ]}
+                tooltipTitle="Parallel Server Slots"
+              />
+            </div>
+          </div>
+
+          {/* Submenu SectionCards */}
+          <div className="epm-section" style={{ marginTop: '20px' }}>
+            <div className="epm-section__label">Advanced Options</div>
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px',
+                marginTop: '10px',
+              }}
+            >
+              <button
+                type="button"
+                className="epm-section-card"
+                onClick={() => onNavigate('cors-settings')}
+              >
+                <div className="epm-section-card__icon">
+                  <Shield size={18} />
+                </div>
+                <div className="epm-section-card__body">
+                  <div className="epm-section-card__title">CORS</div>
+                  <div className="epm-section-card__preview">
+                    Configure cross-origin access for the llama-server API.
+                  </div>
+                </div>
+                <ChevronRight size={16} className="epm-section-card__chevron" />
+              </button>
+              <button
+                type="button"
+                className="epm-section-card"
+                onClick={() => onNavigate('custom-flags')}
+              >
+                <div className="epm-section-card__icon">
+                  <Flag size={18} />
+                </div>
+                <div className="epm-section-card__body">
+                  <div className="epm-section-card__title">Custom Flags</div>
+                  <div className="epm-section-card__preview">
+                    {customFlagsCount > 0
+                      ? `${customFlagsCount} flag${customFlagsCount === 1 ? '' : 's'}`
+                      : 'Add arbitrary llama-server flags'}
+                  </div>
+                </div>
+                <ChevronRight size={16} className="epm-section-card__chevron" />
+              </button>
+            </div>
+          </div>
+
+          {/* Launch Arguments Preview (auto) */}
+          <div className="epm-section" style={{ marginTop: '20px' }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '12px',
+                marginBottom: '8px',
+              }}
+            >
+              <div className="epm-section__label" style={{ marginBottom: 0 }}>
+                Launch Arguments
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <button
+                  type="button"
+                  className={`epm-launch-args__copy ${copied ? 'epm-launch-args__copy--copied' : ''}`}
+                  onClick={handleCopy}
+                  disabled={!launchArgs || launchArgs.length === 0}
+                  title={copied ? 'Copied' : 'Copy launch command'}
+                  aria-label="Copy launch command"
+                >
+                  {copied ? <Check size={12} /> : <Copy size={12} />}
+                  <span>{copied ? 'Copied' : 'Copy'}</span>
+                </button>
+                <div className="epm-perf-toggle-row" style={{ padding: 0 }}>
+                  <span className="epm-perf-toggle-label">Condensed view</span>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={condensed}
+                    aria-label="Condensed view"
+                    className={`epm-toggle-switch${condensed ? ' epm-toggle-switch--on' : ''}`}
+                    onClick={() => onToggleCondensed(!condensed)}
+                  >
+                    <div className="epm-toggle-switch__knob" />
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div className="epm-launch-args__desc">
+              Preview of the exact command line passed to llama-server when this
+              profile is loaded.
+            </div>
+            <div
+              className={`epm-launch-args${condensed ? ' epm-launch-args--condensed' : ''}`}
+            >
+              {launchArgs ? (
+                <>
+                  <span className="epm-launch-args__binary">llama-server</span>
+                  {groupLaunchArgs(launchArgs).map((line) => (
+                    <div key={line.lineKey} className="epm-launch-args__line">
+                      {line.tokens.map((token) => (
+                        <span key={token.text} className={token.cls}>
+                          {token.text}
+                        </span>
+                      ))}
+                    </div>
+                  ))}
+                </>
+              ) : (
+                <span className="epm-launch-args__empty">{emptyMessage}</span>
+              )}
+            </div>
+          </div>
+        </>
+      ) : (
+        <>
+          {/* Manual mode: editable launch command reusing existing preview textarea */}
+          <div className="epm-section" style={{ marginTop: '20px' }}>
+            <InfoTooltip
+              content={MANUAL_LAUNCH_TOOLTIP}
+              side="right"
+              hideIcon
+              title="Launch Command"
+            >
+              <div className="epm-section__label">Launch Command</div>
+            </InfoTooltip>
+            <div className="epm-launch-args__desc">
+              Replaces the auto-generated command above. Paste the full command
+              or just arguments. You must include --host / --port yourself.
+              Invalid commands will fail to start – allowed per spec.
+            </div>
+            <textarea
+              className="epm-textarea epm-textarea--editor epm-launch-args--editable"
+              value={editCustomLaunchCommand}
+              onChange={(e) => setEditCustomLaunchCommand(e.target.value)}
+              placeholder='llama-server --model "/path/to/model.gguf" --ctx-size 8192 --host 127.0.0.1 --port 9931 --verbose'
+              style={{ minHeight: '140px', fontFamily: 'Cascadia Code, JetBrains Mono, monospace', fontSize: '13px' }}
+            />
+          </div>
+
+          <div className="epm-section" style={{ marginTop: '20px' }}>
+            <div className="epm-section__label">Advanced Options (ignored in manual)</div>
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px',
+                marginTop: '10px',
+                opacity: 0.6,
+              }}
+            >
+              <button
+                type="button"
+                className="epm-section-card"
+                onClick={() => onNavigate('cors-settings')}
+              >
+                <div className="epm-section-card__icon">
+                  <Shield size={18} />
+                </div>
+                <div className="epm-section-card__body">
+                  <div className="epm-section-card__title">CORS</div>
+                  <div className="epm-section-card__preview">
+                    Ignored when manual is enabled
+                  </div>
+                </div>
+                <ChevronRight size={16} className="epm-section-card__chevron" />
+              </button>
+              <button
+                type="button"
+                className="epm-section-card"
+                onClick={() => onNavigate('custom-flags')}
+              >
+                <div className="epm-section-card__icon">
+                  <Flag size={18} />
+                </div>
+                <div className="epm-section-card__body">
+                  <div className="epm-section-card__title">Custom Flags</div>
+                  <div className="epm-section-card__preview">
+                    Ignored when manual is enabled
+                  </div>
+                </div>
+                <ChevronRight size={16} className="epm-section-card__chevron" />
+              </button>
+            </div>
+          </div>
+        </>
+      )}
     </>
   );
 }
@@ -3740,6 +3934,107 @@ function CorsSettingsPage({
             </div>
           </InfoTooltip>
         </label>
+      </div>
+    </>
+  );
+}
+
+function CustomFlagsPage({
+  editCustomFlags,
+  setEditCustomFlags,
+}: {
+  editCustomFlags: string[];
+  setEditCustomFlags: (v: string[]) => void;
+}) {
+  const addFlag = () => {
+    setEditCustomFlags([...editCustomFlags, '']);
+  };
+  const updateFlag = (idx: number, val: string) => {
+    const next = [...editCustomFlags];
+    next[idx] = val;
+    setEditCustomFlags(next);
+  };
+  const removeFlag = (idx: number) => {
+    const next = editCustomFlags.filter((_, i) => i !== idx);
+    setEditCustomFlags(next);
+  };
+
+  return (
+    <>
+      <h2 className="epm-page-title">Custom Flags</h2>
+      <p
+        style={{
+          fontSize: '14px',
+          color: 'var(--text-secondary)',
+          margin: '0 0 20px',
+          lineHeight: 1.5,
+        }}
+      >
+        Add arbitrary llama-server flags. Each row is one flag line — e.g.
+        &quot;--verbose&quot; (no value), &quot;--threads 4&quot;, or &apos;--foo &quot;bar
+        baz&quot;&apos; with quotes. Rows are appended before --metrics --no-ui.
+      </p>
+
+      <div className="epm-section">
+        <InfoTooltip
+          content={CUSTOM_FLAGS_PAGE_TOOLTIP}
+          side="right"
+          hideIcon
+          title="Custom Flags"
+        >
+          <div className="epm-section__label">Flag Rows</div>
+        </InfoTooltip>
+        <div className="epm-launch-args__desc" style={{ marginTop: '6px' }}>
+          One string per row; empty rows are ignored. Use shell-like quoting for
+          values with spaces.
+        </div>
+
+        <div className="epm-custom-flags-list">
+          {editCustomFlags.length === 0 ? (
+            <div
+              style={{
+                padding: '12px',
+                textAlign: 'center',
+                color: 'var(--text-secondary)',
+                fontSize: '13px',
+                border: '1px dashed var(--border)',
+                borderRadius: 'var(--radius-md)',
+              }}
+            >
+              No custom flags. Click “Add flag” to create one.
+            </div>
+          ) : (
+            editCustomFlags.map((flag, idx) => (
+              <div key={idx} className="epm-custom-flag-row">
+                <input
+                  type="text"
+                  className="epm-input epm-custom-flag-input"
+                  value={flag}
+                  onChange={(e) => updateFlag(idx, e.target.value)}
+                  placeholder='--flag value or --verbose'
+                />
+                <button
+                  type="button"
+                  className="epm-custom-flag-remove"
+                  onClick={() => removeFlag(idx)}
+                  aria-label={`Remove flag ${idx + 1}`}
+                  title="Remove"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+
+        <button
+          type="button"
+          className="epm-custom-flag-add"
+          onClick={addFlag}
+        >
+          <Plus size={16} />
+          Add flag
+        </button>
       </div>
     </>
   );
@@ -4025,12 +4320,28 @@ export default function EditProfileModal({
       : String(defaultPort ?? 9931),
   );
 
+  const [editCustomFlags, setEditCustomFlags] = useState<string[]>(
+    profile?.customFlags ?? [],
+  );
+  const [editUseCustomLaunch, setEditUseCustomLaunch] = useState<boolean>(
+    !!profile?.useCustomLaunch,
+  );
+  const [editCustomLaunchCommand, setEditCustomLaunchCommand] = useState<string>(
+    profile?.customLaunchCommand ?? '',
+  );
+
   // Launch arguments preview (built by the main process via chat.ts)
   const [launchArgs, setLaunchArgs] = useState<string[] | null>(null);
   const [launchArgsLoading, setLaunchArgsLoading] = useState(false);
   const [launchArgsCondensed, setLaunchArgsCondensed] = useState(false);
   const launchArgsReqId = useRef(0);
   useEffect(() => {
+    if (editUseCustomLaunch) {
+      launchArgsReqId.current += 1;
+      setLaunchArgs(null);
+      setLaunchArgsLoading(false);
+      return undefined;
+    }
     if (!editModelFilename) {
       launchArgsReqId.current += 1;
       setLaunchArgs(null);
@@ -4118,6 +4429,9 @@ export default function EditProfileModal({
         corsMethods: editCorsMethods || undefined,
         corsHeaders: editCorsHeaders || undefined,
         corsCredentials: editCorsCredentials,
+        customFlags: editCustomFlags.filter((s) => s.trim().length > 0),
+        useCustomLaunch: editUseCustomLaunch || undefined,
+        customLaunchCommand: editUseCustomLaunch ? editCustomLaunchCommand : undefined,
       };
       window.electronAPI
         .getLaunchArgs(draft, {
@@ -4184,6 +4498,9 @@ export default function EditProfileModal({
     editCorsMethods,
     editCorsHeaders,
     editCorsCredentials,
+    editCustomFlags,
+    editUseCustomLaunch,
+    editCustomLaunchCommand,
     editLayers,
     editContextSize,
   ]);
@@ -4570,6 +4887,15 @@ export default function EditProfileModal({
       corsMethods: editCorsMethods || undefined,
       corsHeaders: editCorsHeaders || undefined,
       corsCredentials: editCorsCredentials,
+      customFlags: (() => {
+        const f = editCustomFlags.map((s) => s.trim()).filter(Boolean);
+        return f.length > 0 ? f : undefined;
+      })(),
+      useCustomLaunch: editUseCustomLaunch ? true : undefined,
+      customLaunchCommand:
+        editUseCustomLaunch && editCustomLaunchCommand.trim()
+          ? editCustomLaunchCommand
+          : undefined,
       order:
         profile?.order ??
         (profiles.length === 0
@@ -4800,6 +5126,12 @@ export default function EditProfileModal({
             hasModel={!!editModelFilename}
             condensed={launchArgsCondensed}
             onToggleCondensed={setLaunchArgsCondensed}
+            editUseCustomLaunch={editUseCustomLaunch}
+            setEditUseCustomLaunch={setEditUseCustomLaunch}
+            editCustomLaunchCommand={editCustomLaunchCommand}
+            setEditCustomLaunchCommand={setEditCustomLaunchCommand}
+            customFlagsCount={editCustomFlags.filter((s) => s.trim()).length}
+            modelFilename={editModelFilename}
           />
         );
       case 'cors-settings':
@@ -4813,6 +5145,13 @@ export default function EditProfileModal({
             setEditCorsHeaders={setEditCorsHeaders}
             editCorsCredentials={editCorsCredentials}
             setEditCorsCredentials={setEditCorsCredentials}
+          />
+        );
+      case 'custom-flags':
+        return (
+          <CustomFlagsPage
+            editCustomFlags={editCustomFlags}
+            setEditCustomFlags={setEditCustomFlags}
           />
         );
       case 'cache-options':

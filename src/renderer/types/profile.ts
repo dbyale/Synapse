@@ -115,6 +115,9 @@ export interface Profile {
   corsHeaders?: string;
   corsCredentials?: boolean;
   thinkingTokens?: number;
+  customFlags?: string[];
+  useCustomLaunch?: boolean;
+  customLaunchCommand?: string;
   order: number;
   createdAt: number;
 }
