@@ -221,6 +221,16 @@ function stripMarkdown(text: string): string {
     .replace(/<[^>]+>/g, '');
 }
 
+function formatToolJson(jsonString: string): string {
+  let out: string;
+  try {
+    out = JSON.stringify(JSON.parse(jsonString), null, 2);
+  } catch {
+    out = jsonString;
+  }
+  return out.replace(/\\r\\n/g, '\r\n').replace(/\\n/g, '\n');
+}
+
 let persistentLoadedProfileId: string = '';
 let persistentModelLoading = false;
 let persistentLastLoadId = 0;
@@ -237,14 +247,8 @@ const ToolCallSegment = memo(function ToolCallSegmentInner({
   const [expanded, setExpanded] = useState(false);
   const hasContent = !!(segment.toolParams || segment.toolResult);
 
-  const prettyPrintJson = (jsonString: string): string => {
-    try {
-      const parsed = JSON.parse(jsonString);
-      return JSON.stringify(parsed, null, 2);
-    } catch {
-      return jsonString;
-    }
-  };
+  const prettyPrintJson = (jsonString: string): string =>
+    formatToolJson(jsonString);
 
   if (segment.displayedImage) {
     const meta = segment.toolName ? getToolMeta(segment.toolName) : undefined;
@@ -427,13 +431,7 @@ function MessageViewInner({
 }: MessageViewProps) {
   const streamingDisplayText = useMemo(() => {
     if (!streamingTool) return '';
-    let displayText = streamingTool.text;
-    try {
-      displayText = JSON.stringify(JSON.parse(streamingTool.text), null, 2);
-    } catch {
-      displayText = streamingTool.text;
-    }
-    return displayText.replace(/\\r\\n/g, '\r\n').replace(/\\n/g, '\n');
+    return formatToolJson(streamingTool.text);
   }, [streamingTool]);
 
   const toolStreamRef = useRef<HTMLDivElement>(null);

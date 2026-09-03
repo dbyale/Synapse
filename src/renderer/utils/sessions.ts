@@ -2,11 +2,13 @@
 import type { Message, SavedSession } from '../../shared/chatTypes';
 
 function prettyPrintJson(jsonString: string): string {
+  let out: string;
   try {
-    return JSON.stringify(JSON.parse(jsonString), null, 2);
+    out = JSON.stringify(JSON.parse(jsonString), null, 2);
   } catch {
-    return jsonString;
+    out = jsonString;
   }
+  return out.replace(/\\r\\n/g, '\r\n').replace(/\\n/g, '\n');
 }
 
 export function sessionsToMarkdown(
