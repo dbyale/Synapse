@@ -3547,8 +3547,7 @@ export default function ChatPage() {
     const hasContent = !!text || pendingMedia.length > 0;
     // Offline → queue via Enter (Power stays start-only). Text stays until drained.
     if (!isServerOnline) {
-      if (!hasContent) return;
-      if (!selectedProfileId || loadError) return;
+      if (!selectedProfileId) return;
       if (
         pendingMedia.some(
           (m) =>
@@ -3558,6 +3557,12 @@ export default function ChatPage() {
       )
         return;
       if (pendingQueuedRef.current) return;
+      if (!hasContent) {
+        // Empty chatbox: same as Power button — start server without queuing
+        handleToggleServer();
+        return;
+      }
+      if (loadError) return;
       pendingQueuedRef.current = true;
       setIsQueued(true);
       // Start server without switching session
