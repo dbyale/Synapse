@@ -1935,94 +1935,63 @@ export async function sendMessage(
           tags: chatFunctions[tc.name]?.tags,
         });
       }
-      for (const tc of toolCalls) {
-        const handler = chatFunctions[tc.name]?.handler;
-        const toolContext = { sessionId, profileId: s.profileId };
-        let result = await handler(JSON.parse(tc.args), toolContext);
+      // --- Parallel tool execution with configurable concurrency, interactive deferral ---
+      // UI (messages / checkmarks) commits immediately per completion order,
+      // LLM history (s.history) is deferred and applied in index order.
+      const rawLimit = (loadSettings().toolConcurrencyLimit ?? 10) as number;
+      const concurrencyLimit = rawLimit === 0 ? 0 : Math.max(1, Math.floor(rawLimit));
 
-        // Check if tool requests user input
-        const userInput =
-          result && typeof result === 'object' ? result._userInput : undefined;
-        if (userInput) {
-          const inputReq: UserInputRequest = {
-            requestId: tc.id,
-            type: userInput.type || 'confirm',
-            title:
-              userInput.title ||
-              (userInput.type === 'confirm' ? 'Action Required' : 'Question'),
-            prompt: userInput.prompt || `Allow ${tc.name}?`,
-            options: userInput.options,
-            toolName: tc.name,
-            toolParams: JSON.parse(tc.args),
-          };
-          // Pause this session's stream until the user responds. The model's
-          // output stops here; other sessions keep generating in their slots.
-          s.status = 'awaiting-tool';
-          emit({ type: 'user-input', sessionId, request: inputReq });
-          emitSessionChanged(sessionId);
-          const userResponse = await waitForSessionInput(s, inputReq);
+      type BufferedLLM = {
+        resultStr: string;
+        payload: any;
+        imageData: any;
+        sourcesData: any;
+        topSourcesData: any;
+      };
 
-          s.status = 'tool-running';
-          emitSessionChanged(sessionId);
+      const firstResults: PromiseSettledResult<any>[] = new Array(toolCalls.length);
+      const llmBuffers: (BufferedLLM | undefined)[] = new Array(toolCalls.length);
+      const isInteractive: boolean[] = new Array(toolCalls.length).fill(false);
 
-          if (inputReq.type === 'confirm') {
-            if (userResponse.action === 'confirmed') {
-              // Re-call handler with confirmation
-              result = await handler(
-                {
-                  ...JSON.parse(tc.args),
-                  _confirmed: true,
-                },
-                toolContext,
-              );
-            } else {
-              result = { _denied: true, message: 'User denied this action.' };
-            }
-          } else {
-            // select / freeform: use user's response directly as tool result
-            result = {
-              _userResponse: userResponse.action,
-              value: userResponse.value,
-            };
-          }
-        }
-
-        // Check for structured response with optional image data
-        let modelContent = result;
+      const prepareBuffer = (result: any, tc: any): BufferedLLM => {
+        let modelContent: any = result;
         let imageData: any = null;
         if (result && typeof result === 'object' && '_response' in result) {
-          modelContent = result._response;
-          imageData = result._image ?? null;
+          modelContent = (result as any)._response;
+          imageData = (result as any)._image ?? null;
         }
         /* eslint-disable no-underscore-dangle */
         const sourcesData =
-          result && typeof result === 'object' && '_sources' in result
-            ? result._sources
-            : undefined;
+          result && typeof result === 'object' && '_sources' in result ? (result as any)._sources : undefined;
         const topSourcesData =
-          result && typeof result === 'object' && '_top_sources' in result
-            ? result._top_sources
-            : undefined;
+          result && typeof result === 'object' && '_top_sources' in result ? (result as any)._top_sources : undefined;
         /* eslint-enable no-underscore-dangle */
+        const resultStr = JSON.stringify(modelContent);
+        const payload: any = { result: resultStr };
+        if (imageData && tc.name !== 'read_media_file') payload._image = imageData;
+        if (sourcesData) payload._sources = sourcesData;
+        if (topSourcesData) payload._top_sources = topSourcesData;
+        return { resultStr, payload, imageData, sourcesData, topSourcesData };
+      };
 
+      const commitImmediateUI = (idx: number, buffered: BufferedLLM): void => {
+        const tc = toolCalls[idx];
+        const { payload, sourcesData, topSourcesData } = buffered;
         const toolTags = chatFunctions[tc.name]?.tags;
         if (sourcesData || topSourcesData) {
           const incoming: Source[] = [];
           if (Array.isArray(sourcesData)) {
             incoming.push(
-              ...sourcesData.map((src) => ({
+              ...sourcesData.map((src: any) => ({
                 title: src.title,
                 url: src.url,
                 kind: 'other' as const,
               })),
             );
           }
-          if (
-            Array.isArray(topSourcesData) &&
-            toolTags?.includes('top_source')
-          ) {
+          if (Array.isArray(topSourcesData) && toolTags?.includes('top_source')) {
             incoming.push(
-              ...topSourcesData.map((src) => ({
+              ...topSourcesData.map((src: any) => ({
                 title: src.title,
                 url: src.url,
                 kind: 'top' as const,
@@ -2031,62 +2000,161 @@ export async function sendMessage(
           }
           if (incoming.length > 0) {
             s.sources = mergeSources(s.sources, incoming);
-            persistSessionState(sessionId);
           }
         }
-
-        const resultStr = JSON.stringify(modelContent);
-        if (lastUsage) {
-          const resultTokens = (await tokenize(resultStr)) ?? 0;
-          totalResultTokens += resultTokens;
-          lastUsage = {
-            used: lastUsage.used + resultTokens,
-            total: lastUsage.total,
-          };
-        }
-        /* eslint-disable no-underscore-dangle */
-        const resultPayload: any = { result: resultStr };
-        if (imageData && tc.name !== 'read_media_file') {
-          resultPayload._image = imageData;
-        }
-        if (sourcesData) resultPayload._sources = sourcesData;
-        if (topSourcesData) resultPayload._top_sources = topSourcesData;
-        handleFunctionResult(s, resultPayload, tc.segId);
+        handleFunctionResult(s, payload, tc.segId);
         emit({
           type: 'function-result',
           sessionId,
           id: tc.segId,
           toolCallId: tc.id,
           name: tc.name,
-          result: resultStr,
-          _image:
-            imageData && tc.name !== 'read_media_file' ? imageData : undefined,
+          result: buffered.resultStr,
+          _image: buffered.imageData && tc.name !== 'read_media_file' ? buffered.imageData : undefined,
           _sources: sourcesData,
           _top_sources: topSourcesData,
           tags: chatFunctions[tc.name]?.tags,
         });
-        /* eslint-enable no-underscore-dangle */
-        s.history.push({
-          role: 'tool',
-          tool_call_id: tc.id,
-          content: resultStr,
-        });
+        persistSessionState(sessionId);
+      };
 
-        // For projector tools with image data, inject the image into the
-        // conversation so the model can process it through the vision encoder
-        if (imageData && chatFunctions[tc.name]?.displayType === 'projector') {
+      const commitDeferredLLM = async (idx: number): Promise<void> => {
+        const tc = toolCalls[idx];
+        const buffered = llmBuffers[idx];
+        if (!buffered) return;
+        if (lastUsage) {
+          const resultTokens = (await tokenize(buffered.resultStr)) ?? 0;
+          totalResultTokens += resultTokens;
+          lastUsage = { used: lastUsage.used + resultTokens, total: lastUsage.total };
+        }
+        s.history.push({ role: 'tool', tool_call_id: tc.id, content: buffered.resultStr });
+        if (buffered.imageData && chatFunctions[tc.name]?.displayType === 'projector') {
           s.history.push({
             role: 'tool',
             content: [
-              {
-                type: 'text',
-                text: `[Image from tool: ${imageData.altText || 'media'}]`,
-              },
-              { type: 'image_url', image_url: { url: imageData.url } },
+              { type: 'text', text: `[Image from tool: ${buffered.imageData.altText || 'media'}]` },
+              { type: 'image_url', image_url: { url: buffered.imageData.url } },
             ],
           });
         }
+      };
+
+      // Phase 1: parallel first invocation with immediate UI per completion order
+      await (async () => {
+        const runOne = async (idx: number): Promise<void> => {
+          if (s.aborted) {
+            firstResults[idx] = { status: 'rejected', reason: new Error('Aborted') } as PromiseRejectedResult;
+            return;
+          }
+          const tc = toolCalls[idx];
+          try {
+            const h = chatFunctions[tc.name]?.handler;
+            if (!h) throw new Error(`Tool handler not found: ${tc.name}`);
+            const toolContext = { sessionId, profileId: s.profileId };
+            const v = await h(JSON.parse(tc.args), toolContext);
+            firstResults[idx] = { status: 'fulfilled', value: v } as PromiseFulfilledResult<any>;
+            if (v && typeof v === 'object' && (v as any)._userInput) {
+              isInteractive[idx] = true;
+              // interactive probe stays in calling state until Phase 3
+              return;
+            }
+            const buffered = prepareBuffer(v, tc);
+            llmBuffers[idx] = buffered;
+            commitImmediateUI(idx, buffered);
+          } catch (e) {
+            firstResults[idx] = { status: 'rejected', reason: e } as PromiseRejectedResult;
+            const buffered = prepareBuffer({ error: e instanceof Error ? e.message : String(e) }, tc);
+            llmBuffers[idx] = buffered;
+            commitImmediateUI(idx, buffered);
+          }
+        };
+
+        if (concurrencyLimit === 0) {
+          await Promise.all(toolCalls.map((_, i) => runOne(i)));
+        } else {
+          let next = 0;
+          const workers = Array(Math.min(concurrencyLimit, toolCalls.length))
+            .fill(0)
+            .map(async () => {
+              // eslint-disable-next-line no-await-in-loop
+              while (next < toolCalls.length) {
+                if (s.aborted) break;
+                const idx = next;
+                next += 1;
+                // eslint-disable-next-line no-await-in-loop
+                await runOne(idx);
+              }
+            });
+          await Promise.all(workers);
+        }
+      })();
+
+      // Build index lists (interactive probe vs non-interactive)
+      const nonInteractiveIndices: number[] = [];
+      const interactiveIndices: number[] = [];
+      for (let i = 0; i < toolCalls.length; i += 1) {
+        if (isInteractive[i]) interactiveIndices.push(i);
+        else nonInteractiveIndices.push(i);
       }
+
+      // Phase 3: interactive sequential after all non-interactive (preserves single pendingInput)
+      // Immediate UI for interactive stays deferred until after user response; LLM buffers filled here
+      const sortedInteractive = [...interactiveIndices].sort((a, b) => a - b);
+      for (const idx of sortedInteractive) {
+        if (s.aborted) break;
+        const rInter = firstResults[idx];
+        if (!rInter || rInter.status !== 'fulfilled') continue;
+        const tc = toolCalls[idx];
+        const firstVal = (rInter as PromiseFulfilledResult<any>).value;
+        const userInput = (firstVal as any)._userInput;
+        const inputReq: UserInputRequest = {
+          requestId: tc.id,
+          type: userInput.type || 'confirm',
+          title: userInput.title || (userInput.type === 'confirm' ? 'Action Required' : 'Question'),
+          prompt: userInput.prompt || `Allow ${tc.name}?`,
+          options: userInput.options,
+          toolName: tc.name,
+          toolParams: JSON.parse(tc.args),
+        };
+        s.status = 'awaiting-tool';
+        emit({ type: 'user-input', sessionId, request: inputReq });
+        emitSessionChanged(sessionId);
+        // eslint-disable-next-line no-await-in-loop
+        const userResponse = await waitForSessionInput(s, inputReq);
+        s.status = 'tool-running';
+        emitSessionChanged(sessionId);
+        const handler = chatFunctions[tc.name]?.handler;
+        const toolContext = { sessionId, profileId: s.profileId };
+        let finalResult: any;
+        if (inputReq.type === 'confirm') {
+          if (userResponse.action === 'confirmed') {
+            // eslint-disable-next-line no-await-in-loop
+            finalResult = await handler({ ...JSON.parse(tc.args), _confirmed: true }, toolContext);
+          } else {
+            finalResult = { _denied: true, message: 'User denied this action.' };
+          }
+        } else {
+          finalResult = { _userResponse: userResponse.action, value: userResponse.value };
+        }
+        const buffered = prepareBuffer(finalResult, tc);
+        llmBuffers[idx] = buffered;
+        commitImmediateUI(idx, buffered);
+      }
+
+      // Final: deferred LLM history in global index order (0..n-1) so model sees original call order
+      // This runs after immediate UI checks have already been emitted per completion order,
+      // but before the next model turn.
+      const allSorted = Array.from({ length: toolCalls.length }, (_, i) => i).sort((a, b) => a - b);
+      for (const idx of allSorted) {
+        if (s.aborted) break;
+        if (!llmBuffers[idx]) continue;
+        // eslint-disable-next-line no-await-in-loop
+        await commitDeferredLLM(idx);
+      }
+      if (toolCalls.length > 0) {
+        persistSessionState(sessionId);
+      }
+
       currentNewTokens = toolCallRequestTokens + totalResultTokens;
       return runCompletion();
     }

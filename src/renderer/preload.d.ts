@@ -86,6 +86,7 @@ export interface AppSettings {
   corsCredentials?: boolean;
   disableExternalReadmes?: boolean;
   launchServerAutomatically?: boolean;
+  toolConcurrencyLimit?: number;
 }
 
 export interface BackendDownloadRecord {

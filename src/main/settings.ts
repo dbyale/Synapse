@@ -25,6 +25,7 @@ export interface AppSettings {
   corsCredentials?: boolean;
   disableExternalReadmes?: boolean;
   launchServerAutomatically?: boolean;
+  toolConcurrencyLimit?: number;
 }
 
 const SETTINGS_FILE = path.join(app.getPath('userData'), 'settings.json');
@@ -52,6 +53,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   corsCredentials: true,
   disableExternalReadmes: false,
   launchServerAutomatically: true,
+  toolConcurrencyLimit: 10,
 };
 
 let cachedSettings: AppSettings | null = null;
@@ -102,6 +104,16 @@ export function loadSettings(): AppSettings {
       const raw = fs.readFileSync(SETTINGS_FILE, 'utf-8');
       const parsed = JSON.parse(raw);
       loadedSettings = { ...DEFAULT_SETTINGS, ...parsed };
+      // Coerce toolConcurrencyLimit: 0 = unlimited, otherwise >=1 integer, default 10
+      const rawLimit = (parsed as any).toolConcurrencyLimit;
+      if (rawLimit === 0) {
+        loadedSettings.toolConcurrencyLimit = 0;
+      } else if (Number.isFinite(rawLimit)) {
+        const n = Math.floor(Number(rawLimit));
+        loadedSettings.toolConcurrencyLimit = n >= 1 ? n : 10;
+      } else if (rawLimit !== undefined) {
+        loadedSettings.toolConcurrencyLimit = 10;
+      }
     }
   } catch (err) {
     console.error(

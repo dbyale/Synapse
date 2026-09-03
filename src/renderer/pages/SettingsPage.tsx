@@ -94,6 +94,12 @@ export default function SettingsPage() {
           corsCredentials: loaded?.corsCredentials ?? true,
           disableExternalReadmes: loaded?.disableExternalReadmes ?? false,
           launchServerAutomatically: loaded?.launchServerAutomatically ?? true,
+          toolConcurrencyLimit:
+            loaded?.toolConcurrencyLimit === 0
+              ? 0
+              : Number.isFinite(loaded?.toolConcurrencyLimit)
+                ? Math.max(1, Math.floor(loaded.toolConcurrencyLimit as number))
+                : 10,
           host: loaded?.host ?? '127.0.0.1',
           port: loaded?.port ?? 9931,
         };
@@ -485,6 +491,68 @@ export default function SettingsPage() {
                   <div className="epm-toggle-switch__knob" />
                 </div>
               </label>
+            </div>
+          </div>
+
+          <div className="settings-card">
+            <h2 className="settings-card-title">Tools</h2>
+
+            <div className="settings-field">
+              <div className="epm-section__label">Parallel tool limit</div>
+              <InfoTooltip
+                content="Maximum number of non-interactive tools to run at once per turn. Interactive tools (needing confirmation) always run sequentially after. Set to 0 for unlimited concurrency — you assume the risk of resource exhaustion. Default 10."
+                side="bottom"
+                stretch
+                className="info-tooltip-stretch--col"
+                title="Parallel tool limit"
+              >
+                <input
+                  type="number"
+                  className="settings-input"
+                  value={settings.toolConcurrencyLimit?.toString() ?? '10'}
+                  min={0}
+                  step={1}
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    if (raw === '') {
+                      setSettings((prev) =>
+                        prev ? { ...prev, toolConcurrencyLimit: 10 } : prev,
+                      );
+                      return;
+                    }
+                    const n = Number(raw);
+                    if (!Number.isFinite(n)) return;
+                    const clamped = n === 0 ? 0 : Math.max(1, Math.floor(n));
+                    setSettings((prev) =>
+                      prev ? { ...prev, toolConcurrencyLimit: clamped } : prev,
+                    );
+                  }}
+                  onBlur={() => {
+                    const v = settings.toolConcurrencyLimit;
+                    const coerced =
+                      v === 0 ? 0 : Number.isFinite(v) ? Math.max(1, Math.floor(v as number)) : 10;
+                    if (coerced !== v) {
+                      setSettings((prev) =>
+                        prev ? { ...prev, toolConcurrencyLimit: coerced } : prev,
+                      );
+                    }
+                    triggerSave({ toolConcurrencyLimit: coerced });
+                  }}
+                  placeholder="10"
+                  style={{ marginTop: '8px' }}
+                />
+              </InfoTooltip>
+              <p
+                style={{
+                  fontSize: '13px',
+                  color: 'var(--text-secondary)',
+                  lineHeight: 1.5,
+                  margin: '8px 0 0 0',
+                }}
+              >
+                0 = unlimited. Higher values run more tools at once; interactive
+                tools still run one-by-one after.
+              </p>
             </div>
           </div>
 
