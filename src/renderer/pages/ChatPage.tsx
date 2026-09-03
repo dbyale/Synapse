@@ -402,6 +402,7 @@ interface MessageViewProps {
   streamingTool: { name: string; text: string } | null;
   settings: AppSettings | null;
   copiedMsgId: number | null;
+  isCollapsed: boolean;
   onToggleCollapsed: (id: number) => void;
   onCopy: (msg: Message) => void;
   onImageClick: (url: string) => void;
@@ -417,6 +418,7 @@ function MessageViewInner({
   streamingTool,
   settings,
   copiedMsgId,
+  isCollapsed,
   onToggleCollapsed,
   onCopy,
   onImageClick,
@@ -467,13 +469,13 @@ function MessageViewInner({
             {collapsible && (
               <ChevronDown
                 size={12}
-                className={`chat-message__label-chevron${msg.collapsed ? ' chat-message__label-chevron--collapsed' : ''}`}
+                className={`chat-message__label-chevron${isCollapsed ? ' chat-message__label-chevron--collapsed' : ''}`}
               />
             )}
           </div>
         );
       })()}
-      {msg.collapsed && (msg.role === 'user' || msg.role === 'assistant') ? (
+      {isCollapsed && (msg.role === 'user' || msg.role === 'assistant') ? (
         <div
           className="chat-message__bubble chat-message__bubble--collapsed"
           role="button"
@@ -498,7 +500,7 @@ function MessageViewInner({
           })()}
         </div>
       ) : (
-        !msg.collapsed && (
+        !isCollapsed && (
           <>
             {loading && isLast && msg.role === 'assistant' && !processing && (
               <div className="chat-message__indicator-box">
@@ -1018,7 +1020,8 @@ function messageViewPropsEqual(prev: MessageViewProps, next: MessageViewProps) {
     prev.isLast !== next.isLast ||
     prev.profileName !== next.profileName ||
     prev.settings !== next.settings ||
-    prev.copiedMsgId !== next.copiedMsgId
+    prev.copiedMsgId !== next.copiedMsgId ||
+    prev.isCollapsed !== next.isCollapsed
   ) {
     return false;
   }
@@ -1433,6 +1436,13 @@ export default function ChatPage() {
   const [showScrollButton, setShowScrollButton] = useState(false);
   const SCROLL_THRESHOLD_PX = 200;
 
+  // ── Collapsed UI state (clean separation: not stored in Message) ────────
+  const [collapsedIds, setCollapsedIds] = useState<Set<number>>(
+    () => new Set(),
+  );
+  const collapsedBySessionRef = useRef<Record<string, Set<number>>>({});
+  const seenIdsRef = useRef<Record<string, Set<number>>>({});
+
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, []);
@@ -1446,18 +1456,65 @@ export default function ChatPage() {
   }, [SCROLL_THRESHOLD_PX]);
 
   const toggleMessageCollapsed = useCallback((id: number) => {
-    setMessages((prev) => {
-      const updated = [...prev];
-      const idx = updated.findIndex((m) => m.id === id);
-      if (idx >= 0) {
-        updated[idx] = {
-          ...updated[idx],
-          collapsed: !updated[idx].collapsed,
-        };
+    const sid = activeSessionIdRef.current;
+    setCollapsedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      if (sid) {
+        collapsedBySessionRef.current[sid] = new Set(next);
+        if (!seenIdsRef.current[sid]) seenIdsRef.current[sid] = new Set();
+        seenIdsRef.current[sid].add(id);
       }
-      return updated;
+      return next;
     });
   }, []);
+
+  // ── Keep collapsed state in sync with messages (initial collapse for long user msgs)
+  useEffect(() => {
+    const sid = activeSessionIdRef.current;
+    if (!sid) return;
+    if (!seenIdsRef.current[sid]) seenIdsRef.current[sid] = new Set();
+    if (!collapsedBySessionRef.current[sid])
+      collapsedBySessionRef.current[sid] = new Set();
+    const seen = seenIdsRef.current[sid];
+    const collapsedSet = collapsedBySessionRef.current[sid];
+    let changed = false;
+    for (const msg of messages) {
+      if (seen.has(msg.id)) continue;
+      seen.add(msg.id);
+      const text = msg.content[0]?.text || '';
+      const isLongUser =
+        msg.role === 'user' && text.length >= 20 && text.split('\n').length > 5;
+      const shouldCollapse = (msg as any).collapsed === true || isLongUser;
+      if (shouldCollapse && !collapsedSet.has(msg.id)) {
+        collapsedSet.add(msg.id);
+        changed = true;
+      }
+    }
+    if (changed) {
+      collapsedBySessionRef.current[sid] = new Set(collapsedSet);
+      setCollapsedIds(new Set(collapsedSet));
+    }
+  }, [messages]);
+
+  // ── Sync collapsed set when active session switches
+  useEffect(() => {
+    if (!activeSessionId) {
+      setCollapsedIds(new Set());
+      return;
+    }
+    const saved = collapsedBySessionRef.current[activeSessionId];
+    if (saved) {
+      setCollapsedIds(new Set(saved));
+    } else {
+      if (!seenIdsRef.current[activeSessionId])
+        seenIdsRef.current[activeSessionId] = new Set();
+      if (!collapsedBySessionRef.current[activeSessionId])
+        collapsedBySessionRef.current[activeSessionId] = new Set();
+      setCollapsedIds(new Set(collapsedBySessionRef.current[activeSessionId]));
+    }
+  }, [activeSessionId]);
 
   const copyMessageText = useCallback((msg: Message) => {
     const text =
@@ -2115,7 +2172,10 @@ export default function ChatPage() {
     sessionMessagesRef.current = {};
     messageCountersRef.current = {};
     segmentCountersRef.current = {};
+    collapsedBySessionRef.current = {};
+    seenIdsRef.current = {};
     setMessages([]);
+    setCollapsedIds(new Set());
     clearAllSources();
     setStreamingTool(null);
     setProgressPercent(0);
@@ -2259,6 +2319,7 @@ export default function ChatPage() {
         setUsedTokens(0);
         setMaxTokens(null);
         setMessages([]);
+        setCollapsedIds(new Set());
         clearAllSources();
         setStreamingTool(null);
         setProgressPercent(0);
@@ -3362,8 +3423,9 @@ export default function ChatPage() {
             mediaItems,
           },
         ],
-        collapsed: text.length >= 20 && text.split('\n').length > 5,
       };
+      const shouldCollapseUser =
+        text.length >= 20 && text.split('\n').length > 5;
 
       setMessages((prev) => {
         const updated = [...prev];
@@ -3390,6 +3452,26 @@ export default function ChatPage() {
         sessionMessagesRef.current[sessionId] = updated;
         return updated;
       });
+      if (shouldCollapseUser) {
+        const sid = sessionId;
+        if (!collapsedBySessionRef.current[sid])
+          collapsedBySessionRef.current[sid] = new Set();
+        if (!seenIdsRef.current[sid]) seenIdsRef.current[sid] = new Set();
+        collapsedBySessionRef.current[sid].add(uid);
+        seenIdsRef.current[sid].add(uid);
+        if (sid === activeSessionIdRef.current) {
+          setCollapsedIds((prev) => {
+            const next = new Set(prev);
+            next.add(uid);
+            return next;
+          });
+        }
+      } else {
+        // mark as seen so effect doesn't re-evaluate as initially collapsed
+        const sid = sessionId;
+        if (!seenIdsRef.current[sid]) seenIdsRef.current[sid] = new Set();
+        seenIdsRef.current[sid].add(uid);
+      }
       setInputText('');
 
       const textarea = document.querySelector('textarea');
@@ -3521,6 +3603,7 @@ export default function ChatPage() {
       }));
       setProcessingSessions((prev) => ({ ...prev, [sessionId]: false }));
       setSources(sessionId, view.session.sources ?? []);
+      // collapsed state is handled by effects (per-session)
     },
     [modelLoading, loadError, setSources],
   );
@@ -3533,6 +3616,7 @@ export default function ChatPage() {
     activeSessionIdRef.current = null;
     setActiveSessionId(null);
     setMessages([]);
+    setCollapsedIds(new Set());
     clearAllSources();
     setStreamingTool(null);
     setProgressPercent(0);
@@ -3550,11 +3634,14 @@ export default function ChatPage() {
     (id: string) => {
       window.electronAPI.chatDeleteSession(id).catch(() => {});
       removeSessionSources(id);
+      delete collapsedBySessionRef.current[id];
+      delete seenIdsRef.current[id];
+      delete sessionMessagesRef.current[id];
       if (activeSessionIdRef.current === id) {
         activeSessionIdRef.current = null;
         setActiveSessionId(null);
         setMessages([]);
-        delete sessionMessagesRef.current[id];
+        setCollapsedIds(new Set());
       }
     },
     [removeSessionSources],
@@ -3846,6 +3933,7 @@ export default function ChatPage() {
               streamingTool={streamingTool}
               settings={settings}
               copiedMsgId={copiedMsgId}
+              isCollapsed={collapsedIds.has(msg.id)}
               onToggleCollapsed={toggleMessageCollapsed}
               onCopy={copyMessageText}
               onImageClick={setImageViewerUrl}

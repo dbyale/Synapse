@@ -1536,7 +1536,6 @@ export async function sendMessage(
           displayItems && displayItems.length > 0 ? displayItems : undefined,
       },
     ],
-    collapsed: text.length >= 20 && text.split('\n').length > 5,
   };
   s.messageCounter += 1;
 
