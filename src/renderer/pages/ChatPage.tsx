@@ -434,6 +434,36 @@ function MessageViewInner({
     return displayText.replace(/\\r\\n/g, '\r\n').replace(/\\n/g, '\n');
   }, [streamingTool]);
 
+  const toolStreamRef = useRef<HTMLDivElement>(null);
+  const isToolAtBottomRef = useRef(true);
+
+  const handleToolScroll = useCallback(() => {
+    const el = toolStreamRef.current;
+    if (!el) return;
+    const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
+    isToolAtBottomRef.current = distance < 40;
+  }, []);
+
+  useEffect(() => {
+    if (!streamingTool) {
+      isToolAtBottomRef.current = true;
+      return;
+    }
+    if (streamingTool.text.length === 0) {
+      isToolAtBottomRef.current = true;
+      const el = toolStreamRef.current;
+      if (el) el.scrollTop = 0;
+    }
+  }, [streamingTool?.name]);
+
+  useEffect(() => {
+    if (!streamingTool) return;
+    if (!isToolAtBottomRef.current) return;
+    const el = toolStreamRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [streamingDisplayText]);
+
   return (
     <div className={`chat-message chat-message--${msg.role}`}>
       {(() => {
@@ -810,23 +840,27 @@ function MessageViewInner({
                         </span>
                         <div className="tool-call-stream__spinner" />
                       </div>
-                      <SyntaxHighlighter
-                        language="json"
-                        style={oneDark}
-                        customStyle={{
-                          margin: 0,
-                          borderTop: '1px solid var(--border)',
-                          borderRadius: 0,
-                          fontSize: 11,
-                          lineHeight: 1.4,
-                          maxHeight: 240,
-                          overflow: 'auto',
-                          background: 'transparent',
-                        }}
-                        codeTagProps={{ style: { fontFamily: 'inherit' } }}
+                      <div
+                        ref={toolStreamRef}
+                        className="tool-call-stream__body"
+                        onScroll={handleToolScroll}
                       >
-                        {streamingDisplayText}
-                      </SyntaxHighlighter>
+                        <SyntaxHighlighter
+                          language="json"
+                          style={oneDark}
+                          customStyle={{
+                            margin: 0,
+                            borderTop: 'none',
+                            borderRadius: 0,
+                            fontSize: 11,
+                            lineHeight: 1.4,
+                            background: 'transparent',
+                          }}
+                          codeTagProps={{ style: { fontFamily: 'inherit' } }}
+                        >
+                          {streamingDisplayText}
+                        </SyntaxHighlighter>
+                      </div>
                     </div>
                   )}
                   {loading &&
@@ -1381,12 +1415,22 @@ export default function ChatPage() {
   >({});
   const typewriterCarryRef = useRef<Record<string, number>>({});
   const tokenTimestampsRef = useRef<Record<string, number[]>>({});
-  const tokenCharsRef = useRef<Record<string, { chars: number; tokens: number }>>(
-    {},
-  );
+  const tokenCharsRef = useRef<
+    Record<string, { chars: number; tokens: number }>
+  >({});
   const tokenTpsRef = useRef<Record<string, number>>({});
   const tpsRef = useRef<number>(0);
   const TYPEWRITER_INTERVAL_MS = 16;
+  // ── Tool typewriter (both raw & pretty at 16ms) ───────────────────────
+  const toolTypewriterQueuesRef = useRef<Record<string, string[]>>({});
+  const toolTypewriterTimersRef = useRef<
+    Record<string, ReturnType<typeof setInterval>>
+  >({});
+  const toolTypewriterCarryRef = useRef<Record<string, number>>({});
+  // Kept for cleanup of legacy timers (no longer used for batching)
+  const toolPrettyFlushTimersRef = useRef<
+    Record<string, ReturnType<typeof setTimeout>>
+  >({});
   const messagesRef = useRef<Message[]>([]);
   const slotBannerHideTimer = useRef<ReturnType<typeof setTimeout> | null>(
     null,
@@ -1465,12 +1509,10 @@ export default function ChatPage() {
   // ── Typewriter helpers (TPS-driven, very fast, catch-up) ─────────────
   const getEffectiveCPS = useCallback(
     (sessionId: string, queueLen: number): number => {
-      const rawTps =
-        tokenTpsRef.current[sessionId] ?? tpsRef.current ?? 0;
+      const rawTps = tokenTpsRef.current[sessionId] ?? tpsRef.current ?? 0;
       // chars per token estimator
       const cc = tokenCharsRef.current[sessionId];
-      const avgCharsPerToken =
-        cc && cc.tokens > 0 ? cc.chars / cc.tokens : 4;
+      const avgCharsPerToken = cc && cc.tokens > 0 ? cc.chars / cc.tokens : 4;
       let baseCPS: number;
       if (rawTps <= 0.1) {
         baseCPS = 90; // warmup before TPS measured
@@ -1495,6 +1537,18 @@ export default function ChatPage() {
     delete tokenTimestampsRef.current[sessionId];
     delete tokenCharsRef.current[sessionId];
     delete tokenTpsRef.current[sessionId];
+    const tt = toolTypewriterTimersRef.current[sessionId];
+    if (tt) {
+      clearInterval(tt);
+      delete toolTypewriterTimersRef.current[sessionId];
+    }
+    const pt = toolPrettyFlushTimersRef.current[sessionId];
+    if (pt) {
+      clearTimeout(pt);
+      delete toolPrettyFlushTimersRef.current[sessionId];
+    }
+    delete toolTypewriterQueuesRef.current[sessionId];
+    delete toolTypewriterCarryRef.current[sessionId];
   }, []);
 
   const clearAllTypewriterSessions = useCallback(() => {
@@ -1507,6 +1561,16 @@ export default function ChatPage() {
     tokenTimestampsRef.current = {};
     tokenCharsRef.current = {};
     tokenTpsRef.current = {};
+    Object.keys(toolTypewriterTimersRef.current).forEach((sid) => {
+      clearInterval(toolTypewriterTimersRef.current[sid]);
+    });
+    toolTypewriterTimersRef.current = {};
+    Object.keys(toolPrettyFlushTimersRef.current).forEach((sid) => {
+      clearTimeout(toolPrettyFlushTimersRef.current[sid]);
+    });
+    toolPrettyFlushTimersRef.current = {};
+    toolTypewriterQueuesRef.current = {};
+    toolTypewriterCarryRef.current = {};
   }, []);
 
   const drainTypewriterQueue = useCallback(
@@ -1527,7 +1591,7 @@ export default function ChatPage() {
       } else {
         const cps = getEffectiveCPS(sessionId, q.length);
         const carry = typewriterCarryRef.current[sessionId] ?? 0;
-        const inc = cps * TYPEWRITER_INTERVAL_MS / 1000;
+        const inc = (cps * TYPEWRITER_INTERVAL_MS) / 1000;
         const total = carry + inc;
         n = Math.floor(total);
         typewriterCarryRef.current[sessionId] = total - n;
@@ -1564,7 +1628,10 @@ export default function ChatPage() {
               type: currentType,
             });
           }
-          updated = [...updated.slice(0, -1), { ...last, content: updatedContent }];
+          updated = [
+            ...updated.slice(0, -1),
+            { ...last, content: updatedContent },
+          ];
         } else {
           const counters = messageCountersRef.current;
           const id = counters[sessionId] ?? 0;
@@ -1599,6 +1666,63 @@ export default function ChatPage() {
           delete typewriterTimersRef.current[sessionId];
         }
         delete typewriterCarryRef.current[sessionId];
+      }
+    },
+    [getEffectiveCPS],
+  );
+
+  const drainToolTypewriterQueue = useCallback(
+    (sessionId: string, flushAll = false) => {
+      const q = toolTypewriterQueuesRef.current[sessionId];
+      if (!q || q.length === 0) {
+        const timer = toolTypewriterTimersRef.current[sessionId];
+        if (timer) {
+          clearInterval(timer);
+          delete toolTypewriterTimersRef.current[sessionId];
+        }
+        delete toolTypewriterCarryRef.current[sessionId];
+        return;
+      }
+      let n: number;
+      if (flushAll) {
+        n = q.length;
+      } else {
+        const cps = getEffectiveCPS(sessionId, q.length);
+        const carry = toolTypewriterCarryRef.current[sessionId] ?? 0;
+        const inc = (cps * TYPEWRITER_INTERVAL_MS) / 1000;
+        const total = carry + inc;
+        n = Math.floor(total);
+        toolTypewriterCarryRef.current[sessionId] = total - n;
+        if (n <= 0) return;
+        n = Math.min(n, q.length);
+      }
+      const chunk = q.splice(0, n);
+      if (chunk.length === 0) return;
+      const prev = streamingToolsRef.current[sessionId];
+      if (!prev) return;
+      const newText = (prev.text ?? '') + chunk.join('');
+      streamingToolsRef.current[sessionId] = { ...prev, text: newText };
+      const isActive = sessionId === activeSessionIdRef.current;
+      if (!isActive) {
+        if (q.length === 0) {
+          const timer = toolTypewriterTimersRef.current[sessionId];
+          if (timer) {
+            clearInterval(timer);
+            delete toolTypewriterTimersRef.current[sessionId];
+          }
+          delete toolTypewriterCarryRef.current[sessionId];
+        }
+        return;
+      }
+      // Both raw and pretty at 16ms – immediate UI update for typewriter effect
+      setStreamingTool({ ...streamingToolsRef.current[sessionId]! });
+      if (q.length === 0) {
+        const timer = toolTypewriterTimersRef.current[sessionId];
+        if (timer) {
+          clearInterval(timer);
+          delete toolTypewriterTimersRef.current[sessionId];
+        }
+        delete toolTypewriterCarryRef.current[sessionId];
       }
     },
     [getEffectiveCPS],
@@ -2730,6 +2854,14 @@ export default function ChatPage() {
           // No buffered sessions to iterate – the typewriter path already cleared
           // processing directly, so nothing to do here. Keep for safety.
         }
+        // Tool streaming now uses typewriter queue with batched pretty flush,
+        // but keep legacy dirty flush outside loop for safety (previously trapped inside loop).
+        if (toolDirty) {
+          const activeId = activeSessionIdRef.current;
+          if (activeId && streamingToolsRef.current[activeId] !== undefined) {
+            setStreamingTool(streamingToolsRef.current[activeId] ?? null);
+          }
+        }
 
         Object.keys(buffers).forEach((bufferedSessionId) => {
           const events = buffers[bufferedSessionId];
@@ -2745,11 +2877,6 @@ export default function ChatPage() {
             // Failsafe: progress is prompt-only – hide it the moment tokens flow
             progressRef.current[bufferedSessionId] = 0;
             if (bufferedActive) setProgressPercent(0);
-          }
-          if (bufferedActive && toolDirty) {
-            setStreamingTool(
-              streamingToolsRef.current[bufferedSessionId] ?? null,
-            );
           }
 
           applyToSession(bufferedSessionId, bufferedActive, (prev) => {
@@ -2817,6 +2944,8 @@ export default function ChatPage() {
         });
       };
 
+      // Legacy flush still used for 'prompt-done' etc – keep for pending buffers (currently unused but safe)
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const scheduleTokenFlush = () => {
         if (tokenFlushTimerRef.current) return;
         tokenFlushTimerRef.current = setTimeout(() => {
@@ -2850,17 +2979,63 @@ export default function ChatPage() {
         }
       };
 
+      const flushToolTypewriterFor = (sid: string, flushAll = false) => {
+        const q = toolTypewriterQueuesRef.current[sid];
+        if (!q || q.length === 0) return;
+        if (flushAll) {
+          drainToolTypewriterQueue(sid, true);
+          while (
+            toolTypewriterQueuesRef.current[sid] &&
+            toolTypewriterQueuesRef.current[sid].length > 0
+          ) {
+            drainToolTypewriterQueue(sid, true);
+          }
+        } else {
+          drainToolTypewriterQueue(sid, false);
+        }
+      };
+
       switch (payload.type) {
         case 'token': {
           const { token, segmentType } = payload;
           if (segmentType === 'tool') {
-            const prev = streamingToolsRef.current[sessionId] ?? null;
-            streamingToolsRef.current[sessionId] = {
-              name: prev?.name ?? 'tool',
-              text: (prev?.text ?? '') + token,
+            // Typewriter for tool JSON – both raw and pretty at 16ms
+            const now = Date.now();
+            const arr = tokenTimestampsRef.current[sessionId] ?? [];
+            arr.push(now);
+            while (arr.length > 0 && now - arr[0] > 500) arr.shift();
+            tokenTimestampsRef.current[sessionId] = arr;
+            const instantTps = arr.length * 2;
+            const prevTps = tokenTpsRef.current[sessionId] ?? 0;
+            tokenTpsRef.current[sessionId] =
+              prevTps === 0 ? instantTps : 0.3 * instantTps + 0.7 * prevTps;
+            const cc = tokenCharsRef.current[sessionId] ?? {
+              chars: 0,
+              tokens: 0,
             };
-            streamingToolDirtyRef.current = true;
-            scheduleTokenFlush();
+            cc.chars += Array.from(token ?? '').length;
+            cc.tokens += 1;
+            tokenCharsRef.current[sessionId] = cc;
+
+            if (!streamingToolsRef.current[sessionId]) {
+              streamingToolsRef.current[sessionId] = {
+                name: 'tool',
+                text: '',
+              };
+            }
+            if (!toolTypewriterQueuesRef.current[sessionId]) {
+              toolTypewriterQueuesRef.current[sessionId] = [];
+            }
+            for (const ch of Array.from(token ?? '')) {
+              toolTypewriterQueuesRef.current[sessionId].push(ch);
+            }
+            if (!toolTypewriterTimersRef.current[sessionId]) {
+              toolTypewriterCarryRef.current[sessionId] = 0;
+              toolTypewriterTimersRef.current[sessionId] = setInterval(
+                () => drainToolTypewriterQueue(sessionId),
+                TYPEWRITER_INTERVAL_MS,
+              );
+            }
             return;
           }
 
@@ -2876,7 +3051,10 @@ export default function ChatPage() {
           tokenTpsRef.current[sessionId] =
             prevTps === 0 ? instantTps : 0.3 * instantTps + 0.7 * prevTps;
           // chars/token estimator
-          const cc = tokenCharsRef.current[sessionId] ?? { chars: 0, tokens: 0 };
+          const cc = tokenCharsRef.current[sessionId] ?? {
+            chars: 0,
+            tokens: 0,
+          };
           cc.chars += Array.from(token ?? '').length;
           cc.tokens += 1;
           tokenCharsRef.current[sessionId] = cc;
@@ -2918,6 +3096,7 @@ export default function ChatPage() {
         case 'prompt-done': {
           flushTokenBuffer();
           flushTypewriterFor(sessionId, true);
+          flushToolTypewriterFor(sessionId, true);
           const promptStats = payload.stats;
           if (!promptStats) return;
           if (isReprocessingRef.current[sessionId]) {
@@ -2957,6 +3136,22 @@ export default function ChatPage() {
         case 'function-calling': {
           flushTokenBuffer();
           flushTypewriterFor(sessionId, true);
+          flushToolTypewriterFor(sessionId, true);
+          // Clear any stale tool typewriter state before starting new tool
+          {
+            const t = toolTypewriterTimersRef.current[sessionId];
+            if (t) {
+              clearInterval(t);
+              delete toolTypewriterTimersRef.current[sessionId];
+            }
+            const pt = toolPrettyFlushTimersRef.current[sessionId];
+            if (pt) {
+              clearTimeout(pt);
+              delete toolPrettyFlushTimersRef.current[sessionId];
+            }
+            delete toolTypewriterQueuesRef.current[sessionId];
+            delete toolTypewriterCarryRef.current[sessionId];
+          }
           applyToSession(sessionId, isActive, (prev) => {
             const updatedMessages = [...prev];
             const lastMessage = updatedMessages[updatedMessages.length - 1];
@@ -3011,6 +3206,22 @@ export default function ChatPage() {
         case 'function-call': {
           flushTokenBuffer();
           flushTypewriterFor(sessionId, true);
+          flushToolTypewriterFor(sessionId, true);
+          // Ensure tool typewriter fully drained and timers cleared before hiding stream
+          {
+            const t = toolTypewriterTimersRef.current[sessionId];
+            if (t) {
+              clearInterval(t);
+              delete toolTypewriterTimersRef.current[sessionId];
+            }
+            const pt = toolPrettyFlushTimersRef.current[sessionId];
+            if (pt) {
+              clearTimeout(pt);
+              delete toolPrettyFlushTimersRef.current[sessionId];
+            }
+            delete toolTypewriterQueuesRef.current[sessionId];
+            delete toolTypewriterCarryRef.current[sessionId];
+          }
           streamingToolsRef.current[sessionId] = null;
           if (isActive) setStreamingTool(null);
           applyToSession(sessionId, isActive, (prev) => {
@@ -3037,6 +3248,7 @@ export default function ChatPage() {
         case 'function-result': {
           flushTokenBuffer();
           flushTypewriterFor(sessionId, true);
+          flushToolTypewriterFor(sessionId, true);
           isReprocessingRef.current[sessionId] = true;
           const tags = payload.tags ?? [];
           /* eslint-disable no-underscore-dangle */
@@ -3105,6 +3317,7 @@ export default function ChatPage() {
         case 'done': {
           flushTokenBuffer();
           flushTypewriterFor(sessionId, true);
+          flushToolTypewriterFor(sessionId, true);
           pendingSegmentIdsRef.current[sessionId] = [];
           toolSegmentQueuesRef.current[sessionId] = [];
           setSessionLoading(false);
@@ -3121,6 +3334,20 @@ export default function ChatPage() {
           }
           delete typewriterCarryRef.current[sessionId];
           delete typewriterQueuesRef.current[sessionId];
+          {
+            const tt = toolTypewriterTimersRef.current[sessionId];
+            if (tt) {
+              clearInterval(tt);
+              delete toolTypewriterTimersRef.current[sessionId];
+            }
+            const pt = toolPrettyFlushTimersRef.current[sessionId];
+            if (pt) {
+              clearTimeout(pt);
+              delete toolPrettyFlushTimersRef.current[sessionId];
+            }
+            delete toolTypewriterQueuesRef.current[sessionId];
+            delete toolTypewriterCarryRef.current[sessionId];
+          }
           queueSessionSync(sessionId);
           if (isActive) {
             setTps(0);
@@ -3135,6 +3362,7 @@ export default function ChatPage() {
         case 'error': {
           flushTokenBuffer();
           flushTypewriterFor(sessionId, true);
+          flushToolTypewriterFor(sessionId, true);
           clearTypewriterSession(sessionId);
           setSessionLoading(false);
           setSessionProcessing(false);
@@ -3145,6 +3373,7 @@ export default function ChatPage() {
         case 'slot-unavailable': {
           flushTokenBuffer();
           flushTypewriterFor(sessionId, true);
+          flushToolTypewriterFor(sessionId, true);
           clearTypewriterSession(sessionId);
           setSessionLoading(false);
           setSessionProcessing(false);
@@ -3155,6 +3384,7 @@ export default function ChatPage() {
         case 'session-changed': {
           flushTokenBuffer();
           flushTypewriterFor(sessionId, true);
+          flushToolTypewriterFor(sessionId, true);
           setStreamingSessions((prev) => {
             const next = new Set(prev);
             if (payload.streaming) next.add(sessionId);
@@ -3179,6 +3409,14 @@ export default function ChatPage() {
         clearInterval(t),
       );
       typewriterTimersRef.current = {};
+      Object.values(toolTypewriterTimersRef.current).forEach((t) =>
+        clearInterval(t),
+      );
+      toolTypewriterTimersRef.current = {};
+      Object.values(toolPrettyFlushTimersRef.current).forEach((t) =>
+        clearTimeout(t),
+      );
+      toolPrettyFlushTimersRef.current = {};
       unsubscribe();
     };
   }, [
@@ -3188,6 +3426,7 @@ export default function ChatPage() {
     showSlotBanner,
     showErrorToast,
     drainTypewriterQueue,
+    drainToolTypewriterQueue,
     clearTypewriterSession,
     getEffectiveCPS,
   ]);
@@ -3850,6 +4089,20 @@ export default function ChatPage() {
         if (typewriterQueuesRef.current[prevId]?.length) {
           drainTypewriterQueue(prevId, true);
         }
+        if (toolTypewriterQueuesRef.current[prevId]?.length) {
+          drainToolTypewriterQueue(prevId, true);
+          const pt = toolPrettyFlushTimersRef.current[prevId];
+          if (pt) {
+            clearTimeout(pt);
+            delete toolPrettyFlushTimersRef.current[prevId];
+          }
+          const cur = streamingToolsRef.current[prevId];
+          if (cur) {
+            // Ensure pretty state is flushed before leaving
+            // (streamingTool for prev session won't be visible after switch,
+            // but ref stays for when we return)
+          }
+        }
         sessionMessagesRef.current[prevId] = messagesRef.current;
       }
 
@@ -3862,7 +4115,31 @@ export default function ChatPage() {
         0,
       );
       setMessages(restored);
-      setStreamingTool(view.streamingTool);
+      // Sync streaming tool – prefer typewriter ref if we have pending queue (faster than main's batched view)
+      if (toolTypewriterQueuesRef.current[sessionId]?.length) {
+        // Keep existing ref and ensure timer continues; also ensure pretty flush scheduled
+        const cur = streamingToolsRef.current[sessionId];
+        if (cur) setStreamingTool({ ...cur });
+        else setStreamingTool(view.streamingTool);
+      } else {
+        streamingToolsRef.current[sessionId] = view.streamingTool;
+        setStreamingTool(view.streamingTool);
+        // Clear any stale tool queue for this session when switching to idle
+        if (!view.streamingTool) {
+          const t = toolTypewriterTimersRef.current[sessionId];
+          if (t) {
+            clearInterval(t);
+            delete toolTypewriterTimersRef.current[sessionId];
+          }
+          const pt = toolPrettyFlushTimersRef.current[sessionId];
+          if (pt) {
+            clearTimeout(pt);
+            delete toolPrettyFlushTimersRef.current[sessionId];
+          }
+          delete toolTypewriterQueuesRef.current[sessionId];
+          delete toolTypewriterCarryRef.current[sessionId];
+        }
+      }
       setProgressPercent(view.progress);
       setLoadingSessions((prev) => ({
         ...prev,
@@ -3872,7 +4149,13 @@ export default function ChatPage() {
       setSources(sessionId, view.session.sources ?? []);
       // collapsed state is handled by effects (per-session)
     },
-    [modelLoading, loadError, setSources, drainTypewriterQueue],
+    [
+      modelLoading,
+      loadError,
+      setSources,
+      drainTypewriterQueue,
+      drainToolTypewriterQueue,
+    ],
   );
 
   const handleNewChat = useCallback(async () => {
@@ -4140,102 +4423,104 @@ export default function ChatPage() {
 
         <div className="chat-messages-wrapper">
           <div className="chat-messages" ref={messagesContainerRef}>
-          {loadError && (
-            <div className="chat-error">
-              <AlertCircle size={32} style={{ marginBottom: 4 }} />
-              <span className="chat-error__title">Failed to Load Profile</span>
-              <span className="chat-error__message">
-                {(() => {
-                  const lines = loadError.split('\n').filter(Boolean);
-                  if (lines.length <= 1) return loadError;
-                  return (
-                    <>
-                      {lines[0]}
-                      <ul className="chat-error__log">
-                        {lines.slice(1).map((l, i) => (
-                          <li key={i}>{l}</li>
-                        ))}
-                      </ul>
-                    </>
-                  );
-                })()}
-              </span>
-              <button
-                type="button"
-                className="chat-error__retry"
-                onClick={handleRetry}
-              >
-                <RefreshCw size={16} />
-                Retry
-              </button>
-            </div>
-          )}
-
-          {messages.length === 0 && !loading && !loadError && (
-            <div className="chat-empty-state">
-              <SendHorizonal className="chat-empty-state-icon" size={44} />
-              <h2>
-                {modelLoading ? 'Loading profile...' : 'Start a conversation'}
-              </h2>
-              <p>
-                {selectedProfileId
-                  ? 'Type your message below.'
-                  : 'Select a profile from the dropdown above, then type your message below.'}
-              </p>
-              {selectedProfile && (
-                <div className="chat-active-prompt-badge">
-                  Active: {selectedProfile.name}
-                </div>
-              )}
-            </div>
-          )}
-
-          {messages.map((msg) => (
-            <MessageView
-              key={msg.id}
-              msg={msg}
-              isLast={msg === messages[messages.length - 1]}
-              profileName={selectedProfile?.name ?? ''}
-              loading={loading}
-              processing={processing}
-              progressPercent={progressPercent}
-              streamingTool={streamingTool}
-              settings={settings}
-              copiedMsgId={copiedMsgId}
-              isCollapsed={collapsedIds.has(msg.id)}
-              onToggleCollapsed={toggleMessageCollapsed}
-              onCopy={copyMessageText}
-              onImageClick={setImageViewerUrl}
-            />
-          ))}
-
-          {loading &&
-            (messages.length === 0 ||
-              messages[messages.length - 1].role !== 'assistant') && (
-              <div className="chat-message chat-message--assistant">
-                <div className="chat-message__label">Assistant</div>
-                <div className="chat-message__indicator-box">
-                  <div className="chat-indicator">
-                    <div className="chat-indicator__spinner" />
-                    <span className="chat-indicator__label">
-                      {processing
-                        ? `Processing prompt… (${progressPercent}%)`
-                        : 'Generating…'}
-                    </span>
-                  </div>
-                  {processing && (
-                    <div className="chat-progress-bar">
-                      <div
-                        className="chat-progress-bar__fill"
-                        style={{ width: `${progressPercent}%` }}
-                      />
-                    </div>
-                  )}
-                </div>
+            {loadError && (
+              <div className="chat-error">
+                <AlertCircle size={32} style={{ marginBottom: 4 }} />
+                <span className="chat-error__title">
+                  Failed to Load Profile
+                </span>
+                <span className="chat-error__message">
+                  {(() => {
+                    const lines = loadError.split('\n').filter(Boolean);
+                    if (lines.length <= 1) return loadError;
+                    return (
+                      <>
+                        {lines[0]}
+                        <ul className="chat-error__log">
+                          {lines.slice(1).map((l, i) => (
+                            <li key={i}>{l}</li>
+                          ))}
+                        </ul>
+                      </>
+                    );
+                  })()}
+                </span>
+                <button
+                  type="button"
+                  className="chat-error__retry"
+                  onClick={handleRetry}
+                >
+                  <RefreshCw size={16} />
+                  Retry
+                </button>
               </div>
             )}
 
-          <div ref={messagesEndRef} />
+            {messages.length === 0 && !loading && !loadError && (
+              <div className="chat-empty-state">
+                <SendHorizonal className="chat-empty-state-icon" size={44} />
+                <h2>
+                  {modelLoading ? 'Loading profile...' : 'Start a conversation'}
+                </h2>
+                <p>
+                  {selectedProfileId
+                    ? 'Type your message below.'
+                    : 'Select a profile from the dropdown above, then type your message below.'}
+                </p>
+                {selectedProfile && (
+                  <div className="chat-active-prompt-badge">
+                    Active: {selectedProfile.name}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {messages.map((msg) => (
+              <MessageView
+                key={msg.id}
+                msg={msg}
+                isLast={msg === messages[messages.length - 1]}
+                profileName={selectedProfile?.name ?? ''}
+                loading={loading}
+                processing={processing}
+                progressPercent={progressPercent}
+                streamingTool={streamingTool}
+                settings={settings}
+                copiedMsgId={copiedMsgId}
+                isCollapsed={collapsedIds.has(msg.id)}
+                onToggleCollapsed={toggleMessageCollapsed}
+                onCopy={copyMessageText}
+                onImageClick={setImageViewerUrl}
+              />
+            ))}
+
+            {loading &&
+              (messages.length === 0 ||
+                messages[messages.length - 1].role !== 'assistant') && (
+                <div className="chat-message chat-message--assistant">
+                  <div className="chat-message__label">Assistant</div>
+                  <div className="chat-message__indicator-box">
+                    <div className="chat-indicator">
+                      <div className="chat-indicator__spinner" />
+                      <span className="chat-indicator__label">
+                        {processing
+                          ? `Processing prompt… (${progressPercent}%)`
+                          : 'Generating…'}
+                      </span>
+                    </div>
+                    {processing && (
+                      <div className="chat-progress-bar">
+                        <div
+                          className="chat-progress-bar__fill"
+                          style={{ width: `${progressPercent}%` }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+            <div ref={messagesEndRef} />
           </div>
           {showScrollButton && messages.length > 0 && (
             <button

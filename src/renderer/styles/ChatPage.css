@@ -2115,6 +2115,15 @@
   animation: tool-spin 0.75s linear infinite;
 }
 
+.tool-call-stream__body {
+  max-height: 240px;
+  overflow: auto;
+  border-top: 1px solid var(--border);
+  background: transparent;
+  /* keep scroll smooth but use auto during rapid 16ms updates to avoid jank */
+  scrollbar-width: thin;
+}
+
 /* Statistics display underneath assistant bubbles */
 .chat-message__stats {
   display: flex;
