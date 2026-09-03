@@ -286,11 +286,21 @@ export default function ProfilesPage() {
 
   const handleSaveProfile = async (updated: Profile[]) => {
     // If editing an existing profile that is the currently selected one,
-    // check if a server restart dialog is needed
+    // check if a server restart dialog is needed — whenever server loaded with context
     if (editingProfile && editingProfile.id === selectedProfileId) {
-      const isRunning = await window.electronAPI.chatIsRunning();
-      const hasConv = await window.electronAPI.chatHasConversation();
-      if (isRunning && hasConv) {
+      const isRunning = await window.electronAPI
+        .chatIsRunning()
+        .catch(() => false);
+      let hasContext = false;
+      if (isRunning) {
+        try {
+          const { contextSize } = await window.electronAPI.chatContextSize();
+          hasContext = contextSize != null && contextSize > 0;
+        } catch {
+          hasContext = false;
+        }
+      }
+      if (hasContext) {
         setShowEditModal(false);
         setPendingEditProfiles(updated);
         setShowEditRestartDialog(true);
@@ -298,6 +308,8 @@ export default function ProfilesPage() {
       }
       if (isRunning && selectedProfileId) {
         localStorage.setItem('forceProfileReload', selectedProfileId);
+        // Preserve existing session across server reload (persistent sessions)
+        localStorage.setItem('forceProfileReloadPreserve', '1');
       }
     }
     finishSaveProfile(updated);
@@ -316,9 +328,10 @@ export default function ProfilesPage() {
       const updated = pendingEditProfiles;
       setPendingEditProfiles(null);
 
-      // Set flag so ChatPage knows to do a full reload
+      // Set flag so ChatPage knows to do a full reload — preserve session (persistent sessions)
       if (selectedProfileId) {
         localStorage.setItem('forceProfileReload', selectedProfileId);
+        localStorage.setItem('forceProfileReloadPreserve', '1');
       }
 
       // Save and dispatch profiles-changed — triggers ChatPage reload via handleProfilesChanged
@@ -419,7 +432,8 @@ export default function ProfilesPage() {
     updated.splice(targetIndex, 0, draggedProfile);
 
     const reorderedProfiles = updated.map((p, idx) => ({ ...p, order: idx }));
-    saveProfiles(reorderedProfiles);
+    // Reordering does not require server reload — suppress profiles-changed event
+    saveProfiles(reorderedProfiles, true);
     setDraggedId(null);
     setPreviewOrder([]);
   };
@@ -834,7 +848,7 @@ export default function ProfilesPage() {
       {showEditRestartDialog && (
         <ConfirmDialog
           title="Apply Profile Changes?"
-          message={`Saving changes to "${editingProfile?.name ?? 'this profile'}" will restart the server and clear your current conversation.`}
+          message={`Saving changes to "${editingProfile?.name ?? 'this profile'}" will restart the server. Your current conversation will be preserved.`}
           confirmText="Restart Now"
           cancelText="Restart Later"
           onConfirm={handleEditRestartNow}

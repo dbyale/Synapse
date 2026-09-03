@@ -168,7 +168,11 @@ function normalizeDomain(input: string): string {
   return d;
 }
 
-export default function DDGSearchSettings() {
+interface DDGSearchSettingsProps {
+  onSaved?: () => void | Promise<void>;
+}
+
+export default function DDGSearchSettings({ onSaved }: DDGSearchSettingsProps) {
   const [tab, setTab] = useState<Tab>('general');
   const [settings, setSettings] = useState<DDGSSettings>(DEFAULTS);
   const [loading, setLoading] = useState(true);
@@ -236,6 +240,7 @@ export default function DDGSearchSettings() {
       await window.electronAPI.extensionsSetSettings('ddg_search', toSave);
       setSettings(toSave);
       setMessage('Settings saved successfully');
+      if (onSaved) await onSaved();
     } catch {
       setError('Failed to save settings');
     } finally {

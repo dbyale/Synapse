@@ -2,7 +2,11 @@ import { useState, useEffect } from 'react';
 import { AlertCircle } from 'lucide-react';
 import './styles/FileSystemSettings.css';
 
-export default function SandboxSettings() {
+interface SandboxSettingsProps {
+  onSaved?: () => void | Promise<void>;
+}
+
+export default function SandboxSettings({ onSaved }: SandboxSettingsProps) {
   const [readSize, setReadSize] = useState(40000);
   const [autoLaunch, setAutoLaunch] = useState(true);
   const [timeoutSec, setTimeoutSec] = useState(90);
@@ -59,6 +63,7 @@ export default function SandboxSettings() {
       });
       setTimeoutSec(clampedTimeout);
       setDirty(false);
+      if (onSaved) await onSaved();
     } catch {
       setError('Failed to save settings');
     } finally {

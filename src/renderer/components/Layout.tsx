@@ -4,12 +4,16 @@ import Sidebar from './Sidebar';
 import TopBar from './TopBar';
 import SourcesSidebar from './SourcesSidebar';
 import { SourcesProvider, useSourcesContext } from '../context/SourcesContext';
+import ChatPage from '../pages/ChatPage';
 
 function LayoutInner() {
   const { isOpen, closeSources, sources } = useSourcesContext();
   const location = useLocation();
   const navigate = useNavigate();
   const prevPathRef = useRef(location.pathname);
+
+  const isChatRoute =
+    location.pathname === '/' || location.pathname === '/chat';
 
   useEffect(() => {
     const unsubscribe = window.electronAPI.onMenuNavigate((path) => {
@@ -58,7 +62,17 @@ function LayoutInner() {
         <TopBar />
         <div style={s.contentRow}>
           <div style={s.content}>
-            <Outlet />
+            <div
+              style={{
+                display: isChatRoute ? 'block' : 'none',
+                height: '100%',
+              }}
+            >
+              <ChatPage />
+            </div>
+            <div style={{ display: isChatRoute ? 'none' : 'block' }}>
+              <Outlet />
+            </div>
           </div>
           <SourcesSidebar
             sources={sources}

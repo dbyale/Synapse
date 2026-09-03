@@ -2,7 +2,13 @@ import { useState, useEffect } from 'react';
 import { Plus, Trash2, FolderOpen, AlertCircle } from 'lucide-react';
 import './styles/FileSystemSettings.css';
 
-export default function FileSystemSettings() {
+interface FileSystemSettingsProps {
+  onSaved?: () => void | Promise<void>;
+}
+
+export default function FileSystemSettings({
+  onSaved,
+}: FileSystemSettingsProps) {
   const [directories, setDirectories] = useState<string[]>([]);
   const [readSize, setReadSize] = useState(40000);
   const [hostDirectory, setHostDirectory] = useState('');
@@ -46,6 +52,7 @@ export default function FileSystemSettings() {
       setDirectories(dirs);
       if (host) setHostDirectory(host);
       setReadSizeDirty(false);
+      if (onSaved) await onSaved();
     } catch {
       setError('Failed to save settings');
     } finally {

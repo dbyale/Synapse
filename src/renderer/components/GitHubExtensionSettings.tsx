@@ -20,7 +20,13 @@ interface GitHubSettings {
   coAuthorEmail?: string;
 }
 
-export default function GitHubExtensionSettings() {
+interface GitHubExtensionSettingsProps {
+  onSaved?: () => void | Promise<void>;
+}
+
+export default function GitHubExtensionSettings({
+  onSaved,
+}: GitHubExtensionSettingsProps) {
   const [tab, setTab] = useState<'auth' | 'coauthor' | 'repos'>('auth');
   const [settings, setSettings] = useState<GitHubSettings>({
     allowedRepos: [],
@@ -66,6 +72,7 @@ export default function GitHubExtensionSettings() {
     try {
       await window.electronAPI.extensionsSetSettings('github', settings);
       setMessage('Settings saved successfully');
+      if (onSaved) await onSaved();
     } catch {
       setError('Failed to save settings');
     } finally {

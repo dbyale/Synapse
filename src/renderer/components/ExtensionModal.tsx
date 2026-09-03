@@ -1,4 +1,4 @@
-import { useState, MouseEvent, KeyboardEvent } from 'react';
+import { useState, MouseEvent, KeyboardEvent, useCallback } from 'react';
 import {
   X,
   Settings,
@@ -12,6 +12,7 @@ import FileSystemSettings from './FileSystemSettings';
 import SandboxSettings from './SandboxSettings';
 import GitHubExtensionSettings from './GitHubExtensionSettings';
 import DDGSearchSettings from './DDGSearchSettings';
+import ConfirmDialog from './ConfirmDialog';
 import { resolveIcon } from './workflows/IconPicker';
 import { svgToDataUrl } from '../utils/svgToDataUrl';
 import { CodeBlock } from './MarkdownRenderer';
@@ -252,6 +253,75 @@ export default function ExtensionModal({
 }: ExtensionModalProps) {
   const [tab, setTab] = useState<'tools' | 'settings'>('tools');
   const [selectedTool, setSelectedTool] = useState<ToolEntry | null>(null);
+  const [showRestartDialog, setShowRestartDialog] = useState(false);
+
+  const isExtensionActiveInCurrentProfile = useCallback(() => {
+    try {
+      if (!extension.enabled) return false;
+      const selectedId = localStorage.getItem('selectedProfileId');
+      if (!selectedId) return false;
+      const stored = localStorage.getItem('profiles');
+      if (!stored) return false;
+      const profiles = JSON.parse(stored) as Array<{
+        id: string;
+        tools?: string[];
+      }>;
+      const cur = profiles.find((p) => p.id === selectedId);
+      if (!cur) return false;
+      // If profile has no explicit tools list, consider all enabled extensions as loaded
+      if (!cur.tools || !Array.isArray(cur.tools) || cur.tools.length === 0) {
+        return true;
+      }
+      const toolKeys = Object.keys(extension.tools);
+      // If extension has no tools, consider it not loaded (no restart needed)
+      if (toolKeys.length === 0) return false;
+      return toolKeys.some((k) => cur.tools!.includes(k));
+    } catch {
+      return false;
+    }
+  }, [extension.tools, extension.enabled]);
+
+  const handleSettingsSaved = useCallback(async () => {
+    if (!isExtensionActiveInCurrentProfile()) return;
+    try {
+      const isRunning = await window.electronAPI
+        .chatIsRunning()
+        .catch(() => false);
+      if (!isRunning) return;
+      let hasContext = false;
+      try {
+        const { contextSize } = await window.electronAPI.chatContextSize();
+        hasContext = contextSize != null && contextSize > 0;
+      } catch {
+        hasContext = false;
+      }
+      if (hasContext) {
+        setShowRestartDialog(true);
+      } else {
+        // isRunning && !hasContext → auto restart, no prompt, preserve session
+        try {
+          await window.electronAPI.chatReloadProfile();
+        } catch {
+          // Silently fail
+        }
+      }
+    } catch {
+      // Ignore
+    }
+  }, [isExtensionActiveInCurrentProfile]);
+
+  const handleRestartNow = useCallback(async () => {
+    setShowRestartDialog(false);
+    try {
+      await window.electronAPI.chatReloadProfile();
+    } catch {
+      // Silently fail
+    }
+  }, []);
+
+  const handleRestartLater = useCallback(() => {
+    setShowRestartDialog(false);
+  }, []);
 
   const handleOverlayClick = (e: MouseEvent<HTMLDivElement>) => {
     if (e.target === e.currentTarget) onClose();
@@ -268,16 +338,17 @@ export default function ExtensionModal({
   const tools = Object.values(extension.tools);
 
   return (
-    // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions
-    <div
-      className="em-overlay"
-      onClick={handleOverlayClick}
-      onKeyDown={handleKeyDown}
-      role="dialog"
-      aria-modal="true"
-      aria-label={`${extension.manifest.name} details`}
-    >
-      <div className="em-dialog">
+    <>
+      {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */}
+      <div
+        className="em-overlay"
+        onClick={handleOverlayClick}
+        onKeyDown={handleKeyDown}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`${extension.manifest.name} details`}
+      >
+        <div className="em-dialog">
         <div className="em-header">
           <div className="em-header-left">
             <div className="em-header-icon">
@@ -393,16 +464,16 @@ export default function ExtensionModal({
               </div>
             ))}
           {tab === 'settings' && extension.manifest.id === 'filesystem' && (
-            <FileSystemSettings />
+            <FileSystemSettings onSaved={handleSettingsSaved} />
           )}
           {tab === 'settings' && extension.manifest.id === 'sandbox' && (
-            <SandboxSettings />
+            <SandboxSettings onSaved={handleSettingsSaved} />
           )}
           {tab === 'settings' && extension.manifest.id === 'github' && (
-            <GitHubExtensionSettings />
+            <GitHubExtensionSettings onSaved={handleSettingsSaved} />
           )}
           {tab === 'settings' && extension.manifest.id === 'ddg_search' && (
-            <DDGSearchSettings />
+            <DDGSearchSettings onSaved={handleSettingsSaved} />
           )}
           {tab === 'settings' &&
             extension.manifest.id !== 'filesystem' &&
@@ -415,7 +486,18 @@ export default function ExtensionModal({
               </div>
             )}
         </div>
+        </div>
       </div>
-    </div>
+      {showRestartDialog && (
+        <ConfirmDialog
+          title="Restart Server?"
+          message={`Changing ${extension.manifest.name} settings requires a server restart to take effect. Your current conversation will be preserved.`}
+          confirmText="Restart Now"
+          cancelText="Restart Later"
+          onConfirm={handleRestartNow}
+          onCancel={handleRestartLater}
+        />
+      )}
+    </>
   );
 }

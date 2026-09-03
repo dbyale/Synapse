@@ -2428,6 +2428,9 @@ export default function ChatPage() {
     }
 
     const handleProfilesChanged = () => {
+      const prevCurrent = profilesRef.current.find(
+        (p) => p.id === persistentLoadedProfileId,
+      );
       const updated = loadProfilesFromStorage();
 
       if (persistentLoadedProfileId && updated.length > 0) {
@@ -2435,6 +2438,16 @@ export default function ChatPage() {
           (p) => p.id === persistentLoadedProfileId,
         );
         if (currentProfile) {
+          // Ignore reorder-only changes — order does not require server reload
+          if (prevCurrent) {
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            const { order: _po, ...prevRest } = prevCurrent as any;
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            const { order: _co, ...currRest } = currentProfile as any;
+            if (JSON.stringify(prevRest) === JSON.stringify(currRest)) {
+              return;
+            }
+          }
           setSelectedProfileId('');
           setTimeout(() => setSelectedProfileId(persistentLoadedProfileId), 10);
         }
@@ -2471,7 +2484,9 @@ export default function ChatPage() {
   }, [loadProfilesFromStorage]);
 
   useEffect(() => {
-    if (location.pathname === '/chat') {
+    const isChatRoute =
+      location.pathname === '/' || location.pathname === '/chat';
+    if (isChatRoute) {
       loadProfilesFromStorage();
 
       const deferredSwitch = localStorage.getItem('deferredProfileSwitch');
@@ -2613,6 +2628,17 @@ export default function ChatPage() {
         const forceReload = localStorage.getItem('forceProfileReload');
         if (forceReload === selectedProfileId) {
           localStorage.removeItem('forceProfileReload');
+          // Preserve existing session across server reload (persistent sessions)
+          // Check explicit preserve flag (set by ProfilesPage) or default to preserve for profile edits
+          const preserveFlag = localStorage.getItem(
+            'forceProfileReloadPreserve',
+          );
+          if (preserveFlag !== null) {
+            localStorage.removeItem('forceProfileReloadPreserve');
+            preserveSessionOnNextLoadRef.current = true;
+          } else {
+            preserveSessionOnNextLoadRef.current = true;
+          }
           // Profile was edited and server restarted — fall through to full reload
         } else {
           const isRunning = await window.electronAPI.chatIsRunning();
@@ -2630,11 +2656,19 @@ export default function ChatPage() {
             }
           }
           // Server was restarted or not ready — fall through to full reload
+          // Same-profile reload should preserve session (only new session on initial open or explicit)
+          preserveSessionOnNextLoadRef.current = true;
         }
       }
 
       const shouldPreserveSession = preserveSessionOnNextLoadRef.current;
       preserveSessionOnNextLoadRef.current = false;
+      // Also clear any stale preserve flag if reload was not via forceReload
+      if (!shouldPreserveSession) {
+        if (localStorage.getItem('forceProfileReloadPreserve')) {
+          localStorage.removeItem('forceProfileReloadPreserve');
+        }
+      }
 
       persistentModelLoading = true;
       setModelLoading(true);
