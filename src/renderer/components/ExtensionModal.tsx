@@ -11,6 +11,7 @@ import {
 import FileSystemSettings from './FileSystemSettings';
 import SandboxSettings from './SandboxSettings';
 import GitHubExtensionSettings from './GitHubExtensionSettings';
+import DDGSearchSettings from './DDGSearchSettings';
 import { resolveIcon } from './workflows/IconPicker';
 import { svgToDataUrl } from '../utils/svgToDataUrl';
 import { CodeBlock } from './MarkdownRenderer';
@@ -400,10 +401,14 @@ export default function ExtensionModal({
           {tab === 'settings' && extension.manifest.id === 'github' && (
             <GitHubExtensionSettings />
           )}
+          {tab === 'settings' && extension.manifest.id === 'ddg_search' && (
+            <DDGSearchSettings />
+          )}
           {tab === 'settings' &&
             extension.manifest.id !== 'filesystem' &&
             extension.manifest.id !== 'sandbox' &&
-            extension.manifest.id !== 'github' && (
+            extension.manifest.id !== 'github' &&
+            extension.manifest.id !== 'ddg_search' && (
               <div className="em-empty">
                 Settings configuration is not available for this extension in
                 the UI.

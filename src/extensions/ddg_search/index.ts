@@ -1,6 +1,103 @@
+import fs from 'fs';
+import path from 'path';
+import { app } from 'electron';
 import type { ExtensionToolDef } from '../types';
 import { runPython, ensurePackage } from '../../main/functions/pythonRunner';
 import manifest from './manifest.json';
+
+const SETTINGS_FILE = path.join(
+  app.getPath('userData'),
+  'extension-settings',
+  'ddg_search.json',
+);
+
+export interface DDGSSettings {
+  defaultRegion: string;
+  defaultSafesearch: string;
+  defaultTimelimit: string;
+  defaultMaxResults: number;
+  defaultBackend: string;
+  proxy: string;
+  timeout: number;
+  verify: boolean;
+  extractFormat: string;
+  maxFetchLength: number;
+  blockedDomains: string[];
+  allowedDomains: string[];
+  imageSize: string;
+  imageColor: string;
+  imageType: string;
+  imageLayout: string;
+  imageLicense: string;
+  videoResolution: string;
+  videoDuration: string;
+  videoLicense: string;
+}
+
+export const DDGS_DEFAULTS: DDGSSettings = {
+  defaultRegion: 'us-en',
+  defaultSafesearch: 'moderate',
+  defaultTimelimit: '',
+  defaultMaxResults: 10,
+  defaultBackend: 'auto',
+  proxy: '',
+  timeout: 10,
+  verify: true,
+  extractFormat: 'text_markdown',
+  maxFetchLength: 5000,
+  blockedDomains: [],
+  allowedDomains: [],
+  imageSize: '',
+  imageColor: '',
+  imageType: '',
+  imageLayout: '',
+  imageLicense: '',
+  videoResolution: '',
+  videoDuration: '',
+  videoLicense: '',
+};
+
+function loadSettings(): DDGSSettings {
+  try {
+    if (fs.existsSync(SETTINGS_FILE)) {
+      const raw = fs.readFileSync(SETTINGS_FILE, 'utf-8');
+      const parsed = JSON.parse(raw);
+      return {
+        ...DDGS_DEFAULTS,
+        ...parsed,
+        blockedDomains: Array.isArray(parsed.blockedDomains)
+          ? parsed.blockedDomains
+          : [...DDGS_DEFAULTS.blockedDomains],
+        allowedDomains: Array.isArray(parsed.allowedDomains)
+          ? parsed.allowedDomains
+          : [...DDGS_DEFAULTS.allowedDomains],
+        defaultMaxResults:
+          typeof parsed.defaultMaxResults === 'number'
+            ? Math.min(Math.max(Math.round(parsed.defaultMaxResults), 1), 50)
+            : DDGS_DEFAULTS.defaultMaxResults,
+        maxFetchLength:
+          typeof parsed.maxFetchLength === 'number'
+            ? Math.min(Math.max(Math.round(parsed.maxFetchLength), 500), 50000)
+            : DDGS_DEFAULTS.maxFetchLength,
+        timeout:
+          typeof parsed.timeout === 'number'
+            ? Math.min(Math.max(Math.round(parsed.timeout), 1), 120)
+            : DDGS_DEFAULTS.timeout,
+        verify:
+          typeof parsed.verify === 'boolean'
+            ? parsed.verify
+            : DDGS_DEFAULTS.verify,
+      };
+    }
+  } catch {
+    // invalid file
+  }
+  return {
+    ...DDGS_DEFAULTS,
+    blockedDomains: [...DDGS_DEFAULTS.blockedDomains],
+    allowedDomains: [...DDGS_DEFAULTS.allowedDomains],
+  };
+}
 
 const IMAGE_EXTENSIONS: Record<string, string> = {
   '.png': 'image/png',
@@ -21,7 +118,6 @@ function bufferToDataUrl(buffer: Buffer, mimeType: string): string {
 }
 
 // Session-scoped store for image search display IDs.
-// Cleared on app restart, persists for the duration of a chat session.
 let displayIdCounter = 0;
 const displayImageStore = new Map<string, string>();
 
@@ -61,6 +157,72 @@ function escapePyString(s: string): string {
     .replace(/\t/g, '\\t');
 }
 
+function getDDGSConstructor(settings: DDGSSettings): string {
+  const args: string[] = [];
+  const proxy = settings.proxy?.trim();
+  if (proxy) args.push(`proxy='${escapePyString(proxy)}'`);
+  const timeout = settings.timeout ?? DDGS_DEFAULTS.timeout;
+  args.push(`timeout=${Math.min(Math.max(Math.round(timeout), 1), 120)}`);
+  const verify = settings.verify ?? DDGS_DEFAULTS.verify;
+  args.push(`verify=${verify ? 'True' : 'False'}`);
+  return args.length > 0 ? `DDGS(${args.join(', ')})` : 'DDGS()';
+}
+
+function hostMatchesDomain(host: string, domain: string): boolean {
+  const h = host.toLowerCase();
+  let d = domain.toLowerCase().trim();
+  d = d
+    .replace(/^https?:\/\//, '')
+    .replace(/^www\./, '')
+    .split('/')[0]
+    .split('?')[0]
+    .split('#')[0];
+  if (!d) return false;
+  return h === d || h.endsWith(`.${d}`);
+}
+
+function extractHost(url: string): string | null {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return null;
+  }
+}
+
+function isUrlAllowed(url: string, settings: DDGSSettings): boolean {
+  const host = extractHost(url);
+  if (!host) return true;
+  const allowed = settings.allowedDomains ?? [];
+  const blocked = settings.blockedDomains ?? [];
+  if (allowed.length > 0) {
+    const ok = allowed.some((d) => hostMatchesDomain(host, d));
+    if (!ok) return false;
+  }
+  if (blocked.length > 0) {
+    const isBlocked = blocked.some((d) => hostMatchesDomain(host, d));
+    if (isBlocked) return false;
+  }
+  return true;
+}
+
+function filterResultsByDomain(
+  results: unknown[],
+  settings: DDGSSettings,
+): unknown[] {
+  if (
+    (settings.blockedDomains?.length ?? 0) === 0 &&
+    (settings.allowedDomains?.length ?? 0) === 0
+  )
+    return results;
+  return results.filter((item) => {
+    const rec = item as Record<string, unknown>;
+    const candidate =
+      rec.href || rec.url || rec.image || rec.thumbnail || rec.content;
+    if (!candidate) return true;
+    return isUrlAllowed(String(candidate), settings);
+  });
+}
+
 interface SearchResult {
   success: boolean;
   results: unknown[];
@@ -69,6 +231,7 @@ interface SearchResult {
 }
 
 function buildSearchRunner(
+  ddgsConstructor: string,
   ddgsMethod: string,
   positionalArgs: string[],
   keywordArgs: Record<string, string>,
@@ -86,7 +249,7 @@ function buildSearchRunner(
 import json
 try:
     results = []
-    with DDGS() as ddgs:
+    with ${ddgsConstructor} as ddgs:
         for r in ${call}:
             results.append(r)
     print(json.dumps({"success": True, "results": results, "total": len(results)}, default=str, ensure_ascii=False))
@@ -97,12 +260,16 @@ except Exception as e:
 `;
 }
 
-function buildExtractRunner(quotedUrl: string): string {
+function buildExtractRunner(
+  ddgsConstructor: string,
+  quotedUrl: string,
+  quotedFmt: string,
+): string {
   return `from ddgs import DDGS
 import json
 try:
-    with DDGS() as ddgs:
-        result = ddgs.extract(${quotedUrl})
+    with ${ddgsConstructor} as ddgs:
+        result = ddgs.extract(${quotedUrl}, fmt=${quotedFmt})
     print(json.dumps(result, default=str, ensure_ascii=False))
 except ImportError as e:
     print(json.dumps({"error": f"Missing Python package: {e}. Run: pip install ddgs"}))
@@ -115,12 +282,19 @@ async function runSearch(
   ddgsMethod: string,
   keywordArgs: Record<string, string>,
 ): Promise<SearchResult> {
+  const settings = loadSettings();
   const pkgErr = await ensureDdgsPackage();
   if (pkgErr) {
     return { success: false, results: [], error: pkgErr };
   }
+  const ddgsConstructor = getDDGSConstructor(settings);
   const positionalArgs: string[] = [];
-  const code = buildSearchRunner(ddgsMethod, positionalArgs, keywordArgs);
+  const code = buildSearchRunner(
+    ddgsConstructor,
+    ddgsMethod,
+    positionalArgs,
+    keywordArgs,
+  );
   const result = await runPython(code);
   if (!result.success) {
     return {
@@ -130,8 +304,16 @@ async function runSearch(
     };
   }
   try {
-    const parsed = JSON.parse(result.stdout);
-    return parsed as SearchResult;
+    const parsed = JSON.parse(result.stdout) as SearchResult;
+    if (parsed.success && Array.isArray(parsed.results)) {
+      const filtered = filterResultsByDomain(parsed.results, settings);
+      return {
+        ...parsed,
+        results: filtered,
+        total: filtered.length,
+      };
+    }
+    return parsed;
   } catch {
     return {
       success: false,
@@ -147,13 +329,18 @@ interface ExtractResult {
   error?: string;
 }
 
-async function runExtract(url: string): Promise<ExtractResult> {
+async function runExtract(url: string, fmt?: string): Promise<ExtractResult> {
+  const settings = loadSettings();
   const pkgErr = await ensureDdgsPackage();
   if (pkgErr) {
     return { error: pkgErr };
   }
+  const effectiveFmt =
+    fmt ?? settings.extractFormat ?? DDGS_DEFAULTS.extractFormat;
   const quotedUrl = `'${escapePyString(url)}'`;
-  const code = buildExtractRunner(quotedUrl);
+  const quotedFmt = `'${escapePyString(effectiveFmt)}'`;
+  const ddgsConstructor = getDDGSConstructor(settings);
+  const code = buildExtractRunner(ddgsConstructor, quotedUrl, quotedFmt);
   const result = await runPython(code);
   if (!result.success) {
     return { error: result.error || result.stderr || 'Unknown error' };
@@ -216,10 +403,10 @@ export const tools: Record<string, ExtensionToolDef> = {
         'Use this for general-purpose lookups, research, fact-checking, and finding online resources.\n' +
         'Parameters:\n' +
         '  query (required) — what to search for\n' +
-        '  max_results (optional, default 10) — how many results to return (max 50)\n' +
-        '  region (optional) — region code, e.g. "us-en", "uk-en", "ru-ru", "de-de"\n' +
-        '  safesearch (optional) — "on", "moderate", or "off" (default "moderate")\n' +
-        '  timelimit (optional) — "d" (past day), "w" (past week), "m" (past month), "y" (past year)',
+        '  max_results (optional, default from settings) — how many results to return (max 50)\n' +
+        '  region (optional) — region code, e.g. "us-en", "uk-en", "ru-ru", "de-de" (default from settings)\n' +
+        '  safesearch (optional) — "on", "moderate", or "off" (default from settings)\n' +
+        '  timelimit (optional) — "d" (past day), "w" (past week), "m" (past month), "y" (past year) (default from settings)',
       icon: 'Search',
       tags: ['sources', 'web_search'],
     },
@@ -230,25 +417,22 @@ export const tools: Record<string, ExtensionToolDef> = {
         max_results: {
           type: 'integer',
           description:
-            'Maximum number of results to return (default: 10, max: 50).',
-          default: 10,
+            'Maximum number of results to return (default: from settings, max: 50).',
         },
         region: {
           type: 'string',
           description:
-            'Region code (e.g. us-en, uk-en, ru-ru, de-de). Default: us-en.',
-          default: 'us-en',
+            'Region code (e.g. us-en, uk-en, ru-ru, de-de). Default: from settings.',
         },
         safesearch: {
           type: 'string',
           description:
-            'SafeSearch filter: on, moderate, off. Default: moderate.',
-          default: 'moderate',
+            'SafeSearch filter: on, moderate, off. Default: from settings.',
         },
         timelimit: {
           type: 'string',
           description:
-            'Time limit: d (day), w (week), m (month), y (year). Optional.',
+            'Time limit: d (day), w (week), m (month), y (year). Optional, default from settings if set.',
         },
       },
       required: ['query'],
@@ -260,14 +444,19 @@ export const tools: Record<string, ExtensionToolDef> = {
       safesearch?: string;
       timelimit?: string;
     }) {
+      const s = loadSettings();
       const keywordArgs: Record<string, string> = {
         query: `'${escapePyString(params.query)}'`,
-        max_results: String(Math.min(params.max_results ?? 10, 50)),
-        region: `'${escapePyString(params.region ?? 'us-en')}'`,
-        safesearch: `'${escapePyString(params.safesearch ?? 'moderate')}'`,
+        max_results: String(
+          Math.min(params.max_results ?? s.defaultMaxResults, 50),
+        ),
+        region: `'${escapePyString(params.region ?? s.defaultRegion)}'`,
+        safesearch: `'${escapePyString(params.safesearch ?? s.defaultSafesearch)}'`,
+        backend: `'${escapePyString(s.defaultBackend || 'auto')}'`,
       };
-      if (params.timelimit)
-        keywordArgs.timelimit = `'${escapePyString(params.timelimit)}'`;
+      const effectiveTimelimit = params.timelimit ?? s.defaultTimelimit;
+      if (effectiveTimelimit)
+        keywordArgs.timelimit = `'${escapePyString(effectiveTimelimit)}'`;
       return searchResultWithSources(await runSearch('text', keywordArgs));
     },
   },
@@ -282,10 +471,10 @@ export const tools: Record<string, ExtensionToolDef> = {
         'Search recent news articles using DDGS metasearch. Returns results with title, URL, snippet, publication date, and source.\n' +
         'Parameters:\n' +
         '  query (required) — what to search for\n' +
-        '  max_results (optional, default 10) — how many results to return (max 50)\n' +
-        '  region (optional) — region code, e.g. "us-en", "uk-en", "ru-ru"\n' +
-        '  safesearch (optional) — "on", "moderate", or "off" (default "moderate")\n' +
-        '  timelimit (optional) — "d" (past day), "w" (past week), "m" (past month)',
+        '  max_results (optional) — how many results to return (max 50) (default from settings)\n' +
+        '  region (optional) — region code, e.g. "us-en", "uk-en", "ru-ru" (default from settings)\n' +
+        '  safesearch (optional) — "on", "moderate", or "off" (default from settings)\n' +
+        '  timelimit (optional) — "d" (past day), "w" (past week), "m" (past month) (default from settings)',
       icon: 'Newspaper',
       tags: ['sources', 'web_search'],
     },
@@ -295,20 +484,18 @@ export const tools: Record<string, ExtensionToolDef> = {
         query: { type: 'string', description: 'The news search query.' },
         max_results: {
           type: 'integer',
-          description: 'Maximum number of results (default: 10, max: 50).',
-          default: 10,
+          description:
+            'Maximum number of results (default: from settings, max: 50).',
         },
         region: {
           type: 'string',
           description:
-            'Region code (e.g. us-en, uk-en, ru-ru). Default: us-en.',
-          default: 'us-en',
+            'Region code (e.g. us-en, uk-en, ru-ru). Default: from settings.',
         },
         safesearch: {
           type: 'string',
           description:
-            'SafeSearch filter: on, moderate, off. Default: moderate.',
-          default: 'moderate',
+            'SafeSearch filter: on, moderate, off. Default: from settings.',
         },
         timelimit: {
           type: 'string',
@@ -324,14 +511,19 @@ export const tools: Record<string, ExtensionToolDef> = {
       safesearch?: string;
       timelimit?: string;
     }) {
+      const s = loadSettings();
       const keywordArgs: Record<string, string> = {
         query: `'${escapePyString(params.query)}'`,
-        max_results: String(Math.min(params.max_results ?? 10, 50)),
-        region: `'${escapePyString(params.region ?? 'us-en')}'`,
-        safesearch: `'${escapePyString(params.safesearch ?? 'moderate')}'`,
+        max_results: String(
+          Math.min(params.max_results ?? s.defaultMaxResults, 50),
+        ),
+        region: `'${escapePyString(params.region ?? s.defaultRegion)}'`,
+        safesearch: `'${escapePyString(params.safesearch ?? s.defaultSafesearch)}'`,
+        backend: `'${escapePyString(s.defaultBackend || 'auto')}'`,
       };
-      if (params.timelimit)
-        keywordArgs.timelimit = `'${escapePyString(params.timelimit)}'`;
+      const effectiveTimelimit = params.timelimit ?? s.defaultTimelimit;
+      if (effectiveTimelimit)
+        keywordArgs.timelimit = `'${escapePyString(effectiveTimelimit)}'`;
       return searchResultWithSources(await runSearch('news', keywordArgs));
     },
   },
@@ -347,14 +539,14 @@ export const tools: Record<string, ExtensionToolDef> = {
         'Use display_image_by_id with the returned display_id to view the image through the projector.\n' +
         'Parameters:\n' +
         '  query (required) — what to search for\n' +
-        '  max_results (optional, default 10) — how many results to return (max 50)\n' +
-        '  region (optional) — region code, e.g. "us-en", "uk-en", "ru-ru"\n' +
-        '  safesearch (optional) — "on", "moderate", or "off" (default "moderate")\n' +
-        '  size (optional) — filter: Small, Medium, Large, Wallpaper\n' +
-        '  color (optional) — filter by color name or Monochrome\n' +
-        '  type_image (optional) — filter: photo, clipart, gif, transparent, line\n' +
-        '  layout (optional) — filter: Square, Tall, Wide\n' +
-        '  license_image (optional) — filter: any (Creative Commons), Public, Share, ShareCommercially, Modify, ModifyCommercially',
+        '  max_results (optional) — how many results to return (max 50) (default from settings)\n' +
+        '  region (optional) — region code, e.g. "us-en", "uk-en", "ru-ru" (default from settings)\n' +
+        '  safesearch (optional) — "on", "moderate", or "off" (default from settings)\n' +
+        '  size (optional) — filter: Small, Medium, Large, Wallpaper (default from settings)\n' +
+        '  color (optional) — filter by color name or Monochrome (default from settings)\n' +
+        '  type_image (optional) — filter: photo, clipart, gif, transparent, line (default from settings)\n' +
+        '  layout (optional) — filter: Square, Tall, Wide (default from settings)\n' +
+        '  license_image (optional) — filter: any (Creative Commons), Public, Share, ShareCommercially, Modify, ModifyCommercially (default from settings)',
       icon: 'Image',
       tags: ['sources', 'web_search'],
     },
@@ -364,20 +556,18 @@ export const tools: Record<string, ExtensionToolDef> = {
         query: { type: 'string', description: 'The image search query.' },
         max_results: {
           type: 'integer',
-          description: 'Maximum number of results (default: 10, max: 50).',
-          default: 10,
+          description:
+            'Maximum number of results (default: from settings, max: 50).',
         },
         region: {
           type: 'string',
           description:
-            'Region code (e.g. us-en, uk-en, ru-ru). Default: us-en.',
-          default: 'us-en',
+            'Region code (e.g. us-en, uk-en, ru-ru). Default: from settings.',
         },
         safesearch: {
           type: 'string',
           description:
-            'SafeSearch filter: on, moderate, off. Default: moderate.',
-          default: 'moderate',
+            'SafeSearch filter: on, moderate, off. Default: from settings.',
         },
         size: {
           type: 'string',
@@ -414,25 +604,37 @@ export const tools: Record<string, ExtensionToolDef> = {
       layout?: string;
       license_image?: string;
     }) {
+      const s = loadSettings();
       const keywordArgs: Record<string, string> = {
         query: `'${escapePyString(params.query)}'`,
-        max_results: String(Math.min(params.max_results ?? 10, 50)),
-        region: `'${escapePyString(params.region ?? 'us-en')}'`,
-        safesearch: `'${escapePyString(params.safesearch ?? 'moderate')}'`,
+        max_results: String(
+          Math.min(params.max_results ?? s.defaultMaxResults, 50),
+        ),
+        region: `'${escapePyString(params.region ?? s.defaultRegion)}'`,
+        safesearch: `'${escapePyString(params.safesearch ?? s.defaultSafesearch)}'`,
+        backend: `'${escapePyString(s.defaultBackend || 'auto')}'`,
       };
-      if (params.size) keywordArgs.size = `'${escapePyString(params.size)}'`;
-      if (params.color) keywordArgs.color = `'${escapePyString(params.color)}'`;
-      if (params.type_image)
-        keywordArgs.type_image = `'${escapePyString(params.type_image)}'`;
-      if (params.layout)
-        keywordArgs.layout = `'${escapePyString(params.layout)}'`;
-      if (params.license_image)
-        keywordArgs.license_image = `'${escapePyString(params.license_image)}'`;
+      const effSize = params.size ?? s.imageSize;
+      if (effSize) keywordArgs.size = `'${escapePyString(effSize)}'`;
+      const effColor = params.color ?? s.imageColor;
+      if (effColor) keywordArgs.color = `'${escapePyString(effColor)}'`;
+      const effType = params.type_image ?? s.imageType;
+      if (effType) keywordArgs.type_image = `'${escapePyString(effType)}'`;
+      const effLayout = params.layout ?? s.imageLayout;
+      if (effLayout) keywordArgs.layout = `'${escapePyString(effLayout)}'`;
+      const effLicense = params.license_image ?? s.imageLicense;
+      if (effLicense)
+        keywordArgs.license_image = `'${escapePyString(effLicense)}'`;
+      const effectiveTimelimit = s.defaultTimelimit;
+      if (effectiveTimelimit)
+        keywordArgs.timelimit = `'${escapePyString(effectiveTimelimit)}'`;
       const raw = await runSearch('images', keywordArgs);
       if (raw.success && Array.isArray(raw.results)) {
-        for (const item of raw.results) {
+        for (const item of raw.results as Array<Record<string, unknown>>) {
           if (item.image) {
-            item.display_id = nextDisplayId(item.image);
+            (item as Record<string, unknown>).display_id = nextDisplayId(
+              String(item.image),
+            );
           }
         }
       }
@@ -450,13 +652,13 @@ export const tools: Record<string, ExtensionToolDef> = {
         'Search for videos using DDGS metasearch. Returns results with title, video URL, thumbnail URL, duration, publisher, and upload date.\n' +
         'Parameters:\n' +
         '  query (required) — what to search for\n' +
-        '  max_results (optional, default 10) — how many results to return (max 50)\n' +
-        '  region (optional) — region code, e.g. "us-en", "uk-en", "ru-ru"\n' +
-        '  safesearch (optional) — "on", "moderate", or "off" (default "moderate")\n' +
-        '  duration (optional) — filter: short, medium, long\n' +
-        '  resolution (optional) — filter: high, standart\n' +
-        '  license_videos (optional) — filter: creativeCommon, youtube\n' +
-        '  timelimit (optional) — "d" (past day), "w" (past week), "m" (past month)',
+        '  max_results (optional) — how many results to return (max 50) (default from settings)\n' +
+        '  region (optional) — region code, e.g. "us-en", "uk-en", "ru-ru" (default from settings)\n' +
+        '  safesearch (optional) — "on", "moderate", or "off" (default from settings)\n' +
+        '  duration (optional) — filter: short, medium, long (default from settings)\n' +
+        '  resolution (optional) — filter: high, standart (default from settings)\n' +
+        '  license_videos (optional) — filter: creativeCommon, youtube (default from settings)\n' +
+        '  timelimit (optional) — "d" (past day), "w" (past week), "m" (past month) (default from settings)',
       icon: 'Video',
       tags: ['sources', 'web_search'],
     },
@@ -466,20 +668,18 @@ export const tools: Record<string, ExtensionToolDef> = {
         query: { type: 'string', description: 'The video search query.' },
         max_results: {
           type: 'integer',
-          description: 'Maximum number of results (default: 10, max: 50).',
-          default: 10,
+          description:
+            'Maximum number of results (default: from settings, max: 50).',
         },
         region: {
           type: 'string',
           description:
-            'Region code (e.g. us-en, uk-en, ru-ru). Default: us-en.',
-          default: 'us-en',
+            'Region code (e.g. us-en, uk-en, ru-ru). Default: from settings.',
         },
         safesearch: {
           type: 'string',
           description:
-            'SafeSearch filter: on, moderate, off. Default: moderate.',
-          default: 'moderate',
+            'SafeSearch filter: on, moderate, off. Default: from settings.',
         },
         duration: {
           type: 'string',
@@ -510,20 +710,28 @@ export const tools: Record<string, ExtensionToolDef> = {
       license_videos?: string;
       timelimit?: string;
     }) {
+      const s = loadSettings();
       const keywordArgs: Record<string, string> = {
         query: `'${escapePyString(params.query)}'`,
-        max_results: String(Math.min(params.max_results ?? 10, 50)),
-        region: `'${escapePyString(params.region ?? 'us-en')}'`,
-        safesearch: `'${escapePyString(params.safesearch ?? 'moderate')}'`,
+        max_results: String(
+          Math.min(params.max_results ?? s.defaultMaxResults, 50),
+        ),
+        region: `'${escapePyString(params.region ?? s.defaultRegion)}'`,
+        safesearch: `'${escapePyString(params.safesearch ?? s.defaultSafesearch)}'`,
+        backend: `'${escapePyString(s.defaultBackend || 'auto')}'`,
       };
-      if (params.duration)
-        keywordArgs.duration = `'${escapePyString(params.duration)}'`;
-      if (params.resolution)
-        keywordArgs.resolution = `'${escapePyString(params.resolution)}'`;
-      if (params.license_videos)
-        keywordArgs.license_videos = `'${escapePyString(params.license_videos)}'`;
-      if (params.timelimit)
-        keywordArgs.timelimit = `'${escapePyString(params.timelimit)}'`;
+      const effDuration = params.duration ?? s.videoDuration;
+      if (effDuration)
+        keywordArgs.duration = `'${escapePyString(effDuration)}'`;
+      const effResolution = params.resolution ?? s.videoResolution;
+      if (effResolution)
+        keywordArgs.resolution = `'${escapePyString(effResolution)}'`;
+      const effLicense = params.license_videos ?? s.videoLicense;
+      if (effLicense)
+        keywordArgs.license_videos = `'${escapePyString(effLicense)}'`;
+      const effectiveTimelimit = params.timelimit ?? s.defaultTimelimit;
+      if (effectiveTimelimit)
+        keywordArgs.timelimit = `'${escapePyString(effectiveTimelimit)}'`;
       return searchResultWithSources(await runSearch('videos', keywordArgs));
     },
   },
@@ -539,7 +747,7 @@ export const tools: Record<string, ExtensionToolDef> = {
         'Returns results with title, author, publisher, info, URL, and thumbnail.\n' +
         'Parameters:\n' +
         '  query (required) — book title, author, topic, or ISBN\n' +
-        '  max_results (optional, default 10) — how many results to return (max 50)',
+        '  max_results (optional) — how many results to return (max 50) (default from settings)',
       icon: 'BookOpen',
       tags: ['sources', 'web_search'],
     },
@@ -552,16 +760,20 @@ export const tools: Record<string, ExtensionToolDef> = {
         },
         max_results: {
           type: 'integer',
-          description: 'Maximum number of results (default: 10, max: 50).',
-          default: 10,
+          description:
+            'Maximum number of results (default: from settings, max: 50).',
         },
       },
       required: ['query'],
     },
     async handler(params: { query: string; max_results?: number }) {
+      const s = loadSettings();
       const keywordArgs: Record<string, string> = {
         query: `'${escapePyString(params.query)}'`,
-        max_results: String(Math.min(params.max_results ?? 10, 50)),
+        max_results: String(
+          Math.min(params.max_results ?? s.defaultMaxResults, 50),
+        ),
+        backend: `'${escapePyString(s.defaultBackend || 'auto')}'`,
       };
       return searchResultWithSources(await runSearch('books', keywordArgs));
     },
@@ -577,7 +789,7 @@ export const tools: Record<string, ExtensionToolDef> = {
         'Fetch a URL and extract its content as clean markdown. Useful for reading articles, documentation, and web pages.\n' +
         'Parameters:\n' +
         '  url (required) — the URL to fetch\n' +
-        '  max_length (optional, default 5000) — maximum characters to return\n' +
+        '  max_length (optional) — maximum characters to return (default from settings)\n' +
         '  start_index (optional, default 0) — character offset to start from',
       icon: 'Globe',
       tags: ['sources', 'top_source'],
@@ -592,8 +804,7 @@ export const tools: Record<string, ExtensionToolDef> = {
         max_length: {
           type: 'integer',
           description:
-            'Maximum number of characters to return (default: 5000).',
-          default: 5000,
+            'Maximum number of characters to return (default: from settings).',
         },
         start_index: {
           type: 'integer',
@@ -608,7 +819,13 @@ export const tools: Record<string, ExtensionToolDef> = {
       max_length?: number;
       start_index?: number;
     }) {
-      const { url, max_length = 5000, start_index = 0 } = params;
+      const s = loadSettings();
+      const effectiveMaxLength = params.max_length ?? s.maxFetchLength;
+      const { url, start_index = 0 } = params;
+      const max_length = effectiveMaxLength;
+      if (!isUrlAllowed(url, s)) {
+        return `Error: URL "${url}" is blocked by domain filter settings.`;
+      }
       const result = await runExtract(url);
       if (result.error) {
         return `Error: ${result.error}`;
@@ -650,6 +867,12 @@ export const tools: Record<string, ExtensionToolDef> = {
     },
     async handler(params: { url: string; alt_text?: string }) {
       const { url } = params;
+      const s = loadSettings();
+      if (!isUrlAllowed(url, s)) {
+        return {
+          _response: `Error: URL "${url}" is blocked by domain filter settings.`,
+        };
+      }
       let parsedUrl: URL;
       try {
         parsedUrl = new URL(url);
@@ -726,6 +949,12 @@ export const tools: Record<string, ExtensionToolDef> = {
       if (!imageUrl) {
         return {
           _response: `Error Display ID not found: ${params.display_id}`,
+        };
+      }
+      const s = loadSettings();
+      if (!isUrlAllowed(imageUrl, s)) {
+        return {
+          _response: `Error: Image URL is blocked by domain filter settings.`,
         };
       }
       try {
