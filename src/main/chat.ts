@@ -1420,7 +1420,7 @@ function appendAssistantToken(
   ];
 }
 
-function handleFunctionCalling(s: SessionStream, name: string): void {
+function handleFunctionCalling(s: SessionStream, name: string): string {
   const updatedMessages = [...s.messages];
   const lastMessage = updatedMessages[updatedMessages.length - 1];
 
@@ -1453,21 +1453,22 @@ function handleFunctionCalling(s: SessionStream, name: string): void {
     name,
     text: s.streamingTool?.name === name ? (s.streamingTool.text ?? '') : '',
   };
+  return segId;
 }
 
 function handleFunctionCall(
   s: SessionStream,
   name: string,
   params: string,
+  segId?: string,
 ): void {
   s.streamingTool = null;
   const updatedMessages = [...s.messages];
   const lastMessage = updatedMessages[updatedMessages.length - 1];
 
-  if (lastMessage?.role === 'assistant' && s.toolQueue[0]) {
-    const toolSegment = lastMessage.content.find(
-      (seg) => seg.id === s.toolQueue[0],
-    );
+  const targetId = segId ?? s.toolQueue[0];
+  if (lastMessage?.role === 'assistant' && targetId) {
+    const toolSegment = lastMessage.content.find((seg) => seg.id === targetId);
     if (toolSegment && toolSegment.type === 'tool') {
       toolSegment.toolParams = params;
     }
@@ -1476,15 +1477,18 @@ function handleFunctionCall(
   s.messages = updatedMessages;
 }
 
-function handleFunctionResult(s: SessionStream, payload: any): void {
+function handleFunctionResult(
+  s: SessionStream,
+  payload: any,
+  segId?: string,
+): void {
   s.isReprocessing = true;
   const updatedMessages = [...s.messages];
   const lastMessage = updatedMessages[updatedMessages.length - 1];
 
-  if (lastMessage?.role === 'assistant' && s.toolQueue[0]) {
-    const toolSegment = lastMessage.content.find(
-      (seg) => seg.id === s.toolQueue[0],
-    );
+  const targetId = segId ?? s.toolQueue[0];
+  if (lastMessage?.role === 'assistant' && targetId) {
+    const toolSegment = lastMessage.content.find((seg) => seg.id === targetId);
     if (toolSegment && toolSegment.type === 'tool') {
       toolSegment.toolStatus = 'done';
       toolSegment.toolResult = payload.result;
@@ -1498,7 +1502,11 @@ function handleFunctionResult(s: SessionStream, payload: any): void {
     }
   }
 
-  s.toolQueue.shift();
+  if (segId) {
+    s.toolQueue = s.toolQueue.filter((id) => id !== segId);
+  } else {
+    s.toolQueue.shift();
+  }
   s.messages = updatedMessages;
 }
 
@@ -1844,16 +1852,23 @@ export async function sendMessage(
             if (delta.tool_calls) {
               delta.tool_calls.forEach((tc: any) => {
                 if (!toolCalls[tc.index])
-                  toolCalls[tc.index] = { id: tc.id, name: '', args: '' };
+                  toolCalls[tc.index] = { id: tc.id, name: '', args: '', segId: '' };
                 if (tc.function?.name) {
-                  toolCalls[tc.index].name = tc.function.name;
-                  handleFunctionCalling(s, tc.function.name);
-                  emit({
-                    type: 'function-calling',
-                    sessionId,
-                    name: tc.function.name,
-                    tags: chatFunctions[tc.function.name]?.tags,
-                  });
+                  if (!toolCalls[tc.index].segId) {
+                    const segId = handleFunctionCalling(s, tc.function.name);
+                    toolCalls[tc.index].segId = segId;
+                    toolCalls[tc.index].name = tc.function.name;
+                    emit({
+                      type: 'function-calling',
+                      sessionId,
+                      id: segId,
+                      toolCallId: tc.id,
+                      name: tc.function.name,
+                      tags: chatFunctions[tc.function.name]?.tags,
+                    });
+                  } else {
+                    toolCalls[tc.index].name = tc.function.name;
+                  }
                 }
                 if (tc.function?.arguments) {
                   toolCalls[tc.index].args += tc.function.arguments;
@@ -1906,18 +1921,22 @@ export async function sendMessage(
         content: '',
         tool_calls: toolCallRequests,
       });
+      // Emit all function-call params upfront so every card becomes expandable immediately
       for (const tc of toolCalls) {
-        const handler = chatFunctions[tc.name]?.handler;
-        if (chatFunctions[tc.name]?.tags?.includes('web_search'))
-          addWebSearch();
-        handleFunctionCall(s, tc.name, tc.args);
+        if (chatFunctions[tc.name]?.tags?.includes('web_search')) addWebSearch();
+        handleFunctionCall(s, tc.name, tc.args, tc.segId);
         emit({
           type: 'function-call',
           sessionId,
+          id: tc.segId,
+          toolCallId: tc.id,
           name: tc.name,
           params: tc.args,
           tags: chatFunctions[tc.name]?.tags,
         });
+      }
+      for (const tc of toolCalls) {
+        const handler = chatFunctions[tc.name]?.handler;
         const toolContext = { sessionId, profileId: s.profileId };
         let result = await handler(JSON.parse(tc.args), toolContext);
 
@@ -2032,10 +2051,12 @@ export async function sendMessage(
         }
         if (sourcesData) resultPayload._sources = sourcesData;
         if (topSourcesData) resultPayload._top_sources = topSourcesData;
-        handleFunctionResult(s, resultPayload);
+        handleFunctionResult(s, resultPayload, tc.segId);
         emit({
           type: 'function-result',
           sessionId,
+          id: tc.segId,
+          toolCallId: tc.id,
           name: tc.name,
           result: resultStr,
           _image:

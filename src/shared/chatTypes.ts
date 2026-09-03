@@ -137,6 +137,8 @@ export interface StreamEventPayload {
   params?: string;
   tags?: string[];
   result?: string;
+  id?: string;
+  toolCallId?: string;
   _image?: { url: string; altText?: string };
   _sources?: { title: string; url: string }[];
   _top_sources?: { title: string; url: string }[];

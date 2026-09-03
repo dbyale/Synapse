@@ -400,6 +400,7 @@ interface MessageViewProps {
   processing: boolean;
   progressPercent: number;
   streamingTool: { name: string; text: string } | null;
+  executing: { names: string[]; completed: number; total: number } | null;
   settings: AppSettings | null;
   copiedMsgId: number | null;
   isCollapsed: boolean;
@@ -416,6 +417,7 @@ function MessageViewInner({
   processing,
   progressPercent,
   streamingTool,
+  executing,
   settings,
   copiedMsgId,
   isCollapsed,
@@ -454,7 +456,7 @@ function MessageViewInner({
       const el = toolStreamRef.current;
       if (el) el.scrollTop = 0;
     }
-  }, [streamingTool?.name]);
+  }, [streamingTool]);
 
   useEffect(() => {
     if (!streamingTool) return;
@@ -462,7 +464,7 @@ function MessageViewInner({
     const el = toolStreamRef.current;
     if (!el) return;
     el.scrollTop = el.scrollHeight;
-  }, [streamingDisplayText]);
+  }, [streamingDisplayText, streamingTool]);
 
   return (
     <div className={`chat-message chat-message--${msg.role}`}>
@@ -866,7 +868,23 @@ function MessageViewInner({
                   {loading &&
                     isLast &&
                     msg.role === 'assistant' &&
-                    processing && (
+                    executing && (
+                      <div className="chat-message__indicator-box">
+                        <div className="chat-indicator">
+                          <div className="chat-indicator__spinner" />
+                          <span className="chat-indicator__label">
+                            Executing {executing.names.join(', ')} (
+                            {executing.completed}/{executing.total})
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                  {loading &&
+                    isLast &&
+                    msg.role === 'assistant' &&
+                    processing &&
+                    !executing &&
+                    !streamingTool && (
                       <div className="chat-message__indicator-box">
                         <div className="chat-indicator">
                           <div className="chat-indicator__spinner" />
@@ -1064,7 +1082,8 @@ function messageViewPropsEqual(prev: MessageViewProps, next: MessageViewProps) {
     prev.loading === next.loading &&
     prev.processing === next.processing &&
     prev.progressPercent === next.progressPercent &&
-    prev.streamingTool === next.streamingTool
+    prev.streamingTool === next.streamingTool &&
+    prev.executing === next.executing
   );
 }
 
@@ -1381,6 +1400,9 @@ export default function ChatPage() {
   const [processingSessions, setProcessingSessions] = useState<
     Record<string, boolean>
   >({});
+  const [executingSessions, setExecutingSessions] = useState<
+    Record<string, { names: string[]; completed: number; total: number } | null>
+  >({});
   const [showSlotInfo, setShowSlotInfo] = useState(false);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
 
@@ -1395,6 +1417,9 @@ export default function ChatPage() {
   const toolSegmentQueuesRef = useRef<Record<string, string[]>>({});
   const pendingSegmentIdsRef = useRef<Record<string, string[]>>({});
   const isReprocessingRef = useRef<Record<string, boolean>>({});
+  const executingRef = useRef<
+    Record<string, { names: string[]; completed: number; total: number } | null>
+  >({});
   const messageCountersRef = useRef<Record<string, number>>({});
   const segmentCountersRef = useRef<Record<string, number>>({});
   const syncThrottleRef = useRef<Record<string, ReturnType<typeof setTimeout>>>(
@@ -1549,6 +1574,13 @@ export default function ChatPage() {
     }
     delete toolTypewriterQueuesRef.current[sessionId];
     delete toolTypewriterCarryRef.current[sessionId];
+    delete executingRef.current[sessionId];
+    setExecutingSessions((prev) => {
+      if (!(sessionId in prev)) return prev;
+      const next = { ...prev };
+      delete next[sessionId];
+      return next;
+    });
   }, []);
 
   const clearAllTypewriterSessions = useCallback(() => {
@@ -1571,6 +1603,8 @@ export default function ChatPage() {
     toolPrettyFlushTimersRef.current = {};
     toolTypewriterQueuesRef.current = {};
     toolTypewriterCarryRef.current = {};
+    executingRef.current = {};
+    setExecutingSessions({});
   }, []);
 
   const drainTypewriterQueue = useCallback(
@@ -2272,6 +2306,10 @@ export default function ChatPage() {
   const loading = !!activeSessionId && !!loadingSessions[activeSessionId];
   const sending = sendingState && !loading;
   const processing = !!activeSessionId && !!processingSessions[activeSessionId];
+  const executing =
+    activeSessionId != null
+      ? (executingSessions[activeSessionId] ?? null)
+      : null;
   messagesRef.current = messages;
 
   useEffect(() => {
@@ -3156,7 +3194,7 @@ export default function ChatPage() {
             const updatedMessages = [...prev];
             const lastMessage = updatedMessages[updatedMessages.length - 1];
 
-            const segId = crypto.randomUUID();
+            const segId = (payload as any).id ?? crypto.randomUUID();
             pendingSegmentIdsRef.current[sessionId] = [
               ...(pendingSegmentIdsRef.current[sessionId] ?? []),
               segId,
@@ -3191,7 +3229,7 @@ export default function ChatPage() {
               ...(toolSegmentQueuesRef.current[sessionId] ?? []),
               toolSegment.id,
             ];
-            setSessionProcessing(true);
+            // Do not show Processing prompt during live streaming – bar stays hidden until function-call
             streamingToolsRef.current[sessionId] = {
               name: payload.name ?? 'tool',
               text: '',
@@ -3224,16 +3262,39 @@ export default function ChatPage() {
           }
           streamingToolsRef.current[sessionId] = null;
           if (isActive) setStreamingTool(null);
+          // Start Executing bar – hidden until function-call, now show with batch names (unique)
+          if (!executingRef.current[sessionId]) {
+            const queueIds = toolSegmentQueuesRef.current[sessionId] ?? [];
+            const msgs = sessionMessagesRef.current[sessionId] ?? [];
+            const allSegments = msgs.flatMap((m) => m.content);
+            const rawNames = queueIds
+              .map((id) => allSegments.find((s) => s.id === id)?.toolName ?? '')
+              .filter(Boolean) as string[];
+            const fallback = payload.name ?? rawNames[0] ?? 'tool';
+            const resolvedAll =
+              rawNames.length > 0
+                ? rawNames.map((n) => getToolMeta(n)?.label ?? n)
+                : [getToolMeta(fallback)?.label ?? fallback];
+            const uniqueNames = [...new Set(resolvedAll)];
+            const entry = {
+              names: uniqueNames,
+              completed: 0,
+              total: queueIds.length > 0 ? queueIds.length : resolvedAll.length,
+            };
+            executingRef.current[sessionId] = entry;
+            setExecutingSessions((prev) => ({ ...prev, [sessionId]: entry }));
+          }
           applyToSession(sessionId, isActive, (prev) => {
             const updatedMessages = [...prev];
             const lastMessage = updatedMessages[updatedMessages.length - 1];
             const queue = toolSegmentQueuesRef.current[sessionId] ?? [];
+            const targetId = (payload as any).id ?? queue[0];
 
-            if (lastMessage?.role === 'assistant' && queue[0]) {
+            if (lastMessage?.role === 'assistant' && targetId) {
               updatedMessages[updatedMessages.length - 1] = {
                 ...lastMessage,
                 content: lastMessage.content.map((seg) =>
-                  seg.id === queue[0] && seg.type === 'tool'
+                  seg.id === targetId && seg.type === 'tool'
                     ? { ...seg, toolParams: payload.params }
                     : seg,
                 ),
@@ -3267,13 +3328,14 @@ export default function ChatPage() {
             const updatedMessages = [...prev];
             const lastMessage = updatedMessages[updatedMessages.length - 1];
             const queue = toolSegmentQueuesRef.current[sessionId] ?? [];
+            const targetId = (payload as any).id ?? queue[0];
 
-            if (lastMessage?.role === 'assistant' && queue[0]) {
+            if (lastMessage?.role === 'assistant' && targetId) {
               const { result } = payload;
               updatedMessages[updatedMessages.length - 1] = {
                 ...lastMessage,
                 content: lastMessage.content.map((seg) => {
-                  if (seg.id === queue[0] && seg.type === 'tool') {
+                  if (seg.id === targetId && seg.type === 'tool') {
                     const updatedSeg: MessageSegment = {
                       ...seg,
                       toolStatus: 'done',
@@ -3294,9 +3356,45 @@ export default function ChatPage() {
               };
             }
 
-            toolSegmentQueuesRef.current[sessionId] = queue.slice(1);
+            if (targetId) {
+              toolSegmentQueuesRef.current[sessionId] = queue.filter(
+                (id) => id !== targetId,
+              );
+            } else {
+              toolSegmentQueuesRef.current[sessionId] = queue.slice(1);
+            }
             return updatedMessages;
           });
+          // Update Executing (completed/total) – hide bar after last tool, then show reprocessing
+          {
+            const prevExec = executingRef.current[sessionId];
+            if (prevExec) {
+              const newCompleted = prevExec.completed + 1;
+              if (newCompleted >= prevExec.total) {
+                executingRef.current[sessionId] = null;
+                setExecutingSessions((prev) => {
+                  const next = { ...prev };
+                  delete next[sessionId];
+                  return next;
+                });
+                // All tools finished – start reprocessing bar (LLM re-runs)
+                progressRef.current[sessionId] = 0;
+                if (isActive) setProgressPercent(0);
+                setSessionProcessing(true);
+              } else {
+                const updated = { ...prevExec, completed: newCompleted };
+                executingRef.current[sessionId] = updated;
+                setExecutingSessions((prev) => ({
+                  ...prev,
+                  [sessionId]: updated,
+                }));
+              }
+            } else {
+              // Fallback: if Executing was not set (e.g., missed function-call), try to infer single tool
+              const fallbackQueue = toolSegmentQueuesRef.current[sessionId] ?? [];
+              // No further action – will be cleared at done
+            }
+          }
           return;
         }
 
@@ -3322,6 +3420,13 @@ export default function ChatPage() {
           toolSegmentQueuesRef.current[sessionId] = [];
           setSessionLoading(false);
           setSessionProcessing(false);
+          delete executingRef.current[sessionId];
+          setExecutingSessions((prev) => {
+            if (!(sessionId in prev)) return prev;
+            const next = { ...prev };
+            delete next[sessionId];
+            return next;
+          });
           // clear TPS tracking for session
           delete tokenTimestampsRef.current[sessionId];
           delete tokenTpsRef.current[sessionId];
@@ -3906,6 +4011,13 @@ export default function ChatPage() {
       progressRef.current[sessionId] = 0;
       if (sessionId === activeSessionIdRef.current) setProgressPercent(0);
       setStreamingTool(null);
+      delete executingRef.current[sessionId];
+      setExecutingSessions((prev) => {
+        if (!(sessionId in prev)) return prev;
+        const next = { ...prev };
+        delete next[sessionId];
+        return next;
+      });
 
       const counters = messageCountersRef.current;
       const uid = counters[sessionId] ?? 0;
@@ -4485,6 +4597,7 @@ export default function ChatPage() {
                 processing={processing}
                 progressPercent={progressPercent}
                 streamingTool={streamingTool}
+                executing={executing}
                 settings={settings}
                 copiedMsgId={copiedMsgId}
                 isCollapsed={collapsedIds.has(msg.id)}
@@ -4503,12 +4616,14 @@ export default function ChatPage() {
                     <div className="chat-indicator">
                       <div className="chat-indicator__spinner" />
                       <span className="chat-indicator__label">
-                        {processing
-                          ? `Processing prompt… (${progressPercent}%)`
-                          : 'Generating…'}
+                        {executing
+                          ? `Executing ${executing.names.join(', ')} (${executing.completed}/${executing.total})`
+                          : processing
+                            ? `Processing prompt… (${progressPercent}%)`
+                            : 'Generating…'}
                       </span>
                     </div>
-                    {processing && (
+                    {processing && !executing && (
                       <div className="chat-progress-bar">
                         <div
                           className="chat-progress-bar__fill"
