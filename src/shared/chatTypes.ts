@@ -5,6 +5,8 @@ export interface GenerationStatsData {
   responseTokens?: number;
   thinkingTokens?: number;
   toolTokens?: number;
+  totalTokens?: number;
+  isColdStart?: boolean;
 }
 
 export interface MediaDisplayItem {
@@ -131,6 +133,9 @@ export interface StreamEventPayload {
   token?: string;
   segmentType?: 'thought' | 'comment' | 'tool';
   progress?: number;
+  totalTokens?: number;
+  processedTokens?: number;
+  isColdStart?: boolean;
   stats?: GenerationStatsData;
   message?: string;
   name?: string;

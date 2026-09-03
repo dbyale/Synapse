@@ -40,6 +40,8 @@ export interface GenerationStats {
   responseTokens?: number;
   thinkingTokens?: number;
   toolTokens?: number;
+  totalTokens?: number;
+  isColdStart?: boolean;
 }
 
 export interface SendMessageResponse {
@@ -302,9 +304,7 @@ export function deleteSession(sessionId: string): void {
   emitSessionChanged(sessionId);
 }
 
-export function getSessionForTool(
-  sessionId: string,
-): SavedSession | null {
+export function getSessionForTool(sessionId: string): SavedSession | null {
   const s = getSessionState(sessionId);
   if (s) {
     return {
@@ -544,7 +544,13 @@ export function splitShellArgs(input: string): string[] {
         cur += ch;
         continue;
       }
-      if (next === '"' || next === "'" || next === '\\' || next === ' ' || next === '\t') {
+      if (
+        next === '"' ||
+        next === "'" ||
+        next === '\\' ||
+        next === ' ' ||
+        next === '\t'
+      ) {
         escaped = true;
         continue;
       }
@@ -873,7 +879,7 @@ function buildChatBody(
 
   // DRY sampling
   if (p?.repeatPenalty?.dry?.enabled) {
-    const dry = p.repeatPenalty.dry;
+    const { dry } = p.repeatPenalty;
     if (dry.multiplier !== undefined) body.dry_multiplier = dry.multiplier;
     if (dry.base !== undefined) body.dry_base = dry.base;
     if (dry.allowedLength !== undefined)
@@ -980,13 +986,23 @@ export async function preloadSystemPrompt(
       );
       const timeMs = lastProgress.time_ms || 0;
       const timeS = timeMs / 1000;
+      const totalTokens = lastProgress.total;
+      const isColdStart = (lastProgress.cache || 0) === 0 && totalTokens > 0;
       promptStats = {
         tokens: newTokens,
         timeMs,
         tokensPerSecond: timeS > 0 ? newTokens / timeS : 0,
+        totalTokens,
+        isColdStart,
       };
     } else {
-      promptStats = { tokens: 0, timeMs: 0, tokensPerSecond: 0 };
+      promptStats = {
+        tokens: 0,
+        timeMs: 0,
+        tokensPerSecond: 0,
+        totalTokens: 0,
+        isColdStart: false,
+      };
     }
     lastPreloadStats = { stats: promptStats, toolCount: tools.length };
     onDone(promptStats, tools.length);
@@ -1072,10 +1088,14 @@ export async function preloadSystemPrompt(
               if (total > 0 && processed >= total && !promptStats) {
                 const newTokens = Math.max(0, total - (cache || 0));
                 const timeS = (time_ms || 0) / 1000;
+                const totalTokens = total;
+                const isColdStart = (cache || 0) === 0 && totalTokens > 0;
                 promptStats = {
                   tokens: newTokens,
                   timeMs: time_ms || 0,
                   tokensPerSecond: timeS > 0 ? newTokens / timeS : 0,
+                  totalTokens,
+                  isColdStart,
                 };
                 lastPreloadStats = {
                   stats: promptStats,
@@ -1087,10 +1107,17 @@ export async function preloadSystemPrompt(
             }
 
             if (data.usage && !promptStats) {
+              const tokens =
+                data.timings?.prompt_n ?? data.usage.prompt_tokens ?? 0;
+              const totalTokens = data.usage.total_tokens ?? tokens;
+              // usage path: if totalTokens is significantly larger than prompt_n, treat as cold
+              const isColdStart = totalTokens > tokens + 64;
               const pFromUsage: GenerationStats = {
-                tokens: data.timings?.prompt_n ?? data.usage.prompt_tokens ?? 0,
+                tokens,
                 timeMs: data.timings?.prompt_ms || 0,
                 tokensPerSecond: data.timings?.prompt_per_second || 0,
+                totalTokens,
+                isColdStart,
               };
               promptStats = pFromUsage;
               lastPreloadStats = { stats: pFromUsage, toolCount: tools.length };
@@ -1161,7 +1188,7 @@ export async function loadProfile(
       let result: { ngl: number; ctx: number; memory: any };
       let updatedProfile: any;
 
-      const autoOptimizer = (profile as any).autoOptimizer;
+      const { autoOptimizer } = profile as any;
       const hasValidCustom =
         autoOptimizer === 'custom' &&
         typeof (profile as any).layers === 'number' &&
@@ -1364,7 +1391,7 @@ function appendAssistantToken(
   token: string,
   segmentType?: 'thought' | 'comment' | 'tool',
 ): void {
-  const messages = s.messages;
+  const { messages } = s;
   const last = messages[messages.length - 1];
 
   let currentType: 'thought' | 'comment' | 'normal' = 'normal';
@@ -1756,20 +1783,42 @@ export async function sendMessage(
                   ? Math.min(100, Math.round((processed / total) * 100))
                   : 0;
               s.promptProgress = pct;
+              const newTokensServerProg = Math.max(0, total - (cache || 0));
+              const isColdStartProg =
+                newTokensServerProg > currentNewTokens + 64;
               emit({
                 type: 'progress',
                 sessionId,
                 progress: pct,
+                totalTokens: total,
+                processedTokens: processed,
+                isColdStart: isColdStartProg,
               });
+              // Early absolute truth sync: single jump to final total on first progress tick so polling + bottom-right counter reflect absolute without waiting for prompt-done
+              if (total > 0) {
+                lastUsage = {
+                  used: total,
+                  total: currentContextSize || 2048,
+                };
+              }
               // Prompt processing complete — send stats immediately
               if (total > 0 && processed >= total && !promptStats) {
                 const timeS = (time_ms || 0) / 1000;
+                const newTokensServer = Math.max(0, total - (cache || 0));
+                const isColdStart = newTokensServer > currentNewTokens + 64;
                 const pStats: GenerationStats = {
                   tokens: currentNewTokens,
                   timeMs: time_ms || 0,
-                  tokensPerSecond: timeS > 0 ? currentNewTokens / timeS : 0,
+                  tokensPerSecond: timeS > 0 ? newTokensServer / timeS : 0,
+                  totalTokens: total,
+                  isColdStart,
                 };
                 promptStats = pStats;
+                // Sync global KV usage to authoritative total before next poll
+                lastUsage = {
+                  used: total,
+                  total: currentContextSize || 2048,
+                };
                 handlePromptDone(s, pStats);
                 emit({
                   type: 'prompt-done',
@@ -1781,6 +1830,11 @@ export async function sendMessage(
             }
 
             if (data.usage) {
+              const promptN =
+                data.timings?.prompt_n ??
+                data.usage.prompt_tokens ??
+                currentNewTokens;
+              const isColdStartFromUsage = promptN > currentNewTokens + 64;
               lastUsage = {
                 used: data.usage.total_tokens,
                 total: currentContextSize || 2048,
@@ -1801,6 +1855,8 @@ export async function sendMessage(
                 tokens: currentNewTokens,
                 timeMs: data.timings?.prompt_ms || 0,
                 tokensPerSecond: data.timings?.prompt_per_second || 0,
+                totalTokens: data.usage.total_tokens,
+                isColdStart: isColdStartFromUsage,
               };
               // Only set if not already sent via progress events
               if (!promptStats) {
@@ -1852,7 +1908,12 @@ export async function sendMessage(
             if (delta.tool_calls) {
               delta.tool_calls.forEach((tc: any) => {
                 if (!toolCalls[tc.index])
-                  toolCalls[tc.index] = { id: tc.id, name: '', args: '', segId: '' };
+                  toolCalls[tc.index] = {
+                    id: tc.id,
+                    name: '',
+                    args: '',
+                    segId: '',
+                  };
                 if (tc.function?.name) {
                   if (!toolCalls[tc.index].segId) {
                     const segId = handleFunctionCalling(s, tc.function.name);
@@ -1923,7 +1984,8 @@ export async function sendMessage(
       });
       // Emit all function-call params upfront so every card becomes expandable immediately
       for (const tc of toolCalls) {
-        if (chatFunctions[tc.name]?.tags?.includes('web_search')) addWebSearch();
+        if (chatFunctions[tc.name]?.tags?.includes('web_search'))
+          addWebSearch();
         handleFunctionCall(s, tc.name, tc.args, tc.segId);
         emit({
           type: 'function-call',
@@ -1939,7 +2001,8 @@ export async function sendMessage(
       // UI (messages / checkmarks) commits immediately per completion order,
       // LLM history (s.history) is deferred and applied in index order.
       const rawLimit = (loadSettings().toolConcurrencyLimit ?? 10) as number;
-      const concurrencyLimit = rawLimit === 0 ? 0 : Math.max(1, Math.floor(rawLimit));
+      const concurrencyLimit =
+        rawLimit === 0 ? 0 : Math.max(1, Math.floor(rawLimit));
 
       type BufferedLLM = {
         resultStr: string;
@@ -1949,8 +2012,12 @@ export async function sendMessage(
         topSourcesData: any;
       };
 
-      const firstResults: PromiseSettledResult<any>[] = new Array(toolCalls.length);
-      const llmBuffers: (BufferedLLM | undefined)[] = new Array(toolCalls.length);
+      const firstResults: PromiseSettledResult<any>[] = new Array(
+        toolCalls.length,
+      );
+      const llmBuffers: (BufferedLLM | undefined)[] = new Array(
+        toolCalls.length,
+      );
       const isInteractive: boolean[] = new Array(toolCalls.length).fill(false);
 
       const prepareBuffer = (result: any, tc: any): BufferedLLM => {
@@ -1962,13 +2029,18 @@ export async function sendMessage(
         }
         /* eslint-disable no-underscore-dangle */
         const sourcesData =
-          result && typeof result === 'object' && '_sources' in result ? (result as any)._sources : undefined;
+          result && typeof result === 'object' && '_sources' in result
+            ? (result as any)._sources
+            : undefined;
         const topSourcesData =
-          result && typeof result === 'object' && '_top_sources' in result ? (result as any)._top_sources : undefined;
+          result && typeof result === 'object' && '_top_sources' in result
+            ? (result as any)._top_sources
+            : undefined;
         /* eslint-enable no-underscore-dangle */
         const resultStr = JSON.stringify(modelContent);
         const payload: any = { result: resultStr };
-        if (imageData && tc.name !== 'read_media_file') payload._image = imageData;
+        if (imageData && tc.name !== 'read_media_file')
+          payload._image = imageData;
         if (sourcesData) payload._sources = sourcesData;
         if (topSourcesData) payload._top_sources = topSourcesData;
         return { resultStr, payload, imageData, sourcesData, topSourcesData };
@@ -1989,7 +2061,10 @@ export async function sendMessage(
               })),
             );
           }
-          if (Array.isArray(topSourcesData) && toolTags?.includes('top_source')) {
+          if (
+            Array.isArray(topSourcesData) &&
+            toolTags?.includes('top_source')
+          ) {
             incoming.push(
               ...topSourcesData.map((src: any) => ({
                 title: src.title,
@@ -2010,7 +2085,10 @@ export async function sendMessage(
           toolCallId: tc.id,
           name: tc.name,
           result: buffered.resultStr,
-          _image: buffered.imageData && tc.name !== 'read_media_file' ? buffered.imageData : undefined,
+          _image:
+            buffered.imageData && tc.name !== 'read_media_file'
+              ? buffered.imageData
+              : undefined,
           _sources: sourcesData,
           _top_sources: topSourcesData,
           tags: chatFunctions[tc.name]?.tags,
@@ -2025,14 +2103,27 @@ export async function sendMessage(
         if (lastUsage) {
           const resultTokens = (await tokenize(buffered.resultStr)) ?? 0;
           totalResultTokens += resultTokens;
-          lastUsage = { used: lastUsage.used + resultTokens, total: lastUsage.total };
+          lastUsage = {
+            used: lastUsage.used + resultTokens,
+            total: lastUsage.total,
+          };
         }
-        s.history.push({ role: 'tool', tool_call_id: tc.id, content: buffered.resultStr });
-        if (buffered.imageData && chatFunctions[tc.name]?.displayType === 'projector') {
+        s.history.push({
+          role: 'tool',
+          tool_call_id: tc.id,
+          content: buffered.resultStr,
+        });
+        if (
+          buffered.imageData &&
+          chatFunctions[tc.name]?.displayType === 'projector'
+        ) {
           s.history.push({
             role: 'tool',
             content: [
-              { type: 'text', text: `[Image from tool: ${buffered.imageData.altText || 'media'}]` },
+              {
+                type: 'text',
+                text: `[Image from tool: ${buffered.imageData.altText || 'media'}]`,
+              },
               { type: 'image_url', image_url: { url: buffered.imageData.url } },
             ],
           });
@@ -2043,7 +2134,10 @@ export async function sendMessage(
       await (async () => {
         const runOne = async (idx: number): Promise<void> => {
           if (s.aborted) {
-            firstResults[idx] = { status: 'rejected', reason: new Error('Aborted') } as PromiseRejectedResult;
+            firstResults[idx] = {
+              status: 'rejected',
+              reason: new Error('Aborted'),
+            } as PromiseRejectedResult;
             return;
           }
           const tc = toolCalls[idx];
@@ -2052,7 +2146,10 @@ export async function sendMessage(
             if (!h) throw new Error(`Tool handler not found: ${tc.name}`);
             const toolContext = { sessionId, profileId: s.profileId };
             const v = await h(JSON.parse(tc.args), toolContext);
-            firstResults[idx] = { status: 'fulfilled', value: v } as PromiseFulfilledResult<any>;
+            firstResults[idx] = {
+              status: 'fulfilled',
+              value: v,
+            } as PromiseFulfilledResult<any>;
             if (v && typeof v === 'object' && (v as any)._userInput) {
               isInteractive[idx] = true;
               // interactive probe stays in calling state until Phase 3
@@ -2062,8 +2159,14 @@ export async function sendMessage(
             llmBuffers[idx] = buffered;
             commitImmediateUI(idx, buffered);
           } catch (e) {
-            firstResults[idx] = { status: 'rejected', reason: e } as PromiseRejectedResult;
-            const buffered = prepareBuffer({ error: e instanceof Error ? e.message : String(e) }, tc);
+            firstResults[idx] = {
+              status: 'rejected',
+              reason: e,
+            } as PromiseRejectedResult;
+            const buffered = prepareBuffer(
+              { error: e instanceof Error ? e.message : String(e) },
+              tc,
+            );
             llmBuffers[idx] = buffered;
             commitImmediateUI(idx, buffered);
           }
@@ -2110,7 +2213,9 @@ export async function sendMessage(
         const inputReq: UserInputRequest = {
           requestId: tc.id,
           type: userInput.type || 'confirm',
-          title: userInput.title || (userInput.type === 'confirm' ? 'Action Required' : 'Question'),
+          title:
+            userInput.title ||
+            (userInput.type === 'confirm' ? 'Action Required' : 'Question'),
           prompt: userInput.prompt || `Allow ${tc.name}?`,
           options: userInput.options,
           toolName: tc.name,
@@ -2129,12 +2234,21 @@ export async function sendMessage(
         if (inputReq.type === 'confirm') {
           if (userResponse.action === 'confirmed') {
             // eslint-disable-next-line no-await-in-loop
-            finalResult = await handler({ ...JSON.parse(tc.args), _confirmed: true }, toolContext);
+            finalResult = await handler(
+              { ...JSON.parse(tc.args), _confirmed: true },
+              toolContext,
+            );
           } else {
-            finalResult = { _denied: true, message: 'User denied this action.' };
+            finalResult = {
+              _denied: true,
+              message: 'User denied this action.',
+            };
           }
         } else {
-          finalResult = { _userResponse: userResponse.action, value: userResponse.value };
+          finalResult = {
+            _userResponse: userResponse.action,
+            value: userResponse.value,
+          };
         }
         const buffered = prepareBuffer(finalResult, tc);
         llmBuffers[idx] = buffered;
@@ -2144,7 +2258,10 @@ export async function sendMessage(
       // Final: deferred LLM history in global index order (0..n-1) so model sees original call order
       // This runs after immediate UI checks have already been emitted per completion order,
       // but before the next model turn.
-      const allSorted = Array.from({ length: toolCalls.length }, (_, i) => i).sort((a, b) => a - b);
+      const allSorted = Array.from(
+        { length: toolCalls.length },
+        (_, i) => i,
+      ).sort((a, b) => a - b);
       for (const idx of allSorted) {
         if (s.aborted) break;
         if (!llmBuffers[idx]) continue;

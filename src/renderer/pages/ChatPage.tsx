@@ -1469,6 +1469,7 @@ export default function ChatPage() {
   const lastTokenSnapshot = useRef<{ tokens: number; time: number } | null>(
     null,
   );
+  const appliedProgressTruthRef = useRef<Record<string, boolean>>({});
   const systemMessageInsertedRef = useRef(false);
   const autoSavingsShownRef = useRef(false);
 
@@ -1560,6 +1561,7 @@ export default function ChatPage() {
     delete tokenTimestampsRef.current[sessionId];
     delete tokenCharsRef.current[sessionId];
     delete tokenTpsRef.current[sessionId];
+    delete appliedProgressTruthRef.current[sessionId];
     const tt = toolTypewriterTimersRef.current[sessionId];
     if (tt) {
       clearInterval(tt);
@@ -1591,6 +1593,7 @@ export default function ChatPage() {
     tokenTimestampsRef.current = {};
     tokenCharsRef.current = {};
     tokenTpsRef.current = {};
+    appliedProgressTruthRef.current = {};
     Object.keys(toolTypewriterTimersRef.current).forEach((sid) => {
       clearInterval(toolTypewriterTimersRef.current[sid]);
     });
@@ -2790,18 +2793,46 @@ export default function ChatPage() {
       }
 
       if (loading && usage.used > 0) {
-        if (!lastTokenSnapshot.current) {
+        const isPromptOrToolPhase = processing || !!executing;
+        if (isPromptOrToolPhase) {
+          // During prompt processing or tool execution/reprocessing, absorb any jump
+          // (user input tokens, tokenized tool results) without counting toward TPS.
+          lastTokenSnapshot.current = { tokens: usage.used, time: Date.now() };
+          if (generationBaselineTokens.current === null) {
+            generationBaselineTokens.current = usage.used;
+          }
+          const activeId = activeSessionIdRef.current;
+          if (activeId) {
+            tokenTimestampsRef.current[activeId] = [];
+            tokenTpsRef.current[activeId] = 0;
+            tokenCharsRef.current[activeId] = { chars: 0, tokens: 0 };
+          }
+          setTps(0);
+        } else if (!lastTokenSnapshot.current) {
           lastTokenSnapshot.current = { tokens: usage.used, time: Date.now() };
           if (generationBaselineTokens.current === null) {
             generationBaselineTokens.current = usage.used;
           }
         } else if (usage.used > lastTokenSnapshot.current.tokens) {
           const deltaTokens = usage.used - lastTokenSnapshot.current.tokens;
-          const deltaTime =
-            (Date.now() - lastTokenSnapshot.current.time) / 1000;
-          const instantTps = deltaTime > 0 ? deltaTokens / deltaTime : 0;
-          setTps((prev) => 0.3 * instantTps + 0.7 * prev);
-          lastTokenSnapshot.current = { tokens: usage.used, time: Date.now() };
+          // Guard: huge jumps that slipped through (missed prompt phase) are rebased, not counted as TPS
+          if (deltaTokens > 2000) {
+            lastTokenSnapshot.current = {
+              tokens: usage.used,
+              time: Date.now(),
+            };
+            generationBaselineTokens.current = usage.used;
+            setTps(0);
+          } else {
+            const deltaTime =
+              (Date.now() - lastTokenSnapshot.current.time) / 1000;
+            const instantTps = deltaTime > 0 ? deltaTokens / deltaTime : 0;
+            setTps((prev) => 0.3 * instantTps + 0.7 * prev);
+            lastTokenSnapshot.current = {
+              tokens: usage.used,
+              time: Date.now(),
+            };
+          }
         }
       } else if (!loading) {
         generationBaselineTokens.current = null;
@@ -2816,7 +2847,15 @@ export default function ChatPage() {
     const interval = setInterval(updateContextUsage, pollInterval);
 
     return () => clearInterval(interval);
-  }, [selectedProfileId, modelLoading, loading, maxTokens, loadError]);
+  }, [
+    selectedProfileId,
+    modelLoading,
+    loading,
+    maxTokens,
+    loadError,
+    processing,
+    executing,
+  ]);
 
   const addSourcesFromToolResult = useCallback(
     (
@@ -3126,6 +3165,51 @@ export default function ChatPage() {
         case 'progress': {
           progressRef.current[sessionId] = payload.progress ?? 0;
           if (isActive) setProgressPercent(progressRef.current[sessionId]);
+          // ── Early single-jump absolute truth (first progress tick) ──
+          // Prefer prompt processing total from progress event over waiting for prompt-done.
+          // Single jump to final total, gated by isColdStart || isFirstPrompt, deduped per prompt.
+          if (
+            !isReprocessingRef.current[sessionId] &&
+            payload.totalTokens !== undefined &&
+            !appliedProgressTruthRef.current[sessionId]
+          ) {
+            const isCold = !!payload.isColdStart;
+            const priorMsgs = sessionMessagesRef.current[sessionId] ?? [];
+            const userCount = priorMsgs.filter((m) => m.role === 'user').length;
+            const isFirstPromptInSession = userCount <= 1;
+            // Early jump only for cold reloads or first prompt; otherwise just re-anchor TPS window
+            if (isCold || isFirstPromptInSession) {
+              const abs = payload.totalTokens;
+              if (isActive) {
+                setUsedTokens(abs);
+                lastTokenSnapshot.current = { tokens: abs, time: Date.now() };
+                generationBaselineTokens.current = abs;
+                tokenTimestampsRef.current[sessionId] = [];
+                tokenCharsRef.current[sessionId] = { chars: 0, tokens: 0 };
+                tokenTpsRef.current[sessionId] = 0;
+                setTps(0);
+              } else {
+                tokenTimestampsRef.current[sessionId] = [];
+                tokenCharsRef.current[sessionId] = { chars: 0, tokens: 0 };
+                tokenTpsRef.current[sessionId] = 0;
+              }
+              appliedProgressTruthRef.current[sessionId] = true;
+            } else {
+              // Non-cold, non-first: still reset window to avoid counting prompt delta, but don't change displayed counter
+              tokenTimestampsRef.current[sessionId] = [];
+              tokenCharsRef.current[sessionId] = { chars: 0, tokens: 0 };
+              tokenTpsRef.current[sessionId] = 0;
+              if (isActive) {
+                lastTokenSnapshot.current = {
+                  tokens: payload.totalTokens,
+                  time: Date.now(),
+                };
+                generationBaselineTokens.current = payload.totalTokens;
+              }
+              // Mark handled so we don't re-anchor on every progress tick
+              appliedProgressTruthRef.current[sessionId] = true;
+            }
+          }
           return;
         }
 
@@ -3135,7 +3219,50 @@ export default function ChatPage() {
           flushToolTypewriterFor(sessionId, true);
           const promptStats = payload.stats;
           if (!promptStats) return;
-          if (isReprocessingRef.current[sessionId]) {
+          const isReprocessing = !!isReprocessingRef.current[sessionId];
+          // ── Absolute-truth token counter sync (first message / cold start) ──
+          // Use promptStats.totalTokens as ground truth when this prompt had to (re)process the whole history.
+          // isColdStart covers switched-session reloads; isFirstPrompt covers brand-new sessions.
+          if (!isReprocessing && promptStats.totalTokens !== undefined) {
+            const isCold = !!promptStats.isColdStart;
+            const priorMsgs = sessionMessagesRef.current[sessionId] ?? [];
+            const userCount = priorMsgs.filter((m) => m.role === 'user').length;
+            const isFirstPromptInSession = userCount <= 1;
+            if (isCold || isFirstPromptInSession) {
+              const abs = promptStats.totalTokens;
+              if (isActive) {
+                setUsedTokens(abs);
+                // Reset TPS baselines to the absolute point so prompt delta doesn't spike the gauge
+                lastTokenSnapshot.current = { tokens: abs, time: Date.now() };
+                generationBaselineTokens.current = abs;
+                tokenTimestampsRef.current[sessionId] = [];
+                tokenCharsRef.current[sessionId] = { chars: 0, tokens: 0 };
+                tokenTpsRef.current[sessionId] = 0;
+                setTps(0);
+              } else {
+                // Inactive session: clean its per-session TPS window so it doesn't carry stale state when it becomes active
+                tokenTimestampsRef.current[sessionId] = [];
+                tokenCharsRef.current[sessionId] = { chars: 0, tokens: 0 };
+                tokenTpsRef.current[sessionId] = 0;
+              }
+            } else {
+              // Non-cold, non-first prompt: still reset TPS window so prompt delta doesn't count toward TPS
+              // Keep lastTokenSnapshot aligned to abs without updating displayed usedTokens via absolute
+              // (displayed usedTokens will be updated via normal chatContextUsage polling)
+              tokenTimestampsRef.current[sessionId] = [];
+              tokenCharsRef.current[sessionId] = { chars: 0, tokens: 0 };
+              tokenTpsRef.current[sessionId] = 0;
+              if (isActive && promptStats.totalTokens !== undefined) {
+                // Re-anchor snapshot to abs to debias the next delta, but don't overwrite usedTokens
+                lastTokenSnapshot.current = {
+                  tokens: promptStats.totalTokens,
+                  time: Date.now(),
+                };
+                generationBaselineTokens.current = promptStats.totalTokens;
+              }
+            }
+          }
+          if (isReprocessing) {
             isReprocessingRef.current[sessionId] = false;
             const ids =
               pendingSegmentIdsRef.current[sessionId]?.splice(0) ?? [];
@@ -3166,6 +3293,7 @@ export default function ChatPage() {
               return updated;
             });
           }
+          delete appliedProgressTruthRef.current[sessionId];
           return;
         }
 
@@ -3389,7 +3517,8 @@ export default function ChatPage() {
               }
             } else {
               // Fallback: if Executing was not set (e.g., missed function-call), try to infer single tool
-              const fallbackQueue = toolSegmentQueuesRef.current[sessionId] ?? [];
+              const fallbackQueue =
+                toolSegmentQueuesRef.current[sessionId] ?? [];
               // No further action – will be cleared at done
             }
           }
@@ -3458,6 +3587,7 @@ export default function ChatPage() {
             generationBaselineTokens.current = null;
             lastTokenSnapshot.current = null;
           }
+          delete appliedProgressTruthRef.current[sessionId];
           refreshCumulativeTokens();
           return;
         }
