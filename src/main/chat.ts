@@ -1812,7 +1812,12 @@ export async function sendMessage(
             if (delta.content) {
               fullResponse += delta.content;
               responseTokenCount += 1;
-              s.promptProgress = 0;
+              if (s.promptProgress !== 0) {
+                s.promptProgress = 0;
+                emit({ type: 'progress', sessionId, progress: 0 });
+              } else {
+                s.promptProgress = 0;
+              }
               appendAssistantToken(s, delta.content);
               emit({
                 type: 'token',
@@ -1821,7 +1826,12 @@ export async function sendMessage(
               });
             }
             if (delta.reasoning_content) {
-              s.promptProgress = 0;
+              if (s.promptProgress !== 0) {
+                s.promptProgress = 0;
+                emit({ type: 'progress', sessionId, progress: 0 });
+              } else {
+                s.promptProgress = 0;
+              }
               thinkingTokenCount += 1;
               appendAssistantToken(s, delta.reasoning_content, 'thought');
               emit({

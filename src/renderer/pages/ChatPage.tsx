@@ -1372,6 +1372,21 @@ export default function ChatPage() {
   const streamingToolDirtyRef = useRef(false);
   const processingDirtyRef = useRef(false);
   const tokenFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // ── Typewriter (TPS-driven) ──────────────────────────────────────
+  const typewriterQueuesRef = useRef<
+    Record<string, { char: string; segmentType?: string }[]>
+  >({});
+  const typewriterTimersRef = useRef<
+    Record<string, ReturnType<typeof setInterval>>
+  >({});
+  const typewriterCarryRef = useRef<Record<string, number>>({});
+  const tokenTimestampsRef = useRef<Record<string, number[]>>({});
+  const tokenCharsRef = useRef<Record<string, { chars: number; tokens: number }>>(
+    {},
+  );
+  const tokenTpsRef = useRef<Record<string, number>>({});
+  const tpsRef = useRef<number>(0);
+  const TYPEWRITER_INTERVAL_MS = 16;
   const messagesRef = useRef<Message[]>([]);
   const slotBannerHideTimer = useRef<ReturnType<typeof setTimeout> | null>(
     null,
@@ -1446,6 +1461,155 @@ export default function ChatPage() {
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, []);
+
+  // ── Typewriter helpers (TPS-driven, very fast, catch-up) ─────────────
+  const getEffectiveCPS = useCallback(
+    (sessionId: string, queueLen: number): number => {
+      const rawTps =
+        tokenTpsRef.current[sessionId] ?? tpsRef.current ?? 0;
+      // chars per token estimator
+      const cc = tokenCharsRef.current[sessionId];
+      const avgCharsPerToken =
+        cc && cc.tokens > 0 ? cc.chars / cc.tokens : 4;
+      let baseCPS: number;
+      if (rawTps <= 0.1) {
+        baseCPS = 90; // warmup before TPS measured
+      } else {
+        baseCPS = rawTps * avgCharsPerToken * 1.25; // 25% faster than generation
+        baseCPS = Math.max(30, Math.min(1200, baseCPS));
+      }
+      const catchUp = 1 + Math.min(1.5, queueLen / 250);
+      return Math.min(1400, baseCPS * catchUp);
+    },
+    [],
+  );
+
+  const clearTypewriterSession = useCallback((sessionId: string) => {
+    const t = typewriterTimersRef.current[sessionId];
+    if (t) {
+      clearInterval(t);
+      delete typewriterTimersRef.current[sessionId];
+    }
+    delete typewriterQueuesRef.current[sessionId];
+    delete typewriterCarryRef.current[sessionId];
+    delete tokenTimestampsRef.current[sessionId];
+    delete tokenCharsRef.current[sessionId];
+    delete tokenTpsRef.current[sessionId];
+  }, []);
+
+  const clearAllTypewriterSessions = useCallback(() => {
+    Object.keys(typewriterTimersRef.current).forEach((sid) => {
+      clearInterval(typewriterTimersRef.current[sid]);
+    });
+    typewriterTimersRef.current = {};
+    typewriterQueuesRef.current = {};
+    typewriterCarryRef.current = {};
+    tokenTimestampsRef.current = {};
+    tokenCharsRef.current = {};
+    tokenTpsRef.current = {};
+  }, []);
+
+  const drainTypewriterQueue = useCallback(
+    (sessionId: string, flushAll = false) => {
+      const q = typewriterQueuesRef.current[sessionId];
+      if (!q || q.length === 0) {
+        const timer = typewriterTimersRef.current[sessionId];
+        if (timer) {
+          clearInterval(timer);
+          delete typewriterTimersRef.current[sessionId];
+        }
+        delete typewriterCarryRef.current[sessionId];
+        return;
+      }
+      let n: number;
+      if (flushAll) {
+        n = q.length;
+      } else {
+        const cps = getEffectiveCPS(sessionId, q.length);
+        const carry = typewriterCarryRef.current[sessionId] ?? 0;
+        const inc = cps * TYPEWRITER_INTERVAL_MS / 1000;
+        const total = carry + inc;
+        n = Math.floor(total);
+        typewriterCarryRef.current[sessionId] = total - n;
+        if (n <= 0) return;
+        n = Math.min(n, q.length);
+      }
+      const chunk = q.splice(0, n);
+      if (chunk.length === 0) return;
+      const isActive = sessionId === activeSessionIdRef.current;
+      // Apply chars batched into messages – replicate token flush logic but per-char grouped by segmentType
+      const current = sessionMessagesRef.current[sessionId] ?? [];
+      let updated = current;
+      // Process chunk sequentially, grouping consecutive chars of same type into one update
+      // For performance we apply all chars in a single updated copy
+      chunk.forEach(({ char, segmentType }) => {
+        const last = updated[updated.length - 1];
+        let currentType: 'thought' | 'comment' | 'normal' = 'normal';
+        if (segmentType === 'thought') currentType = 'thought';
+        else if (segmentType === 'comment') currentType = 'comment';
+        if (last && last.role === 'assistant') {
+          const updatedContent = [...last.content];
+          const lastSegment = updatedContent[updatedContent.length - 1];
+          if (lastSegment && lastSegment.type === currentType) {
+            updatedContent[updatedContent.length - 1] = {
+              ...lastSegment,
+              text: lastSegment.text + char,
+            };
+          } else {
+            const counters = segmentCountersRef.current;
+            counters[sessionId] = (counters[sessionId] ?? 0) + 1;
+            updatedContent.push({
+              id: `seg-${Date.now()}-${counters[sessionId]}`,
+              text: char,
+              type: currentType,
+            });
+          }
+          updated = [...updated.slice(0, -1), { ...last, content: updatedContent }];
+        } else {
+          const counters = messageCountersRef.current;
+          const id = counters[sessionId] ?? 0;
+          counters[sessionId] = id + 1;
+          const segCounters = segmentCountersRef.current;
+          segCounters[sessionId] = (segCounters[sessionId] ?? 0) + 1;
+          let initialType: 'thought' | 'comment' | 'normal' = 'normal';
+          if (segmentType === 'thought') initialType = 'thought';
+          else if (segmentType === 'comment') initialType = 'comment';
+          updated = [
+            ...updated,
+            {
+              id,
+              role: 'assistant',
+              content: [
+                {
+                  id: `seg-${Date.now()}-${segCounters[sessionId]}`,
+                  text: char.replace(/^\s+/, ''),
+                  type: initialType,
+                },
+              ],
+            },
+          ];
+        }
+      });
+      sessionMessagesRef.current[sessionId] = updated;
+      if (isActive) setMessages(updated);
+      if (q.length === 0) {
+        const timer = typewriterTimersRef.current[sessionId];
+        if (timer) {
+          clearInterval(timer);
+          delete typewriterTimersRef.current[sessionId];
+        }
+        delete typewriterCarryRef.current[sessionId];
+      }
+    },
+    [getEffectiveCPS],
+  );
+
+  // Mirror tps into refs so typewriter speed reacts instantly to polled tps as well
+  useEffect(() => {
+    tpsRef.current = tps;
+    const sid = activeSessionIdRef.current;
+    if (sid) tokenTpsRef.current[sid] = tps;
+  }, [tps]);
 
   const handleScroll = useCallback(() => {
     const container = messagesContainerRef.current;
@@ -2167,6 +2331,7 @@ export default function ChatPage() {
     if (activeSessionIdRef.current) {
       sessionMessagesRef.current[activeSessionIdRef.current] = messages;
     }
+    clearAllTypewriterSessions();
     activeSessionIdRef.current = null;
     setActiveSessionId(null);
     sessionMessagesRef.current = {};
@@ -2558,6 +2723,13 @@ export default function ChatPage() {
         streamingToolDirtyRef.current = false;
         const procDirty = processingDirtyRef.current;
         processingDirtyRef.current = false;
+        // Failsafe: if token arrived but buffers were empty (typewriter path handled separately),
+        // still clear processing – this branch covers non-typewriter path.
+        // Moved outside loop so a single procDirty isn't lost when buffers empty.
+        if (procDirty && Object.keys(buffers).length === 0) {
+          // No buffered sessions to iterate – the typewriter path already cleared
+          // processing directly, so nothing to do here. Keep for safety.
+        }
 
         Object.keys(buffers).forEach((bufferedSessionId) => {
           const events = buffers[bufferedSessionId];
@@ -2570,6 +2742,9 @@ export default function ChatPage() {
               ...prev,
               [bufferedSessionId]: false,
             }));
+            // Failsafe: progress is prompt-only – hide it the moment tokens flow
+            progressRef.current[bufferedSessionId] = 0;
+            if (bufferedActive) setProgressPercent(0);
           }
           if (bufferedActive && toolDirty) {
             setStreamingTool(
@@ -2657,6 +2832,24 @@ export default function ChatPage() {
         setProcessingSessions((prev) => ({ ...prev, [sessionId]: value }));
       };
 
+      const flushTypewriterFor = (sid: string, flushAll = false) => {
+        const q = typewriterQueuesRef.current[sid];
+        if (!q || q.length === 0) return;
+        if (flushAll) {
+          // drain all instantly in one update
+          drainTypewriterQueue(sid, true);
+          // if still remaining (very large), loop
+          while (
+            typewriterQueuesRef.current[sid] &&
+            typewriterQueuesRef.current[sid].length > 0
+          ) {
+            drainTypewriterQueue(sid, true);
+          }
+        } else {
+          drainTypewriterQueue(sid, false);
+        }
+      };
+
       switch (payload.type) {
         case 'token': {
           const { token, segmentType } = payload;
@@ -2671,15 +2864,48 @@ export default function ChatPage() {
             return;
           }
 
-          processingDirtyRef.current = true;
-          if (!pendingTokenBuffersRef.current[sessionId]) {
-            pendingTokenBuffersRef.current[sessionId] = [];
-          }
-          pendingTokenBuffersRef.current[sessionId].push({
-            token: token ?? '',
-            segmentType,
+          // Always enabled typewriter – TPS observation and char queuing
+          const now = Date.now();
+          const arr = tokenTimestampsRef.current[sessionId] ?? [];
+          arr.push(now);
+          // keep 500ms window
+          while (arr.length > 0 && now - arr[0] > 500) arr.shift();
+          tokenTimestampsRef.current[sessionId] = arr;
+          const instantTps = arr.length * 2; // per 500ms -> per sec
+          const prevTps = tokenTpsRef.current[sessionId] ?? 0;
+          tokenTpsRef.current[sessionId] =
+            prevTps === 0 ? instantTps : 0.3 * instantTps + 0.7 * prevTps;
+          // chars/token estimator
+          const cc = tokenCharsRef.current[sessionId] ?? { chars: 0, tokens: 0 };
+          cc.chars += Array.from(token ?? '').length;
+          cc.tokens += 1;
+          tokenCharsRef.current[sessionId] = cc;
+
+          // Failsafe: hide "Processing prompt… 100%" the instant generation starts
+          setProcessingSessions((prev) => {
+            if (!prev[sessionId]) return prev;
+            return { ...prev, [sessionId]: false };
           });
-          scheduleTokenFlush();
+          progressRef.current[sessionId] = 0;
+          if (isActive) setProgressPercent(0);
+          processingDirtyRef.current = false;
+
+          if (!typewriterQueuesRef.current[sessionId]) {
+            typewriterQueuesRef.current[sessionId] = [];
+          }
+          for (const ch of Array.from(token ?? '')) {
+            typewriterQueuesRef.current[sessionId].push({
+              char: ch,
+              segmentType,
+            });
+          }
+          if (!typewriterTimersRef.current[sessionId]) {
+            typewriterCarryRef.current[sessionId] = 0;
+            typewriterTimersRef.current[sessionId] = setInterval(
+              () => drainTypewriterQueue(sessionId),
+              TYPEWRITER_INTERVAL_MS,
+            );
+          }
           return;
         }
 
@@ -2691,6 +2917,7 @@ export default function ChatPage() {
 
         case 'prompt-done': {
           flushTokenBuffer();
+          flushTypewriterFor(sessionId, true);
           const promptStats = payload.stats;
           if (!promptStats) return;
           if (isReprocessingRef.current[sessionId]) {
@@ -2729,6 +2956,7 @@ export default function ChatPage() {
 
         case 'function-calling': {
           flushTokenBuffer();
+          flushTypewriterFor(sessionId, true);
           applyToSession(sessionId, isActive, (prev) => {
             const updatedMessages = [...prev];
             const lastMessage = updatedMessages[updatedMessages.length - 1];
@@ -2782,6 +3010,7 @@ export default function ChatPage() {
 
         case 'function-call': {
           flushTokenBuffer();
+          flushTypewriterFor(sessionId, true);
           streamingToolsRef.current[sessionId] = null;
           if (isActive) setStreamingTool(null);
           applyToSession(sessionId, isActive, (prev) => {
@@ -2807,6 +3036,7 @@ export default function ChatPage() {
 
         case 'function-result': {
           flushTokenBuffer();
+          flushTypewriterFor(sessionId, true);
           isReprocessingRef.current[sessionId] = true;
           const tags = payload.tags ?? [];
           /* eslint-disable no-underscore-dangle */
@@ -2874,10 +3104,23 @@ export default function ChatPage() {
 
         case 'done': {
           flushTokenBuffer();
+          flushTypewriterFor(sessionId, true);
           pendingSegmentIdsRef.current[sessionId] = [];
           toolSegmentQueuesRef.current[sessionId] = [];
           setSessionLoading(false);
           setSessionProcessing(false);
+          // clear TPS tracking for session
+          delete tokenTimestampsRef.current[sessionId];
+          delete tokenTpsRef.current[sessionId];
+          // keep chars/tokens for potential next round? reset
+          delete tokenCharsRef.current[sessionId];
+          const timer = typewriterTimersRef.current[sessionId];
+          if (timer) {
+            clearInterval(timer);
+            delete typewriterTimersRef.current[sessionId];
+          }
+          delete typewriterCarryRef.current[sessionId];
+          delete typewriterQueuesRef.current[sessionId];
           queueSessionSync(sessionId);
           if (isActive) {
             setTps(0);
@@ -2891,6 +3134,8 @@ export default function ChatPage() {
 
         case 'error': {
           flushTokenBuffer();
+          flushTypewriterFor(sessionId, true);
+          clearTypewriterSession(sessionId);
           setSessionLoading(false);
           setSessionProcessing(false);
           showErrorToast(payload.message ?? 'Unknown error');
@@ -2899,6 +3144,8 @@ export default function ChatPage() {
 
         case 'slot-unavailable': {
           flushTokenBuffer();
+          flushTypewriterFor(sessionId, true);
+          clearTypewriterSession(sessionId);
           setSessionLoading(false);
           setSessionProcessing(false);
           showSlotBanner();
@@ -2907,6 +3154,7 @@ export default function ChatPage() {
 
         case 'session-changed': {
           flushTokenBuffer();
+          flushTypewriterFor(sessionId, true);
           setStreamingSessions((prev) => {
             const next = new Set(prev);
             if (payload.streaming) next.add(sessionId);
@@ -2927,6 +3175,10 @@ export default function ChatPage() {
         clearTimeout(tokenFlushTimerRef.current);
         tokenFlushTimerRef.current = null;
       }
+      Object.values(typewriterTimersRef.current).forEach((t) =>
+        clearInterval(t),
+      );
+      typewriterTimersRef.current = {};
       unsubscribe();
     };
   }, [
@@ -2935,6 +3187,9 @@ export default function ChatPage() {
     queueSessionSync,
     showSlotBanner,
     showErrorToast,
+    drainTypewriterQueue,
+    clearTypewriterSession,
+    getEffectiveCPS,
   ]);
 
   useEffect(() => {
@@ -3404,6 +3659,8 @@ export default function ChatPage() {
 
       setLoadingSessions((prev) => ({ ...prev, [sessionId]: true }));
       setProcessingSessions((prev) => ({ ...prev, [sessionId]: true }));
+      progressRef.current[sessionId] = 0;
+      if (sessionId === activeSessionIdRef.current) setProgressPercent(0);
       setStreamingTool(null);
 
       const counters = messageCountersRef.current;
@@ -3539,6 +3796,7 @@ export default function ChatPage() {
       loadAbortController.current.cancelled = true;
     }
 
+    clearAllTypewriterSessions();
     setLoadError(null);
     pendingQueuedRef.current = false;
     setIsQueued(false);
@@ -3581,9 +3839,13 @@ export default function ChatPage() {
       const view = await window.electronAPI.chatGetSession(sessionId);
       if (!view) return;
 
+      // Flush any pending typewriter chars for current session before switching
       if (activeSessionIdRef.current) {
-        sessionMessagesRef.current[activeSessionIdRef.current] =
-          messagesRef.current;
+        const prevId = activeSessionIdRef.current;
+        if (typewriterQueuesRef.current[prevId]?.length) {
+          drainTypewriterQueue(prevId, true);
+        }
+        sessionMessagesRef.current[prevId] = messagesRef.current;
       }
 
       activeSessionIdRef.current = sessionId;
@@ -3605,7 +3867,7 @@ export default function ChatPage() {
       setSources(sessionId, view.session.sources ?? []);
       // collapsed state is handled by effects (per-session)
     },
-    [modelLoading, loadError, setSources],
+    [modelLoading, loadError, setSources, drainTypewriterQueue],
   );
 
   const handleNewChat = useCallback(async () => {
@@ -3613,6 +3875,7 @@ export default function ChatPage() {
       sessionMessagesRef.current[activeSessionIdRef.current] =
         messagesRef.current;
     }
+    clearAllTypewriterSessions();
     activeSessionIdRef.current = null;
     setActiveSessionId(null);
     setMessages([]);
@@ -3628,11 +3891,12 @@ export default function ChatPage() {
       if (m.type === 'video') URL.revokeObjectURL(m.objectUrl);
     });
     setPendingMedia([]);
-  }, [pendingMedia, clearAllSources]);
+  }, [pendingMedia, clearAllSources, clearAllTypewriterSessions]);
 
   const handleDeleteSession = useCallback(
     (id: string) => {
       window.electronAPI.chatDeleteSession(id).catch(() => {});
+      clearTypewriterSession(id);
       removeSessionSources(id);
       delete collapsedBySessionRef.current[id];
       delete seenIdsRef.current[id];
@@ -3644,7 +3908,7 @@ export default function ChatPage() {
         setCollapsedIds(new Set());
       }
     },
-    [removeSessionSources],
+    [removeSessionSources, clearTypewriterSession],
   );
 
   const toggleSidebarCollapsed = useCallback(() => {
