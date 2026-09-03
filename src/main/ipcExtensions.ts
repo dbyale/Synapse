@@ -9,7 +9,11 @@ import {
   setMaxReadSize,
   getDefaultHostDirectory,
 } from './functions/fileSystem';
-import { setSandboxMaxReadSize } from './functions/sandboxRunner';
+import {
+  setSandboxMaxReadSize,
+  setSandboxAutoLaunch,
+  setSandboxAutoLaunchTimeout,
+} from './functions/sandboxRunner';
 
 const EXTENSION_SETTINGS_DIR = path.join(
   app.getPath('userData'),
@@ -124,10 +128,16 @@ export function registerExtensionIpcHandlers(): void {
       if (id === 'sandbox') {
         if (settings.maxReadSize !== undefined)
           setSandboxMaxReadSize(settings.maxReadSize);
+        if (settings.autoLaunchDockerDesktop !== undefined)
+          setSandboxAutoLaunch(!!settings.autoLaunchDockerDesktop);
+        if (settings.autoLaunchTimeoutSec !== undefined)
+          setSandboxAutoLaunchTimeout(settings.autoLaunchTimeoutSec);
       }
       return { success: true };
     },
   );
+
+  ipcMain.handle('get-platform', () => process.platform);
 
   // Initialize extensions settings on startup
   const fsSettings = loadExtensionSettings('filesystem');
@@ -143,5 +153,14 @@ export function registerExtensionIpcHandlers(): void {
   const sbSettings = loadExtensionSettings('sandbox');
   if (sbSettings.maxReadSize !== undefined) {
     setSandboxMaxReadSize(sbSettings.maxReadSize);
+  }
+  // Defaults: true / 90 for convenience; persisted value overrides
+  if (sbSettings.autoLaunchDockerDesktop !== undefined) {
+    setSandboxAutoLaunch(!!sbSettings.autoLaunchDockerDesktop);
+  } else {
+    setSandboxAutoLaunch(true);
+  }
+  if (sbSettings.autoLaunchTimeoutSec !== undefined) {
+    setSandboxAutoLaunchTimeout(sbSettings.autoLaunchTimeoutSec);
   }
 }

@@ -1,6 +1,7 @@
 import { execFile, spawn } from 'child_process';
 import { promisify } from 'util';
 import fs from 'fs/promises';
+import fsSync from 'fs';
 import path from 'path';
 import { randomUUID } from 'crypto';
 import { app } from 'electron';
@@ -81,15 +82,373 @@ function validateCommand(command: string): void {
   }
 }
 
-// ── Docker detection ────────────────────────────────────────────
+// ── Sandbox runtime settings ────────────────────────────────────
 
-let dockerPath: string | null | undefined = undefined;
+let autoLaunchEnabled = true;
+let autoLaunchTimeoutSec = 90;
+
+export function setSandboxAutoLaunch(enabled: boolean): void {
+  autoLaunchEnabled = !!enabled;
+}
+
+export function setSandboxAutoLaunchTimeout(sec: number): void {
+  const n = Math.round(Number(sec));
+  if (!Number.isFinite(n)) return;
+  autoLaunchTimeoutSec = Math.max(30, Math.min(180, n));
+}
+
+export function isSandboxAutoLaunchEnabled(): boolean {
+  return autoLaunchEnabled;
+}
+
+export function getSandboxAutoLaunchTimeoutSec(): number {
+  return autoLaunchTimeoutSec;
+}
+
+let dockerPath: string | null | undefined;
 
 export interface DockerInfo {
   available: boolean;
   path: string | null;
   error: string | null;
 }
+
+function getDockerBin(): string {
+  if (dockerPath && typeof dockerPath === 'string') return dockerPath;
+  return process.platform === 'win32' ? 'docker.exe' : 'docker';
+}
+
+// ── Linux distro helpers ────────────────────────────────────────
+
+function getLinuxDistroId(): string {
+  if (process.platform !== 'linux') return process.platform;
+  try {
+    const raw: string = fsSync.readFileSync('/etc/os-release', 'utf-8');
+    for (const line of raw.split('\n')) {
+      const m = line.match(/^\s*ID\s*=\s*"?([^"\n]+)"?\s*$/);
+      if (m) return m[1].trim().toLowerCase();
+    }
+  } catch {
+    // ignore — fall through to generic
+  }
+  return 'linux';
+}
+
+function getLinuxDockerInstructions(distroId: string): string {
+  const id = distroId.toLowerCase();
+  const common = [
+    'Docker Desktop (Linux): systemctl --user start docker-desktop  (enable: systemctl --user enable docker-desktop)',
+    'Rootless Engine: systemctl --user start docker',
+    'Verify: docker info  or  docker ps',
+  ];
+
+  let engineCmds: string[];
+  if (
+    ['ubuntu', 'debian', 'linuxmint', 'pop', 'elementary', 'zorin'].includes(id)
+  ) {
+    engineCmds = [
+      'Docker Engine (systemd): sudo systemctl start docker  (enable on boot: sudo systemctl enable --now docker)',
+      'Fallback SysV: sudo service docker start',
+      'Install if missing: sudo apt update && sudo apt install docker.io   (or https://docs.docker.com/engine/install/)',
+    ];
+  } else if (
+    ['fedora', 'rhel', 'centos', 'rocky', 'almalinux', 'ol'].includes(id)
+  ) {
+    engineCmds = [
+      'Docker Engine (systemd): sudo systemctl start docker  (enable: sudo systemctl enable --now docker)',
+      'Install if missing: sudo dnf install moby-engine docker-compose-plugin  (or https://docs.docker.com/engine/install/fedora/)',
+    ];
+  } else if (['arch', 'manjaro', 'endeavouros', 'garuda'].includes(id)) {
+    engineCmds = [
+      'Docker Engine (systemd): sudo systemctl start docker  (also: sudo systemctl start docker.socket; enable: sudo systemctl enable --now docker)',
+      'Install if missing: sudo pacman -S docker  (https://wiki.archlinux.org/title/Docker)',
+    ];
+  } else if (
+    id.startsWith('opensuse') ||
+    id === 'sles' ||
+    id === 'opensuse-tumbleweed' ||
+    id === 'opensuse-leap'
+  ) {
+    engineCmds = [
+      'Docker Engine (systemd): sudo systemctl start docker  (enable: sudo systemctl enable --now docker)',
+      'Install if missing: sudo zypper install docker  (https://docs.docker.com/engine/install/opensuse/)',
+    ];
+  } else if (['gentoo'].includes(id)) {
+    engineCmds = [
+      'OpenRC: sudo rc-service docker start  (systemd: sudo systemctl start docker)',
+      'Install if missing: emerge --ask app-containers/docker',
+    ];
+  } else if (['nixos'].includes(id)) {
+    engineCmds = [
+      'NixOS: add services.docker.enable = true; to configuration.nix then sudo nixos-rebuild switch, or sudo systemctl start docker',
+    ];
+  } else if (['alpine'].includes(id)) {
+    engineCmds = [
+      'Alpine: sudo rc-service docker start  (enable: sudo rc-update add docker default)',
+      'Install if missing: sudo apk add docker',
+    ];
+  } else {
+    engineCmds = [
+      'Docker Engine (systemd): sudo systemctl start docker  (enable: sudo systemctl enable --now docker)',
+      'Fallback SysV/OpenRC: sudo service docker start  /  sudo rc-service docker start',
+    ];
+  }
+
+  const lines = [
+    '',
+    'On Linux, start the Docker daemon with ONE of:',
+    ...engineCmds.map((c) => `  • ${c}`),
+    ...common.map((c) => `  • ${c}`),
+    '',
+    'Then retry sandbox_environment_create. On Linux, Sandbox Settings shows distro-specific instructions — automatic start is disabled on this platform.',
+    'If you installed Docker Desktop, ensure it is running; otherwise ensure the Engine service is active.',
+  ];
+  return lines.join('\n');
+}
+
+function buildLinuxBinaryNotFoundError(): string {
+  const distroId = getLinuxDistroId();
+  const instructions = getLinuxDockerInstructions(distroId);
+  return `Docker binary not found in PATH or common install locations.${instructions}`;
+}
+
+function buildLinuxDaemonError(
+  dockerPathVal: string,
+  originalMsg: string,
+): string {
+  const distroId = getLinuxDistroId();
+  const instructions = getLinuxDockerInstructions(distroId);
+  return `Docker binary found at "${dockerPathVal}" but daemon is unreachable: ${originalMsg}${instructions}`;
+}
+
+// ── Docker Desktop auto-launch (non-Linux) ──────────────────────
+
+let dockerLaunchInProgress: Promise<boolean> | null = null;
+
+function getDockerDesktopPaths(): string[] {
+  const plat = process.platform;
+  if (plat === 'win32') {
+    const paths: string[] = [];
+    const programFiles = process.env.ProgramFiles || 'C:\\Program Files';
+    const programFilesX86 =
+      process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
+    const localAppData = process.env.LOCALAPPDATA || '';
+    paths.push(
+      path.join(programFiles, 'Docker', 'Docker', 'Docker Desktop.exe'),
+      path.join(programFilesX86, 'Docker', 'Docker', 'Docker Desktop.exe'),
+    );
+    if (localAppData) {
+      paths.push(path.join(localAppData, 'Docker', 'Docker Desktop.exe'));
+    }
+    // Common alternate seen in some installs
+    paths.push('C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe');
+    return [...new Set(paths)];
+  }
+  if (plat === 'darwin') {
+    return [
+      '/Applications/Docker.app/Contents/MacOS/Docker Desktop',
+      '/Applications/Docker.app/Contents/MacOS/Docker',
+      '/Applications/Docker.app',
+    ];
+  }
+  return [];
+}
+
+function findDockerDesktopPath(): string | null {
+  for (const p of getDockerDesktopPaths()) {
+    try {
+      if (fsSync.existsSync(p)) return p;
+    } catch {
+      // ignore
+    }
+  }
+  return null;
+}
+
+function isDockerDesktopInstalled(): boolean {
+  return findDockerDesktopPath() !== null;
+}
+
+async function launchDockerDesktop(): Promise<boolean> {
+  const plat = process.platform;
+  const desktopPath = findDockerDesktopPath();
+
+  try {
+    if (plat === 'win32') {
+      if (!desktopPath) return false;
+      console.log(`[sandbox] Launching Docker Desktop: "${desktopPath}"`);
+      // Use detached spawn so Electron doesn't wait
+      const child = spawn(`"${desktopPath}"`, [], {
+        shell: true,
+        detached: true,
+        stdio: 'ignore',
+        windowsHide: true,
+      } as any);
+      child.unref();
+      return true;
+    }
+    if (plat === 'darwin') {
+      if (desktopPath) {
+        // Prefer `open -a Docker` for .app bundles, direct spawn for binary
+        if (desktopPath.endsWith('.app')) {
+          console.log('[sandbox] Launching Docker Desktop via open -a Docker');
+          const child = spawn('open', ['-a', 'Docker'], {
+            detached: true,
+            stdio: 'ignore',
+          });
+          child.unref();
+          return true;
+        }
+        console.log(`[sandbox] Launching Docker Desktop: "${desktopPath}"`);
+        const child = spawn(desktopPath, [], {
+          detached: true,
+          stdio: 'ignore',
+        });
+        child.unref();
+        return true;
+      }
+      // Fallback: try open -a Docker even if path not found
+      console.log(
+        '[sandbox] Launching Docker Desktop via open -a Docker (fallback)',
+      );
+      const child = spawn('open', ['-a', 'Docker'], {
+        detached: true,
+        stdio: 'ignore',
+      });
+      child.unref();
+      return true;
+    }
+  } catch (err) {
+    console.error('[sandbox] Failed to launch Docker Desktop:', err);
+    return false;
+  }
+  return false;
+}
+
+async function waitForDockerDaemon(
+  timeoutMs: number,
+  intervalMs = 2000,
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  const bin = getDockerBin();
+  while (Date.now() < deadline) {
+    try {
+      await execFileAsync(bin, ['info', '--format', '{{.ServerVersion}}'], {
+        timeout: 5000,
+      });
+      console.log('[sandbox] Docker daemon is now reachable');
+      return true;
+    } catch {
+      // not ready yet
+    }
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) break;
+    await new Promise((r) => setTimeout(r, Math.min(intervalMs, remaining)));
+  }
+  return false;
+}
+
+async function attemptAutoLaunchAndWait(): Promise<DockerInfo> {
+  if (process.platform === 'linux') {
+    // Linux is instructions-only — never auto-launch
+    return {
+      available: false,
+      path: dockerPath as string | null,
+      error: buildLinuxDaemonError(
+        String(dockerPath),
+        'Daemon unreachable and auto-launch is disabled on Linux.',
+      ),
+    };
+  }
+
+  if (!autoLaunchEnabled) {
+    return {
+      available: false,
+      path: dockerPath as string | null,
+      error: `Docker binary found at "${dockerPath}" but daemon is unreachable. Auto-launch is disabled in Sandbox Settings.`,
+    };
+  }
+
+  if (!isDockerDesktopInstalled()) {
+    return {
+      available: false,
+      path: dockerPath as string | null,
+      error: `Docker binary found at "${dockerPath}" but daemon is unreachable and Docker Desktop is not installed at known locations (${getDockerDesktopPaths().join(', ')}). Please start the Docker daemon or install Docker Desktop.`,
+    };
+  }
+
+  if (dockerLaunchInProgress) {
+    console.log(
+      '[sandbox] Docker Desktop launch already in progress, waiting...',
+    );
+    const ok = await dockerLaunchInProgress;
+    if (ok) {
+      try {
+        await execFileAsync(
+          getDockerBin(),
+          ['info', '--format', '{{.ServerVersion}}'],
+          { timeout: 10000 },
+        );
+        return { available: true, path: dockerPath as string, error: null };
+      } catch (err: any) {
+        return {
+          available: false,
+          path: dockerPath as string | null,
+          error: `Docker Desktop was launched but daemon is still unreachable: ${err.message || String(err)}`,
+        };
+      }
+    }
+    return {
+      available: false,
+      path: dockerPath as string | null,
+      error: `Failed to launch Docker Desktop (concurrent launch failed).`,
+    };
+  }
+
+  const timeoutMs = Math.max(30, Math.min(180, autoLaunchTimeoutSec)) * 1000;
+  console.log(
+    `[sandbox] Docker daemon unreachable — auto-launching Docker Desktop (timeout ${timeoutMs}ms)`,
+  );
+
+  dockerLaunchInProgress = (async () => {
+    const launched = await launchDockerDesktop();
+    if (!launched) return false;
+    const ready = await waitForDockerDaemon(timeoutMs);
+    return ready;
+  })();
+
+  let launchedOk = false;
+  try {
+    launchedOk = await dockerLaunchInProgress;
+  } finally {
+    dockerLaunchInProgress = null;
+  }
+
+  if (launchedOk) {
+    try {
+      await execFileAsync(
+        getDockerBin(),
+        ['info', '--format', '{{.ServerVersion}}'],
+        { timeout: 10000 },
+      );
+      return { available: true, path: dockerPath as string, error: null };
+    } catch (err: any) {
+      return {
+        available: false,
+        path: dockerPath as string | null,
+        error: `Docker Desktop was launched but daemon did not become ready within ${autoLaunchTimeoutSec}s: ${err.message || String(err)}`,
+      };
+    }
+  }
+
+  return {
+    available: false,
+    path: dockerPath as string | null,
+    error: `Docker Desktop was launched but daemon did not become ready within ${autoLaunchTimeoutSec}s. Please open Docker Desktop manually and retry.`,
+  };
+}
+
+// ── Docker detection ────────────────────────────────────────────
 
 export async function detectDocker(): Promise<DockerInfo> {
   if (dockerPath === undefined) {
@@ -132,6 +491,11 @@ export async function detectDocker(): Promise<DockerInfo> {
   }
 
   if (dockerPath === null) {
+    if (process.platform === 'linux') {
+      const err = buildLinuxBinaryNotFoundError();
+      console.error(`[sandbox] ${err}`);
+      return { available: false, path: null, error: err };
+    }
     return {
       available: false,
       path: null,
@@ -148,22 +512,42 @@ export async function detectDocker(): Promise<DockerInfo> {
     );
     return { available: true, path: dockerPath, error: null };
   } catch (err: any) {
-    const msg = `Docker binary found at "${dockerPath}" but daemon is unreachable: ${err.message || String(err)}`;
+    // Linux: instructions-only
+    if (process.platform === 'linux') {
+      const msg = buildLinuxDaemonError(
+        String(dockerPath),
+        err.message || String(err),
+      );
+      console.error(`[sandbox] ${msg}`);
+      return { available: false, path: dockerPath, error: msg };
+    }
+
+    // Non-Linux: attempt auto-launch if enabled and Desktop is installed
+    const originalMsg = err.message || String(err);
+    if (autoLaunchEnabled && isDockerDesktopInstalled()) {
+      console.log(
+        `[sandbox] Daemon unreachable at "${dockerPath}" — attempting auto-launch (timeout ${autoLaunchTimeoutSec}s)`,
+      );
+      const launched = await attemptAutoLaunchAndWait();
+      if (launched.available) return launched;
+      // fall through to return launched error (includes timeout details)
+      console.error(`[sandbox] ${launched.error}`);
+      return launched;
+    }
+
+    const msg = `Docker binary found at "${dockerPath}" but daemon is unreachable: ${originalMsg}`;
     console.error(`[sandbox] ${msg}`);
-    return { available: false, path: dockerPath, error: msg };
+    // Append hint about setting when not launching
+    const hint = autoLaunchEnabled
+      ? ' Docker Desktop not found at known locations; please start it manually.'
+      : ' Auto-launch is disabled in Sandbox Settings — enable it to start Docker Desktop automatically.';
+    return { available: false, path: dockerPath, error: msg + hint };
   }
 }
 
 export async function checkDockerAvailable(): Promise<boolean> {
   const info = await detectDocker();
   return info.available;
-}
-
-// ── Docker binary resolution ──────────────────────────────────────
-
-function getDockerBin(): string {
-  if (dockerPath && typeof dockerPath === 'string') return dockerPath;
-  return process.platform === 'win32' ? 'docker.exe' : 'docker';
 }
 
 // ── State persistence ────────────────────────────────────────────
@@ -306,9 +690,7 @@ export async function getSavedEnvironments(): Promise<
   return result;
 }
 
-export async function startSandboxEnvironment(
-  containerName: string,
-): Promise<{
+export async function startSandboxEnvironment(containerName: string): Promise<{
   success: boolean;
   containerId?: string;
   containerName?: string;

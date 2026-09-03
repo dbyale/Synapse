@@ -318,6 +318,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     fileBufferRam: number;
   }> => ipcRenderer.invoke('profile:estimateMemory', params),
 
+  getPlatform: (): Promise<string> =>
+    ipcRenderer.invoke('get-platform'),
+
   // ── Extensions ──
   extensionsList: () => ipcRenderer.invoke('extensions:list'),
   extensionsInstall: () => ipcRenderer.invoke('extensions:install'),

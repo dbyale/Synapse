@@ -49,7 +49,7 @@ export const tools: Record<string, ExtensionToolDef> = {
         '  3. Use sandbox_read/write_file for file operations\n' +
         '  4. Call sandbox_environment_destroy when done (this permanently deletes everything)\n' +
         '\n' +
-        'NOTE: Docker Desktop must be installed on the host system.',
+        'NOTE: Docker must be installed. On Linux, if the daemon is not running the error will include distro-specific start commands (e.g. sudo systemctl start docker). On Windows/macOS, if Sandbox Settings → “Automatically launch Docker Desktop” is enabled (default: true), Docker Desktop will be started automatically and awaited up to the configured timeout (default 90s).',
       icon: 'ShieldPlus',
     },
     params: {
@@ -106,7 +106,9 @@ export const tools: Record<string, ExtensionToolDef> = {
         '  3. Use sandbox_read/write_file for file operations\n' +
         '  4. Call sandbox_environment_destroy when done (this permanently deletes everything)\n' +
         '\n' +
-        'SECURITY NOTE: This container has network access but no host filesystem access. Use sandbox_environment_create (no network) when you only need local file operations for maximum isolation.',
+        'SECURITY NOTE: This container has network access but no host filesystem access. Use sandbox_environment_create (no network) when you only need local file operations for maximum isolation.\n' +
+        '\n' +
+        'NOTE: Docker must be installed. On Linux, daemon-not-running errors include distro-specific start commands. On Windows/macOS, auto-launch is controlled by Sandbox Settings (default: enabled, timeout 90s).',
       icon: 'Globe',
     },
     params: {
@@ -549,11 +551,12 @@ export const tools: Record<string, ExtensionToolDef> = {
         'Check if Docker is available and whether a sandbox environment is active.',
       descriptionForModel:
         'Check the status of the sandbox system:\n' +
-        '  • Whether Docker is available and running\n' +
+        '  • Whether Docker is available and running (on Linux, includes distro-specific start hints if not)\n' +
         '  • Whether a sandbox environment is currently active\n' +
         '  • The active container name and workspace path if one exists\n' +
         '\n' +
-        'Call this first to determine if you need to create a sandbox environment.',
+        'Call this first to determine if you need to create a sandbox environment.\n' +
+        'NOTE: Docker must be installed. Auto-launch of Docker Desktop on Windows/macOS is controlled by Sandbox Settings (default enabled, 90s timeout; disabled on Linux — instructions only).',
       icon: 'ShieldCheck',
     },
     params: { type: 'object', properties: {} },
