@@ -733,6 +733,62 @@ const environments = new Map<string, SandboxEnv>();
 // Load saved state on module init
 loadSandboxState();
 
+// ── Name sanitization & resolution ─────────────────────────────────
+
+export function sanitizeSandboxName(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  let s = raw.trim();
+  if (!s) return null;
+  // Whitespace → hyphen
+  s = s.replace(/\s+/g, '-');
+  // Replace any character not allowed in Docker names (preserve case, sanitize rest)
+  s = s.replace(/[^a-zA-Z0-9_.-]/g, '-');
+  // Collapse repeated separators
+  s = s.replace(/-+/g, '-');
+  s = s.replace(/_+/g, '_');
+  s = s.replace(/\.+/g, '.');
+  // Collapse mixed runs of - _ . into single hyphen for cleanliness
+  s = s.replace(/[-_.]{2,}/g, (m) => (m.includes('-') ? '-' : m[0]));
+  // Trim leading/trailing separators
+  s = s.replace(/^[-_.]+/, '').replace(/[-_.]+$/, '');
+  if (!s) return null;
+  // Must start with alphanumeric
+  if (!/^[a-zA-Z0-9]/.test(s)) {
+    s = s.replace(/^[^a-zA-Z0-9]+/, '');
+    if (!s) return null;
+  }
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(s)) return null;
+  if (s.length > 128) s = s.slice(0, 128).replace(/[-_.]+$/, '');
+  if (!s) return null;
+
+  const hasPrefix = s.startsWith('synapse-');
+  const finalName = hasPrefix ? s : `synapse-${s}`;
+  if (finalName.length > 128) {
+    const maxBase = 128 - 'synapse-'.length;
+    let base = s.startsWith('synapse-') ? s.slice(8) : s;
+    base = base.slice(0, maxBase).replace(/[-_.]+$/, '');
+    if (!base || !/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(base)) return null;
+    const truncated = `synapse-${base}`;
+    if (truncated.length < 2) return null;
+    return truncated;
+  }
+  if (finalName.length < 2) return null;
+  return finalName;
+}
+
+function resolveCreateName(requested: unknown): string {
+  const sanitized = sanitizeSandboxName(requested);
+  if (sanitized && !environments.has(sanitized)) return sanitized;
+  // Silent fallback to placeholder (random) — also ensure uniqueness
+  let fallback: string;
+  let attempts = 0;
+  do {
+    fallback = `synapse-sandbox-${randomUUID().slice(0, 8)}`;
+    attempts += 1;
+  } while (environments.has(fallback) && attempts < 5);
+  return fallback;
+}
+
 async function ensureSandboxImage(): Promise<void> {
   const bin = getDockerBin();
   try {
@@ -786,6 +842,7 @@ async function ensureSandboxImage(): Promise<void> {
 export async function createSandboxEnvironment(options?: {
   memoryLimit?: string;
   cpuLimit?: number;
+  name?: string;
 }): Promise<{
   success: boolean;
   containerId?: string;
@@ -805,7 +862,7 @@ export async function createSandboxEnvironment(options?: {
     await ensureSandboxImage();
 
     const bin = getDockerBin();
-    const containerName = `synapse-sandbox-${randomUUID().slice(0, 8)}`;
+    const containerName = resolveCreateName(options?.name);
     const memoryLimit = options?.memoryLimit ?? '512m';
     const cpuLimit = options?.cpuLimit ?? 2;
 
@@ -867,6 +924,7 @@ export async function createNetworkedSandboxEnvironment(options?: {
   memoryLimit?: string;
   cpuLimit?: number;
   network?: string;
+  name?: string;
 }): Promise<{
   success: boolean;
   containerId?: string;
@@ -886,7 +944,7 @@ export async function createNetworkedSandboxEnvironment(options?: {
     await ensureSandboxImage();
 
     const bin = getDockerBin();
-    const containerName = `synapse-sandbox-${randomUUID().slice(0, 8)}`;
+    const containerName = resolveCreateName(options?.name);
     const memoryLimit = options?.memoryLimit ?? '512m';
     const cpuLimit = options?.cpuLimit ?? 2;
     const network = options?.network ?? 'bridge';
@@ -1009,9 +1067,13 @@ export async function renameSandboxEnvironment(
     };
   }
 
-  const newName = newNameRaw.startsWith('synapse-')
-    ? newNameRaw
-    : `synapse-${newNameRaw}`;
+  const newName = sanitizeSandboxName(newNameRaw);
+  if (!newName) {
+    return {
+      success: false,
+      error: `Invalid name "${newNameRaw}". Name must contain alphanumeric characters and may include "-", "_", "."; it is sanitized and prefixed with "synapse-" automatically.`,
+    };
+  }
 
   if (environments.has(newName)) {
     return {

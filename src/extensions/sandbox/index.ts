@@ -41,10 +41,16 @@ export const tools: Record<string, ExtensionToolDef> = {
         '  • Memory and CPU limits applied\n' +
         '  • Git, bash, coreutils, and findutils pre-installed\n' +
         '\n' +
+        'NAMING (required, same as rename):\n' +
+        '  • `name` is required — provide a short descriptive name (e.g., "frontend-build", "api-test").\n' +
+        '  • Sanitized to Docker-safe characters [a-zA-Z0-9_.-]: whitespace and special chars become "-", runs collapsed, leading/trailing separators trimmed.\n' +
+        '  • "synapse-" prefix is auto-prepended if missing (identical to sandbox_environment_rename).\n' +
+        '  • If sanitized name is empty/malformed or collides with an existing environment, falls back silently to auto-generated "synapse-sandbox-<id>".\n' +
+        '\n' +
         'IMPORTANT: Destroying this container with sandbox_environment_destroy permanently deletes ALL files inside it. There is no host-side copy. All work is lost on destroy.\n' +
         '\n' +
         'USAGE:\n' +
-        '  1. Call sandbox_environment_create (no arguments needed)\n' +
+        '  1. Call sandbox_environment_create with required name e.g. {"name": "my-project"}\n' +
         '  2. Use sandbox_run_command for shell/git operations\n' +
         '  3. Use sandbox_read/write_file for file operations\n' +
         '  4. Call sandbox_environment_destroy when done (this permanently deletes everything)\n' +
@@ -55,6 +61,11 @@ export const tools: Record<string, ExtensionToolDef> = {
     params: {
       type: 'object',
       properties: {
+        name: {
+          type: 'string',
+          description:
+            'Required. Desired name for the environment (e.g., "frontend-build"). Sanitized to Docker-safe [a-zA-Z0-9_.-] — spaces/special chars become "-", collapsed; "synapse-" prefix auto-added if missing (same as rename). Silently falls back to synapse-sandbox-<id> if malformed/empty or name already exists.',
+        },
         memory_limit: {
           type: 'string',
           description:
@@ -66,9 +77,11 @@ export const tools: Record<string, ExtensionToolDef> = {
             'CPU limit for the container (number of CPUs). Default: 2.',
         },
       },
+      required: ['name'],
     },
-    async handler(params: { memory_limit?: string; cpu_limit?: number }) {
+    async handler(params: { name: string; memory_limit?: string; cpu_limit?: number }) {
       return await createSandboxEnvironment({
+        name: params.name,
         memoryLimit: params.memory_limit,
         cpuLimit: params.cpu_limit,
       });
@@ -98,10 +111,16 @@ export const tools: Record<string, ExtensionToolDef> = {
         '  • Memory and CPU limits applied\n' +
         '  • Git, bash, coreutils, and findutils pre-installed\n' +
         '\n' +
+        'NAMING (required, same as rename):\n' +
+        '  • `name` is required — provide a short descriptive name (e.g., "networked-build").\n' +
+        '  • Sanitized to Docker-safe [a-zA-Z0-9_.-]: whitespace/special chars become "-", runs collapsed, leading/trailing separators trimmed.\n' +
+        '  • "synapse-" prefix is auto-prepended if missing (identical to sandbox_environment_rename).\n' +
+        '  • If sanitized name is empty/malformed or collides with an existing environment, falls back silently to auto-generated "synapse-sandbox-<id>".\n' +
+        '\n' +
         'IMPORTANT: Destroying this container with sandbox_environment_destroy permanently deletes ALL files inside it. There is no host-side copy. All work is lost on destroy.\n' +
         '\n' +
         'USAGE:\n' +
-        '  1. Call sandbox_environment_create_networked (no arguments needed)\n' +
+        '  1. Call sandbox_environment_create_networked with required name e.g. {"name": "my-networked"}\n' +
         '  2. Clone repos, install packages via sandbox_run_command\n' +
         '  3. Use sandbox_read/write_file for file operations\n' +
         '  4. Call sandbox_environment_destroy when done (this permanently deletes everything)\n' +
@@ -114,6 +133,11 @@ export const tools: Record<string, ExtensionToolDef> = {
     params: {
       type: 'object',
       properties: {
+        name: {
+          type: 'string',
+          description:
+            'Required. Desired name for the environment (e.g., "networked-build"). Sanitized to Docker-safe [a-zA-Z0-9_.-] — spaces/special chars become "-", collapsed; "synapse-" prefix auto-added if missing (same as rename). Silently falls back to synapse-sandbox-<id> if malformed/empty or name already exists.',
+        },
         network: {
           type: 'string',
           description:
@@ -130,13 +154,16 @@ export const tools: Record<string, ExtensionToolDef> = {
             'CPU limit for the container (number of CPUs). Default: 2.',
         },
       },
+      required: ['name'],
     },
     async handler(params: {
+      name: string;
       network?: string;
       memory_limit?: string;
       cpu_limit?: number;
     }) {
       return await createNetworkedSandboxEnvironment({
+        name: params.name,
         network: params.network,
         memoryLimit: params.memory_limit,
         cpuLimit: params.cpu_limit,
@@ -175,9 +202,10 @@ export const tools: Record<string, ExtensionToolDef> = {
         'Rename an existing sandbox environment to a more meaningful name.\n' +
         '\n' +
         'RENAME BEHAVIOR:\n' +
+        '  • Sanitized to Docker-safe [a-zA-Z0-9_.-]: whitespace/special chars become "-", runs collapsed, leading/trailing separators trimmed.\n' +
         '  • The "synapse-" prefix is automatically prepended to new_name if not already present.\n' +
-        '    For example, "my-box" becomes "synapse-my-box".\n' +
-        '  • If two environments end up with the same name (after prefixing), the tool returns an error.\n' +
+        '    For example, "My Cool Box" becomes "synapse-My-Cool-Box".\n' +
+        '  • If two environments end up with the same name (after sanitizing/prefixing), the tool returns an error.\n' +
         '  • The Docker container is renamed via "docker rename" and state is persisted.\n' +
         '  • All files, packages, and state inside the sandbox are preserved.\n' +
         '\n' +
