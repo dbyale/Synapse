@@ -348,6 +348,84 @@
 
 /* ── Indicator box ── */
 
+.chat-message__row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.chat-message--user .chat-message__row {
+  flex-direction: row;
+  justify-content: flex-end;
+}
+
+.chat-message__row .chat-message__bubble {
+  flex: 1;
+  min-width: 0;
+}
+
+.chat-message__error-icon-wrap {
+  flex-shrink: 0;
+  padding-top: 14px;
+  display: inline-flex;
+}
+
+.chat-message__error-icon {
+  color: #ef4444;
+  flex-shrink: 0;
+}
+
+.chat-message__row > .chat-message__error-icon {
+  margin-top: 14px;
+}
+
+.chat-message--failed .chat-message__bubble {
+  border: 1px solid rgba(239, 68, 68, 0.6);
+  opacity: 0.85;
+}
+
+.chat-message__failed-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 2px;
+  padding: 0 2px;
+}
+
+.chat-message__failed-text {
+  font-size: 11px;
+  color: #ef4444;
+}
+
+.chat-message__failed-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.chat-message__failed-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.chat-message__failed-btn:hover {
+  border-color: var(--accent);
+}
+
+.chat-message__failed-btn--delete:hover {
+  border-color: #ef4444;
+  color: #ef4444;
+}
+
 .chat-message__indicator-box {
   background: var(--bg-secondary);
   border: 1px solid var(--border);

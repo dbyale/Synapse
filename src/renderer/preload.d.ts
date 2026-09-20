@@ -279,7 +279,12 @@ declare global {
         contentParts?: ContentPart[],
         displayItems?: any[],
         thinkingTokens?: number,
-      ) => Promise<{ success: boolean; error?: string }>;
+      ) => Promise<{
+        success: boolean;
+        error?: string;
+        code?: string;
+        failedMessageId?: number;
+      }>;
       chatStartSession: (profileId: string, title: string) => Promise<string>;
       chatGetSession: (sessionId: string) => Promise<SessionView | null>;
       chatListSessions: (profileId: string) => Promise<SavedSession[]>;
@@ -289,6 +294,10 @@ declare global {
         pinned: boolean,
       ) => Promise<SavedSession | null>;
       chatDeleteSession: (sessionId: string) => Promise<{ success: boolean }>;
+      chatDeleteMessage: (
+        sessionId: string,
+        messageId: number,
+      ) => Promise<{ success: boolean }>;
       chatRespondInput: (
         sessionId: string,
         response: {

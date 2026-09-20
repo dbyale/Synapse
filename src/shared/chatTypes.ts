@@ -38,6 +38,16 @@ export interface Message {
   collapsed?: boolean;
   stats?: GenerationStatsData;
   promptStats?: GenerationStatsData;
+  /** Set when the server rejected the prompt before accepting it (pre-accept failure). */
+  failed?: boolean;
+  /** Raw server/transport error for the failed turn (tooltip). */
+  error?: string;
+  /** Machine-readable failure kind for the failed turn. */
+  errorCode?:
+    | 'context-exceeded'
+    | 'connection'
+    | 'slot-unavailable'
+    | 'rejected';
 }
 
 export interface ChatHistoryMsg {
@@ -138,6 +148,10 @@ export interface StreamEventPayload {
   isColdStart?: boolean;
   stats?: GenerationStatsData;
   message?: string;
+  /** Machine-readable failure kind for `error` events (pre-accept failures only). */
+  code?: 'context-exceeded' | 'connection' | 'slot-unavailable' | 'rejected';
+  /** Display message id of the failed user turn, if any. */
+  failedMessageId?: number;
   name?: string;
   params?: string;
   tags?: string[];

@@ -137,10 +137,74 @@ function emitSessionChanged(sessionId: string): void {
 }
 
 class SlotUnavailableError extends Error {
-  constructor() {
+  failedMessageId?: number;
+
+  status?: number;
+
+  code: 'slot-unavailable' = 'slot-unavailable';
+
+  constructor(failedMessageId?: number, status?: number) {
     super('No generation slot is free');
     this.name = 'SlotUnavailableError';
+    this.failedMessageId = failedMessageId;
+    this.status = status;
   }
+}
+
+/** Thrown when the server rejects the prompt before accepting it. */
+class PreAcceptError extends Error {
+  code: 'context-exceeded' | 'connection' | 'slot-unavailable' | 'rejected';
+
+  failedMessageId: number;
+
+  status?: number;
+
+  constructor(
+    message: string,
+    code: 'context-exceeded' | 'connection' | 'slot-unavailable' | 'rejected',
+    failedMessageId: number,
+    status?: number,
+  ) {
+    super(message);
+    this.name = 'PreAcceptError';
+    this.code = code;
+    this.failedMessageId = failedMessageId;
+    this.status = status;
+  }
+}
+
+export type PreAcceptErrorCode = PreAcceptError['code'];
+
+export function isContextLengthError(status: number, message: string): boolean {
+  if (!message) return false;
+  return /context|n_ctx|nctx|ctx.?size|prompt.*too (long|large)|exceed.*(context|token|limit|n_ctx)|too many tokens|input.*too long|maximum context|out of context|kv cache|no space in the kv/i.test(
+    message,
+  );
+}
+
+export function isConnectionErrorMessage(message: string): boolean {
+  if (!message) return false;
+  return /failed to fetch|fetch failed|econnrefused|econnreset|econnaborted|enotfound|network|socket hang up|connection (refused|reset|closed|aborted|lost)|net::|load failed|server.+not.+respond|no response body/i.test(
+    message,
+  );
+}
+
+export function classifyPreAcceptError(
+  status: number | undefined,
+  message: string,
+): PreAcceptErrorCode {
+  const msg = message ?? '';
+  if (status !== undefined && isSlotUnavailableError(status, msg))
+    return 'slot-unavailable';
+  if (isContextLengthError(status ?? 0, msg)) return 'context-exceeded';
+  if (
+    status === undefined ||
+    status === 0 ||
+    isConnectionErrorMessage(msg) ||
+    /no response body/i.test(msg)
+  )
+    return 'connection';
+  return 'rejected';
 }
 
 function isSlotUnavailableError(status: number, message: string): boolean {
@@ -702,7 +766,6 @@ export function buildLlamaServerArgs(
   if (profile.mmap === false) spawnArgs.push('--no-mmap');
   if (profile.mlock === true) spawnArgs.push('--mlock');
   if (profile.repack === false) spawnArgs.push('--no-repack');
-  if ((profile as any).contextShift === true) spawnArgs.push('--context-shift');
 
   // Context Scaling Arguments (only applied when different from server defaults)
   const scalingMethod = (profile as any).rope?.scaling;
@@ -1592,9 +1655,29 @@ function finishSession(sessionId: string, stats?: GenerationStats): void {
   emitSessionChanged(sessionId);
 }
 
-export function failSession(sessionId: string, message: string): void {
+export function failSession(
+  sessionId: string,
+  message: string,
+  opts?: {
+    code?: PreAcceptErrorCode;
+    failedMessageId?: number;
+    userTokens?: number;
+  },
+): void {
   const s = sessions.get(sessionId);
   if (!s || s.failed) return;
+  // Pre-accept failure of a specific user turn: strip it from LLM history so
+  // the conversation is not poisoned, but keep the bubble visible as failed.
+  if (opts?.failedMessageId !== undefined) {
+    failUserTurnAsFailed(
+      sessionId,
+      opts.failedMessageId,
+      message,
+      opts.code ?? 'rejected',
+      opts.userTokens ?? 0,
+    );
+    return;
+  }
   s.failed = true;
   s.aborted = true;
   s.abortController?.abort();
@@ -1606,6 +1689,73 @@ export function failSession(sessionId: string, message: string): void {
   emit({ type: 'done', sessionId });
   emit({ type: 'error', sessionId, message });
   emitSessionChanged(sessionId);
+}
+
+/**
+ * Marks a user turn as failed (red X icon in UI) and removes it from the LLM
+ * history. Only used when the server never accepted the prompt (pre-accept
+ * failure: connection lost, context too large, slot busy, rejected).
+ */
+function failUserTurnAsFailed(
+  sessionId: string,
+  failedMessageId: number,
+  message: string,
+  code: PreAcceptErrorCode,
+  userTokens: number,
+): void {
+  const s = sessions.get(sessionId);
+  if (!s || s.failed) return;
+  // Remove the just-pushed user entry from LLM history (last role==='user').
+  // Pre-accept means history still ends at/near that entry — search from end
+  // to avoid ever touching the system prompt at index 0.
+  for (let i = s.history.length - 1; i >= 0; i -= 1) {
+    if (s.history[i]?.role === 'user') {
+      s.history = [...s.history.slice(0, i), ...s.history.slice(i + 1)];
+      break;
+    }
+  }
+  s.messages = s.messages.map((m) =>
+    m.id === failedMessageId && m.role === 'user'
+      ? { ...m, failed: true, error: message, errorCode: code }
+      : m,
+  );
+  if (lastUsage && userTokens > 0) {
+    lastUsage = {
+      used: Math.max(0, lastUsage.used - userTokens),
+      total: lastUsage.total,
+    };
+  }
+  s.failed = true;
+  s.aborted = true;
+  s.abortController?.abort();
+  s.abortController = null;
+  s.currentReader = null;
+  s.status = 'idle';
+  cancelPendingInput(s);
+  persistSessionState(sessionId);
+  emit({ type: 'done', sessionId });
+  // Keep the legacy slot-unavailable event for the banner, plus the generic
+  // error event carrying the failure code + message id for the red icon.
+  if (code === 'slot-unavailable') {
+    emit({ type: 'slot-unavailable', sessionId });
+  }
+  emit({ type: 'error', sessionId, message, code, failedMessageId });
+  emitSessionChanged(sessionId);
+}
+
+/** Removes a failed user bubble from display state (history already clean). */
+export function deleteFailedMessage(
+  sessionId: string,
+  messageId: number,
+): boolean {
+  const s = getSessionState(sessionId);
+  if (!s) return false;
+  const target = s.messages.find((m) => m.id === messageId);
+  if (!target || !target.failed) return false;
+  s.messages = s.messages.filter((m) => m.id !== messageId);
+  persistSessionState(sessionId);
+  emitSessionChanged(sessionId);
+  return true;
 }
 
 // --- Streaming engine ---
@@ -1709,14 +1859,22 @@ export async function sendMessage(
   let toolTokenCount = 0;
 
   const runCompletion = async (): Promise<SendMessageResponse> => {
-    const response = await fetch(getServerUrl('/v1/chat/completions'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(
-        buildChatBody(s.history, activeTools, thinkingTokens),
-      ),
-      signal: s.abortController?.signal,
-    });
+    let response: Response;
+    try {
+      response = await fetch(getServerUrl('/v1/chat/completions'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(
+          buildChatBody(s.history, activeTools, thinkingTokens),
+        ),
+        signal: s.abortController?.signal,
+      });
+    } catch (e: any) {
+      // User abort is not an error — let the outer catch finish gracefully.
+      if (e?.name === 'AbortError' || s.aborted) throw e;
+      const msg = e?.message ?? 'Connection failed';
+      throw new PreAcceptError(msg, 'connection', userMsg.id);
+    }
 
     if (!response.ok) {
       let serverMessage = '';
@@ -1726,14 +1884,17 @@ export async function sendMessage(
       } catch {
         serverMessage = `HTTP ${response.status}`;
       }
-      if (isSlotUnavailableError(response.status, serverMessage)) {
-        emit({ type: 'slot-unavailable', sessionId });
-        throw new SlotUnavailableError();
+      const finalMessage = serverMessage || `HTTP ${response.status}`;
+      if (isSlotUnavailableError(response.status, finalMessage)) {
+        throw new SlotUnavailableError(userMsg.id, response.status);
       }
-      throw new Error(serverMessage || `HTTP ${response.status}`);
+      const code = classifyPreAcceptError(response.status, finalMessage);
+      throw new PreAcceptError(finalMessage, code, userMsg.id, response.status);
     }
 
-    if (!response.body) throw new Error('No response body');
+    if (!response.body) {
+      throw new PreAcceptError('No response body', 'connection', userMsg.id);
+    }
     const reader = response.body.getReader();
     s.currentReader = reader;
     const decoder = new TextDecoder();
@@ -1957,7 +2118,9 @@ export async function sendMessage(
         }
       }
     } finally {
-      reader.releaseLock();
+      try {
+        reader.releaseLock();
+      } catch {}
       s.currentReader = null;
     }
 
@@ -2285,13 +2448,36 @@ export async function sendMessage(
     finishSession(sessionId, result.stats);
     return result;
   } catch (e: any) {
-    if (e.name === 'AbortError' || s.aborted) {
+    if (e?.name === 'AbortError' || s.aborted) {
       finishSession(sessionId);
       return { content: 'Aborted' };
     }
-    if (e instanceof SlotUnavailableError) {
-      finishSession(sessionId);
-      return { content: '' };
+    // Pre-accept failures (server never received the prompt): strip the user
+    // turn from LLM history, keep the bubble visible as failed. Abort and
+    // post-accept (streaming/tool-follow-up) failures never mark a turn failed.
+    if (e instanceof SlotUnavailableError || e instanceof PreAcceptError) {
+      // Tool-loop follow-ups end with assistant/tool history — the original
+      // user turn was already accepted, so leave history alone (legacy path).
+      const lastHistory = s.history[s.history.length - 1];
+      if (lastHistory?.role !== 'user') {
+        failSession(sessionId, e?.message ?? 'Unknown error');
+        throw e;
+      }
+      const failedMessageId = e.failedMessageId ?? userMsg.id;
+      const code: PreAcceptErrorCode =
+        e instanceof SlotUnavailableError
+          ? 'slot-unavailable'
+          : (e.code ?? classifyPreAcceptError(e.status, e?.message ?? ''));
+      const message = e?.message ?? 'Unknown error';
+      failSession(sessionId, message, {
+        code,
+        failedMessageId,
+        userTokens,
+      });
+      // Enrich so ipc can propagate the code without re-failing the session.
+      e.code = code;
+      e.failedMessageId = failedMessageId;
+      throw e;
     }
     failSession(sessionId, e?.message ?? 'Unknown error');
     throw e;

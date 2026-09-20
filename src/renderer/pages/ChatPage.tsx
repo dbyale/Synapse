@@ -30,6 +30,9 @@ import {
   FilePlusCorner,
   FileText,
   X,
+  XCircle,
+  RotateCcw,
+  Trash2,
   SquareDashedText,
   Copy,
   MessagesSquare,
@@ -396,6 +399,17 @@ const ToolCallSegment = memo(function ToolCallSegmentInner({
   );
 });
 
+const FAILED_MESSAGE_TOOLTIPS: Record<string, string> = {
+  'context-exceeded':
+    'Message exceeds the token limit — removed from conversation history',
+  connection:
+    'Server could not receive the message (connection lost) — removed from conversation history',
+  'slot-unavailable':
+    'Server had no free slot — removed from conversation history, retry when free',
+};
+const FAILED_MESSAGE_FALLBACK_TOOLTIP =
+  'Server could not receive the message — removed from conversation history';
+
 interface MessageViewProps {
   msg: Message;
   isLast: boolean;
@@ -411,6 +425,8 @@ interface MessageViewProps {
   onToggleCollapsed: (id: number) => void;
   onCopy: (msg: Message) => void;
   onImageClick: (url: string) => void;
+  onRetry: (msg: Message) => void;
+  onDelete: (msg: Message) => void;
 }
 
 function MessageViewInner({
@@ -428,6 +444,8 @@ function MessageViewInner({
   onToggleCollapsed,
   onCopy,
   onImageClick,
+  onRetry,
+  onDelete,
 }: MessageViewProps) {
   const streamingDisplayText = useMemo(() => {
     if (!streamingTool) return '';
@@ -464,8 +482,16 @@ function MessageViewInner({
     el.scrollTop = el.scrollHeight;
   }, [streamingDisplayText, streamingTool]);
 
+  const isFailedUser = msg.role === 'user' && !!msg.failed;
+  const failedTooltip =
+    msg.error ||
+    FAILED_MESSAGE_TOOLTIPS[msg.errorCode] ||
+    FAILED_MESSAGE_FALLBACK_TOOLTIP;
+
   return (
-    <div className={`chat-message chat-message--${msg.role}`}>
+    <div
+      className={`chat-message chat-message--${msg.role}${isFailedUser ? ' chat-message--failed' : ''}`}
+    >
       {(() => {
         const text = msg.content[0]?.text || '';
         const outputText =
@@ -506,28 +532,38 @@ function MessageViewInner({
         );
       })()}
       {isCollapsed && (msg.role === 'user' || msg.role === 'assistant') ? (
-        <div
-          className="chat-message__bubble chat-message__bubble--collapsed"
-          role="button"
-          tabIndex={0}
-          onClick={() => onToggleCollapsed(msg.id)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              onToggleCollapsed(msg.id);
-            }
-          }}
-        >
-          {(() => {
-            const outputText =
-              msg.content.find((s) => s.type === 'normal')?.text ||
-              msg.content[0]?.text ||
-              '';
-            if (msg.role === 'assistant') {
-              return `${stripMarkdown(outputText).trim().slice(0, 40)}…`;
-            }
-            return `${outputText.slice(0, 20)}…`;
-          })()}
+        <div className="chat-message__row">
+          {isFailedUser && (
+            <XCircle
+              size={20}
+              className="chat-message__error-icon"
+              aria-label="Message failed to send"
+            />
+          )}
+          <div
+            className="chat-message__bubble chat-message__bubble--collapsed"
+            role="button"
+            tabIndex={0}
+            title={isFailedUser ? failedTooltip : undefined}
+            onClick={() => onToggleCollapsed(msg.id)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onToggleCollapsed(msg.id);
+              }
+            }}
+          >
+            {(() => {
+              const outputText =
+                msg.content.find((s) => s.type === 'normal')?.text ||
+                msg.content[0]?.text ||
+                '';
+              if (msg.role === 'assistant') {
+                return `${stripMarkdown(outputText).trim().slice(0, 40)}…`;
+              }
+              return `${outputText.slice(0, 20)}…`;
+            })()}
+          </div>
         </div>
       ) : (
         !isCollapsed && (
@@ -540,7 +576,23 @@ function MessageViewInner({
                 </div>
               </div>
             )}
-            <div className="chat-message__bubble">
+            <div className="chat-message__row">
+              {isFailedUser && (
+                <span
+                  className="chat-message__error-icon-wrap"
+                  title={failedTooltip}
+                >
+                  <XCircle
+                    size={20}
+                    className="chat-message__error-icon"
+                    aria-label="Message failed to send"
+                  />
+                </span>
+              )}
+              <div
+                className="chat-message__bubble"
+                title={isFailedUser ? failedTooltip : undefined}
+              >
               {msg.role === 'assistant' ? (
                 <div className="chat-message__assistant-content">
                   {(() => {
@@ -943,7 +995,44 @@ function MessageViewInner({
                   {msg.content[0]?.text || ''}
                 </>
               )}
+              </div>
             </div>
+            {isFailedUser && (
+              <div className="chat-message__failed-row">
+                <span
+                  className="chat-message__failed-text"
+                  title={failedTooltip}
+                >
+                  Not sent — removed from history
+                </span>
+                <span className="chat-message__failed-actions">
+                  {onRetry && (
+                    <button
+                      type="button"
+                      className="chat-message__failed-btn"
+                      onClick={() => onRetry(msg)}
+                      title="Retry sending this message"
+                      aria-label="Retry sending this message"
+                    >
+                      <RotateCcw size={12} />
+                      <span>Retry</span>
+                    </button>
+                  )}
+                  {onDelete && (
+                    <button
+                      type="button"
+                      className="chat-message__failed-btn chat-message__failed-btn--delete"
+                      onClick={() => onDelete(msg)}
+                      title="Delete this failed message"
+                      aria-label="Delete this failed message"
+                    >
+                      <Trash2 size={12} />
+                      <span>Delete</span>
+                    </button>
+                  )}
+                </span>
+              </div>
+            )}
           </>
         )
       )}
@@ -1071,7 +1160,9 @@ function messageViewPropsEqual(prev: MessageViewProps, next: MessageViewProps) {
     prev.profileName !== next.profileName ||
     prev.settings !== next.settings ||
     prev.copiedMsgId !== next.copiedMsgId ||
-    prev.isCollapsed !== next.isCollapsed
+    prev.isCollapsed !== next.isCollapsed ||
+    prev.onRetry !== next.onRetry ||
+    prev.onDelete !== next.onDelete
   ) {
     return false;
   }
@@ -3634,6 +3725,18 @@ export default function ChatPage() {
           setSessionLoading(false);
           setSessionProcessing(false);
           showErrorToast(payload.message ?? 'Unknown error');
+          // Pre-accept failures mark the user turn failed in main and strip it
+          // from LLM history. Pull authoritative messages immediately (in
+          // addition to the done/session-changed sync) so the red icon shows
+          // without waiting for the throttle.
+          if (
+            payload.code !== undefined ||
+            payload.failedMessageId !== undefined
+          ) {
+            syncSessionFromMain(sessionId).catch(() => {});
+          } else {
+            queueSessionSync(sessionId);
+          }
           return;
         }
 
@@ -3690,6 +3793,7 @@ export default function ChatPage() {
     refreshCumulativeTokens,
     addSourcesFromToolResult,
     queueSessionSync,
+    syncSessionFromMain,
     showSlotBanner,
     showErrorToast,
     drainTypewriterQueue,
@@ -4466,6 +4570,105 @@ export default function ChatPage() {
     [removeSessionSources, clearTypewriterSession],
   );
 
+  const handleDeleteFailedMessage = useCallback(
+    (msg: Message) => {
+      const sessionId = activeSessionIdRef.current;
+      if (!sessionId || !msg.failed) return;
+      // Optimistic removal; authoritative sync follows via session-changed.
+      setMessages((prev) => {
+        const updated = prev.filter((m) => m.id !== msg.id);
+        sessionMessagesRef.current[sessionId] = updated;
+        return updated;
+      });
+      window.electronAPI
+        .chatDeleteMessage(sessionId, msg.id)
+        .then(() => syncSessionFromMain(sessionId))
+        .catch(() => {});
+    },
+    [syncSessionFromMain],
+  );
+
+  const handleRetryFailedMessage = useCallback(
+    (msg: Message) => {
+      if (!msg.failed) return;
+      if (loading || sendingRef.current || modelLoading) return;
+      const text =
+        msg.content.find((s) => s.type === 'normal')?.text ??
+        msg.content[0]?.text ??
+        '';
+      if (!text.trim()) return;
+      const mediaItems = msg.content[0]?.mediaItems ?? [];
+      const hasNonImage = mediaItems.some((m) => m.type !== 'image');
+      const sessionId = activeSessionIdRef.current;
+      if (!sessionId) return;
+      // Images (data URLs) survive in display state and can be resent.
+      // Documents/videos cannot be reconstructed from the bubble — fall back
+      // to restoring the text so the user can re-attach and resend.
+      if (hasNonImage) {
+        setInputText(text);
+        showErrorToast(
+          'Attachments from the failed message cannot be retried automatically — text restored, please re-attach files.',
+        );
+        return;
+      }
+      const contentParts: ContentPart[] = [];
+      const nextMedia: MediaDisplayItem[] = [];
+      mediaItems.forEach((item) => {
+        if (item.type === 'image' && item.url) {
+          contentParts.push({ kind: 'image_url', url: item.url });
+          nextMedia.push({ type: 'image', url: item.url });
+        }
+      });
+      // Remove the failed bubble optimistically, then send as a fresh turn.
+      // Main has already stripped it from LLM history, so no duplication.
+      window.electronAPI.chatDeleteMessage(sessionId, msg.id).catch(() => {});
+      setMessages((prev) => {
+        const updated = prev.filter((m) => m.id !== msg.id);
+        sessionMessagesRef.current[sessionId] = updated;
+        return updated;
+      });
+      const sid = sessionId;
+      setLoadingSessions((prev) => ({ ...prev, [sid]: true }));
+      setProcessingSessions((prev) => ({ ...prev, [sid]: true }));
+      const counters = messageCountersRef.current;
+      const uid = counters[sid] ?? 0;
+      counters[sid] = uid + 1;
+      const segCounters = segmentCountersRef.current;
+      segCounters[sid] = (segCounters[sid] ?? 0) + 1;
+      const userMessage: Message = {
+        id: uid,
+        role: 'user',
+        content: [
+          {
+            id: `seg-${Date.now()}-${segCounters[sid]}`,
+            text,
+            type: 'normal',
+            mediaItems: nextMedia.length > 0 ? nextMedia : undefined,
+          },
+        ],
+      };
+      setMessages((prev) => {
+        const updated = [...prev, userMessage];
+        sessionMessagesRef.current[sid] = updated;
+        return updated;
+      });
+      if (sid === activeSessionIdRef.current) {
+        if (!seenIdsRef.current[sid]) seenIdsRef.current[sid] = new Set();
+        seenIdsRef.current[sid].add(uid);
+      }
+      window.electronAPI
+        .chatSend(
+          sid,
+          text,
+          contentParts,
+          nextMedia,
+          readThinkingTokens(selectedProfileId),
+        )
+        .catch(() => {});
+    },
+    [loading, modelLoading, selectedProfileId, showErrorToast],
+  );
+
   const toggleSidebarCollapsed = useCallback(() => {
     setSidebarCollapsed((v) => !v);
   }, []);
@@ -4763,6 +4966,8 @@ export default function ChatPage() {
                 onToggleCollapsed={toggleMessageCollapsed}
                 onCopy={copyMessageText}
                 onImageClick={setImageViewerUrl}
+                onRetry={handleRetryFailedMessage}
+                onDelete={handleDeleteFailedMessage}
               />
             ))}
 

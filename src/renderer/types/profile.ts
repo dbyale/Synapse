@@ -9,6 +9,18 @@ export type CacheType =
   | 'q5_0'
   | 'q5_1';
 
+export interface ContextShiftSettings {
+  enabled: boolean;
+  tokensRemainingUntilShift: number;
+  maxUserMessages: number;
+  minTokensToClear: number;
+  preserveAttachments: boolean;
+  summarizationEnabled: boolean;
+  summarizationMessage: string;
+  summarizationThinkingBudget: number;
+  midChatShiftEnabled: boolean;
+}
+
 export interface Profile {
   id: string;
   name: string;
@@ -53,7 +65,7 @@ export interface Profile {
   tools?: string[];
   layers?: number;
   gpuLayersAuto?: boolean;
-  contextShift?: boolean;
+  contextShift?: ContextShiftSettings;
   contextSize?: number;
   autoOptimizer?: 'longest-context' | 'most-gpu' | 'custom';
   kvOffload?: boolean;

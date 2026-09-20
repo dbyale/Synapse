@@ -154,6 +154,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('chat:setSessionPinned', sessionId, pinned),
   chatDeleteSession: (sessionId: string) =>
     ipcRenderer.invoke('chat:deleteSession', sessionId),
+  chatDeleteMessage: (sessionId: string, messageId: number) =>
+    ipcRenderer.invoke('chat:deleteMessage', sessionId, messageId),
   chatRespondInput: (sessionId: string, response: any) =>
     ipcRenderer.invoke('chat:respond-input', sessionId, response),
   chatAbort: (sessionId?: string | null) =>

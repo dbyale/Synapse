@@ -33,7 +33,10 @@ import {
   Copy,
   Check,
 } from 'lucide-react';
-import { Profile, CacheType } from '../types/profile';
+import {
+  Profile,
+  CacheType,
+} from '../types/profile';
 import type { LocalModel } from '../preload.d';
 import { getToolMeta, getAvailableToolNames } from '../utils/extensionData';
 import { svgToDataUrl } from '../utils/svgToDataUrl';
@@ -75,7 +78,6 @@ import {
   CUSTOM_TOOLTIP,
   GPU_LAYERS_TOOLTIP,
   GPU_LAYERS_AUTO_TOOLTIP,
-  CONTEXT_SHIFT_TOOLTIP,
   CONTEXT_SIZE_TOOLTIP,
   KV_CACHE_OFFLOAD_TOOLTIP,
   K_CACHE_TYPE_TOOLTIP,
@@ -591,12 +593,6 @@ const SEARCH_INDEX: SearchIndexEntry[] = [
     id: 'performance:gpu-layers',
     label: 'GPU Layers (NGL)',
     keywords: ['gpu layers', 'ngl', 'offload'],
-    page: 'performance',
-  },
-  {
-    id: 'performance:context-shift',
-    label: 'Context Shift',
-    keywords: ['context shift', 'kv cache'],
     page: 'performance',
   },
   {
@@ -2745,13 +2741,11 @@ function PerformancePage({
   editLayers,
   editContextSize,
   editGpuLayersAuto,
-  editContextShift,
   optimizerRunning,
   modelMaxLayers,
   modelMaxContext,
   onSetAutoOptimizer,
   onSetGpuLayersAuto,
-  onSetContextShift,
   onSetLayers,
   onSetContextSize,
   onRunOptimizer,
@@ -2765,7 +2759,6 @@ function PerformancePage({
   editLayers: number | undefined;
   editContextSize: number | undefined;
   editGpuLayersAuto: boolean;
-  editContextShift: boolean;
   optimizerRunning: 'longest-context' | 'most-gpu' | null;
   modelMaxLayers: number;
   modelMaxContext: number;
@@ -2773,7 +2766,6 @@ function PerformancePage({
     v: 'longest-context' | 'most-gpu' | 'custom' | null,
   ) => void;
   onSetGpuLayersAuto: (v: boolean) => void;
-  onSetContextShift: (v: boolean) => void;
   onSetLayers: (v: number | undefined) => void;
   onSetContextSize: (v: number | undefined) => void;
   onRunOptimizer: (mode: 'longest-context' | 'most-gpu') => void;
@@ -3412,32 +3404,6 @@ function PerformancePage({
           </div>
 
           <div className="epm-perf-slider-group" style={{ marginTop: '16px' }}>
-            <label className="epm-perf-toggle-row" style={{ paddingTop: 0 }}>
-              <InfoTooltip
-                content={CONTEXT_SHIFT_TOOLTIP}
-                side="right"
-                stretch
-                className="info-tooltip-stretch--row"
-                title="Context Shift"
-              >
-                <span className="epm-perf-toggle-label">Context Shift</span>
-                <div
-                  className={`epm-toggle-switch${editContextShift ? ' epm-toggle-switch--on' : ''}`}
-                  onClick={() => onSetContextShift(!editContextShift)}
-                  role="switch"
-                  aria-checked={editContextShift}
-                  tabIndex={0}
-                  onKeyDown={(e) => {
-                    if (e.key === ' ' || e.key === 'Enter') {
-                      e.preventDefault();
-                      onSetContextShift(!editContextShift);
-                    }
-                  }}
-                >
-                  <div className="epm-toggle-switch__knob" />
-                </div>
-              </InfoTooltip>
-            </label>
             <InfoTooltip
               content={CONTEXT_SIZE_TOOLTIP}
               side="bottom"
@@ -5024,9 +4990,6 @@ export default function EditProfileModal({
   const [editGpuLayersAuto, setEditGpuLayersAuto] = useState<boolean>(
     profile?.gpuLayersAuto ?? false,
   );
-  const [editContextShift, setEditContextShift] = useState<boolean>(
-    profile?.contextShift ?? true,
-  );
   const [editKvOffload, setEditKvOffload] = useState<boolean>(
     profile?.kvOffload ?? true,
   );
@@ -5227,7 +5190,6 @@ export default function EditProfileModal({
         mmap: editMmap,
         mlock: editMlock,
         repack: editRepack,
-        contextShift: editContextShift,
         cacheTypeK: editCacheTypeK,
         cacheTypeV: editCacheTypeV,
         flashAttn: editFlashAttn,
@@ -5297,7 +5259,6 @@ export default function EditProfileModal({
     editMmap,
     editMlock,
     editRepack,
-    editContextShift,
     editCacheTypeK,
     editCacheTypeV,
     editFlashAttn,
@@ -5774,7 +5735,6 @@ export default function EditProfileModal({
       mlock: editMlock,
       repack: editRepack,
       gpuLayersAuto: editGpuLayersAuto,
-      contextShift: editContextShift,
       ...(modelMeta
         ? {
             maxForModel: modelRelativePath,
@@ -6026,13 +5986,11 @@ export default function EditProfileModal({
             editLayers={editLayers}
             editContextSize={editContextSize}
             editGpuLayersAuto={editGpuLayersAuto}
-            editContextShift={editContextShift}
             optimizerRunning={optimizerRunning}
             modelMaxLayers={modelMeta?.maxLayers ?? 200}
             modelMaxContext={modelMeta?.maxContext ?? 131072}
             onSetAutoOptimizer={setEditAutoOptimizer}
             onSetGpuLayersAuto={setEditGpuLayersAuto}
-            onSetContextShift={setEditContextShift}
             onSetLayers={setEditLayers}
             onSetContextSize={setEditContextSize}
             onRunOptimizer={handleRunOptimizer}

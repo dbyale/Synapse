@@ -507,9 +507,17 @@ export function registerIpcHandlers(win: BrowserWindow): void {
         );
         return { success: true };
       } catch (err: any) {
+        // sendMessage already failed the session (with failed-turn rollback for
+        // pre-accept errors). failSession is idempotent via its s.failed guard,
+        // so this only covers paths that somehow didn't fail yet.
         chatService.failSession(sessionId, err?.message ?? 'Unknown error');
         console.error('[chat:send]', err);
-        return { success: false, error: err.message };
+        return {
+          success: false,
+          error: err?.message ?? 'Unknown error',
+          code: err?.code,
+          failedMessageId: err?.failedMessageId,
+        };
       }
     },
   );
@@ -547,6 +555,14 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     chatService.deleteSession(sessionId);
     return { success: true };
   });
+
+  ipcMain.handle(
+    'chat:deleteMessage',
+    (_event, sessionId: string, messageId: number) => {
+      const ok = chatService.deleteFailedMessage(sessionId, messageId);
+      return { success: ok };
+    },
+  );
 
   ipcMain.handle('chat:respond-input', async (_event, sessionId, response) => {
     return { success: chatService.resolveUserInput(sessionId, response) };
