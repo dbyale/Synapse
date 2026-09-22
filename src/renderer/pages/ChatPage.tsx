@@ -430,6 +430,52 @@ interface MessageViewProps {
   onDelete: (msg: Message) => void;
 }
 
+function ContextCutoffMarker() {
+  return (
+    <div className="chat-context-cutoff">
+      <div className="chat-context-cutoff__line">
+        <span className="chat-context-cutoff__label">Active Context</span>
+      </div>
+      <p className="chat-context-cutoff__hint">
+        AI Models can only retain so much information at a time. In order to
+        continue the conversation, all messages beyond this point will not be
+        remembered by the model. You can increase this limit by using different
+        Models, higher Context Lengths, or changing Context Shift profile
+        settings.
+      </p>
+    </div>
+  );
+}
+
+// Splits an assistant message partially cleared by a mid-chat shift into its
+// cleared head and retained tail (render-time only; storage keeps 1 message).
+// Returns null when there is no splice or it cannot be resolved.
+function splitSplicedMessage(msg: Message): {
+  head: Message;
+  tail: Message;
+} | null {
+  const splice = msg.contextSpliceAt;
+  if (!splice || msg.role !== 'assistant') return null;
+  const idx = msg.content.findIndex((seg) => seg.id === splice.segId);
+  if (idx === -1) return null;
+  const seg = msg.content[idx];
+  if (seg.type !== 'normal') return null;
+  const offset = Math.max(0, Math.min(splice.offset, seg.text.length));
+  const headSegs: MessageSegment[] = [];
+  for (let i = 0; i < idx; i += 1) headSegs.push(msg.content[i]);
+  if (offset > 0) headSegs.push({ ...seg, text: seg.text.slice(0, offset) });
+  const tailSegs: MessageSegment[] = [];
+  if (offset < seg.text.length)
+    tailSegs.push({ ...seg, text: seg.text.slice(offset) });
+  for (let i = idx + 1; i < msg.content.length; i += 1)
+    tailSegs.push(msg.content[i]);
+  if (headSegs.length === 0 || tailSegs.length === 0) return null;
+  return {
+    head: { ...msg, content: headSegs, contextSpliceAt: undefined },
+    tail: { ...msg, content: tailSegs, contextSpliceAt: undefined },
+  };
+}
+
 function MessageViewInner({
   msg,
   isLast,
@@ -4950,45 +4996,76 @@ export default function ChatPage() {
               </div>
             )}
 
-            {messages.map((msg) => (
-              <Fragment key={msg.id}>
-                <MessageView
-                  msg={msg}
-                  isLast={msg === messages[messages.length - 1]}
-                  profileName={selectedProfile?.name ?? ''}
-                  loading={loading}
-                  processing={processing}
-                  progressPercent={progressPercent}
-                  streamingTool={streamingTool}
-                  executing={executing}
-                  settings={settings}
-                  copiedMsgId={copiedMsgId}
-                  isCollapsed={collapsedIds.has(msg.id)}
-                  onToggleCollapsed={toggleMessageCollapsed}
-                  onCopy={copyMessageText}
-                  onImageClick={setImageViewerUrl}
-                  onRetry={handleRetryFailedMessage}
-                  onDelete={handleDeleteFailedMessage}
-                />
-                {msg.contextCutoff && (
-                  <div className="chat-context-cutoff">
-                    <div className="chat-context-cutoff__line">
-                      <span className="chat-context-cutoff__label">
-                        Active Context
-                      </span>
-                    </div>
-                    <p className="chat-context-cutoff__hint">
-                      AI Models can only retain so much information at a
-                      time. In order to continue the conversation, all
-                      messages beyond this point will not be remembered by
-                      the model. You can increase this limit by using
-                      different Models, higher Context Lengths, or changing
-                      Context Shift profile settings.
-                    </p>
-                  </div>
-                )}
-              </Fragment>
-            ))}
+            {messages.map((msg) => {
+              const split = splitSplicedMessage(msg);
+              if (split) {
+                return (
+                  <Fragment key={msg.id}>
+                    <MessageView
+                      msg={split.head}
+                      isLast={false}
+                      profileName={selectedProfile?.name ?? ''}
+                      loading={false}
+                      processing={false}
+                      progressPercent={0}
+                      streamingTool={null}
+                      executing={null}
+                      settings={settings}
+                      copiedMsgId={copiedMsgId}
+                      isCollapsed={collapsedIds.has(msg.id)}
+                      onToggleCollapsed={toggleMessageCollapsed}
+                      onCopy={copyMessageText}
+                      onImageClick={setImageViewerUrl}
+                      onRetry={handleRetryFailedMessage}
+                      onDelete={handleDeleteFailedMessage}
+                    />
+                    <ContextCutoffMarker />
+                    <MessageView
+                      msg={split.tail}
+                      isLast={msg === messages[messages.length - 1]}
+                      profileName={selectedProfile?.name ?? ''}
+                      loading={loading}
+                      processing={processing}
+                      progressPercent={progressPercent}
+                      streamingTool={streamingTool}
+                      executing={executing}
+                      settings={settings}
+                      copiedMsgId={copiedMsgId}
+                      isCollapsed={collapsedIds.has(msg.id)}
+                      onToggleCollapsed={toggleMessageCollapsed}
+                      onCopy={copyMessageText}
+                      onImageClick={setImageViewerUrl}
+                      onRetry={handleRetryFailedMessage}
+                      onDelete={handleDeleteFailedMessage}
+                    />
+                    {msg.contextCutoff && <ContextCutoffMarker />}
+                  </Fragment>
+                );
+              }
+              return (
+                <Fragment key={msg.id}>
+                  <MessageView
+                    msg={msg}
+                    isLast={msg === messages[messages.length - 1]}
+                    profileName={selectedProfile?.name ?? ''}
+                    loading={loading}
+                    processing={processing}
+                    progressPercent={progressPercent}
+                    streamingTool={streamingTool}
+                    executing={executing}
+                    settings={settings}
+                    copiedMsgId={copiedMsgId}
+                    isCollapsed={collapsedIds.has(msg.id)}
+                    onToggleCollapsed={toggleMessageCollapsed}
+                    onCopy={copyMessageText}
+                    onImageClick={setImageViewerUrl}
+                    onRetry={handleRetryFailedMessage}
+                    onDelete={handleDeleteFailedMessage}
+                  />
+                  {msg.contextCutoff && <ContextCutoffMarker />}
+                </Fragment>
+              );
+            })}
 
             {loading &&
               (messages.length === 0 ||

@@ -31,6 +31,17 @@ export interface MessageSegment {
   };
 }
 
+/** Render-time split point for an assistant message partially cleared by a
+ * mid-chat context shift. The head (up to the split) was dropped from LLM
+ * context but stays visible; the renderer shows head, cutoff marker, tail.
+ * Stored on the single persisted message so reloads render the same split. */
+export interface ContextSplice {
+  /** Id of the display segment containing the split. */
+  segId: string;
+  /** Chars of that segment belonging to the cleared head. */
+  offset: number;
+}
+
 export interface Message {
   id: number;
   role: 'user' | 'assistant' | 'system';
@@ -38,6 +49,8 @@ export interface Message {
   collapsed?: boolean;
   /** Set on the newest display message that was cleared from LLM context by a context shift; renders a cutoff divider after it. */
   contextCutoff?: boolean;
+  /** Set on an in-progress assistant message whose leading output was cleared by a mid-chat shift; renders the message split around a cutoff divider. */
+  contextSpliceAt?: ContextSplice;
   stats?: GenerationStatsData;
   promptStats?: GenerationStatsData;
   /** Set when the server rejected the prompt before accepting it (pre-accept failure). */
@@ -140,7 +153,8 @@ export interface StreamEventPayload {
     | 'user-input'
     | 'user-input-resolved'
     | 'slot-unavailable'
-    | 'session-changed';
+    | 'session-changed'
+    | 'context-shift';
   sessionId: string;
   token?: string;
   segmentType?: 'thought' | 'comment' | 'tool';
@@ -165,6 +179,14 @@ export interface StreamEventPayload {
   _top_sources?: { title: string; url: string }[];
   request?: UserInputRequest;
   streaming?: boolean;
+  /** Set on `context-shift` events triggered mid-generation (vs post-turn). */
+  midChat?: boolean;
+  /** Context-shift diagnostics: tokens remaining at shift time. */
+  remaining?: number;
+  /** Context-shift diagnostics: estimated tokens freed by the shift. */
+  freedTokens?: number;
+  /** Context-shift diagnostics: configured remaining-tokens threshold. */
+  threshold?: number;
 }
 
 export type ChatStreamEvent = StreamEventPayload;

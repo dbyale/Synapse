@@ -454,7 +454,8 @@ export const CONTEXT_SHIFT_SUMMARIZATION_THINKING_BUDGET_TOOLTIP = [
 ];
 
 export const CONTEXT_SHIFT_MID_CHAT_ENABLED_TOOLTIP = [
-  'Reserved for future use. When implemented, the shift could trigger while a response is still generating, rather than only after it finishes.',
-  'The option is saved now but has no effect yet.',
+  'When enabled, the shift can trigger while a response is still generating, not only after it finishes.',
+  'Generation pauses, the oldest context is cleared (splicing the front of the in-progress response only if the minimum requires it), then generation continues from the remaining text.',
+  'The in-progress user message is always kept.',
   'Default: disabled.',
 ];
