@@ -21,6 +21,19 @@ export interface ContextShiftSettings {
   midChatShiftEnabled: boolean;
 }
 
+export const DEFAULT_CONTEXT_SHIFT: ContextShiftSettings = {
+  enabled: false,
+  tokensRemainingUntilShift: 4096,
+  maxUserMessages: 6,
+  minTokensToClear: 8192,
+  preserveAttachments: true,
+  summarizationEnabled: false,
+  summarizationMessage:
+    'Summarize the conversation so far in a few concise sentences, preserving key decisions, facts, and open threads.',
+  summarizationThinkingBudget: 4096,
+  midChatShiftEnabled: false,
+};
+
 export interface Profile {
   id: string;
   name: string;

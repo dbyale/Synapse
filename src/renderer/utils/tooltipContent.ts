@@ -402,3 +402,59 @@ export const CORS_CREDENTIALS_TOOLTIP = [
   'When enabled and cors-origins is *, the Origin header is echoed back and credentials are always allowed.',
   'Default: enabled.',
 ];
+
+// ── Context Shift (Performance) ──
+
+export const CONTEXT_SHIFT_ENABLED_TOOLTIP = [
+  'When enabled, old conversation messages are automatically cleared from the model context after a response finishes, if the context window is running low.',
+  'Messages stay visible in the chat, but the model no longer "sees" them beyond the cutoff.',
+  'An "Active Context" divider marks where the cutoff is.',
+  'Default: disabled.',
+];
+
+export const CONTEXT_SHIFT_TOKENS_REMAINING_TOOLTIP = [
+  'The shift triggers when fewer than this many tokens remain in the context window after a response.',
+  'Lower values trigger the shift closer to the limit.',
+  'Default: 4096.',
+];
+
+export const CONTEXT_SHIFT_MAX_USER_MESSAGES_TOOLTIP = [
+  'Maximum number of your most recent user messages kept in model context after a shift.',
+  'Applied after the minimum tokens are cleared: if more messages remain, clearing continues until this many are left. Set to 0 to allow clearing everything.',
+  'Default: 6.',
+];
+
+export const CONTEXT_SHIFT_MIN_TOKENS_TO_CLEAR_TOOLTIP = [
+  'Minimum tokens each shift removes, clearing oldest messages first.',
+  'Every shift frees at least this much; it does not prevent a shift from starting.',
+  'Default: 8192.',
+];
+
+export const CONTEXT_SHIFT_PRESERVE_ATTACHMENTS_TOOLTIP = [
+  'When enabled, images and other attachments inside cleared messages are kept in the model context.',
+  'Only the text of cleared messages is dropped.',
+  'Default: enabled.',
+];
+
+export const CONTEXT_SHIFT_SUMMARIZATION_ENABLED_TOOLTIP = [
+  'Reserved for future use. When implemented, cleared messages will be replaced with a short summary so the model retains key context.',
+  'The summarization options below are saved now but have no effect yet.',
+  'Default: disabled.',
+];
+
+export const CONTEXT_SHIFT_SUMMARIZATION_MESSAGE_TOOLTIP = [
+  'Reserved for future use. The prompt used to generate the summary of cleared messages.',
+  'Saved for now; has no effect yet.',
+];
+
+export const CONTEXT_SHIFT_SUMMARIZATION_THINKING_BUDGET_TOOLTIP = [
+  'Reserved for future use. The token budget for the model to "think" while writing the summary.',
+  'Saved for now; has no effect yet.',
+  'Default: 4096.',
+];
+
+export const CONTEXT_SHIFT_MID_CHAT_ENABLED_TOOLTIP = [
+  'Reserved for future use. When implemented, the shift could trigger while a response is still generating, rather than only after it finishes.',
+  'The option is saved now but has no effect yet.',
+  'Default: disabled.',
+];

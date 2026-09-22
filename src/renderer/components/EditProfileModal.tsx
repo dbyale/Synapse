@@ -32,10 +32,13 @@ import {
   Flag,
   Copy,
   Check,
+  Scissors,
 } from 'lucide-react';
 import {
   Profile,
   CacheType,
+  ContextShiftSettings,
+  DEFAULT_CONTEXT_SHIFT,
 } from '../types/profile';
 import type { LocalModel } from '../preload.d';
 import { getToolMeta, getAvailableToolNames } from '../utils/extensionData';
@@ -109,6 +112,15 @@ import {
   DRY_PENALTY_ENABLED,
   MANUAL_LAUNCH_TOOLTIP,
   CUSTOM_FLAGS_PAGE_TOOLTIP,
+  CONTEXT_SHIFT_ENABLED_TOOLTIP,
+  CONTEXT_SHIFT_TOKENS_REMAINING_TOOLTIP,
+  CONTEXT_SHIFT_MAX_USER_MESSAGES_TOOLTIP,
+  CONTEXT_SHIFT_MIN_TOKENS_TO_CLEAR_TOOLTIP,
+  CONTEXT_SHIFT_PRESERVE_ATTACHMENTS_TOOLTIP,
+  CONTEXT_SHIFT_SUMMARIZATION_ENABLED_TOOLTIP,
+  CONTEXT_SHIFT_SUMMARIZATION_MESSAGE_TOOLTIP,
+  CONTEXT_SHIFT_SUMMARIZATION_THINKING_BUDGET_TOOLTIP,
+  CONTEXT_SHIFT_MID_CHAT_ENABLED_TOOLTIP,
 } from '../utils/tooltipContent';
 import ModelSelectModal from './ModelSelectModal';
 import ProjectorSelectModal from './ProjectorSelectModal';
@@ -200,6 +212,7 @@ const PAGE_DEPTH: Record<string, number> = {
   'rope-scaling': 2,
   'draft-model': 2,
   'moe-options': 2,
+  'context-shift': 2,
   'server-settings': 1,
   'cors-settings': 2,
   'custom-flags': 2,
@@ -227,6 +240,7 @@ const BREADCRUMB_MAP: Record<string, { label: string; parent: string | null }> =
     },
     'draft-model': { label: 'Draft Model', parent: 'performance' },
     'moe-options': { label: 'Mixture of Experts', parent: 'performance' },
+    'context-shift': { label: 'Context Shift', parent: 'performance' },
     'server-settings': { label: 'Server Settings', parent: 'main' },
     'cors-settings': { label: 'CORS', parent: 'server-settings' },
     'custom-flags': { label: 'Custom Flags', parent: 'server-settings' },
@@ -686,6 +700,55 @@ const SEARCH_INDEX: SearchIndexEntry[] = [
     label: 'Weight Repacking',
     keywords: ['repack', 'weights'],
     page: 'memory-options',
+  },
+  // context-shift
+  {
+    id: 'context-shift:page',
+    label: 'Context Shift',
+    keywords: ['context', 'shift', 'clear', 'window'],
+    page: 'context-shift',
+  },
+  {
+    id: 'context-shift:enabled',
+    label: 'Context Shift Enabled',
+    keywords: ['context', 'shift', 'enabled', 'clear'],
+    page: 'context-shift',
+  },
+  {
+    id: 'context-shift:tokens-remaining',
+    label: 'Tokens Remaining Until Shift',
+    keywords: ['tokens', 'remaining', 'threshold', 'shift'],
+    page: 'context-shift',
+  },
+  {
+    id: 'context-shift:max-user-messages',
+    label: 'Max User Messages Kept',
+    keywords: ['user messages', 'keep', 'recent'],
+    page: 'context-shift',
+  },
+  {
+    id: 'context-shift:min-tokens-to-clear',
+    label: 'Min Tokens To Clear',
+    keywords: ['minimum', 'tokens', 'clear', 'floor'],
+    page: 'context-shift',
+  },
+  {
+    id: 'context-shift:preserve-attachments',
+    label: 'Preserve Attachments',
+    keywords: ['attachments', 'images', 'media', 'preserve'],
+    page: 'context-shift',
+  },
+  {
+    id: 'context-shift:summarization',
+    label: 'Summarization',
+    keywords: ['summarize', 'summary', 'recap'],
+    page: 'context-shift',
+  },
+  {
+    id: 'context-shift:mid-chat',
+    label: 'Mid-Chat Shift',
+    keywords: ['mid-chat', 'reserved', 'future'],
+    page: 'context-shift',
   },
   // rope-scaling
   {
@@ -1937,6 +2000,292 @@ function RepeatPenaltyPage({
   );
 }
 
+function ContextShiftPage({
+  editCsEnabled,
+  setEditCsEnabled,
+  editCsTokensRemaining,
+  setEditCsTokensRemaining,
+  editCsMaxUserMessages,
+  setEditCsMaxUserMessages,
+  editCsMinTokensToClear,
+  setEditCsMinTokensToClear,
+  editCsPreserveAttachments,
+  setEditCsPreserveAttachments,
+  editCsSummarizationEnabled,
+  setEditCsSummarizationEnabled,
+  editCsSummarizationMessage,
+  setEditCsSummarizationMessage,
+  editCsSummarizationThinkingBudget,
+  setEditCsSummarizationThinkingBudget,
+  editCsMidChatEnabled,
+  setEditCsMidChatEnabled,
+}: {
+  editCsEnabled: boolean;
+  setEditCsEnabled: (v: boolean) => void;
+  editCsTokensRemaining: string;
+  setEditCsTokensRemaining: (v: string) => void;
+  editCsMaxUserMessages: string;
+  setEditCsMaxUserMessages: (v: string) => void;
+  editCsMinTokensToClear: string;
+  setEditCsMinTokensToClear: (v: string) => void;
+  editCsPreserveAttachments: boolean;
+  setEditCsPreserveAttachments: (v: boolean) => void;
+  editCsSummarizationEnabled: boolean;
+  setEditCsSummarizationEnabled: (v: boolean) => void;
+  editCsSummarizationMessage: string;
+  setEditCsSummarizationMessage: (v: string) => void;
+  editCsSummarizationThinkingBudget: string;
+  setEditCsSummarizationThinkingBudget: (v: string) => void;
+  editCsMidChatEnabled: boolean;
+  setEditCsMidChatEnabled: (v: boolean) => void;
+}) {
+  return (
+    <>
+      <p
+        style={{
+          fontSize: '14px',
+          color: 'var(--text-secondary)',
+          margin: '0 0 16px',
+          lineHeight: 1.5,
+        }}
+      >
+        Automatically clears old conversation context when the context window is
+        running low, keeping the most recent user messages intact.
+      </p>
+
+      <label className="epm-perf-toggle-row" style={{ paddingTop: 0 }}>
+        <InfoTooltip
+          content={CONTEXT_SHIFT_ENABLED_TOOLTIP}
+          side="right"
+          stretch
+          portal
+          className="info-tooltip-stretch--row"
+          title="Context Shift"
+        >
+          <span className="epm-perf-toggle-label">Enabled</span>
+          <div
+            className={`epm-toggle-switch${
+              editCsEnabled ? ' epm-toggle-switch--on' : ''
+            }`}
+            onClick={() => setEditCsEnabled(!editCsEnabled)}
+            role="switch"
+            aria-checked={editCsEnabled}
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === ' ' || e.key === 'Enter') {
+                e.preventDefault();
+                setEditCsEnabled(!editCsEnabled);
+              }
+            }}
+          >
+            <div className="epm-toggle-switch__knob" />
+          </div>
+        </InfoTooltip>
+      </label>
+
+      <div
+        className={
+          !editCsEnabled ? 'epm-repeat-penalty-fields--disabled' : undefined
+        }
+      >
+        <div className="epm-number-grid">
+          <NumberField
+            label="Tokens Remaining Until Shift"
+            value={editCsTokensRemaining}
+            onChange={setEditCsTokensRemaining}
+            min="0"
+            step="1"
+            helper={`Default: ${DEFAULT_CONTEXT_SHIFT.tokensRemainingUntilShift}`}
+            tooltip={CONTEXT_SHIFT_TOKENS_REMAINING_TOOLTIP}
+          />
+          <NumberField
+            label="Max User Messages Kept"
+            value={editCsMaxUserMessages}
+            onChange={setEditCsMaxUserMessages}
+            min="0"
+            step="1"
+            helper={`Default: ${DEFAULT_CONTEXT_SHIFT.maxUserMessages}`}
+            tooltip={CONTEXT_SHIFT_MAX_USER_MESSAGES_TOOLTIP}
+          />
+          <NumberField
+            label="Min Tokens To Clear"
+            value={editCsMinTokensToClear}
+            onChange={setEditCsMinTokensToClear}
+            min="0"
+            step="1"
+            helper={`Default: ${DEFAULT_CONTEXT_SHIFT.minTokensToClear}`}
+            tooltip={CONTEXT_SHIFT_MIN_TOKENS_TO_CLEAR_TOOLTIP}
+          />
+        </div>
+
+        <label className="epm-perf-toggle-row">
+          <InfoTooltip
+            content={CONTEXT_SHIFT_PRESERVE_ATTACHMENTS_TOOLTIP}
+            side="right"
+            stretch
+            portal
+            className="info-tooltip-stretch--row"
+            title="Preserve Attachments"
+          >
+            <span className="epm-perf-toggle-label">Preserve Attachments</span>
+            <div
+              className={`epm-toggle-switch${
+                editCsPreserveAttachments ? ' epm-toggle-switch--on' : ''
+              }`}
+              onClick={() =>
+                setEditCsPreserveAttachments(!editCsPreserveAttachments)
+              }
+              role="switch"
+              aria-checked={editCsPreserveAttachments}
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === ' ' || e.key === 'Enter') {
+                  e.preventDefault();
+                  setEditCsPreserveAttachments(!editCsPreserveAttachments);
+                }
+              }}
+            >
+              <div className="epm-toggle-switch__knob" />
+            </div>
+          </InfoTooltip>
+        </label>
+
+        <div style={{ marginTop: '24px' }}>
+          <div
+            style={{
+              fontSize: '14px',
+              fontWeight: 600,
+              color: 'var(--text-secondary)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+              marginBottom: '12px',
+            }}
+          >
+            SUMMARIZATION
+          </div>
+
+          <label className="epm-perf-toggle-row" style={{ paddingTop: 0 }}>
+            <InfoTooltip
+              content={CONTEXT_SHIFT_SUMMARIZATION_ENABLED_TOOLTIP}
+              side="right"
+              stretch
+              portal
+              className="info-tooltip-stretch--row"
+              title="Summarization"
+            >
+              <span className="epm-perf-toggle-label">Enabled</span>
+              <div
+                className={`epm-toggle-switch${
+                  editCsSummarizationEnabled ? ' epm-toggle-switch--on' : ''
+                }`}
+                onClick={() =>
+                  setEditCsSummarizationEnabled(!editCsSummarizationEnabled)
+                }
+                role="switch"
+                aria-checked={editCsSummarizationEnabled}
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === ' ' || e.key === 'Enter') {
+                    e.preventDefault();
+                    setEditCsSummarizationEnabled(!editCsSummarizationEnabled);
+                  }
+                }}
+              >
+                <div className="epm-toggle-switch__knob" />
+              </div>
+            </InfoTooltip>
+          </label>
+
+          <div
+            className={
+              !editCsSummarizationEnabled
+                ? 'epm-repeat-penalty-fields--disabled'
+                : undefined
+            }
+          >
+            <div className="epm-section" style={{ marginTop: '12px' }}>
+              <InfoTooltip
+                content={CONTEXT_SHIFT_SUMMARIZATION_MESSAGE_TOOLTIP}
+                side="bottom"
+                stretch
+                className="info-tooltip-stretch--col"
+                title="Summarization Message"
+              >
+                <div className="epm-section__label">Summarization Message</div>
+                <textarea
+                  className="epm-textarea"
+                  value={editCsSummarizationMessage}
+                  onChange={(e) =>
+                    setEditCsSummarizationMessage(e.target.value)
+                  }
+                  placeholder="Enter the summarization prompt here..."
+                  style={{ marginTop: '8px', minHeight: '80px' }}
+                />
+              </InfoTooltip>
+            </div>
+            <div className="epm-number-grid" style={{ marginTop: '12px' }}>
+              <NumberField
+                label="Summarization Thinking Budget"
+                value={editCsSummarizationThinkingBudget}
+                onChange={setEditCsSummarizationThinkingBudget}
+                min="0"
+                step="1"
+                helper={`Default: ${DEFAULT_CONTEXT_SHIFT.summarizationThinkingBudget}`}
+                tooltip={CONTEXT_SHIFT_SUMMARIZATION_THINKING_BUDGET_TOOLTIP}
+              />
+            </div>
+          </div>
+        </div>
+
+        <div style={{ marginTop: '24px' }}>
+          <div
+            style={{
+              fontSize: '14px',
+              fontWeight: 600,
+              color: 'var(--text-secondary)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+              marginBottom: '12px',
+            }}
+          >
+            MID-CHAT SHIFT
+          </div>
+
+          <label className="epm-perf-toggle-row" style={{ paddingTop: 0 }}>
+            <InfoTooltip
+              content={CONTEXT_SHIFT_MID_CHAT_ENABLED_TOOLTIP}
+              side="right"
+              stretch
+              portal
+              className="info-tooltip-stretch--row"
+              title="Mid-Chat Shift"
+            >
+              <span className="epm-perf-toggle-label">Enabled</span>
+              <div
+                className={`epm-toggle-switch${
+                  editCsMidChatEnabled ? ' epm-toggle-switch--on' : ''
+                }`}
+                onClick={() => setEditCsMidChatEnabled(!editCsMidChatEnabled)}
+                role="switch"
+                aria-checked={editCsMidChatEnabled}
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === ' ' || e.key === 'Enter') {
+                    e.preventDefault();
+                    setEditCsMidChatEnabled(!editCsMidChatEnabled);
+                  }
+                }}
+              >
+                <div className="epm-toggle-switch__knob" />
+              </div>
+            </InfoTooltip>
+          </label>
+        </div>
+      </div>
+    </>
+  );
+}
+
 function AdvancedSamplersPage({
   editIgnoreEos,
   setEditIgnoreEos,
@@ -2754,6 +3103,8 @@ function PerformancePage({
   onNavigate,
   editSpecType,
   editDraftModelFilename,
+  editCsEnabled,
+  editCsTokensRemaining,
 }: {
   editAutoOptimizer: 'longest-context' | 'most-gpu' | 'custom' | null;
   editLayers: number | undefined;
@@ -2797,6 +3148,8 @@ function PerformancePage({
   onNavigate: (page: string) => void;
   editSpecType: string[];
   editDraftModelFilename: string;
+  editCsEnabled: boolean;
+  editCsTokensRemaining: string;
 }) {
   const isAuto =
     editAutoOptimizer !== null &&
@@ -3513,6 +3866,24 @@ function PerformancePage({
               <div className="epm-section-card__title">Mixture of Experts</div>
               <div className="epm-section-card__preview">
                 Control where MoE weights are loaded.
+              </div>
+            </div>
+            <ChevronRight size={16} className="epm-section-card__chevron" />
+          </button>
+          <button
+            type="button"
+            className="epm-section-card"
+            onClick={() => onNavigate('context-shift')}
+          >
+            <div className="epm-section-card__icon">
+              <Scissors size={18} />
+            </div>
+            <div className="epm-section-card__body">
+              <div className="epm-section-card__title">Context Shift</div>
+              <div className="epm-section-card__preview">
+                {editCsEnabled
+                  ? `Shifts when ${editCsTokensRemaining} tokens remain.`
+                  : 'Disabled'}
               </div>
             </div>
             <ChevronRight size={16} className="epm-section-card__chevron" />
@@ -5008,6 +5379,57 @@ export default function EditProfileModal({
     profile?.flashAttn ?? 'auto',
   );
 
+  // Context Shift options
+  const [editCsEnabled, setEditCsEnabled] = useState<boolean>(
+    profile?.contextShift?.enabled ?? DEFAULT_CONTEXT_SHIFT.enabled,
+  );
+  const [editCsTokensRemaining, setEditCsTokensRemaining] = useState<string>(
+    String(
+      profile?.contextShift?.tokensRemainingUntilShift ??
+        DEFAULT_CONTEXT_SHIFT.tokensRemainingUntilShift,
+    ),
+  );
+  const [editCsMaxUserMessages, setEditCsMaxUserMessages] = useState<string>(
+    String(
+      profile?.contextShift?.maxUserMessages ??
+        DEFAULT_CONTEXT_SHIFT.maxUserMessages,
+    ),
+  );
+  const [editCsMinTokensToClear, setEditCsMinTokensToClear] = useState<string>(
+    String(
+      profile?.contextShift?.minTokensToClear ??
+        DEFAULT_CONTEXT_SHIFT.minTokensToClear,
+    ),
+  );
+  const [editCsPreserveAttachments, setEditCsPreserveAttachments] =
+    useState<boolean>(
+      profile?.contextShift?.preserveAttachments ??
+        DEFAULT_CONTEXT_SHIFT.preserveAttachments,
+    );
+  const [editCsSummarizationEnabled, setEditCsSummarizationEnabled] =
+    useState<boolean>(
+      profile?.contextShift?.summarizationEnabled ??
+        DEFAULT_CONTEXT_SHIFT.summarizationEnabled,
+    );
+  const [editCsSummarizationMessage, setEditCsSummarizationMessage] =
+    useState<string>(
+      profile?.contextShift?.summarizationMessage ??
+        DEFAULT_CONTEXT_SHIFT.summarizationMessage,
+    );
+  const [
+    editCsSummarizationThinkingBudget,
+    setEditCsSummarizationThinkingBudget,
+  ] = useState<string>(
+    String(
+      profile?.contextShift?.summarizationThinkingBudget ??
+        DEFAULT_CONTEXT_SHIFT.summarizationThinkingBudget,
+    ),
+  );
+  const [editCsMidChatEnabled, setEditCsMidChatEnabled] = useState<boolean>(
+    profile?.contextShift?.midChatShiftEnabled ??
+      DEFAULT_CONTEXT_SHIFT.midChatShiftEnabled,
+  );
+
   // Context scaling (RoPE/YaRN) options
   const [editRopeScaling, setEditRopeScaling] = useState<string>(
     profile?.rope?.scaling ?? '',
@@ -5675,6 +6097,37 @@ export default function EditProfileModal({
       return Object.keys(rp).length > 0 ? rp : undefined;
     };
 
+    const buildContextShift = (): ContextShiftSettings => {
+      const parsedTokensRemaining = parseInt(editCsTokensRemaining, 10);
+      const parsedMaxUserMessages = parseInt(editCsMaxUserMessages, 10);
+      const parsedMinTokensToClear = parseInt(editCsMinTokensToClear, 10);
+      const parsedThinkingBudget = parseInt(
+        editCsSummarizationThinkingBudget,
+        10,
+      );
+      return {
+        enabled: editCsEnabled,
+        tokensRemainingUntilShift: Number.isNaN(parsedTokensRemaining)
+          ? DEFAULT_CONTEXT_SHIFT.tokensRemainingUntilShift
+          : parsedTokensRemaining,
+        maxUserMessages: Number.isNaN(parsedMaxUserMessages)
+          ? DEFAULT_CONTEXT_SHIFT.maxUserMessages
+          : parsedMaxUserMessages,
+        minTokensToClear: Number.isNaN(parsedMinTokensToClear)
+          ? DEFAULT_CONTEXT_SHIFT.minTokensToClear
+          : parsedMinTokensToClear,
+        preserveAttachments: editCsPreserveAttachments,
+        summarizationEnabled: editCsSummarizationEnabled,
+        summarizationMessage:
+          editCsSummarizationMessage.trim() ||
+          DEFAULT_CONTEXT_SHIFT.summarizationMessage,
+        summarizationThinkingBudget: Number.isNaN(parsedThinkingBudget)
+          ? DEFAULT_CONTEXT_SHIFT.summarizationThinkingBudget
+          : parsedThinkingBudget,
+        midChatShiftEnabled: editCsMidChatEnabled,
+      };
+    };
+
     const buildAdvancedSamplers = (): Partial<Profile> => {
       const s: Partial<Profile> = {};
       if (editIgnoreEos) s.ignoreEos = true;
@@ -5724,6 +6177,7 @@ export default function EditProfileModal({
       seed: parseInt(editSeed, 10),
       tools: editTools.filter((t) => getAvailableToolNames().includes(t)),
       repeatPenalty: buildRepeatPenalty(),
+      contextShift: buildContextShift(),
       ...buildAdvancedSamplers(),
       kvOffload: editKvOffload,
       flashAttn: editFlashAttn,
@@ -5999,6 +6453,8 @@ export default function EditProfileModal({
             onNavigate={navigateTo}
             editSpecType={editSpecType}
             editDraftModelFilename={editDraftModelFilename}
+            editCsEnabled={editCsEnabled}
+            editCsTokensRemaining={editCsTokensRemaining}
           />
         );
       case 'moe-options':
@@ -6008,6 +6464,33 @@ export default function EditProfileModal({
             editNCpuMoe={editNCpuMoe}
             onSetCpuMoe={setEditCpuMoe}
             onSetNCpuMoe={setEditNCpuMoe}
+          />
+        );
+      case 'context-shift':
+        return (
+          <ContextShiftPage
+            editCsEnabled={editCsEnabled}
+            setEditCsEnabled={setEditCsEnabled}
+            editCsTokensRemaining={editCsTokensRemaining}
+            setEditCsTokensRemaining={setEditCsTokensRemaining}
+            editCsMaxUserMessages={editCsMaxUserMessages}
+            setEditCsMaxUserMessages={setEditCsMaxUserMessages}
+            editCsMinTokensToClear={editCsMinTokensToClear}
+            setEditCsMinTokensToClear={setEditCsMinTokensToClear}
+            editCsPreserveAttachments={editCsPreserveAttachments}
+            setEditCsPreserveAttachments={setEditCsPreserveAttachments}
+            editCsSummarizationEnabled={editCsSummarizationEnabled}
+            setEditCsSummarizationEnabled={setEditCsSummarizationEnabled}
+            editCsSummarizationMessage={editCsSummarizationMessage}
+            setEditCsSummarizationMessage={setEditCsSummarizationMessage}
+            editCsSummarizationThinkingBudget={
+              editCsSummarizationThinkingBudget
+            }
+            setEditCsSummarizationThinkingBudget={
+              setEditCsSummarizationThinkingBudget
+            }
+            editCsMidChatEnabled={editCsMidChatEnabled}
+            setEditCsMidChatEnabled={setEditCsMidChatEnabled}
           />
         );
       case 'server-settings':

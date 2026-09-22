@@ -36,6 +36,8 @@ export interface Message {
   role: 'user' | 'assistant' | 'system';
   content: MessageSegment[];
   collapsed?: boolean;
+  /** Set on the newest display message that was cleared from LLM context by a context shift; renders a cutoff divider after it. */
+  contextCutoff?: boolean;
   stats?: GenerationStatsData;
   promptStats?: GenerationStatsData;
   /** Set when the server rejected the prompt before accepting it (pre-accept failure). */

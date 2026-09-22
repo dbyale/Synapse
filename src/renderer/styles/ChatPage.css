@@ -277,6 +277,55 @@
   max-width: 100%;
 }
 
+.chat-context-cutoff {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  width: 100%;
+  max-width: none;
+  align-self: stretch;
+  margin: 4px 0;
+}
+
+.chat-context-cutoff__line {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
+}
+
+.chat-context-cutoff__line::before,
+.chat-context-cutoff__line::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border, rgba(148, 163, 184, 0.25));
+}
+
+.chat-context-cutoff__label {
+  padding: 3px 12px;
+  border: 1px solid var(--border, rgba(148, 163, 184, 0.25));
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  background: var(--bg-secondary, transparent);
+  user-select: none;
+}
+
+.chat-context-cutoff__hint {
+  margin: 0 auto;
+  max-width: 640px;
+  text-align: center;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
 .chat-message__bubble {
   padding: 10px 14px;
   border-radius: 12px;

@@ -11,7 +11,7 @@ import {
   getModelsDirectory,
 } from './settings';
 import type { AppSettings } from './settings';
-import type { Profile } from '../renderer/types/profile';
+import type { ContextShiftSettings, Profile } from '../renderer/types/profile';
 // eslint-disable-next-line import/no-cycle
 import { createChatFunctions } from './chatFunctions';
 import { solveMaxConfig, getOrRunOptimizer } from './estimator';
@@ -109,6 +109,7 @@ let preloadAbortController: AbortController | null = null;
 let lastResolvedMemory: any = null;
 let currentContextSize: number | null = null;
 let lastUsage: { used: number; total: number } | null = null;
+let currentContextShift: ContextShiftSettings | null = null;
 
 export function getCumulativeTokenUsage(): UsageStore {
   return getUsage();
@@ -1428,6 +1429,7 @@ export async function loadProfile(
 
       onStatus?.({ phase: 'ready', message: '' });
       currentProfile = profile;
+      currentContextShift = profile.contextShift ?? null;
       currentSystemPrompt = resolvedSystemPrompt;
       lastPreloadStats = null;
 
@@ -1635,7 +1637,186 @@ function handlePromptDone(
   s.messages = updated;
 }
 
-function finishSession(sessionId: string, stats?: GenerationStats): void {
+// Context shift: when the remaining context budget drops below the profile's
+// threshold, drop the oldest turns from LLM history in two phases:
+// (1) clear oldest-first until at least minTokensToClear is freed,
+// (2) if more than maxUserMessages users remain, keep clearing until exactly
+// maxUserMessages remain. The system prompt is always kept; cuts land only on
+// user boundaries. Display bubbles stay; a cutoff marker is set on the last
+// cleared turn.
+async function applyContextShift(s: SessionStream): Promise<void> {
+  const cs = currentContextShift;
+  if (!cs?.enabled || !lastUsage) return;
+
+  const total = currentContextSize ?? lastUsage.total;
+  const remaining = total - lastUsage.used;
+  if (remaining > cs.tokensRemainingUntilShift) return;
+
+  const systemEnd = s.history[0]?.role === 'system' ? 1 : 0;
+  if (s.history.length <= systemEnd) return;
+  const userIndexes: number[] = [];
+  for (let i = systemEnd; i < s.history.length; i += 1) {
+    if (s.history[i].role === 'user') userIndexes.push(i);
+  }
+
+  const maxToKeep = Math.max(0, cs.maxUserMessages);
+  const minToClear = Math.max(0, cs.minTokensToClear);
+
+  // Text eligible for freeing per history entry (text and tool-call payloads;
+  // kept media still counts against the budget, so image_url parts excluded).
+  const messageText = (m: ChatHistoryMsg): string => {
+    const parts: string[] = [];
+    if (typeof m.content === 'string') {
+      parts.push(m.content);
+    } else if (Array.isArray(m.content)) {
+      for (const part of m.content) {
+        if (part?.type === 'text' && typeof part.text === 'string') {
+          parts.push(part.text);
+        }
+      }
+    }
+    if (m.tool_calls && m.tool_calls.length > 0) {
+      parts.push(JSON.stringify(m.tool_calls));
+    }
+    return parts.join('\n');
+  };
+
+  // eslint-disable-next-line no-use-before-define
+  const bulkTokens = async (from: number, to: number): Promise<number> => {
+    const texts: string[] = [];
+    for (let i = from; i < to; i += 1) {
+      const t = messageText(s.history[i]);
+      if (t) texts.push(t);
+    }
+    if (texts.length === 0) return 0;
+    // eslint-disable-next-line no-use-before-define
+    return (await tokenize(texts.join('\n'))) ?? 0;
+  };
+
+  // Phase 1: oldest-first until at least minToClear is freed. Candidate cuts
+  // are user boundaries plus clear-all; fallback is clearing everything.
+  let phase1KeepFrom = systemEnd;
+  if (minToClear <= 0) {
+    phase1KeepFrom = systemEnd;
+  } else if (userIndexes.length === 0) {
+    phase1KeepFrom = s.history.length;
+  } else {
+    // Tokenize per-message in parallel, then prefix-sum over candidates.
+    const perMessage: number[] = new Array(s.history.length).fill(0);
+    const pending: Promise<number>[] = [];
+    for (let i = systemEnd; i < s.history.length; i += 1) {
+      const t = messageText(s.history[i]);
+      if (!t) continue;
+      const idx = i;
+      pending.push(
+        // eslint-disable-next-line no-use-before-define
+        tokenize(t).then((n) => {
+          perMessage[idx] = n ?? 0;
+          return perMessage[idx];
+        }),
+      );
+    }
+    await Promise.all(pending);
+    // Running prefix: prefix[i] = tokens in [systemEnd, i).
+    const prefix: number[] = new Array(s.history.length + 1).fill(0);
+    for (let i = systemEnd; i < s.history.length; i += 1) {
+      prefix[i + 1] = prefix[i] + (perMessage[i] ?? 0);
+    }
+    const candidates: number[] = [...userIndexes, s.history.length];
+    const hit = candidates.find(
+      (cut) => prefix[cut] - prefix[systemEnd] >= minToClear,
+    );
+    phase1KeepFrom = hit ?? s.history.length;
+  }
+
+  // Phase 2: after the minimum is cleared, enforce the maximum kept.
+  let keepFrom = phase1KeepFrom;
+  const remainingUsersAfter = (cut: number): number =>
+    userIndexes.filter((idx) => idx >= cut).length;
+  if (remainingUsersAfter(keepFrom) > maxToKeep) {
+    if (maxToKeep === 0) {
+      keepFrom = s.history.length;
+    } else {
+      // keepFrom must move forward so exactly maxToKeep users remain.
+      const firstKeptUserPos = userIndexes.length - maxToKeep;
+      keepFrom = Math.max(keepFrom, userIndexes[firstKeptUserPos]);
+    }
+  }
+  if (keepFrom <= systemEnd) return;
+
+  // Authoritative freed estimate for the final window (matches prior
+  // accounting: single bulk tokenize of the dropped prefix).
+  const freedTokens = await bulkTokens(systemEnd, keepFrom);
+  const oldHistoryLength = s.history.length;
+  const clearedEverything = keepFrom >= oldHistoryLength;
+
+  const nextHistory: ChatHistoryMsg[] = [];
+  for (let i = 0; i < s.history.length; i += 1) {
+    const m = s.history[i];
+    const inClearedWindow = i >= systemEnd && i < keepFrom;
+    if (inClearedWindow) {
+      const keepMedia =
+        m.role === 'user' &&
+        cs.preserveAttachments &&
+        Array.isArray(m.content) &&
+        m.content.some((part: any) => part?.type === 'image_url');
+      if (keepMedia) {
+        nextHistory.push({
+          role: 'user',
+          content: m.content.filter((part: any) => part?.type === 'image_url'),
+        });
+      }
+    } else {
+      nextHistory.push(m);
+    }
+  }
+  s.history = nextHistory;
+
+  lastUsage = {
+    used: Math.max(0, lastUsage.used - freedTokens),
+    total,
+  };
+
+  // Mark the last display message before the first retained user turn so the
+  // UI draws the cutoff divider there. Failed user bubbles have no history
+  // entry, so they are excluded from the ordinal mapping.
+  const clearedUserCount = userIndexes.filter((idx) => idx < keepFrom).length;
+  let seenUsers = 0;
+  let cutoffId: number | null = null;
+  if (clearedEverything) {
+    // Everything cleared: mark the newest display message so the divider
+    // renders at the end of the visible chat.
+    for (let i = s.messages.length - 1; i >= 0; i -= 1) {
+      if (s.messages[i].role !== 'system') {
+        cutoffId = s.messages[i].id;
+        break;
+      }
+    }
+  } else {
+    for (let i = 0; i < s.messages.length; i += 1) {
+      const m = s.messages[i];
+      if (m.role === 'user' && !m.failed) {
+        seenUsers += 1;
+        if (seenUsers === clearedUserCount + 1) {
+          if (i > 0) cutoffId = s.messages[i - 1].id;
+          break;
+        }
+      }
+    }
+  }
+  if (cutoffId !== null) {
+    s.messages = s.messages.map((m) => {
+      if (m.id === cutoffId) return { ...m, contextCutoff: true };
+      if (m.contextCutoff) return { ...m, contextCutoff: false };
+      return m;
+    });
+  }
+}
+
+async function finishSession(
+  sessionId: string,
+  stats?: GenerationStats,
+): Promise<void> {
   const s = sessions.get(sessionId);
   if (!s) return;
   s.status = 'idle';
@@ -1645,6 +1826,7 @@ function finishSession(sessionId: string, stats?: GenerationStats): void {
       s.messages = [...s.messages.slice(0, -1), { ...last, stats }];
     }
   }
+  await applyContextShift(s);
   s.abortController = null;
   s.currentReader = null;
   s.streamingTool = null;
@@ -2125,7 +2307,7 @@ export async function sendMessage(
     }
 
     if (s.aborted) {
-      finishSession(sessionId);
+      await finishSession(sessionId);
       return { content: 'Aborted' };
     }
 
@@ -2445,11 +2627,11 @@ export async function sendMessage(
   try {
     const result = await runCompletion();
     s.history.push({ role: 'assistant', content: result.content });
-    finishSession(sessionId, result.stats);
+    await finishSession(sessionId, result.stats);
     return result;
   } catch (e: any) {
     if (e?.name === 'AbortError' || s.aborted) {
-      finishSession(sessionId);
+      await finishSession(sessionId);
       return { content: 'Aborted' };
     }
     // Pre-accept failures (server never received the prompt): strip the user
@@ -2550,6 +2732,7 @@ export async function unloadModel() {
   }
   currentContextSize = null;
   lastUsage = null;
+  currentContextShift = null;
   currentSystemPrompt = '';
   lastPreloadStats = null;
 }

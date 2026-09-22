@@ -1,5 +1,6 @@
 import {
   FormEvent,
+  Fragment,
   useEffect,
   useRef,
   useState,
@@ -4950,25 +4951,43 @@ export default function ChatPage() {
             )}
 
             {messages.map((msg) => (
-              <MessageView
-                key={msg.id}
-                msg={msg}
-                isLast={msg === messages[messages.length - 1]}
-                profileName={selectedProfile?.name ?? ''}
-                loading={loading}
-                processing={processing}
-                progressPercent={progressPercent}
-                streamingTool={streamingTool}
-                executing={executing}
-                settings={settings}
-                copiedMsgId={copiedMsgId}
-                isCollapsed={collapsedIds.has(msg.id)}
-                onToggleCollapsed={toggleMessageCollapsed}
-                onCopy={copyMessageText}
-                onImageClick={setImageViewerUrl}
-                onRetry={handleRetryFailedMessage}
-                onDelete={handleDeleteFailedMessage}
-              />
+              <Fragment key={msg.id}>
+                <MessageView
+                  msg={msg}
+                  isLast={msg === messages[messages.length - 1]}
+                  profileName={selectedProfile?.name ?? ''}
+                  loading={loading}
+                  processing={processing}
+                  progressPercent={progressPercent}
+                  streamingTool={streamingTool}
+                  executing={executing}
+                  settings={settings}
+                  copiedMsgId={copiedMsgId}
+                  isCollapsed={collapsedIds.has(msg.id)}
+                  onToggleCollapsed={toggleMessageCollapsed}
+                  onCopy={copyMessageText}
+                  onImageClick={setImageViewerUrl}
+                  onRetry={handleRetryFailedMessage}
+                  onDelete={handleDeleteFailedMessage}
+                />
+                {msg.contextCutoff && (
+                  <div className="chat-context-cutoff">
+                    <div className="chat-context-cutoff__line">
+                      <span className="chat-context-cutoff__label">
+                        Active Context
+                      </span>
+                    </div>
+                    <p className="chat-context-cutoff__hint">
+                      AI Models can only retain so much information at a
+                      time. In order to continue the conversation, all
+                      messages beyond this point will not be remembered by
+                      the model. You can increase this limit by using
+                      different Models, higher Context Lengths, or changing
+                      Context Shift profile settings.
+                    </p>
+                  </div>
+                )}
+              </Fragment>
             ))}
 
             {loading &&
