@@ -154,7 +154,8 @@ export interface StreamEventPayload {
     | 'user-input-resolved'
     | 'slot-unavailable'
     | 'session-changed'
-    | 'context-shift';
+    | 'context-shift'
+    | 'shift-progress';
   sessionId: string;
   token?: string;
   segmentType?: 'thought' | 'comment' | 'tool';

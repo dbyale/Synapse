@@ -418,6 +418,10 @@ interface MessageViewProps {
   loading: boolean;
   processing: boolean;
   progressPercent: number;
+  shifting: boolean;
+  shiftProgressPercent: number;
+  /** Stretch the bubble to full width (split splice fragments). */
+  fillWidth?: boolean;
   streamingTool: { name: string; text: string } | null;
   executing: { names: string[]; completed: number; total: number } | null;
   settings: AppSettings | null;
@@ -445,6 +449,23 @@ function ContextCutoffMarker() {
       </p>
     </div>
   );
+}
+
+// Status line + bar for the bottom indicator: shift takes precedence over
+// prompt processing while a mid-chat shift is running.
+function statusLabel(
+  executing: { names: string[]; completed: number; total: number } | null,
+  shifting: boolean,
+  shiftPct: number,
+  processing: boolean,
+  progressPct: number,
+): string {
+  if (executing) {
+    return `Executing ${executing.names.join(', ')} (${executing.completed}/${executing.total})`;
+  }
+  if (shifting) return `Shifting Context… (${shiftPct}%)`;
+  if (processing) return `Processing prompt… (${progressPct}%)`;
+  return 'Generating…';
 }
 
 // Splits an assistant message partially cleared by a mid-chat shift into its
@@ -483,6 +504,9 @@ function MessageViewInner({
   loading,
   processing,
   progressPercent,
+  shifting,
+  shiftProgressPercent,
+  fillWidth = false,
   streamingTool,
   executing,
   settings,
@@ -537,7 +561,7 @@ function MessageViewInner({
 
   return (
     <div
-      className={`chat-message chat-message--${msg.role}${isFailedUser ? ' chat-message--failed' : ''}`}
+      className={`chat-message chat-message--${msg.role}${isFailedUser ? ' chat-message--failed' : ''}${fillWidth ? ' chat-message--split' : ''}`}
     >
       {(() => {
         const text = msg.content[0]?.text || '';
@@ -979,20 +1003,24 @@ function MessageViewInner({
                   {loading &&
                     isLast &&
                     msg.role === 'assistant' &&
-                    processing &&
+                    (processing || shifting) &&
                     !executing &&
                     !streamingTool && (
                       <div className="chat-message__indicator-box">
                         <div className="chat-indicator">
                           <div className="chat-indicator__spinner" />
                           <span className="chat-indicator__label">
-                            Processing prompt… ({progressPercent}%)
+                            {shifting
+                              ? `Shifting Context… (${shiftProgressPercent}%)`
+                              : `Processing prompt… (${progressPercent}%)`}
                           </span>
                         </div>
                         <div className="chat-progress-bar">
                           <div
                             className="chat-progress-bar__fill"
-                            style={{ width: `${progressPercent}%` }}
+                            style={{
+                              width: `${shifting ? shiftProgressPercent : progressPercent}%`,
+                            }}
                           />
                         </div>
                       </div>
@@ -1218,6 +1246,9 @@ function messageViewPropsEqual(prev: MessageViewProps, next: MessageViewProps) {
     prev.loading === next.loading &&
     prev.processing === next.processing &&
     prev.progressPercent === next.progressPercent &&
+    prev.shifting === next.shifting &&
+    prev.shiftProgressPercent === next.shiftProgressPercent &&
+    prev.fillWidth === next.fillWidth &&
     prev.streamingTool === next.streamingTool &&
     prev.executing === next.executing
   );
@@ -1494,6 +1525,7 @@ export default function ChatPage() {
   const [imageViewerUrl, setImageViewerUrl] = useState<string | null>(null);
   const [pendingMedia, setPendingMedia] = useState<PendingMedia[]>([]);
   const [progressPercent, setProgressPercent] = useState(0);
+  const [shiftProgressPercent, setShiftProgressPercent] = useState(0);
   const [systemPhase, setSystemPhase] = useState<
     'solving' | 'starting' | 'preloading' | 'ready'
   >('ready');
@@ -1536,6 +1568,9 @@ export default function ChatPage() {
   const [processingSessions, setProcessingSessions] = useState<
     Record<string, boolean>
   >({});
+  const [shiftingSessions, setShiftingSessions] = useState<
+    Record<string, boolean>
+  >({});
   const [executingSessions, setExecutingSessions] = useState<
     Record<string, { names: string[]; completed: number; total: number } | null>
   >({});
@@ -1550,6 +1585,7 @@ export default function ChatPage() {
     Record<string, { name: string; text: string } | null>
   >({});
   const progressRef = useRef<Record<string, number>>({});
+  const shiftProgressRef = useRef<Record<string, number>>({});
   const toolSegmentQueuesRef = useRef<Record<string, string[]>>({});
   const pendingSegmentIdsRef = useRef<Record<string, string[]>>({});
   const isReprocessingRef = useRef<Record<string, boolean>>({});
@@ -2445,6 +2481,7 @@ export default function ChatPage() {
   const loading = !!activeSessionId && !!loadingSessions[activeSessionId];
   const sending = sendingState && !loading;
   const processing = !!activeSessionId && !!processingSessions[activeSessionId];
+  const shifting = !!activeSessionId && !!shiftingSessions[activeSessionId];
   const executing =
     activeSessionId != null
       ? (executingSessions[activeSessionId] ?? null)
@@ -3334,6 +3371,26 @@ export default function ChatPage() {
           return;
         }
 
+        case 'shift-progress': {
+          const pct = Math.max(0, Math.min(100, payload.progress ?? 0));
+          shiftProgressRef.current[sessionId] = pct;
+          if (isActive) setShiftProgressPercent(pct);
+          setShiftingSessions((prev) => ({ ...prev, [sessionId]: pct < 100 }));
+          return;
+        }
+
+        case 'context-shift': {
+          // Shift work finished (the resumed leg's own prompt progress takes
+          // over from here); the splice marker arrives via session sync.
+          setShiftingSessions((prev) => {
+            if (!prev[sessionId]) return prev;
+            return { ...prev, [sessionId]: false };
+          });
+          shiftProgressRef.current[sessionId] = 0;
+          if (isActive) setShiftProgressPercent(0);
+          return;
+        }
+
         case 'progress': {
           progressRef.current[sessionId] = payload.progress ?? 0;
           if (isActive) setProgressPercent(progressRef.current[sessionId]);
@@ -3719,6 +3776,12 @@ export default function ChatPage() {
           toolSegmentQueuesRef.current[sessionId] = [];
           setSessionLoading(false);
           setSessionProcessing(false);
+          setShiftingSessions((prev) => {
+            if (!(sessionId in prev)) return prev;
+            const next = { ...prev };
+            delete next[sessionId];
+            return next;
+          });
           delete executingRef.current[sessionId];
           setExecutingSessions((prev) => {
             if (!(sessionId in prev)) return prev;
@@ -3756,6 +3819,7 @@ export default function ChatPage() {
           if (isActive) {
             setTps(0);
             setProgressPercent(0);
+            setShiftProgressPercent(0);
             generationBaselineTokens.current = null;
             lastTokenSnapshot.current = null;
           }
@@ -3771,6 +3835,12 @@ export default function ChatPage() {
           clearTypewriterSession(sessionId);
           setSessionLoading(false);
           setSessionProcessing(false);
+          setShiftingSessions((prev) => {
+            if (!(sessionId in prev)) return prev;
+            const next = { ...prev };
+            delete next[sessionId];
+            return next;
+          });
           showErrorToast(payload.message ?? 'Unknown error');
           // Pre-accept failures mark the user turn failed in main and strip it
           // from LLM history. Pull authoritative messages immediately (in
@@ -3794,6 +3864,12 @@ export default function ChatPage() {
           clearTypewriterSession(sessionId);
           setSessionLoading(false);
           setSessionProcessing(false);
+          setShiftingSessions((prev) => {
+            if (!(sessionId in prev)) return prev;
+            const next = { ...prev };
+            delete next[sessionId];
+            return next;
+          });
           showSlotBanner();
           return;
         }
@@ -5008,6 +5084,9 @@ export default function ChatPage() {
                       loading={false}
                       processing={false}
                       progressPercent={0}
+                      shifting={false}
+                      shiftProgressPercent={0}
+                      fillWidth
                       streamingTool={null}
                       executing={null}
                       settings={settings}
@@ -5027,6 +5106,9 @@ export default function ChatPage() {
                       loading={loading}
                       processing={processing}
                       progressPercent={progressPercent}
+                      shifting={shifting}
+                      shiftProgressPercent={shiftProgressPercent}
+                      fillWidth
                       streamingTool={streamingTool}
                       executing={executing}
                       settings={settings}
@@ -5051,6 +5133,8 @@ export default function ChatPage() {
                     loading={loading}
                     processing={processing}
                     progressPercent={progressPercent}
+                    shifting={shifting}
+                    shiftProgressPercent={shiftProgressPercent}
                     streamingTool={streamingTool}
                     executing={executing}
                     settings={settings}
@@ -5076,18 +5160,22 @@ export default function ChatPage() {
                     <div className="chat-indicator">
                       <div className="chat-indicator__spinner" />
                       <span className="chat-indicator__label">
-                        {executing
-                          ? `Executing ${executing.names.join(', ')} (${executing.completed}/${executing.total})`
-                          : processing
-                            ? `Processing prompt… (${progressPercent}%)`
-                            : 'Generating…'}
+                        {statusLabel(
+                          executing,
+                          shifting,
+                          shiftProgressPercent,
+                          processing,
+                          progressPercent,
+                        )}
                       </span>
                     </div>
-                    {processing && !executing && (
+                    {(processing || shifting) && !executing && (
                       <div className="chat-progress-bar">
                         <div
                           className="chat-progress-bar__fill"
-                          style={{ width: `${progressPercent}%` }}
+                          style={{
+                            width: `${shifting ? shiftProgressPercent : progressPercent}%`,
+                          }}
                         />
                       </div>
                     )}

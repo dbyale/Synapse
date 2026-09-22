@@ -277,6 +277,14 @@
   max-width: 100%;
 }
 
+/* Split fragments of a spliced response: hold full width so the bubble does
+   not abruptly narrow when a context shift divides it. */
+.chat-message--split {
+  align-self: stretch;
+  width: 100%;
+  max-width: 100%;
+}
+
 .chat-context-cutoff {
   display: flex;
   flex-direction: column;

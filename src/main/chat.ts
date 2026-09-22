@@ -1712,6 +1712,7 @@ async function computeOldTurnCut(
   s: SessionStream,
   cs: ContextShiftSettings,
   protectFrom: number = Number.POSITIVE_INFINITY,
+  onProgress: ((fraction: number) => void) | undefined = undefined,
 ): Promise<{ keepFrom: number; freedTokens: number }> {
   const { systemEnd, userIndexes } = collectShiftIndexes(s);
   if (s.history.length <= systemEnd) {
@@ -1731,20 +1732,24 @@ async function computeOldTurnCut(
   } else {
     // Tokenize per-message in parallel, then prefix-sum over candidates.
     const perMessage: number[] = new Array(s.history.length).fill(0);
-    const pending: Promise<number>[] = [];
+    const targets: { idx: number; text: string }[] = [];
     for (let i = systemEnd; i < s.history.length; i += 1) {
       const t = shiftMessageText(s.history[i]);
       if (!t) continue;
-      const idx = i;
-      pending.push(
-        // eslint-disable-next-line no-use-before-define
-        tokenize(t).then((n) => {
-          perMessage[idx] = n ?? 0;
-          return perMessage[idx];
-        }),
-      );
+      targets.push({ idx: i, text: t });
     }
-    await Promise.all(pending);
+    const completedRef = { n: 0 };
+    await Promise.all(
+      targets.map(async ({ idx, text }) => {
+        // eslint-disable-next-line no-use-before-define
+        const n = (await tokenize(text)) ?? 0;
+        perMessage[idx] = n;
+        completedRef.n += 1;
+        onProgress?.(completedRef.n / targets.length);
+        return n;
+      }),
+    );
+    onProgress?.(1);
     // Running prefix: prefix[i] = tokens in [systemEnd, i).
     const prefix: number[] = new Array(s.history.length + 1).fill(0);
     for (let i = systemEnd; i < s.history.length; i += 1) {
@@ -1905,27 +1910,116 @@ function shouldRequestMidShift(s: SessionStream): boolean {
 async function findTokenPrefixLength(
   text: string,
   target: number,
+  onProgress?: (fraction: number) => void,
 ): Promise<number> {
   if (target <= 0 || text.length === 0) return 0;
   // eslint-disable-next-line no-use-before-define
   const whole = (await tokenize(text)) ?? 0;
-  if (whole < target) return text.length;
+  onProgress?.(0);
+  if (whole < target) {
+    onProgress?.(1);
+    return text.length;
+  }
+  const estTotal = Math.max(1, Math.ceil(Math.log2(text.length)) + 1);
+  let step = 0;
   let lo = 1;
   let hi = text.length;
   while (lo < hi) {
     const mid = Math.floor((lo + hi) / 2);
     // eslint-disable-next-line no-use-before-define,no-await-in-loop
     const n = (await tokenize(text.slice(0, mid))) ?? 0;
+    step += 1;
+    onProgress?.(Math.min(1, step / estTotal));
     if (n >= target) hi = mid;
     else lo = mid + 1;
   }
+  onProgress?.(1);
   return lo;
+}
+
+// Max extra chars a splice may drop past its token minimum to land on a
+// markdown block boundary. Bounds over-dropping when a giant unbroken block
+// (e.g. a huge code dump) straddles the deficit point.
+const MAX_SPLICE_OVERDROP_CHARS = 2000;
+
+// Snap a splice offset forward to a markdown block boundary so fenced code,
+// tables and quotes stay renderable — and the model can continue cleanly —
+// on both sides of the split. Snapping only ever moves forward, so the token
+// minimum that produced minOffset stays satisfied. Returns minOffset unchanged
+// when already at a boundary or when none is found within the overdrop cap.
+function snapSpliceOffset(
+  text: string,
+  minOffset: number,
+  maxOverdrop: number = MAX_SPLICE_OVERDROP_CHARS,
+): number {
+  if (minOffset <= 0 || minOffset >= text.length) return minOffset;
+  const lines = text.split('\n');
+  const starts: number[] = [];
+  let pos = 0;
+  lines.forEach((line) => {
+    starts.push(pos);
+    pos += line.length + 1;
+  });
+  // Line containing minOffset.
+  let li = 0;
+  while (li < lines.length - 1 && starts[li + 1] <= minOffset) li += 1;
+
+  // Fence state before each line (CommonMark-lite: ``` or ~~~ runs).
+  const inFenceBefore: boolean[] = [];
+  const opensHere: boolean[] = [];
+  const closesHere: boolean[] = [];
+  let open: { char: string; len: number } | null = null;
+  for (let i = 0; i < lines.length; i += 1) {
+    inFenceBefore.push(open !== null);
+    const m = /^ {0,3}(`{3,}|~{3,})/.exec(lines[i]);
+    opensHere.push(!!m && open === null);
+    closesHere.push(false);
+    if (m) {
+      const run = m[1];
+      const rest = lines[i].slice(m[0].length);
+      if (open === null) {
+        open = { char: run[0], len: run.length };
+      } else if (
+        run[0] === open.char &&
+        run.length >= open.len &&
+        rest.trim() === ''
+      ) {
+        closesHere[i] = true;
+        open = null;
+      }
+      // Otherwise: fence-like text inside a block — literal, ignore.
+    }
+  }
+
+  const isBlank = (idx: number): boolean => lines[idx].trim() === '';
+  // Already at a clean block start: line start outside fences, preceded by
+  // start-of-text, a blank line, a fence close, or opening a fresh fence.
+  if (
+    !inFenceBefore[li] &&
+    starts[li] === minOffset &&
+    (li === 0 || isBlank(li - 1) || closesHere[li - 1] || opensHere[li])
+  ) {
+    return minOffset;
+  }
+  // Scan forward for the first clean line start within the overdrop cap.
+  for (let i = li + 1; i < lines.length; i += 1) {
+    const splitAt = starts[i];
+    if (splitAt - minOffset > maxOverdrop) break;
+    if (
+      !inFenceBefore[i] &&
+      (isBlank(i - 1) || closesHere[i - 1] || opensHere[i])
+    ) {
+      return splitAt;
+    }
+  }
+  return minOffset;
 }
 
 // Mid-chat shift: trim old turns (shielding the in-progress user turn), then
 // if the minimum is still unmet, splice the front of the in-progress response
 // and stage the remainder as an assistant prefill the resumed leg continues
-// from. Display keeps the full text; the absolute splice offset is recorded
+// from. The splice snaps forward to a markdown block boundary so fenced code,
+// tables and quotes survive on both sides. Display keeps the full text; the absolute splice offset is recorded
 // on the live message for the renderer to split the bubble at render time.
 // Reasoning/thinking output is intentionally excluded from the prefill: the
 // chat history format carries plain assistant content only.
@@ -1938,6 +2032,15 @@ async function performMidChatShift(
   if (!cs || !lastUsage) return;
   const total = currentContextSize ?? lastUsage.total;
   const minToClear = Math.max(0, cs.minTokensToClear);
+  const emitShiftProgress = (progress: number): void => {
+    emit({
+      type: 'shift-progress',
+      sessionId,
+      progress: Math.max(0, Math.min(100, Math.round(progress))),
+    });
+  };
+  // Show immediately: the measurable work (token measuring) follows.
+  emitShiftProgress(4);
 
   // The turn being answered must survive: clamp old-turn clearing to before
   // the newest user entry.
@@ -1950,17 +2053,29 @@ async function performMidChatShift(
   }
   const protectFrom = currentUserIdx >= 0 ? currentUserIdx : s.history.length;
 
-  const { keepFrom, freedTokens } = await computeOldTurnCut(s, cs, protectFrom);
+  const { keepFrom, freedTokens } = await computeOldTurnCut(
+    s,
+    cs,
+    protectFrom,
+    (fraction) => emitShiftProgress(4 + 70 * fraction),
+  );
   applyHistoryTrim(s, cs, keepFrom, freedTokens, total);
 
   // Whole response text kept in context so far (prior legs + this leg).
   const candidate = `${s.midShiftKeptText}${legPartial}`;
   let contextDrop = 0;
+  let spliceRawDrop = 0;
   if (freedTokens < minToClear && candidate.length > 1) {
     const deficit = minToClear - freedTokens;
-    const raw = await findTokenPrefixLength(candidate, deficit);
+    const raw = await findTokenPrefixLength(candidate, deficit, (fraction) =>
+      emitShiftProgress(74 + 14 * fraction),
+    );
+    spliceRawDrop = raw;
+    // Snap forward to a markdown block boundary so fenced code, tables and
+    // quotes stay renderable (and continuable) on both sides of the split.
+    const snapped = snapSpliceOffset(candidate, raw);
     // Always keep at least one char of context as the continuation anchor.
-    contextDrop = Math.min(raw, candidate.length - 1);
+    contextDrop = Math.min(snapped, candidate.length - 1);
   }
   const newKept = contextDrop > 0 ? candidate.slice(contextDrop) : candidate;
 
@@ -2023,6 +2138,7 @@ async function performMidChatShift(
   // checks stay cheap and shifts cannot thrash back-to-back. No count cap:
   // shifts may repeat without limit while tokens keep streaming.
   s.midShiftNextAllowedAt = s.midShiftStreamedLen + MID_SHIFT_REARM_CHARS;
+  emitShiftProgress(93);
 
   if (lastUsage) {
     // eslint-disable-next-line no-console
@@ -2031,6 +2147,7 @@ async function performMidChatShift(
       keepFrom,
       freedOldTurns: freedTokens,
       minToClear,
+      spliceRawDrop,
       contextDropChars: contextDrop,
       newKeptLen: newKept.length,
       remaining: total - lastUsage.used,
@@ -2038,6 +2155,7 @@ async function performMidChatShift(
   }
 
   persistSessionState(sessionId);
+  emitShiftProgress(100);
   emit({
     type: 'context-shift',
     sessionId,
