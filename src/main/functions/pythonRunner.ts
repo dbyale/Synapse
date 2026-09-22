@@ -104,6 +104,30 @@ const SANDBOX_CONFIG = {
   ]),
 } as const;
 
+// Top-level import → pip package mapping for lazy auto-install.
+// run_python advertises these as AVAILABLE, so runPythonInternal installs
+// them on demand (mirroring the networkx/ddgs pattern) instead of failing
+// with a bare ModuleNotFoundError when the user's Python lacks them.
+const AUTO_INSTALL_MAP: Record<string, { pip: string; importName: string }> = {
+  numpy: { pip: 'numpy', importName: 'numpy' },
+  pandas: { pip: 'pandas', importName: 'pandas' },
+  scipy: { pip: 'scipy', importName: 'scipy' },
+  sklearn: { pip: 'scikit-learn', importName: 'sklearn' },
+  statsmodels: { pip: 'statsmodels', importName: 'statsmodels' },
+  sympy: { pip: 'sympy', importName: 'sympy' },
+  matplotlib: { pip: 'matplotlib', importName: 'matplotlib' },
+  PIL: { pip: 'Pillow', importName: 'PIL' },
+  networkx: { pip: 'networkx', importName: 'networkx' },
+  requests: { pip: 'requests', importName: 'requests' },
+  httpx: { pip: 'httpx', importName: 'httpx' },
+  ddgs: { pip: 'ddgs', importName: 'ddgs' },
+};
+
+// Session caches so a successful install is only checked once and
+// concurrent runs requesting the same package share one pip invocation.
+const autoInstallReady = new Set<string>();
+const autoInstallInFlight = new Map<string, Promise<boolean>>();
+
 // Raster image formats captured from the sandbox working directory.
 // (SVG is intentionally excluded — the vision projector needs raster data.)
 const IMAGE_EXTENSIONS: Record<string, string> = {
@@ -447,6 +471,194 @@ function spawnWithTimeout(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 7b. AUTO-INSTALL + ERROR FORMATTING (must precede runPythonInternal)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Ensure a Python pip package is installed. Checks for the package first,
+ * and runs `pip install --quiet` if it is not found.
+ */
+export async function ensurePackage(
+  packageName: string,
+  importName?: string,
+): Promise<{ success: boolean; error?: string }> {
+  const checkName = importName ?? packageName.replace(/-/g, '_');
+  try {
+    const binary = await resolvePythonBinary();
+    await execFileAsync(binary, ['-c', `import ${checkName}`]);
+    return { success: true };
+  } catch {
+    try {
+      const binary = await resolvePythonBinary();
+      await execFileAsync(
+        binary,
+        ['-m', 'pip', 'install', packageName, '--quiet'],
+        {
+          timeout: 120_000,
+        },
+      );
+      return { success: true };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return {
+        success: false,
+        error: `Failed to install ${packageName}: ${msg}`,
+      };
+    }
+  }
+}
+
+/**
+ * Extract the top-level imports a snippet requires (e.g. `scipy` from
+ * `import scipy.integrate as x` or `from scipy.stats import norm`).
+ * Only returns names present in AUTO_INSTALL_MAP — stdlib and unknown
+ * names are ignored. Best-effort regex scan: over-approximation is safe
+ * because ensurePackage() re-checks before installing.
+ */
+function parseRequiredTopLevels(code: string): Set<string> {
+  const required = new Set<string>();
+  const addTop = (dotted: string): void => {
+    const top = dotted.split('.')[0];
+    if (top && AUTO_INSTALL_MAP[top]) {
+      required.add(top);
+    }
+  };
+  // `import a.b, c as d` lines — collect via replace-callback (no exec loop).
+  code.replace(/^\s*import\s+(.+)$/gm, (full: string, mods: string): string => {
+    mods.split(',').forEach((part: string): void => {
+      const mod = part.trim().split(/\s+/)[0];
+      if (mod) {
+        addTop(mod);
+      }
+    });
+    return full;
+  });
+  // `from a.b import ...` lines.
+  code.replace(
+    /^\s*from\s+([A-Za-z0-9_.]+)\s+import\s+/gm,
+    (full: string, mod: string): string => {
+      addTop(mod);
+      return full;
+    },
+  );
+  return required;
+}
+
+function ensureSingleAutoInstall(topLevel: string): Promise<boolean> {
+  const existing = autoInstallInFlight.get(topLevel);
+  if (existing) {
+    return existing;
+  }
+  const mapping = AUTO_INSTALL_MAP[topLevel];
+  const p = ensurePackage(mapping.pip, mapping.importName)
+    .then((result): boolean => {
+      if (result.success) {
+        autoInstallReady.add(topLevel);
+        return true;
+      }
+      return false;
+    })
+    .catch((): boolean => false)
+    .finally((): void => {
+      autoInstallInFlight.delete(topLevel);
+    });
+  autoInstallInFlight.set(topLevel, p);
+  return p;
+}
+
+interface AutoInstallOutcome {
+  installed: string[];
+  failed: Array<{ topLevel: string; pip: string; error?: string }>;
+}
+
+/**
+ * Ensure every third-party package the snippet imports is installed.
+ * Chained (not parallel, not await-in-loop) to avoid concurrent pip
+ * invocations fighting over the same environment.
+ */
+function ensurePythonPackagesForCode(
+  code: string,
+): Promise<AutoInstallOutcome> {
+  const pending = [...parseRequiredTopLevels(code)].filter(
+    (topLevel): boolean => !autoInstallReady.has(topLevel),
+  );
+  const seed: Promise<AutoInstallOutcome> = Promise.resolve({
+    installed: [],
+    failed: [],
+  });
+  return pending.reduce(
+    (chain, topLevel): Promise<AutoInstallOutcome> =>
+      chain.then((acc): Promise<AutoInstallOutcome> => {
+        const mapping = AUTO_INSTALL_MAP[topLevel];
+        return ensureSingleAutoInstall(topLevel).then(
+          (ok): AutoInstallOutcome => {
+            if (ok) {
+              return {
+                installed: [...acc.installed, topLevel],
+                failed: acc.failed,
+              };
+            }
+            return {
+              installed: acc.installed,
+              failed: [...acc.failed, { topLevel, pip: mapping.pip }],
+            };
+          },
+        );
+      }),
+    seed,
+  );
+}
+
+/**
+ * Rewrite a sandbox traceback so line numbers refer to the USER's snippet,
+ * not the temp file (preamble + optional headless preamble shift every
+ * line). Frames inside our injected preamble are dropped — only user-code
+ * frames and the final exception line are kept.
+ */
+function sanitizePythonStderr(stderr: string, lineOffset: number): string {
+  if (!stderr || lineOffset <= 0) {
+    return stderr;
+  }
+  const initial = { out: [] as string[], skip: false };
+  const reduced = stderr.split('\n').reduce((acc, line): typeof initial => {
+    if (acc.skip && /^\s+\S/.test(line)) {
+      // Source-code line belonging to a dropped preamble frame.
+      return { out: acc.out, skip: false };
+    }
+    const m = line.match(/File "(.*code\.py)", line (\d+), in (.+)/);
+    if (m) {
+      const fileLine = parseInt(m[2], 10);
+      if (Number.isNaN(fileLine) || fileLine <= lineOffset) {
+        return { out: acc.out, skip: true };
+      }
+      const userLine = fileLine - lineOffset;
+      return {
+        out: [
+          ...acc.out,
+          line.replace(`, line ${m[2]},`, `, line ${userLine},`),
+        ],
+        skip: false,
+      };
+    }
+    return { out: [...acc.out, line], skip: false };
+  }, initial);
+  return reduced.out.join('\n');
+}
+
+function describeMissingModule(
+  stderr: string,
+): { module: string; pip: string } | null {
+  const m = stderr.match(/ModuleNotFoundError:\s*No module named '([^']+)'/);
+  if (!m) {
+    return null;
+  }
+  const module = m[1].split(';')[0].trim();
+  const top = module.split('.')[0];
+  const pip = AUTO_INSTALL_MAP[top]?.pip ?? top;
+  return { module, pip };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 8. PUBLIC API
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -465,8 +677,39 @@ async function runPythonInternal(
     // ── Step 2: Resolve Python binary ─────────────────────────
     const binary = await resolvePythonBinary();
 
+    // ── Step 2b: Lazy auto-install of advertised third-party deps ──
+    // run_python promises numpy/scipy/etc. Install whatever the snippet
+    // imports before spawning, so a fresh machine doesn't see a bare
+    // ModuleNotFoundError. Failures fall through to an actionable error.
+    const autoInstall = await ensurePythonPackagesForCode(code);
+    if (autoInstall.failed.length > 0) {
+      const details = autoInstall.failed
+        .map((f) => `'${f.topLevel}' (pip install ${f.pip})`)
+        .join(', ');
+      return {
+        success: false,
+        stdout: '',
+        stderr: '',
+        runId,
+        executionTimeMs: Date.now() - startTime,
+        timedOut: false,
+        error:
+          `Missing Python package: ${details}. ` +
+          `Automatic install failed (offline or pip error). ` +
+          `Run: pip install ${autoInstall.failed.map((f) => f.pip).join(' ')}.`,
+      };
+    }
+
     // ── Step 3: Write preamble + user code to temp file ───────
     codePath = await writeTempCodeFile(code, runId, options.extraPreamble);
+
+    // Line offset of the first user-code line inside the temp file, used
+    // to rewrite tracebacks back to user-visible line numbers.
+    const preambleForOffset = buildPreamble(SANDBOX_CONFIG.allowedModules);
+    const prefixForOffset =
+      preambleForOffset +
+      (options.extraPreamble ? `${options.extraPreamble}\n` : '');
+    const lineOffset = prefixForOffset.split('\n').length - 1;
 
     // ── Step 4: Spawn with timeout ─────────────────────────────
     // The working directory is the sandbox's own ephemeral temp dir
@@ -484,7 +727,7 @@ async function runPythonInternal(
       return {
         success: false,
         stdout: raw.stdout,
-        stderr: raw.stderr,
+        stderr: sanitizePythonStderr(raw.stderr, lineOffset),
         runId,
         executionTimeMs,
         timedOut: true,
@@ -494,18 +737,41 @@ async function runPythonInternal(
 
     const success = raw.exitCode === 0;
     let error: string | undefined;
+    let { stderr } = raw;
     if (!success) {
-      // A null exit code means the process never started (e.g. missing
-      // binary) — surface the raw spawn error instead of a generic message.
-      error =
-        raw.exitCode === null
-          ? raw.stderr
-          : `Process exited with code ${raw.exitCode}.`;
+      // Rewrite preamble-shifted line numbers before surfacing.
+      stderr = sanitizePythonStderr(raw.stderr, lineOffset);
+      if (raw.exitCode === null) {
+        // A null exit code means the process never started (e.g. missing
+        // binary) — surface the raw spawn error instead of a generic message.
+        error = raw.stderr;
+      } else {
+        error = `Process exited with code ${raw.exitCode}.`;
+        const missing = describeMissingModule(raw.stderr);
+        if (missing) {
+          error +=
+            ` Missing Python package '${missing.module}'.` +
+            ` Run: pip install ${missing.pip}.` +
+            ` (Auto-install was attempted — the machine may be offline or pip may have failed.)`;
+        } else if (
+          /cannot import name 'derivative' from 'scipy[.]misc'/.test(
+            raw.stderr,
+          ) ||
+          (/from\s+scipy[.]misc\s+import/i.test(code) &&
+            /derivative/i.test(raw.stderr))
+        ) {
+          error +=
+            ` 'scipy.misc.derivative' was removed in SciPy 1.12.` +
+            ` Use a manual finite difference, e.g.` +
+            ` (f(x+dx)-f(x-dx))/(2*dx), or` +
+            ` scipy.optimize.approx_fprime instead.`;
+        }
+      }
     }
     return {
       success,
       stdout: raw.stdout,
-      stderr: raw.stderr,
+      stderr,
       runId,
       executionTimeMs,
       timedOut: false,
@@ -628,40 +894,6 @@ export async function runPythonWithImages(
   }
 
   return { ...result, images };
-}
-
-/**
- * Ensure a Python pip package is installed. Checks for the package first,
- * and runs `pip install --quiet` if it is not found.
- */
-export async function ensurePackage(
-  packageName: string,
-  importName?: string,
-): Promise<{ success: boolean; error?: string }> {
-  const checkName = importName ?? packageName.replace(/-/g, '_');
-  try {
-    const binary = await resolvePythonBinary();
-    await execFileAsync(binary, ['-c', `import ${checkName}`]);
-    return { success: true };
-  } catch {
-    try {
-      const binary = await resolvePythonBinary();
-      await execFileAsync(
-        binary,
-        ['-m', 'pip', 'install', packageName, '--quiet'],
-        {
-          timeout: 120_000,
-        },
-      );
-      return { success: true };
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return {
-        success: false,
-        error: `Failed to install ${packageName}: ${msg}`,
-      };
-    }
-  }
 }
 
 /**

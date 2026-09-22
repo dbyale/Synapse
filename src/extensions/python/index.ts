@@ -3,29 +3,12 @@ import {
   getPythonEnvironmentInfo,
   runPython,
   runPythonWithImages,
-  ensurePackage,
 } from '../../main/functions/pythonRunner';
 import manifest from './manifest.json';
 
-// Optional graph-layout dependency (drawn through matplotlib).
-// Installed lazily and cached for the session; the diagram tool still
-// works for non-graph diagrams even if this installation fails.
-let networkxReady = false;
-let networkxCheckInProgress: Promise<boolean> | null = null;
-
-async function ensureNetworkxPackage(): Promise<void> {
-  if (networkxReady) return;
-  if (networkxCheckInProgress) {
-    await networkxCheckInProgress;
-    return;
-  }
-  networkxCheckInProgress = (async () => {
-    const result = await ensurePackage('networkx');
-    if (result.success) networkxReady = true;
-    return result.success;
-  })();
-  await networkxCheckInProgress;
-}
+// Note: third-party deps (numpy, scipy, networkx, …) are auto-installed on
+// demand inside runPython/runPythonWithImages when the snippet imports them,
+// so handlers here don't need explicit ensurePackage() calls.
 
 function trimForModel(s: string | null | undefined, max: number): string {
   if (!s) return '';
@@ -89,6 +72,8 @@ export const tools: Record<string, ExtensionToolDef> = {
         '  HTTP:       requests, httpx\n' +
         '  Stdlib:     math, random, statistics, decimal, datetime, json, re,\n' +
         '              collections, itertools, functools, heapq, and more\n' +
+        '  NOTE: third-party packages auto-install on first use (may take up to ~2 min on a fresh machine). Prefer stdlib (math/statistics) for trivial math.\n' +
+        "  NOTE: scipy.misc.derivative was removed in SciPy 1.12 — do NOT use 'from scipy.misc import derivative'. Use a manual finite difference (f(x+dx)-f(x-dx))/(2*dx) instead.\n" +
         '\n' +
         'RESTRICTIONS — these will raise a sandbox error:\n' +
         '  Blocked modules: os, sys, subprocess, socket, pathlib, shutil,\n' +
@@ -96,7 +81,7 @@ export const tools: Record<string, ExtensionToolDef> = {
         '                   importlib, builtins\n' +
         '  Blocked built-ins: open(), exec(), eval(), compile(), input(), breakpoint()\n' +
         '\n' +
-        'LIMITS: 15-second timeout. stdout/stderr capped at 100 KB.',
+        'LIMITS: 15-second timeout (code run only; first-use pip install may take longer). stdout/stderr capped at 100 KB.',
       icon: 'Terminal',
     },
     params: {
@@ -193,13 +178,14 @@ export const tools: Record<string, ExtensionToolDef> = {
         'AVAILABLE LIBRARIES:\n' +
         '  matplotlib (pyplot, patches, figure, axes), numpy, pandas, scipy, networkx, PIL, math, random,\n' +
         '  statistics, json, re, collections, itertools, functools, datetime, and more.\n' +
+        '  NOTE: networkx/scipy/etc. auto-install on first use when imported (may take up to ~2 min); non-graph diagrams need no extra deps.\n' +
         '\n' +
         'RESTRICTIONS — these will raise a sandbox error:\n' +
         '  Blocked modules: os, sys, subprocess, socket, pathlib, shutil,\n' +
         '                   threading, multiprocessing, asyncio, ctypes, pickle,\n' +
         '                   importlib, builtins\n' +
         '  Blocked built-ins: open(), exec(), eval(), compile(), input(), breakpoint()\n' +
-        '  LIMITS: 15-second timeout. stdout/stderr capped at 100 KB. ' +
+        '  LIMITS: 15-second timeout (code run only; first-use pip install may take longer). stdout/stderr capped at 100 KB. ' +
         'Images capped at 8 MB each (5 files max, only the first is returned).',
       icon: 'Image',
       displayType: 'projector',
@@ -225,7 +211,8 @@ export const tools: Record<string, ExtensionToolDef> = {
       required: ['code'],
     },
     async handler(params: { code: string; alt_text?: string }) {
-      await ensureNetworkxPackage();
+      // networkx (and other third-party deps) auto-install inside
+      // runPythonWithImages only when the snippet actually imports them.
       const result = await runPythonWithImages(params.code);
       if (!result.success) {
         const stderrTail = trimForModel(result.stderr, 4000);
