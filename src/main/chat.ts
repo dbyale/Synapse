@@ -88,8 +88,12 @@ interface SessionStream {
   midShiftStreamedLen: number;
   /** Streamed-char watermark: generation may only trigger at or past this. */
   midShiftNextAllowedAt: number;
-  /** Full response text kept in LLM context across mid-shift legs. */
-  midShiftKeptText: string;
+  /** Tokens of the live response dropped from context so far (all types). */
+  midShiftDroppedTokens: number;
+  /** Absolute char offset of the context drop in the live response text. */
+  midShiftDroppedChars: number;
+  /** Latched once per turn when the hopeless-config warning is logged. */
+  midShiftHopelessWarned: boolean;
   /** History index of the mid-shift prefill assistant entry (-1 if none). */
   midShiftPrefillIndex: number;
 }
@@ -278,7 +282,9 @@ function getSessionState(sessionId: string): SessionStream | null {
       midShiftRequested: false,
       midShiftStreamedLen: 0,
       midShiftNextAllowedAt: 0,
-      midShiftKeptText: '',
+      midShiftDroppedTokens: 0,
+      midShiftDroppedChars: 0,
+      midShiftHopelessWarned: false,
       midShiftPrefillIndex: -1,
     };
     sessions.set(sessionId, s);
@@ -345,7 +351,9 @@ export function startSession(profileId: string, title: string): string {
     midShiftRequested: false,
     midShiftStreamedLen: 0,
     midShiftNextAllowedAt: 0,
-    midShiftKeptText: '',
+    midShiftDroppedTokens: 0,
+    midShiftDroppedChars: 0,
+    midShiftHopelessWarned: false,
     midShiftPrefillIndex: -1,
   };
   sessions.set(sessionId, state);
@@ -2015,18 +2023,51 @@ function snapSpliceOffset(
   return minOffset;
 }
 
+// Split an ordered response (normal + thought + comment segment text joined
+// in display order) at an absolute char offset. Returns the split segment,
+// its inner offset, and the kept text suffix for the prefill. Tool segments
+// carry call payloads, not prose, and are skipped in both halves.
+function splitOrderedResponse(
+  segs: { id: string; type: string; text: string }[],
+  absoluteDrop: number,
+): { splitSegId: string | null; splitOff: number; keptText: string } {
+  let acc = 0;
+  let splitSegId: string | null = null;
+  let splitOff = 0;
+  const keptParts: string[] = [];
+  const prose = segs.filter(
+    (seg) =>
+      seg.type === 'normal' ||
+      seg.type === 'thought' ||
+      seg.type === 'comment',
+  );
+  prose.forEach((seg) => {
+    const start = acc;
+    acc += seg.text.length;
+    if (acc <= absoluteDrop) return;
+    if (splitSegId === null) {
+      splitSegId = seg.id;
+      splitOff = Math.max(0, absoluteDrop - start);
+    }
+    keptParts.push(seg.text.slice(Math.max(0, absoluteDrop - start)));
+  });
+  return { splitSegId, splitOff, keptText: keptParts.join('') };
+}
+
 // Mid-chat shift: trim old turns (shielding the in-progress user turn), then
 // if the minimum is still unmet, splice the front of the in-progress response
 // and stage the remainder as an assistant prefill the resumed leg continues
-// from. The splice snaps forward to a markdown block boundary so fenced code,
-// tables and quotes survive on both sides. Display keeps the full text; the absolute splice offset is recorded
-// on the live message for the renderer to split the bubble at render time.
+// from. The splice covers all generated prose — normal output and thinking
+// alike; thinking is dropped from context exactly like standard output while
+// display keeps everything. The splice snaps forward to a markdown block
+// boundary so fenced code, tables and quotes survive on both sides. Display
+// keeps the full text; the absolute splice offset is recorded on the live
+// message for the renderer to split the bubble at render time.
 // Reasoning/thinking output is intentionally excluded from the prefill: the
 // chat history format carries plain assistant content only.
 async function performMidChatShift(
   s: SessionStream,
   sessionId: string,
-  legPartial: string,
 ): Promise<void> {
   const cs = currentContextShift;
   if (!cs || !lastUsage) return;
@@ -2061,28 +2102,52 @@ async function performMidChatShift(
   );
   applyHistoryTrim(s, cs, keepFrom, freedTokens, total);
 
-  // Whole response text kept in context so far (prior legs + this leg).
-  const candidate = `${s.midShiftKeptText}${legPartial}`;
-  let contextDrop = 0;
+  // Splice over the whole live response in chronological segment order, so
+  // thinking counts exactly like standard output and multi-leg responses
+  // stay consistent (display always holds every leg; no per-leg carry needed).
+  const tailMsg = s.messages[s.messages.length - 1];
+  const orderedSegs =
+    tailMsg?.role === 'assistant'
+      ? tailMsg.content.filter(
+          (seg) =>
+            seg.type === 'normal' ||
+            seg.type === 'thought' ||
+            seg.type === 'comment',
+        )
+      : [];
+  const fullText = orderedSegs.map((seg) => seg.text).join('');
+  const prevAbsoluteDrop = s.midShiftDroppedChars;
+  let absoluteDrop = prevAbsoluteDrop;
   let spliceRawDrop = 0;
-  if (freedTokens < minToClear && candidate.length > 1) {
+  if (freedTokens < minToClear && fullText.length > 1) {
     const deficit = minToClear - freedTokens;
-    const raw = await findTokenPrefixLength(candidate, deficit, (fraction) =>
+    const target = s.midShiftDroppedTokens + deficit;
+    const raw = await findTokenPrefixLength(fullText, target, (fraction) =>
       emitShiftProgress(74 + 14 * fraction),
     );
     spliceRawDrop = raw;
     // Snap forward to a markdown block boundary so fenced code, tables and
     // quotes stay renderable (and continuable) on both sides of the split.
-    const snapped = snapSpliceOffset(candidate, raw);
+    const snapped = snapSpliceOffset(fullText, raw);
     // Always keep at least one char of context as the continuation anchor.
-    contextDrop = Math.min(snapped, candidate.length - 1);
+    const drop = Math.min(snapped, fullText.length - 1);
+    if (drop > 0) {
+      absoluteDrop = drop;
+      s.midShiftDroppedTokens = target;
+      s.midShiftDroppedChars = drop;
+    }
   }
-  const newKept = contextDrop > 0 ? candidate.slice(contextDrop) : candidate;
+  const { splitSegId, splitOff, keptText } = splitOrderedResponse(
+    orderedSegs,
+    absoluteDrop,
+  );
 
   // Stage the kept remainder as the prefill (replace the prior leg's
-  // prefill when it is still the last history entry, else push).
-  if (newKept.length > 0) {
-    const prefill: ChatHistoryMsg = { role: 'assistant', content: newKept };
+  // prefill when it is still the last history entry, else push). When no new
+  // splice was needed, this extends the staged prefill over the full live
+  // response, so previously dropped output stays dropped.
+  if (keptText.length > 0) {
+    const prefill: ChatHistoryMsg = { role: 'assistant', content: keptText };
     const lastIdx = s.history.length - 1;
     const lastEntry = lastIdx >= 0 ? s.history[lastIdx] : undefined;
     if (
@@ -2096,41 +2161,18 @@ async function performMidChatShift(
       s.history = [...s.history, prefill];
       s.midShiftPrefillIndex = s.history.length - 1;
     }
-    s.midShiftKeptText = newKept;
   }
 
-  // Record the render-time split point: absolute offset from the response
-  // start over normal-text segments (newKept is always a suffix of the
-  // displayed response text, up to leading-whitespace stripping).
-  if (contextDrop > 0) {
+  // Record the render-time split point when this shift moved it forward.
+  // Display keeps the full text in both halves.
+  if (absoluteDrop > prevAbsoluteDrop && splitSegId) {
     const tail = s.messages[s.messages.length - 1];
     if (tail?.role === 'assistant') {
-      const displayText = tail.content
-        .filter((seg) => seg.type === 'normal')
-        .map((seg) => seg.text)
-        .join('');
-      const absoluteDrop = displayText.length - newKept.length;
-      if (absoluteDrop > 0 && absoluteDrop < displayText.length) {
-        let acc = 0;
-        let splitSegId: string | null = null;
-        let splitOff = 0;
-        for (const seg of tail.content) {
-          if (seg.type !== 'normal') continue;
-          if (acc + seg.text.length > absoluteDrop) {
-            splitSegId = seg.id;
-            splitOff = absoluteDrop - acc;
-            break;
-          }
-          acc += seg.text.length;
-        }
-        if (splitSegId) {
-          const updated = {
-            ...tail,
-            contextSpliceAt: { segId: splitSegId, offset: splitOff },
-          };
-          s.messages = [...s.messages.slice(0, -1), updated];
-        }
-      }
+      const updated = {
+        ...tail,
+        contextSpliceAt: { segId: splitSegId, offset: splitOff },
+      };
+      s.messages = [...s.messages.slice(0, -1), updated];
     }
   }
 
@@ -2148,8 +2190,8 @@ async function performMidChatShift(
       freedOldTurns: freedTokens,
       minToClear,
       spliceRawDrop,
-      contextDropChars: contextDrop,
-      newKeptLen: newKept.length,
+      contextDropChars: absoluteDrop,
+      newKeptLen: keptText.length,
       remaining: total - lastUsage.used,
     });
   }
@@ -2393,7 +2435,9 @@ export async function sendMessage(
   s.midShiftRequested = false;
   s.midShiftStreamedLen = 0;
   s.midShiftNextAllowedAt = 0;
-  s.midShiftKeptText = '';
+  s.midShiftDroppedTokens = 0;
+  s.midShiftDroppedChars = 0;
+  s.midShiftHopelessWarned = false;
   s.midShiftPrefillIndex = -1;
   if (currentContextShift) {
     const csSnap = currentContextShift;
@@ -2577,14 +2621,36 @@ export async function sendMessage(
                   removable === false &&
                   lastUsage
                 ) {
-                  // eslint-disable-next-line no-console
-                  console.log('[context-shift] prompt-phase skip', {
-                    sessionId,
-                    reason: 'no-trimmable-history',
-                    remaining:
-                      (currentContextSize ?? lastUsage.total) - lastUsage.used,
-                    threshold: csPrompt.tokensRemainingUntilShift,
-                  });
+                  // Over budget with nothing trimmable: no shift this turn or
+                  // any restart could free space. Log once per turn — this
+                  // configuration should never happen in practice.
+                  if (shouldRequestMidShift(s)) {
+                    if (!s.midShiftHopelessWarned) {
+                      s.midShiftHopelessWarned = true;
+                      // eslint-disable-next-line no-console
+                      console.error(
+                        '[context-shift] prompt exceeds workable context and nothing is trimmable; shifts cannot free space',
+                        {
+                          sessionId,
+                          remaining:
+                            (currentContextSize ?? lastUsage.total) -
+                            lastUsage.used,
+                          threshold: csPrompt.tokensRemainingUntilShift,
+                          historyLen: s.history.length,
+                        },
+                      );
+                    }
+                  } else {
+                    // eslint-disable-next-line no-console
+                    console.log('[context-shift] prompt-phase skip', {
+                      sessionId,
+                      reason: 'no-trimmable-history',
+                      remaining:
+                        (currentContextSize ?? lastUsage.total) -
+                        lastUsage.used,
+                      threshold: csPrompt.tokensRemainingUntilShift,
+                    });
+                  }
                 }
               }
               // Prompt processing complete — send stats immediately
@@ -2766,7 +2832,8 @@ export async function sendMessage(
                   threshold:
                     currentContextShift?.tokensRemainingUntilShift ?? null,
                   streamedLen: s.midShiftStreamedLen,
-                  partialLen: fullResponse.length + fullThinking.length,
+                  legNormalLen: fullResponse.length,
+                  legThinkingLen: fullThinking.length,
                 });
               }
               s.midShiftRequested = true;
@@ -2788,7 +2855,7 @@ export async function sendMessage(
       // from the staged prefill (tool-loop precedent for pause-mutate-resume).
       s.midShiftRequested = false;
       if (!s.aborted) {
-        await performMidChatShift(s, sessionId, fullResponse);
+        await performMidChatShift(s, sessionId);
         if (!s.aborted) {
           s.abortController = new AbortController();
           persistSessionState(sessionId);

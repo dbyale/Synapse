@@ -470,7 +470,9 @@ function statusLabel(
 
 // Splits an assistant message partially cleared by a mid-chat shift into its
 // cleared head and retained tail (render-time only; storage keeps 1 message).
-// Returns null when there is no splice or it cannot be resolved.
+// The split may land in normal, thought or comment segments; tool segments
+// carry call payloads and are never split. Returns null when there is no
+// splice or it cannot be resolved.
 function splitSplicedMessage(msg: Message): {
   head: Message;
   tail: Message;
@@ -480,7 +482,8 @@ function splitSplicedMessage(msg: Message): {
   const idx = msg.content.findIndex((seg) => seg.id === splice.segId);
   if (idx === -1) return null;
   const seg = msg.content[idx];
-  if (seg.type !== 'normal') return null;
+  if (seg.type !== 'normal' && seg.type !== 'thought' && seg.type !== 'comment')
+    return null;
   const offset = Math.max(0, Math.min(splice.offset, seg.text.length));
   const headSegs: MessageSegment[] = [];
   for (let i = 0; i < idx; i += 1) headSegs.push(msg.content[i]);
