@@ -12,20 +12,22 @@ export type CacheType =
 export interface ContextShiftSettings {
   enabled: boolean;
   tokensRemainingUntilShift: number;
-  maxUserMessages: number;
-  minTokensToClear: number;
+  tokensToShift: number;
   preserveAttachments: boolean;
   summarizationEnabled: boolean;
   summarizationMessage: string;
   summarizationThinkingBudget: number;
   midChatShiftEnabled: boolean;
+  /** @deprecated Removed; kept for reading old profiles. */
+  maxUserMessages?: number;
+  /** @deprecated Renamed to tokensToShift. */
+  minTokensToClear?: number;
 }
 
 export const DEFAULT_CONTEXT_SHIFT: ContextShiftSettings = {
   enabled: false,
   tokensRemainingUntilShift: 4096,
-  maxUserMessages: 6,
-  minTokensToClear: 8192,
+  tokensToShift: 8192,
   preserveAttachments: true,
   summarizationEnabled: false,
   summarizationMessage:

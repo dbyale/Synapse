@@ -114,8 +114,7 @@ import {
   CUSTOM_FLAGS_PAGE_TOOLTIP,
   CONTEXT_SHIFT_ENABLED_TOOLTIP,
   CONTEXT_SHIFT_TOKENS_REMAINING_TOOLTIP,
-  CONTEXT_SHIFT_MAX_USER_MESSAGES_TOOLTIP,
-  CONTEXT_SHIFT_MIN_TOKENS_TO_CLEAR_TOOLTIP,
+  CONTEXT_SHIFT_TOKENS_TO_SHIFT_TOOLTIP,
   CONTEXT_SHIFT_PRESERVE_ATTACHMENTS_TOOLTIP,
   CONTEXT_SHIFT_SUMMARIZATION_ENABLED_TOOLTIP,
   CONTEXT_SHIFT_SUMMARIZATION_MESSAGE_TOOLTIP,
@@ -721,15 +720,9 @@ const SEARCH_INDEX: SearchIndexEntry[] = [
     page: 'context-shift',
   },
   {
-    id: 'context-shift:max-user-messages',
-    label: 'Max User Messages Kept',
-    keywords: ['user messages', 'keep', 'recent'],
-    page: 'context-shift',
-  },
-  {
-    id: 'context-shift:min-tokens-to-clear',
-    label: 'Min Tokens To Clear',
-    keywords: ['minimum', 'tokens', 'clear', 'floor'],
+    id: 'context-shift:tokens-to-shift',
+    label: 'Tokens To Shift',
+    keywords: ['tokens', 'shift', 'clear', 'remove'],
     page: 'context-shift',
   },
   {
@@ -747,7 +740,7 @@ const SEARCH_INDEX: SearchIndexEntry[] = [
   {
     id: 'context-shift:mid-chat',
     label: 'Mid-Chat Shift',
-    keywords: ['mid-chat', 'reserved', 'future'],
+    keywords: ['mid-chat', 'streaming', 'generation'],
     page: 'context-shift',
   },
   // rope-scaling
@@ -2005,10 +1998,8 @@ function ContextShiftPage({
   setEditCsEnabled,
   editCsTokensRemaining,
   setEditCsTokensRemaining,
-  editCsMaxUserMessages,
-  setEditCsMaxUserMessages,
-  editCsMinTokensToClear,
-  setEditCsMinTokensToClear,
+  editCsTokensToShift,
+  setEditCsTokensToShift,
   editCsPreserveAttachments,
   setEditCsPreserveAttachments,
   editCsSummarizationEnabled,
@@ -2024,10 +2015,8 @@ function ContextShiftPage({
   setEditCsEnabled: (v: boolean) => void;
   editCsTokensRemaining: string;
   setEditCsTokensRemaining: (v: string) => void;
-  editCsMaxUserMessages: string;
-  setEditCsMaxUserMessages: (v: string) => void;
-  editCsMinTokensToClear: string;
-  setEditCsMinTokensToClear: (v: string) => void;
+  editCsTokensToShift: string;
+  setEditCsTokensToShift: (v: string) => void;
   editCsPreserveAttachments: boolean;
   setEditCsPreserveAttachments: (v: boolean) => void;
   editCsSummarizationEnabled: boolean;
@@ -2050,7 +2039,8 @@ function ContextShiftPage({
         }}
       >
         Automatically clears old conversation context when the context window is
-        running low, keeping the most recent user messages intact.
+        running low, removing the configured number of tokens per shift,
+        oldest first.
       </p>
 
       <label className="epm-perf-toggle-row" style={{ paddingTop: 0 }}>
@@ -2099,22 +2089,13 @@ function ContextShiftPage({
             tooltip={CONTEXT_SHIFT_TOKENS_REMAINING_TOOLTIP}
           />
           <NumberField
-            label="Max User Messages Kept"
-            value={editCsMaxUserMessages}
-            onChange={setEditCsMaxUserMessages}
+            label="Tokens To Shift"
+            value={editCsTokensToShift}
+            onChange={setEditCsTokensToShift}
             min="0"
             step="1"
-            helper={`Default: ${DEFAULT_CONTEXT_SHIFT.maxUserMessages}`}
-            tooltip={CONTEXT_SHIFT_MAX_USER_MESSAGES_TOOLTIP}
-          />
-          <NumberField
-            label="Min Tokens To Clear"
-            value={editCsMinTokensToClear}
-            onChange={setEditCsMinTokensToClear}
-            min="0"
-            step="1"
-            helper={`Default: ${DEFAULT_CONTEXT_SHIFT.minTokensToClear}`}
-            tooltip={CONTEXT_SHIFT_MIN_TOKENS_TO_CLEAR_TOOLTIP}
+            helper={`Default: ${DEFAULT_CONTEXT_SHIFT.tokensToShift}`}
+            tooltip={CONTEXT_SHIFT_TOKENS_TO_SHIFT_TOOLTIP}
           />
         </div>
 
@@ -5389,16 +5370,11 @@ export default function EditProfileModal({
         DEFAULT_CONTEXT_SHIFT.tokensRemainingUntilShift,
     ),
   );
-  const [editCsMaxUserMessages, setEditCsMaxUserMessages] = useState<string>(
+  const [editCsTokensToShift, setEditCsTokensToShift] = useState<string>(
     String(
-      profile?.contextShift?.maxUserMessages ??
-        DEFAULT_CONTEXT_SHIFT.maxUserMessages,
-    ),
-  );
-  const [editCsMinTokensToClear, setEditCsMinTokensToClear] = useState<string>(
-    String(
-      profile?.contextShift?.minTokensToClear ??
-        DEFAULT_CONTEXT_SHIFT.minTokensToClear,
+      profile?.contextShift?.tokensToShift ??
+        profile?.contextShift?.minTokensToClear ??
+        DEFAULT_CONTEXT_SHIFT.tokensToShift,
     ),
   );
   const [editCsPreserveAttachments, setEditCsPreserveAttachments] =
@@ -6099,8 +6075,7 @@ export default function EditProfileModal({
 
     const buildContextShift = (): ContextShiftSettings => {
       const parsedTokensRemaining = parseInt(editCsTokensRemaining, 10);
-      const parsedMaxUserMessages = parseInt(editCsMaxUserMessages, 10);
-      const parsedMinTokensToClear = parseInt(editCsMinTokensToClear, 10);
+      const parsedTokensToShift = parseInt(editCsTokensToShift, 10);
       const parsedThinkingBudget = parseInt(
         editCsSummarizationThinkingBudget,
         10,
@@ -6110,12 +6085,9 @@ export default function EditProfileModal({
         tokensRemainingUntilShift: Number.isNaN(parsedTokensRemaining)
           ? DEFAULT_CONTEXT_SHIFT.tokensRemainingUntilShift
           : parsedTokensRemaining,
-        maxUserMessages: Number.isNaN(parsedMaxUserMessages)
-          ? DEFAULT_CONTEXT_SHIFT.maxUserMessages
-          : parsedMaxUserMessages,
-        minTokensToClear: Number.isNaN(parsedMinTokensToClear)
-          ? DEFAULT_CONTEXT_SHIFT.minTokensToClear
-          : parsedMinTokensToClear,
+        tokensToShift: Number.isNaN(parsedTokensToShift)
+          ? DEFAULT_CONTEXT_SHIFT.tokensToShift
+          : parsedTokensToShift,
         preserveAttachments: editCsPreserveAttachments,
         summarizationEnabled: editCsSummarizationEnabled,
         summarizationMessage:
@@ -6473,10 +6445,8 @@ export default function EditProfileModal({
             setEditCsEnabled={setEditCsEnabled}
             editCsTokensRemaining={editCsTokensRemaining}
             setEditCsTokensRemaining={setEditCsTokensRemaining}
-            editCsMaxUserMessages={editCsMaxUserMessages}
-            setEditCsMaxUserMessages={setEditCsMaxUserMessages}
-            editCsMinTokensToClear={editCsMinTokensToClear}
-            setEditCsMinTokensToClear={setEditCsMinTokensToClear}
+            editCsTokensToShift={editCsTokensToShift}
+            setEditCsTokensToShift={setEditCsTokensToShift}
             editCsPreserveAttachments={editCsPreserveAttachments}
             setEditCsPreserveAttachments={setEditCsPreserveAttachments}
             editCsSummarizationEnabled={editCsSummarizationEnabled}

@@ -418,15 +418,9 @@ export const CONTEXT_SHIFT_TOKENS_REMAINING_TOOLTIP = [
   'Default: 4096.',
 ];
 
-export const CONTEXT_SHIFT_MAX_USER_MESSAGES_TOOLTIP = [
-  'Maximum number of your most recent user messages kept in model context after a shift.',
-  'Applied after the minimum tokens are cleared: if more messages remain, clearing continues until this many are left. Set to 0 to allow clearing everything.',
-  'Default: 6.',
-];
-
-export const CONTEXT_SHIFT_MIN_TOKENS_TO_CLEAR_TOOLTIP = [
-  'Minimum tokens each shift removes, clearing oldest messages first.',
-  'Every shift frees at least this much; it does not prevent a shift from starting.',
+export const CONTEXT_SHIFT_TOKENS_TO_SHIFT_TOOLTIP = [
+  'How many tokens each shift removes, oldest context first, until the context fits again.',
+  'Entries are split when the amount lands mid-message. Repeated shifts each remove this amount.',
   'Default: 8192.',
 ];
 

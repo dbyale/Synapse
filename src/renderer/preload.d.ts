@@ -341,6 +341,9 @@ declare global {
       removeChatListeners: () => void;
       chatTokenize: (text: string) => Promise<{ count: number | null }>;
       chatContextUsage: () => Promise<{ used: number; total: number }>;
+      chatRefreshUsage: (
+        sessionId: string,
+      ) => Promise<{ used: number; total: number }>;
       chatContextSize: () => Promise<{ contextSize: number | null }>;
 
       chatCumulativeTokenUsage: () => Promise<{

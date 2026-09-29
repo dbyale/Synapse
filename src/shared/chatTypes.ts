@@ -31,17 +31,6 @@ export interface MessageSegment {
   };
 }
 
-/** Render-time split point for an assistant message partially cleared by a
- * mid-chat context shift. The head (up to the split) was dropped from LLM
- * context but stays visible; the renderer shows head, cutoff marker, tail.
- * Stored on the single persisted message so reloads render the same split. */
-export interface ContextSplice {
-  /** Id of the display segment containing the split. */
-  segId: string;
-  /** Chars of that segment belonging to the cleared head. */
-  offset: number;
-}
-
 export interface Message {
   id: number;
   role: 'user' | 'assistant' | 'system';
@@ -49,8 +38,14 @@ export interface Message {
   collapsed?: boolean;
   /** Set on the newest display message that was cleared from LLM context by a context shift; renders a cutoff divider after it. */
   contextCutoff?: boolean;
-  /** Set on an in-progress assistant message whose leading output was cleared by a mid-chat shift; renders the message split around a cutoff divider. */
-  contextSpliceAt?: ContextSplice;
+  /** Chars dropped from the head of this message's splittable text by a
+   * context shift (absolute offset over normal/thought/comment text plus
+   * tool results, in segment order). The renderer shows head, cutoff
+   * marker, tail from the single persisted message. */
+  contextSpliceChars?: number;
+  /** Tool-result split: ordinal of the tool segment (among segments carrying
+   * a result, in order) holding the split, with head chars in contextSpliceChars. */
+  contextSpliceTool?: { ordinal: number; chars: number };
   stats?: GenerationStatsData;
   promptStats?: GenerationStatsData;
   /** Set when the server rejected the prompt before accepting it (pre-accept failure). */
@@ -70,6 +65,8 @@ export interface ChatHistoryMsg {
   content: any;
   tool_calls?: any[];
   tool_call_id?: string;
+  /** Display message this entry was created from (split-marker mapping). */
+  msgId?: number;
 }
 
 export interface Source {

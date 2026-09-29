@@ -642,6 +642,11 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     return usage || { used: 0, total: 0 };
   });
 
+  ipcMain.handle('chat:refreshUsage', async (_event, sessionId: string) => {
+    const usage = await chatService.refreshUsageFromHistory(sessionId);
+    return usage || { used: 0, total: 0 };
+  });
+
   ipcMain.handle('chat:contextSize', () => {
     return { contextSize: chatService.getContextSize() };
   });

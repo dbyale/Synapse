@@ -468,35 +468,98 @@ function statusLabel(
   return 'Generating…';
 }
 
-// Splits an assistant message partially cleared by a mid-chat shift into its
-// cleared head and retained tail (render-time only; storage keeps 1 message).
-// The split may land in normal, thought or comment segments; tool segments
-// carry call payloads and are never split. Returns null when there is no
-// splice or it cannot be resolved.
+// Splits a message partially cleared by a context shift into its cleared
+// head and retained tail (render-time only; storage keeps 1 message). Two
+// forms: a char offset over the message's joined prose (normal/thought/
+// comment text, tool segments ride along positionally), or a tool-result
+// split ({ordinal}th tool segment carrying a result, at {chars} chars).
+// Returns null when there is no splice or it cannot be resolved.
 function splitSplicedMessage(msg: Message): {
   head: Message;
   tail: Message;
 } | null {
-  const splice = msg.contextSpliceAt;
-  if (!splice || msg.role !== 'assistant') return null;
-  const idx = msg.content.findIndex((seg) => seg.id === splice.segId);
-  if (idx === -1) return null;
-  const seg = msg.content[idx];
-  if (seg.type !== 'normal' && seg.type !== 'thought' && seg.type !== 'comment')
-    return null;
-  const offset = Math.max(0, Math.min(splice.offset, seg.text.length));
+  if (msg.role !== 'assistant' && msg.role !== 'user') return null;
+  const stripSplice = (m: Message): Message => {
+    const copy = { ...m };
+    delete copy.contextSpliceChars;
+    delete copy.contextSpliceTool;
+    return copy;
+  };
+  // Tool-result split: slice the ordinal-th tool segment carrying a result.
+  // Params stay on the head card; the tail keeps name, status and output.
+  if (msg.contextSpliceTool !== undefined) {
+    const { ordinal, chars } = msg.contextSpliceTool;
+    const toolIdxs: number[] = [];
+    msg.content.forEach((seg, i) => {
+      if (seg.type === 'tool' && seg.toolResult) toolIdxs.push(i);
+    });
+    if (ordinal < 0 || ordinal >= toolIdxs.length) return null;
+    const si = toolIdxs[ordinal];
+    const seg = msg.content[si];
+    const result = seg.toolResult ?? '';
+    const offset = Math.max(0, Math.min(chars, result.length));
+    const headSegs: MessageSegment[] = [];
+    for (let i = 0; i < si; i += 1) headSegs.push(msg.content[i]);
+    if (offset > 0) {
+      headSegs.push({ ...seg, toolResult: result.slice(0, offset) });
+    }
+    const tailSegs: MessageSegment[] = [];
+    if (offset < result.length) {
+      tailSegs.push({
+        ...seg,
+        toolParams: undefined,
+        toolResult: result.slice(offset),
+      });
+    }
+    for (let i = si + 1; i < msg.content.length; i += 1) {
+      tailSegs.push(msg.content[i]);
+    }
+    if (headSegs.length === 0 || tailSegs.length === 0) return null;
+    return {
+      head: stripSplice({ ...msg, content: headSegs }),
+      tail: stripSplice({ ...msg, content: tailSegs }),
+    };
+  }
+  // Prose split: walk normal/thought/comment text; tool segments ride along
+  // on whichever side the split has reached.
+  const chars = msg.contextSpliceChars;
+  if (chars === undefined || chars <= 0) return null;
+  let acc = 0;
+  let splitIdx = -1;
+  let splitOff = 0;
+  for (let i = 0; i < msg.content.length; i += 1) {
+    const seg = msg.content[i];
+    if (
+      seg.type === 'normal' ||
+      seg.type === 'thought' ||
+      seg.type === 'comment'
+    ) {
+      if (acc + seg.text.length > chars) {
+        splitIdx = i;
+        splitOff = chars - acc;
+        break;
+      }
+      acc += seg.text.length;
+    }
+  }
+  if (splitIdx === -1) return null;
   const headSegs: MessageSegment[] = [];
-  for (let i = 0; i < idx; i += 1) headSegs.push(msg.content[i]);
-  if (offset > 0) headSegs.push({ ...seg, text: seg.text.slice(0, offset) });
+  for (let i = 0; i < splitIdx; i += 1) headSegs.push(msg.content[i]);
+  const splitSeg = msg.content[splitIdx];
+  if (splitOff > 0) {
+    headSegs.push({ ...splitSeg, text: splitSeg.text.slice(0, splitOff) });
+  }
   const tailSegs: MessageSegment[] = [];
-  if (offset < seg.text.length)
-    tailSegs.push({ ...seg, text: seg.text.slice(offset) });
-  for (let i = idx + 1; i < msg.content.length; i += 1)
+  if (splitOff < splitSeg.text.length) {
+    tailSegs.push({ ...splitSeg, text: splitSeg.text.slice(splitOff) });
+  }
+  for (let i = splitIdx + 1; i < msg.content.length; i += 1) {
     tailSegs.push(msg.content[i]);
+  }
   if (headSegs.length === 0 || tailSegs.length === 0) return null;
   return {
-    head: { ...msg, content: headSegs, contextSpliceAt: undefined },
-    tail: { ...msg, content: tailSegs, contextSpliceAt: undefined },
+    head: stripSplice({ ...msg, content: headSegs }),
+    tail: stripSplice({ ...msg, content: tailSegs }),
   };
 }
 
@@ -3068,6 +3131,36 @@ export default function ChatPage() {
     processing,
     executing,
   ]);
+
+  // One-shot usage re-anchor when the active chat changes: restored chats
+  // have no live counters until then (the counter reads 0 and main-side
+  // gates decide on fiction). Re-measures from stored history once.
+  useEffect(() => {
+    if (!activeSessionId || !selectedProfileId || modelLoading || loadError) {
+      return;
+    }
+    const sid = activeSessionId;
+    window.electronAPI
+      .chatRefreshUsage(sid)
+      .then((usage) => {
+        if (activeSessionIdRef.current === sid) {
+          setUsedTokens(usage.used);
+          setMaxTokens((prev) =>
+            prev === null && usage.total > 0 ? usage.total : prev,
+          );
+          // Rebase TPS tracking so the jump to true history size is not
+          // misread as generation speed.
+          lastTokenSnapshot.current = {
+            tokens: usage.used,
+            time: Date.now(),
+          };
+          generationBaselineTokens.current = usage.used;
+          setTps(0);
+        }
+        return undefined;
+      })
+      .catch(() => {});
+  }, [activeSessionId, selectedProfileId, modelLoading, loadError]);
 
   const addSourcesFromToolResult = useCallback(
     (
