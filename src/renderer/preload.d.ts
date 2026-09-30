@@ -338,6 +338,13 @@ declare global {
           toolCount: number;
         }) => void,
       ) => () => void;
+      onChatServerCrashed: (
+        callback: (data: {
+          logs: string[];
+          exitCode: number | null;
+          signalCode: string | null;
+        }) => void,
+      ) => () => void;
       removeChatListeners: () => void;
       chatTokenize: (text: string) => Promise<{ count: number | null }>;
       chatContextUsage: () => Promise<{ used: number; total: number }>;

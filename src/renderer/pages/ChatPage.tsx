@@ -4049,10 +4049,25 @@ export default function ChatPage() {
       },
     );
 
+    // llama-server crashed after load: main pushes the last ~5 stderr lines.
+    // Intentional stops (Power / profile switch) never push, so any event
+    // here is unexpected and should surface the existing error card.
+    const removeServerCrashedListener = window.electronAPI.onChatServerCrashed(
+      (data) => {
+        const logs = (data?.logs ?? []).slice(-5);
+        const detail =
+          logs.length > 0 ? logs.join('\n') : '(no server output captured)';
+        persistentLoadedProfileId = '';
+        setIsServerOnline(false);
+        setLoadError(`Inference server crashed.\n${detail}`);
+      },
+    );
+
     return () => {
       removeSystemProgressListener();
       removeSystemStatusListener();
       removeSystemDoneListener();
+      removeServerCrashedListener();
     };
   }, []);
 
@@ -5130,7 +5145,7 @@ export default function ChatPage() {
                       <>
                         {lines[0]}
                         <ul className="chat-error__log">
-                          {lines.slice(1).map((l, i) => (
+                          {lines.slice(1, 6).map((l, i) => (
                             <li key={i}>{l}</li>
                           ))}
                         </ul>

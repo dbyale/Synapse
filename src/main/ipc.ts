@@ -792,6 +792,12 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     win.webContents.send('chat:stream-event', payload);
   });
 
+  chatService.setServerCrashCallback((info) => {
+    const crashWin = BrowserWindow.getAllWindows()[0];
+    if (!crashWin || crashWin.isDestroyed()) return;
+    crashWin.webContents.send('chat:server-crashed', info);
+  });
+
   ipcMain.handle('chat:cumulativeTokenUsage', () => {
     return chatService.getCumulativeTokenUsage();
   });

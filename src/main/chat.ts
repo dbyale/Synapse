@@ -101,6 +101,44 @@ let chatFunctions: any = null;
 let activeTools: any[] = [];
 let emitStreamEvent: ((payload: StreamEventPayload) => void) | null = null;
 
+// --- llama-server stderr tail + crash propagation ---
+// Persistent (module-scope) so a crash AFTER a successful load can still
+// surface its last ~5 stderr lines. Previously this buffer was local to
+// loadProfile() and discarded on success, so post-load crashes only flipped
+// the online pill with no logs.
+let lastServerStderr = '';
+let serverStopRequested = false;
+
+export interface ServerCrashInfo {
+  logs: string[];
+  exitCode: number | null;
+  signalCode: string | null;
+}
+
+let emitServerCrash: ((info: ServerCrashInfo) => void) | null = null;
+
+function appendServerStderr(chunk: string): void {
+  lastServerStderr += chunk;
+  // Bound memory: keep only the recent tail.
+  if (lastServerStderr.length > 50000) {
+    lastServerStderr = lastServerStderr.slice(-50000);
+  }
+}
+
+export function getLastServerLogLines(count = 5): string[] {
+  return lastServerStderr
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .slice(-count);
+}
+
+export function setServerCrashCallback(
+  cb: (info: ServerCrashInfo) => void,
+): void {
+  emitServerCrash = cb;
+}
+
 const sessions = new Map<string, SessionStream>();
 
 // Provide live session access to sessionStore for extension use without circular import
@@ -1290,8 +1328,6 @@ export async function loadProfile(
     console.log('[chat] Loading Profile:', profile.name);
     onStatus?.({ phase: 'fetching', message: `Fetching Profile…` });
 
-    let serverErrorLog = '';
-
     try {
       // Start unload in background
       const unloadPromise = unloadModel();
@@ -1370,6 +1406,12 @@ export async function loadProfile(
       });
       await unloadPromise;
 
+      // Fresh slate for the new server: drop the old run's tail so a new
+      // failure can't show stale lines, and clear the intentional-stop flag
+      // set by unloadModel() so unexpected exits count as crashes.
+      lastServerStderr = '';
+      serverStopRequested = false;
+
       lastResolvedMemory = result.memory;
       currentContextSize = result.ctx;
 
@@ -1438,22 +1480,55 @@ export async function loadProfile(
       // stale handle so future loads don't try to unload a dead process.
       // Identity guard prevents a late-fired exit from clobbering a
       // freshly spawned replacement (unloadModel nulls before killing).
-      proc.once('exit', () => {
+      // Unexpected exits also snapshot the last ~5 stderr lines and push a
+      // 'chat:server-crashed' event so ChatPage can show them (previously
+      // only the online pill flipped with no logs).
+      proc.once('exit', (code: number | null, signal: string | null) => {
         if (serverProcess === proc) {
           serverProcess = null;
           currentProjector = null;
+          if (!serverStopRequested) {
+            const logs = getLastServerLogLines(5);
+            console.error(
+              '[llama-server] Crashed. Exit:',
+              code,
+              'Signal:',
+              signal,
+              'Tail:\n',
+              logs.join('\n'),
+            );
+            emitServerCrash?.({
+              logs,
+              exitCode: code,
+              signalCode: signal,
+            });
+          }
         }
       });
 
       proc.stderr?.on('data', (d) => {
-        serverErrorLog += d.toString();
+        appendServerStderr(d.toString());
+      });
+
+      proc.once('error', (err: Error) => {
+        appendServerStderr(`spawn error: ${err.message}\n`);
       });
 
       let ready = false;
       for (let i = 0; i < 45; i++) {
-        // Abort immediately if server was shut down while still loading (all phases)
+        // Abort immediately if server was shut down while still loading (all phases).
+        // An unexpected exit (crash) surfaces its stderr tail instead of the
+        // generic shutdown message so the error card has something to show.
         if (serverProcess !== proc) {
-          throw new Error('Server shutdown requested');
+          if (serverStopRequested) {
+            throw new Error('Server shutdown requested');
+          }
+          const tail = getLastServerLogLines(5);
+          const detail =
+            tail.length > 0
+              ? tail.join('\n')
+              : '(no server output captured)';
+          throw new Error(`Inference server crashed.\n${detail}`);
         }
         try {
           const host = (profile as any).host ?? '127.0.0.1';
@@ -1468,18 +1543,11 @@ export async function loadProfile(
       }
 
       if (!ready) {
-        console.error('[llama-server] Startup failed. Logs:\n', serverErrorLog);
-        const errorLines = serverErrorLog
-          .split('\n')
-          .filter((l) => /\bE\b/.test(l) || l.includes('error'))
-          .map((l) => l.trim())
-          .filter(Boolean)
-          .slice(0, 10);
+        console.error('[llama-server] Startup failed. Logs:\n', lastServerStderr);
+        const tail = getLastServerLogLines(5);
         const detail =
-          errorLines.length > 0
-            ? errorLines.join('\n')
-            : serverErrorLog.trim().slice(0, 2000);
-        throw new Error(`Inference server failed to respond.\n\n${detail}`);
+          tail.length > 0 ? tail.join('\n') : '(no server output captured)';
+        throw new Error(`Inference server failed to respond.\n${detail}`);
       }
 
       const resolvedSystemPrompt = substituteSystemPromptVariables(
@@ -3475,6 +3543,10 @@ function abortAllStreams(): void {
 export async function unloadModel() {
   const proc = serverProcess;
   if (proc) {
+    // Intentional stop: suppress the 'server-crashed' push for this exit.
+    // loadProfile() clears the flag after awaiting the old server's
+    // shutdown and before spawning its replacement.
+    serverStopRequested = true;
     serverProcess = null;
     currentProjector = null;
     abortAllStreams();

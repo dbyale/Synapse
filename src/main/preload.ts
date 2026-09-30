@@ -221,6 +221,25 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('chat:stream-event', listener);
   },
 
+  onChatServerCrashed: (
+    callback: (data: {
+      logs: string[];
+      exitCode: number | null;
+      signalCode: string | null;
+    }) => void,
+  ) => {
+    const listener = (
+      _event: IpcRendererEvent,
+      data: {
+        logs: string[];
+        exitCode: number | null;
+        signalCode: string | null;
+      },
+    ) => callback(data);
+    ipcRenderer.on('chat:server-crashed', listener);
+    return () => ipcRenderer.removeListener('chat:server-crashed', listener);
+  },
+
   removeChatListeners: () => {
     ipcRenderer.removeAllListeners('chat:stream-event');
   },
