@@ -59,6 +59,7 @@ import ThinkingDropdown, {
   readThinkingTokens,
 } from '../components/ThinkingDropdown';
 import SavingsModal from '../components/SavingsModal';
+import ServerLogModal from '../components/ServerLogModal';
 import ChatSearchBar from '../components/ChatSearchBar';
 import { useSourcesContext } from '../context/SourcesContext';
 import type { Profile } from '../types/profile';
@@ -1555,6 +1556,9 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [modelLoading, setModelLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [showLogModal, setShowLogModal] = useState(false);
+  const [fullServerLog, setFullServerLog] = useState('');
+  const [logLoading, setLogLoading] = useState(false);
   const [chatErrors, setChatErrors] = useState<
     { message: string; id: string }[]
   >([]);
@@ -4674,6 +4678,8 @@ export default function ChatPage() {
 
   const handleRetry = async () => {
     setLoadError(null);
+    setShowLogModal(false);
+    setFullServerLog('');
     manualStartRequestedRef.current = true;
     preserveSessionOnNextLoadRef.current = true;
     setIsServerOnline(true);
@@ -4687,6 +4693,19 @@ export default function ChatPage() {
     setTimeout(() => {
       setSelectedProfileId(tempId);
     }, 100);
+  };
+
+  const handleOpenFullLog = async () => {
+    setLogLoading(true);
+    try {
+      const log = await window.electronAPI.chatGetServerLog();
+      setFullServerLog(log || '');
+      setShowLogModal(true);
+    } catch {
+      setFullServerLog('');
+    } finally {
+      setLogLoading(false);
+    }
   };
 
   const handleRestoreSession = useCallback(
@@ -5153,14 +5172,37 @@ export default function ChatPage() {
                     );
                   })()}
                 </span>
-                <button
-                  type="button"
-                  className="chat-error__retry"
-                  onClick={handleRetry}
-                >
-                  <RefreshCw size={16} />
-                  Retry
-                </button>
+                {(() => {
+                  const lines = loadError.split('\n').filter(Boolean);
+                  const hasLogs =
+                    lines.length > 1 &&
+                    lines
+                      .slice(1)
+                      .some((l) => l !== '(no server output captured)');
+                  return (
+                    <div className="chat-error__actions">
+                      <button
+                        type="button"
+                        className="chat-error__retry"
+                        onClick={handleRetry}
+                      >
+                        <RefreshCw size={16} />
+                        Retry
+                      </button>
+                      {hasLogs && (
+                        <button
+                          type="button"
+                          className="chat-error__retry"
+                          onClick={handleOpenFullLog}
+                          disabled={logLoading}
+                        >
+                          <FileText size={16} />
+                          {logLoading ? 'Loading…' : 'See Full Log'}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             )}
 
@@ -5807,6 +5849,13 @@ export default function ChatPage() {
             title={savingsModalTitle}
             tipBasis={savingsModalBasis}
             onClose={() => setShowSavingsModal(false)}
+          />
+        )}
+
+        {showLogModal && (
+          <ServerLogModal
+            log={fullServerLog}
+            onClose={() => setShowLogModal(false)}
           />
         )}
 

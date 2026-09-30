@@ -139,6 +139,10 @@ export function setServerCrashCallback(
   emitServerCrash = cb;
 }
 
+export function getServerLog(): string {
+  return lastServerStderr;
+}
+
 const sessions = new Map<string, SessionStream>();
 
 // Provide live session access to sessionStore for extension use without circular import
@@ -1525,9 +1529,7 @@ export async function loadProfile(
           }
           const tail = getLastServerLogLines(5);
           const detail =
-            tail.length > 0
-              ? tail.join('\n')
-              : '(no server output captured)';
+            tail.length > 0 ? tail.join('\n') : '(no server output captured)';
           throw new Error(`Inference server crashed.\n${detail}`);
         }
         try {
@@ -1543,7 +1545,10 @@ export async function loadProfile(
       }
 
       if (!ready) {
-        console.error('[llama-server] Startup failed. Logs:\n', lastServerStderr);
+        console.error(
+          '[llama-server] Startup failed. Logs:\n',
+          lastServerStderr,
+        );
         const tail = getLastServerLogLines(5);
         const detail =
           tail.length > 0 ? tail.join('\n') : '(no server output captured)';

@@ -1792,6 +1792,19 @@
   border-color: var(--accent);
 }
 
+.chat-error__retry:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.chat-error__actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 /* ============================================================================
    CONFIRM DIALOG (clear conversation / switch profile warning)
    ============================================================================ */

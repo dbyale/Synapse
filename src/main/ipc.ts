@@ -584,6 +584,10 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     return chatService.isServerRunning();
   });
 
+  ipcMain.handle('chat:getServerLog', () => {
+    return chatService.getServerLog();
+  });
+
   ipcMain.handle('chat:reloadProfile', async (event) => {
     const profile = chatService.getCurrentProfile();
     if (!profile) {

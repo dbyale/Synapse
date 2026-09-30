@@ -352,6 +352,7 @@ declare global {
         sessionId: string,
       ) => Promise<{ used: number; total: number }>;
       chatContextSize: () => Promise<{ contextSize: number | null }>;
+      chatGetServerLog: () => Promise<string>;
 
       chatCumulativeTokenUsage: () => Promise<{
         totalInputTokens: number;

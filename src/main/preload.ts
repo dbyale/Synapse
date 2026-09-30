@@ -255,6 +255,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   chatContextSize: (): Promise<{ contextSize: number | null }> =>
     ipcRenderer.invoke('chat:contextSize'),
 
+  chatGetServerLog: (): Promise<string> =>
+    ipcRenderer.invoke('chat:getServerLog'),
+
   openModelsFolder: () => ipcRenderer.invoke('open-models-folder'),
   openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
   openPath: (filePath: string) =>
