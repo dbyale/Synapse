@@ -133,6 +133,49 @@ export function getLastServerLogLines(count = 5): string[] {
     .slice(-count);
 }
 
+// Known llama.cpp failure signatures mapped to friendly messages. Scanned
+// against the full stderr buffer; every match is shown (in listed order)
+// instead of the raw 5-line tail. Captures (architecture, filepath) are
+// interpolated; the raw log stays available via getServerLog().
+export function matchKnownServerErrors(log: string): string[] {
+  const matched: string[] = [];
+
+  const archMatch = log.match(/unknown model architecture:\s*'([^']+)'/);
+  if (archMatch) {
+    matched.push(
+      `Model Architecture "${archMatch[1]}" Unsupported.\nTry Using A Different Model, or Report an Issue`,
+    );
+  }
+
+  if (/failed to create MTP context/.test(log)) {
+    matched.push(
+      'Model Does Not Support MTP, but MTP is Enabled.\nUse An MTP Supported Model, or Disable MTP in Profile -> Performance -> Draft Model',
+    );
+  }
+
+  if (/mismatch between text model[\s\S]*?and mmproj/.test(log)) {
+    matched.push(
+      'Mismatching Model and Projector.\nTry installing a different Projector, or Remove the Projector.',
+    );
+  }
+
+  const ggufMatch = log.match(/failed to open GGUF file\s*'([^']+)'/);
+  if (ggufMatch) {
+    matched.push(
+      `The Following Model Is Missing or Corrupted\n"${ggufMatch[1]}"`,
+    );
+  }
+
+  return matched;
+}
+
+export function getServerErrorDetail(): string {
+  const known = matchKnownServerErrors(lastServerStderr);
+  if (known.length > 0) return known.join('\n');
+  const tail = getLastServerLogLines(5);
+  return tail.length > 0 ? tail.join('\n') : '(no server output captured)';
+}
+
 export function setServerCrashCallback(
   cb: (info: ServerCrashInfo) => void,
 ): void {
@@ -1484,15 +1527,20 @@ export async function loadProfile(
       // stale handle so future loads don't try to unload a dead process.
       // Identity guard prevents a late-fired exit from clobbering a
       // freshly spawned replacement (unloadModel nulls before killing).
-      // Unexpected exits also snapshot the last ~5 stderr lines and push a
-      // 'chat:server-crashed' event so ChatPage can show them (previously
-      // only the online pill flipped with no logs).
+      // Unexpected exits also snapshot the error detail (friendly preset
+      // when a known signature matches, else the last ~5 stderr lines) and
+      // push a 'chat:server-crashed' event so ChatPage can show them
+      // (previously only the online pill flipped with no logs).
       proc.once('exit', (code: number | null, signal: string | null) => {
         if (serverProcess === proc) {
           serverProcess = null;
           currentProjector = null;
           if (!serverStopRequested) {
-            const logs = getLastServerLogLines(5);
+            const detail = getServerErrorDetail();
+            const logs =
+              detail === '(no server output captured)'
+                ? []
+                : detail.split('\n');
             console.error(
               '[llama-server] Crashed. Exit:',
               code,
@@ -1521,15 +1569,14 @@ export async function loadProfile(
       let ready = false;
       for (let i = 0; i < 45; i++) {
         // Abort immediately if server was shut down while still loading (all phases).
-        // An unexpected exit (crash) surfaces its stderr tail instead of the
-        // generic shutdown message so the error card has something to show.
+        // An unexpected exit (crash) surfaces the friendly preset or stderr
+        // tail instead of the generic shutdown message so the error card has
+        // something to show.
         if (serverProcess !== proc) {
           if (serverStopRequested) {
             throw new Error('Server shutdown requested');
           }
-          const tail = getLastServerLogLines(5);
-          const detail =
-            tail.length > 0 ? tail.join('\n') : '(no server output captured)';
+          const detail = getServerErrorDetail();
           throw new Error(`Inference server crashed.\n${detail}`);
         }
         try {
@@ -1549,9 +1596,7 @@ export async function loadProfile(
           '[llama-server] Startup failed. Logs:\n',
           lastServerStderr,
         );
-        const tail = getLastServerLogLines(5);
-        const detail =
-          tail.length > 0 ? tail.join('\n') : '(no server output captured)';
+        const detail = getServerErrorDetail();
         throw new Error(`Inference server failed to respond.\n${detail}`);
       }
 
