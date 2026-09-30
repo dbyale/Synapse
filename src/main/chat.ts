@@ -85,20 +85,12 @@ interface SessionStream {
   promptProgress: number;
   /** Authoritative usage total at the last anchor (prompt/usage/snap/send). */
   usageBasisTokens: number;
-  /** streamedLen value at the last anchor; the estimate counts chars after it. */
+  /** Streamed chars at the last anchor; the estimate counts chars after it. */
   usageBasisLen: number;
-  /** Set when a mid-generation context shift is requested; distinct from user abort. */
-  midShiftRequested: boolean;
-  /** Chars streamed this turn (content + reasoning); O(1) re-arm clock. */
-  midShiftStreamedLen: number;
-  /** Streamed-char watermark: generation may only trigger at or past this. */
-  midShiftNextAllowedAt: number;
-  /** Tokens of the live response dropped from context so far (all types). */
-  midShiftDroppedTokens: number;
-  /** Rescue retry (trim + one leg retry on context-exceeded) used this turn. */
-  midShiftRescueDone: boolean;
-  /** History index of the mid-shift prefill assistant entry (-1 if none). */
-  midShiftPrefillIndex: number;
+  /** Chars streamed this turn (content + reasoning + tool args). */
+  streamedLen: number;
+  /** Context-limit retry used this turn (single rescue per turn). */
+  rescueDone: boolean;
 }
 
 // --- State ---
@@ -155,7 +147,7 @@ function emit(payload: StreamEventPayload): void {
 // per-object estimator itself) so the running estimate never double-counts.
 function anchorUsage(s: SessionStream, used: number, total: number): void {
   s.usageBasisTokens = used;
-  s.usageBasisLen = s.midShiftStreamedLen;
+  s.usageBasisLen = s.streamedLen;
   lastUsage = { used, total };
 }
 
@@ -333,12 +325,8 @@ function getSessionState(sessionId: string): SessionStream | null {
       promptProgress: 0,
       usageBasisTokens: 0,
       usageBasisLen: 0,
-      midShiftRequested: false,
-      midShiftStreamedLen: 0,
-      midShiftNextAllowedAt: 0,
-      midShiftDroppedTokens: 0,
-      midShiftRescueDone: false,
-      midShiftPrefillIndex: -1,
+      streamedLen: 0,
+      rescueDone: false,
     };
     sessions.set(sessionId, s);
   }
@@ -403,12 +391,8 @@ export function startSession(profileId: string, title: string): string {
     promptProgress: 0,
     usageBasisTokens: 0,
     usageBasisLen: 0,
-    midShiftRequested: false,
-    midShiftStreamedLen: 0,
-    midShiftNextAllowedAt: 0,
-    midShiftDroppedTokens: 0,
-    midShiftRescueDone: false,
-    midShiftPrefillIndex: -1,
+    streamedLen: 0,
+    rescueDone: false,
   };
   sessions.set(sessionId, state);
   persistSessionState(sessionId);
@@ -1752,22 +1736,6 @@ function shiftMessageText(m: ChatHistoryMsg): string {
   return parts.join('\n');
 }
 
-// eslint-disable-next-line no-use-before-define
-async function bulkShiftTokens(
-  s: SessionStream,
-  from: number,
-  to: number,
-): Promise<number> {
-  const texts: string[] = [];
-  for (let i = from; i < to; i += 1) {
-    const t = shiftMessageText(s.history[i]);
-    if (t) texts.push(t);
-  }
-  if (texts.length === 0) return 0;
-  // eslint-disable-next-line no-use-before-define
-  return (await tokenize(texts.join('\n'))) ?? 0;
-}
-
 // Effective per-shift removal amount, with migration from the old minimum
 // setting. Callers treat 0 as "nothing to remove".
 function shiftTokensToShift(cs: ContextShiftSettings): number {
@@ -1778,220 +1746,44 @@ function shiftTokensToShift(cs: ContextShiftSettings): number {
   return Math.max(0, v);
 }
 
-// A droppable span of history for one shift.
-interface ShiftUnit {
-  start: number;
-  end: number; // exclusive
-  tokens: number;
-  // Splittable text in order, or null for whole-drop-only units. Assistant
-  // tool-call records travel whole with their group so call/result pairing
-  // stays intact; media/array content is never split.
-  splitParts: { entryIdx: number; text: string }[] | null;
-}
+// --- Universal context shift ---
+// Single method for every shift. Drops/splices the oldest history entries
+// until tokensToRemove are freed. System prompt is never touched, attachment
+// stubs are skipped (they already count 0 via shiftMessageText), and nothing
+// is ever substituted — only removed or spliced.
 
-// Build droppable units over [systemEnd, cap). Plain user/assistant/tool
-// strings are splittable; an assistant tool-call record plus its following
-// tool entries form one atomic group (splittable only inside result strings,
-// call records always travel with kept results); media/array content and
-// empty entries are whole-drop only.
-function buildShiftUnits(
-  s: SessionStream,
-  systemEnd: number,
-  cap: number,
-  perMessage: number[],
-): ShiftUnit[] {
-  const units: ShiftUnit[] = [];
-  let i = systemEnd;
-  while (i < cap) {
-    const m = s.history[i];
-    if (m?.role === 'assistant' && m?.tool_calls && m.tool_calls.length > 0) {
-      const parts: { entryIdx: number; text: string }[] = [];
-      let tokens = perMessage[i] ?? 0;
-      let j = i + 1;
-      while (j < cap && s.history[j]?.role === 'tool') {
-        const tm = s.history[j];
-        tokens += perMessage[j] ?? 0;
-        if (typeof tm.content === 'string' && tm.content) {
-          parts.push({ entryIdx: j, text: tm.content });
-        }
-        j += 1;
-      }
-      units.push({
-        start: i,
-        end: j,
-        tokens,
-        splitParts: parts.length > 0 ? parts : null,
-      });
-      i = j;
-    } else if (typeof m?.content === 'string' && m.content) {
-      units.push({
-        start: i,
-        end: i + 1,
-        tokens: perMessage[i] ?? 0,
-        splitParts: [{ entryIdx: i, text: m.content }],
-      });
-      i += 1;
-    } else {
-      units.push({
-        start: i,
-        end: i + 1,
-        tokens: perMessage[i] ?? 0,
-        splitParts: null,
-      });
-      i += 1;
-    }
-  }
-  return units;
-}
-
-export interface ShiftCut {
-  /** Entries [systemEnd, dropTo) are fully removed. */
-  dropTo: number;
-  /** Straddling unit/entry split, if the target lands mid-entry. */
-  split: { unitEnd: number; entryIdx: number; inner: number } | null;
-  /** Authoritative freed estimate for the removed text. */
-  freedTokens: number;
-}
-
-// Unified cut: oldest-first until targetTokens are freed, splitting any
-// entry (user, assistant, or old tool result) when the amount lands inside
-// it. System entries and everything from the newest user turn on (the live
-// turn, its tool entries and partial output) are always shielded, so a shift
-// can never wipe the active exchange no matter how large the target is.
-// Display bubbles stay intact; split entries are marked for render-time
-// splitting via their msgId link.
-async function computeShiftCut(
-  s: SessionStream,
+// Attachment entries are kept in place and excluded from all counting.
+function isAttachmentEntry(
+  m: ChatHistoryMsg,
   cs: ContextShiftSettings,
-  targetTokens: number,
-  onProgress?: (fraction: number) => void,
-): Promise<ShiftCut> {
-  const empty: ShiftCut = { dropTo: 0, split: null, freedTokens: 0 };
-  const { systemEnd, userIndexes } = collectShiftIndexes(s);
-  if (s.history.length <= systemEnd || targetTokens <= 0) {
-    return { ...empty, dropTo: systemEnd };
-  }
-  const newestUserDefault = s.history.length;
-  let newestUser = newestUserDefault;
-  if (userIndexes.length > 0) {
-    newestUser = userIndexes[userIndexes.length - 1];
-  }
-  const cap = Math.min(s.history.length, newestUser);
-  if (cap <= systemEnd) {
-    return { ...empty, dropTo: systemEnd };
-  }
-
-  // Measure each entry in parallel, then prefix-sum over the range.
-  const perMessage: number[] = new Array(s.history.length).fill(0);
-  const targets: { idx: number; text: string }[] = [];
-  for (let i = systemEnd; i < cap; i += 1) {
-    const t = shiftMessageText(s.history[i]);
-    if (t) targets.push({ idx: i, text: t });
-  }
-  const completedRef = { n: 0 };
-  await Promise.all(
-    targets.map(async ({ idx, text }) => {
-      // eslint-disable-next-line no-use-before-define
-      const n = (await tokenize(text)) ?? 0;
-      perMessage[idx] = n;
-      completedRef.n += 1;
-      onProgress?.(
-        targets.length > 0 ? (completedRef.n / targets.length) * 0.8 : 1,
-      );
-      return n;
-    }),
+): boolean {
+  return (
+    !!cs.preserveAttachments &&
+    m?.role === 'user' &&
+    Array.isArray(m.content) &&
+    m.content.some((part: any) => part?.type === 'image_url')
   );
-  onProgress?.(0.8);
+}
 
-  const units = buildShiftUnits(s, systemEnd, cap, perMessage);
-  let acc = 0;
-  let dropTo = systemEnd;
-  let split: ShiftCut['split'] = null;
-  for (let ui = 0; ui < units.length; ui += 1) {
-    const u = units[ui];
-    if (acc >= targetTokens) break;
-    if (
-      u.splitParts &&
-      u.splitParts.length > 0 &&
-      acc + u.tokens > targetTokens
-    ) {
-      // Straddle: binary-search the drop offset within the unit's splittable
-      // text, then snap forward to a markdown block boundary.
-      const concat = u.splitParts.map((p) => p.text).join('');
-      const need = targetTokens - acc;
-      // eslint-disable-next-line no-use-before-define,no-await-in-loop
-      const raw = await findTokenPrefixLength(concat, need, (fraction) =>
-        onProgress?.(0.8 + 0.2 * fraction),
-      );
-      // eslint-disable-next-line no-use-before-define
-      const snapped = snapSpliceOffset(concat, raw);
-      const drop = Math.min(snapped, concat.length - 1);
-      if (drop > 0) {
-        let rem = drop;
-        let entryIdx = -1;
-        let inner = 0;
-        for (let pi = 0; pi < u.splitParts.length; pi += 1) {
-          const { entryIdx: partIdx, text: partText } = u.splitParts[pi];
-          const plen = partText.length;
-          if (rem < plen) {
-            entryIdx = partIdx;
-            inner = rem;
-            break;
-          }
-          rem -= plen;
-        }
-        if (entryIdx >= 0) {
-          split = { unitEnd: u.end, entryIdx, inner };
-          break;
-        }
-        // Fell off the end (rounding): whole-drop below.
-      }
-      // Degenerate (single-char unit): whole-drop below.
-    }
-    acc += u.tokens;
-    dropTo = u.end;
-  }
-  onProgress?.(1);
-
-  if (dropTo <= systemEnd && !split) {
-    return { ...empty, dropTo: systemEnd };
-  }
-  // Authoritative freed estimate: whole-dropped entries (bulk) plus the
-  // straddler head. Unit totals above include tool-call JSON that the head
-  // excludes, so accumulation may stop marginally early — always on the
-  // floor-preserving side.
+// Char offset holding at least target tokens (binary search, no snapping).
+async function findTokenPrefixLength(
+  text: string,
+  target: number,
+): Promise<number> {
+  if (target <= 0 || text.length === 0) return 0;
   // eslint-disable-next-line no-use-before-define
-  const wholeFreed = await bulkShiftTokens(s, systemEnd, dropTo);
-  let headFreed = 0;
-  if (split) {
-    const sp = split;
-    const unit = units.find(
-      (u) => u.start <= sp.entryIdx && sp.entryIdx < u.end,
-    );
-    if (unit && unit.splitParts) {
-      let head = '';
-      for (let pi = 0; pi < unit.splitParts.length; pi += 1) {
-        const part = unit.splitParts[pi];
-        if (part.entryIdx < sp.entryIdx) {
-          head += part.text;
-        } else if (part.entryIdx === sp.entryIdx) {
-          head += part.text.slice(0, sp.inner);
-          break;
-        } else {
-          break;
-        }
-      }
-      if (head) {
-        // eslint-disable-next-line no-use-before-define
-        headFreed = (await tokenize(head)) ?? 0;
-      }
-    }
+  const whole = (await tokenize(text)) ?? 0;
+  if (whole < target) return text.length;
+  let lo = 1;
+  let hi = text.length;
+  while (lo < hi) {
+    const mid = Math.floor((lo + hi) / 2);
+    // eslint-disable-next-line no-await-in-loop, no-use-before-define
+    const n = (await tokenize(text.slice(0, mid))) ?? 0;
+    if (n >= target) hi = mid;
+    else lo = mid + 1;
   }
-  const freedTokens = wholeFreed + headFreed;
-  if (freedTokens <= 0) {
-    return { ...empty, dropTo: systemEnd };
-  }
-  return { dropTo, split, freedTokens };
+  return lo;
 }
 
 // Set the cutoff divider on one display message, clearing it elsewhere.
@@ -2003,187 +1795,578 @@ function setCutoffOnMessage(s: SessionStream, id: number): void {
   });
 }
 
-// Applies a unified cut: whole-dropped entries removed (media stubs kept),
-// the straddler replaced by its kept tail with call records preserved, usage
-// decremented, and both markers placed (cutoff divider after the newest
-// fully-dropped message, render-time split on the straddled message via its
-// msgId link). Display text is never modified here.
-async function applyShiftCut(
-  s: SessionStream,
-  cs: ContextShiftSettings,
-  cut: ShiftCut,
-  total: number,
-): Promise<void> {
-  const { systemEnd, userIndexes } = collectShiftIndexes(s);
-  if (cut.dropTo <= systemEnd && !cut.split) return;
-  const oldHistoryLength = s.history.length;
-  const splitEnd = cut.split ? cut.split.unitEnd : cut.dropTo;
-  const splitEntry = cut.split ? s.history[cut.split.entryIdx] : undefined;
-
-  const nextHistory: ChatHistoryMsg[] = [];
-  for (let i = 0; i < s.history.length; i += 1) {
-    const m = s.history[i];
-    if (i < systemEnd || i >= splitEnd) {
-      nextHistory.push(m);
-    } else if (cut.split && i >= cut.dropTo) {
-      if (i < cut.split.entryIdx) {
-        // Straddler-group prefix: keep call records so kept results stay
-        // paired, drop earlier result text.
-        if (
-          m?.role === 'assistant' &&
-          m?.tool_calls &&
-          m.tool_calls.length > 0
-        ) {
-          nextHistory.push(m);
-        }
-      } else if (i === cut.split.entryIdx) {
-        if (typeof m.content === 'string') {
-          const kept: ChatHistoryMsg = {
-            role: m.role,
-            content: m.content.slice(cut.split.inner),
-          };
-          if (m.tool_call_id !== undefined) kept.tool_call_id = m.tool_call_id;
-          if (m.msgId !== undefined) kept.msgId = m.msgId;
-          nextHistory.push(kept);
-        } else {
-          nextHistory.push(m);
-        }
-      } else {
-        nextHistory.push(m);
-      }
-    } else {
-      const keepMedia =
-        m.role === 'user' &&
-        cs.preserveAttachments &&
-        Array.isArray(m.content) &&
-        m.content.some((part: any) => part?.type === 'image_url');
-      if (keepMedia) {
-        const stub: ChatHistoryMsg = {
-          role: 'user',
-          content: m.content.filter((part: any) => part?.type === 'image_url'),
-        };
-        if (m.msgId !== undefined) stub.msgId = m.msgId;
-        nextHistory.push(stub);
-      }
-    }
-  }
-  s.history = nextHistory;
-
-  if (lastUsage) {
-    anchorUsage(
-      s,
-      Math.max(0, lastUsage.used - cut.freedTokens),
-      total,
-    );
-  }
-
-  // Cutoff divider after the newest fully-dropped message. Failed user
-  // bubbles have no history entry, so they are excluded from the ordinal
-  // mapping.
-  const firstKept = cut.split ? cut.split.entryIdx : cut.dropTo;
-  const clearedUserCount = userIndexes.filter((idx) => idx < firstKept).length;
-  let seenUsers = 0;
+// Cutoff divider after the newest fully-dropped message.
+function markShiftCutoff(s: SessionStream, firstKept: number): void {
+  const { userIndexes } = collectShiftIndexes(s);
+  const cleared = userIndexes.filter((idx) => idx < firstKept).length;
+  let seen = 0;
   let cutoffId: number | null = null;
-  if (!cut.split && cut.dropTo >= oldHistoryLength) {
-    // Everything dropped: mark the newest display message so the divider
-    // renders at the end of the visible chat.
-    for (let i = s.messages.length - 1; i >= 0; i -= 1) {
-      if (s.messages[i].role !== 'system') {
-        cutoffId = s.messages[i].id;
+  for (let i = 0; i < s.messages.length; i += 1) {
+    const m = s.messages[i];
+    if (m.role === 'user' && !m.failed) {
+      seen += 1;
+      if (seen === cleared + 1) {
+        if (i > 0) cutoffId = s.messages[i - 1].id;
         break;
       }
     }
-  } else {
-    for (let i = 0; i < s.messages.length; i += 1) {
-      const m = s.messages[i];
-      if (m.role === 'user' && !m.failed) {
-        seenUsers += 1;
-        if (seenUsers === clearedUserCount + 1) {
-          if (i > 0) cutoffId = s.messages[i - 1].id;
-          break;
+  }
+  if (cutoffId !== null) setCutoffOnMessage(s, cutoffId);
+}
+
+// Render-time split marker on the spliced message (tools via ordinal).
+function markShiftSplice(
+  s: SessionStream,
+  splitEntry: ChatHistoryMsg,
+  dropChars: number,
+  toolOrdinal = 0,
+): void {
+  if (splitEntry.msgId === undefined || dropChars <= 0) return;
+  const targetId = splitEntry.msgId;
+  const target = s.messages.find((msg) => msg.id === targetId);
+  if (!target) return;
+  if (splitEntry.role === 'tool' && typeof splitEntry.content === 'string') {
+    const ordinal = toolOrdinal;
+    const chars = Math.max(0, Math.min(dropChars, splitEntry.content.length));
+    s.messages = s.messages.map((msg) =>
+      msg.id === targetId
+        ? {
+            ...msg,
+            contextSpliceChars: chars,
+            contextSpliceTool: { ordinal, chars },
+          }
+        : msg,
+    );
+    return;
+  }
+  s.messages = s.messages.map((msg) =>
+    msg.id === targetId ? { ...msg, contextSpliceChars: dropChars } : msg,
+  );
+}
+
+// Injected as the tool result when a call never runs because a shift
+// removed its record. History-only; display shows it via the normal result.
+const TOOL_INTERRUPTED_NOTICE =
+  'Tool Call was interrupted as Context Overflowed';
+
+// Spill removal forward from index `from` until `need` tokens are freed.
+// Skips attachments, empty entries and assistant tool-call records (kept in
+// place: negligible cost and preserves call/result pairing). Whole-drops
+// array/media entries, splices the first string entry that covers the rest.
+async function spillForward(
+  s: SessionStream,
+  cs: ContextShiftSettings,
+  perMessage: number[],
+  from: number,
+  need: number,
+): Promise<{
+  freed: number;
+  dropTo: number;
+  split: {
+    entryIdx: number;
+    kept: ChatHistoryMsg;
+    dropChars: number;
+    ordinal: number;
+  } | null;
+}> {
+  let acc = 0;
+  let dropTo = from;
+  for (let j = from; j < s.history.length; j += 1) {
+    const m = s.history[j];
+    if (isAttachmentEntry(m, cs)) continue;
+    if (m?.role === 'assistant' && m.tool_calls?.length) continue;
+    const t = perMessage[j] ?? 0;
+    if (t <= 0) continue;
+    if (typeof m.content === 'string' && m.content && acc + t >= need) {
+      const head = need - acc;
+      // eslint-disable-next-line no-await-in-loop
+      const raw = await findTokenPrefixLength(m.content, head);
+      const dropChars = Math.min(raw, m.content.length - 1);
+      if (dropChars <= 0) {
+        acc += t;
+        dropTo = j + 1;
+        if (acc >= need) break;
+        continue;
+      }
+      const headText = m.content.slice(0, dropChars);
+      // eslint-disable-next-line no-await-in-loop, no-use-before-define
+      const headTokens = (await tokenize(headText)) ?? head;
+      const kept: ChatHistoryMsg = {
+        role: m.role,
+        content: m.content.slice(dropChars),
+      };
+      if (m.tool_call_id !== undefined) kept.tool_call_id = m.tool_call_id;
+      if (m.msgId !== undefined) kept.msgId = m.msgId;
+      let ordinal = 0;
+      if (m.role === 'tool' && m.msgId !== undefined) {
+        for (let i = 0; i < j; i += 1) {
+          const h = s.history[i];
+          if (
+            h?.role === 'tool' &&
+            typeof h.content === 'string' &&
+            h.content &&
+            h.msgId === m.msgId
+          ) {
+            ordinal += 1;
+          }
         }
+      }
+      return {
+        freed: acc + headTokens,
+        dropTo: j,
+        split: { entryIdx: j, kept, dropChars, ordinal },
+      };
+    }
+    acc += t;
+    dropTo = j + 1;
+    if (acc >= need) break;
+  }
+  return { freed: acc, dropTo, split: null };
+}
+
+// Repairs tool call/result pairing after a shift. Records are treated like
+// any other entry, so a shift can strand a call without its result (or a
+// result without its call). Missing results are injected as interruption
+// notices; orphan results are dropped. History-only; display untouched.
+async function repairToolPairing(
+  s: SessionStream,
+  total: number,
+  injectTrailing = true,
+): Promise<void> {
+  const pending = new Map<string, number>();
+  const orphanIdx = new Set<number>();
+  const missingByRecord = new Map<number, { id: string; msgId?: number }[]>();
+  const flushPending = (): void => {
+    const ids = Array.from(pending.keys());
+    for (let k = 0; k < ids.length; k += 1) {
+      const id = ids[k];
+      const rec = pending.get(id) as number;
+      const entry = s.history[rec];
+      const list = missingByRecord.get(rec) ?? [];
+      list.push({ id, msgId: entry?.msgId });
+      missingByRecord.set(rec, list);
+    }
+    pending.clear();
+  };
+  for (let i = 0; i < s.history.length; i += 1) {
+    const m = s.history[i];
+    if (m?.role === 'assistant' && m.tool_calls?.length) {
+      flushPending();
+      for (let k = 0; k < m.tool_calls.length; k += 1) {
+        const c = m.tool_calls[k];
+        if (c?.id && !pending.has(c.id)) pending.set(c.id, i);
+      }
+    } else if (m?.role === 'tool' && typeof m.tool_call_id === 'string') {
+      if (pending.has(m.tool_call_id)) pending.delete(m.tool_call_id);
+      else orphanIdx.add(i);
+    } else if (m?.role === 'user') {
+      flushPending();
+    }
+  }
+  // Trailing pending calls belong to the in-flight leg whose results have
+  // not been pushed yet — only the pre-execution shift may leave them alone.
+  if (injectTrailing) flushPending();
+  if (orphanIdx.size === 0 && missingByRecord.size === 0) return;
+  // eslint-disable-next-line no-use-before-define
+  const noticeTokens = (await tokenize(TOOL_INTERRUPTED_NOTICE)) ?? 0;
+  let orphanFreed = 0;
+  let injected = 0;
+  const next: ChatHistoryMsg[] = [];
+  for (let i = 0; i < s.history.length; i += 1) {
+    if (orphanIdx.has(i)) {
+      const t = shiftMessageText(s.history[i]);
+      if (t) {
+        // eslint-disable-next-line no-await-in-loop, no-use-before-define
+        orphanFreed += (await tokenize(t)) ?? 0;
+      }
+      continue;
+    }
+    next.push(s.history[i]);
+    const miss = missingByRecord.get(i);
+    if (miss) {
+      for (let k = 0; k < miss.length; k += 1) {
+        const { id, msgId } = miss[k];
+        injected += 1;
+        next.push({
+          role: 'tool',
+          tool_call_id: id,
+          content: TOOL_INTERRUPTED_NOTICE,
+          ...(msgId !== undefined ? { msgId } : {}),
+        });
       }
     }
   }
-  if (cutoffId !== null) {
-    setCutoffOnMessage(s, cutoffId);
+  s.history = next;
+  if (lastUsage) {
+    anchorUsage(
+      s,
+      Math.max(0, lastUsage.used + noticeTokens * injected - orphanFreed),
+      total,
+    );
+  }
+}
+
+// Core shift: remove tokensToRemove oldest-first with role edge cases.
+// Returns tokens actually freed.
+async function shiftContext(
+  s: SessionStream,
+  sessionId: string,
+  tokensToRemove: number,
+  total: number,
+  label: string,
+): Promise<number> {
+  const cs = currentContextShift;
+  if (!cs?.enabled || !lastUsage || tokensToRemove <= 0) return 0;
+  const systemEnd = s.history[0]?.role === 'system' ? 1 : 0;
+  if (s.history.length <= systemEnd) return 0;
+
+  // Measure each entry oldest-first; attachments count 0.
+  const perMessage: number[] = new Array(s.history.length).fill(0);
+  for (let i = systemEnd; i < s.history.length; i += 1) {
+    const m = s.history[i];
+    if (isAttachmentEntry(m, cs)) continue;
+    const t = shiftMessageText(m);
+    if (!t) continue;
+    // eslint-disable-next-line no-await-in-loop, no-use-before-define
+    perMessage[i] = (await tokenize(t)) ?? 0;
   }
 
-  // Render-time split on the straddled message. Tool results address their
-  // display segment by ordinal (chronological on both sides); prose offsets
-  // are re-measured on display text when it holds thinking the history entry
-  // lacks, otherwise the history offset applies directly (identical strings).
-  if (cut.split && splitEntry?.msgId !== undefined) {
-    const targetId: number = splitEntry.msgId;
-    const target = s.messages.find((msg) => msg.id === targetId);
-    if (
-      target &&
-      splitEntry.role === 'tool' &&
-      typeof splitEntry.content === 'string'
-    ) {
-      let ordinal = -1;
-      for (let i = 0; i <= cut.split.entryIdx; i += 1) {
-        const h = s.history[i];
-        if (
-          h?.role === 'tool' &&
-          typeof h.content === 'string' &&
-          h.content &&
-          h.msgId === targetId
-        ) {
-          ordinal += 1;
-        }
-      }
-      if (ordinal >= 0) {
-        const toolChars = Math.max(
-          0,
-          Math.min(cut.split.inner, splitEntry.content.length),
-        );
-        s.messages = s.messages.map((msg) =>
-          msg.id === targetId
-            ? {
-                ...msg,
-                contextSpliceChars: toolChars,
-                contextSpliceTool: { ordinal, chars: toolChars },
-              }
-            : msg,
-        );
-      }
-    } else if (target) {
-      let chars: number | null = cut.split.inner;
-      if (
-        target.role === 'assistant' &&
-        splitEntry.role === 'assistant' &&
-        target.content.some(
-          (seg) => seg.type === 'thought' || seg.type === 'comment',
-        ) &&
-        typeof splitEntry.content === 'string'
-      ) {
-        const prose = target.content
-          .filter(
-            (seg) =>
-              seg.type === 'normal' ||
-              seg.type === 'thought' ||
-              seg.type === 'comment',
-          )
-          .map((seg) => seg.text)
-          .join('');
-        const headText = splitEntry.content.slice(0, cut.split.inner);
-        // eslint-disable-next-line no-use-before-define
-        const headTokens = headText ? ((await tokenize(headText)) ?? 0) : 0;
-        if (headTokens > 0 && prose.length > 1) {
-          // eslint-disable-next-line no-use-before-define
-          const rawD = await findTokenPrefixLength(prose, headTokens);
-          // eslint-disable-next-line no-use-before-define
-          chars = Math.min(snapSpliceOffset(prose, rawD), prose.length - 1);
-        }
-      }
-      if (chars !== null) {
-        s.messages = s.messages.map((msg) =>
-          msg.id === targetId ? { ...msg, contextSpliceChars: chars } : msg,
-        );
-      }
+  // Walk to the cut entry holding the target's tail.
+  let accBefore = 0;
+  let cutIdx = -1;
+  for (let i = systemEnd; i < s.history.length; i += 1) {
+    if (isAttachmentEntry(s.history[i], cs)) continue;
+    if (perMessage[i] <= 0) continue;
+    if (accBefore + perMessage[i] >= tokensToRemove) {
+      cutIdx = i;
+      break;
+    }
+    accBefore += perMessage[i];
+  }
+  // The most-recent user prompt is never dropped: the server template
+  // requires a user query in context.
+  let recentUser = -1;
+  for (let i = s.history.length - 1; i >= systemEnd; i -= 1) {
+    if (s.history[i]?.role === 'user') {
+      recentUser = i;
+      break;
     }
   }
+  if (cutIdx === -1) {
+    // Target exceeds removable content: drop everything but attachments
+    // and the most-recent user prompt.
+    let freed = 0;
+    const next: ChatHistoryMsg[] = [];
+    for (let i = 0; i < s.history.length; i += 1) {
+      if (
+        i < systemEnd ||
+        i === recentUser ||
+        isAttachmentEntry(s.history[i], cs)
+      )
+        next.push(s.history[i]);
+      else freed += perMessage[i];
+    }
+    if (freed <= 0) return 0;
+    s.history = next;
+    anchorUsage(s, Math.max(0, lastUsage.used - freed), total);
+    await repairToolPairing(s, total, label !== 'tool-round-pre');
+    persistSessionState(sessionId);
+    emit({ type: 'context-shift', sessionId });
+    emitSessionChanged(sessionId);
+    // eslint-disable-next-line no-console
+    console.log(`[context-shift] ${label} shift applied`, {
+      sessionId,
+      freedTokens: freed,
+      remaining: total - lastUsage.used,
+    });
+    return freed;
+  }
+
+  const cut = s.history[cutIdx];
+  const headNeed = tokensToRemove - accBefore;
+
+  // User cut: older prompts whole-drop; the most-recent prompt is kept
+  // and its share spills forward into the following model response.
+  if (cut.role === 'user' && cutIdx !== recentUser) {
+    const dropped = accBefore + perMessage[cutIdx];
+    const next: ChatHistoryMsg[] = [];
+    for (let i = 0; i < s.history.length; i += 1) {
+      if (i < systemEnd) next.push(s.history[i]);
+      else if (i < cutIdx) {
+        if (isAttachmentEntry(s.history[i], cs)) next.push(s.history[i]);
+        // else dropped (already counted in accBefore)
+      } else if (i === cutIdx) {
+        // drop whole
+      } else next.push(s.history[i]);
+    }
+    s.history = next;
+    anchorUsage(s, Math.max(0, lastUsage.used - dropped), total);
+    await repairToolPairing(s, total, label !== 'tool-round-pre');
+    markShiftCutoff(s, cutIdx + 1);
+    persistSessionState(sessionId);
+    emit({ type: 'context-shift', sessionId });
+    emitSessionChanged(sessionId);
+    // eslint-disable-next-line no-console
+    console.log(`[context-shift] ${label} shift applied`, {
+      sessionId,
+      freedTokens: dropped,
+      remaining: total - lastUsage.used,
+    });
+    return dropped;
+  }
+
+  // Most-recent user cut: keep the prompt, spill its share forward into
+  // the following response. With nothing after it, old turns still drop.
+  if (cut.role === 'user') {
+    const spill = await spillForward(
+      s,
+      cs,
+      perMessage,
+      cutIdx + 1,
+      headNeed + perMessage[cutIdx],
+    );
+    const dropped = accBefore + spill.freed;
+    if (dropped <= 0) return 0;
+    const splitOrig = spill.split ? s.history[spill.split.entryIdx] : undefined;
+    const next: ChatHistoryMsg[] = [];
+    for (let i = 0; i < s.history.length; i += 1) {
+      if (i < systemEnd) next.push(s.history[i]);
+      else if (i < cutIdx) {
+        if (isAttachmentEntry(s.history[i], cs)) next.push(s.history[i]);
+        // else dropped (already counted in accBefore)
+      } else if (i === cutIdx) next.push(s.history[i]);
+      else if (i < spill.dropTo) {
+        const m = s.history[i];
+        if (
+          isAttachmentEntry(m, cs) ||
+          perMessage[i] <= 0 ||
+          (m?.role === 'assistant' && m.tool_calls?.length)
+        ) {
+          next.push(m);
+        }
+        // else whole-dropped by the spill
+      } else if (spill.split && i === spill.split.entryIdx) {
+        next.push(spill.split.kept);
+      } else next.push(s.history[i]);
+    }
+    s.history = next;
+    anchorUsage(s, Math.max(0, lastUsage.used - dropped), total);
+    await repairToolPairing(s, total, label !== 'tool-round-pre');
+    markShiftCutoff(s, cutIdx);
+    if (spill.split && splitOrig) {
+      markShiftSplice(s, splitOrig, spill.split.dropChars, spill.split.ordinal);
+    }
+    persistSessionState(sessionId);
+    emit({ type: 'context-shift', sessionId });
+    emitSessionChanged(sessionId);
+    // eslint-disable-next-line no-console
+    console.log(`[context-shift] ${label} shift applied`, {
+      sessionId,
+      freedTokens: dropped,
+      remaining: total - lastUsage.used,
+    });
+    return dropped;
+  }
+
+  // Assistant cut: keep the owning user prompt, take extra from the head.
+  if (cut.role === 'assistant') {
+    let ownerUser = -1;
+    for (let i = cutIdx - 1; i >= systemEnd; i -= 1) {
+      if (s.history[i]?.role === 'user') {
+        ownerUser = i;
+        break;
+      }
+    }
+    const ownerTokens =
+      ownerUser >= 0 && !isAttachmentEntry(s.history[ownerUser], cs)
+        ? perMessage[ownerUser]
+        : 0;
+    const need = headNeed + (ownerUser >= 0 ? ownerTokens : 0);
+    if (typeof cut.content !== 'string' || !cut.content) {
+      // Un-splittable (e.g. tool-call record): drop whole, keep owner.
+      const next: ChatHistoryMsg[] = [];
+      for (let i = 0; i < s.history.length; i += 1) {
+        if (i < systemEnd) next.push(s.history[i]);
+        else if (i < cutIdx) {
+          if (i === ownerUser || isAttachmentEntry(s.history[i], cs))
+            next.push(s.history[i]);
+        } else if (i === cutIdx) {
+          // drop whole
+        } else next.push(s.history[i]);
+      }
+      const dropped =
+        accBefore - (ownerUser >= 0 ? ownerTokens : 0) + perMessage[cutIdx];
+      if (dropped <= 0) return 0;
+      s.history = next;
+      anchorUsage(s, Math.max(0, lastUsage.used - dropped), total);
+      await repairToolPairing(s, total, label !== 'tool-round-pre');
+      markShiftCutoff(s, cutIdx + 1);
+      persistSessionState(sessionId);
+      emit({ type: 'context-shift', sessionId });
+      emitSessionChanged(sessionId);
+      // eslint-disable-next-line no-console
+      console.log(`[context-shift] ${label} shift applied`, {
+        sessionId,
+        freedTokens: dropped,
+        remaining: total - lastUsage.used,
+      });
+      return dropped;
+    }
+    const raw = await findTokenPrefixLength(cut.content, need);
+    const drop = Math.min(raw, cut.content.length - 1);
+    if (drop <= 0) return 0;
+    const head = cut.content.slice(0, drop);
+    // eslint-disable-next-line no-use-before-define
+    const headTokens = (await tokenize(head)) ?? need;
+    const kept: ChatHistoryMsg = {
+      role: cut.role,
+      content: cut.content.slice(drop),
+    };
+    if (cut.tool_calls !== undefined) kept.tool_calls = cut.tool_calls;
+    if (cut.tool_call_id !== undefined) kept.tool_call_id = cut.tool_call_id;
+    if (cut.msgId !== undefined) kept.msgId = cut.msgId;
+    const next: ChatHistoryMsg[] = [];
+    for (let i = 0; i < s.history.length; i += 1) {
+      if (i < systemEnd) next.push(s.history[i]);
+      else if (i < cutIdx) {
+        if (i === ownerUser || isAttachmentEntry(s.history[i], cs))
+          next.push(s.history[i]);
+      } else if (i === cutIdx) next.push(kept);
+      else next.push(s.history[i]);
+    }
+    const dropped = accBefore - (ownerUser >= 0 ? ownerTokens : 0) + headTokens;
+    s.history = next;
+    anchorUsage(s, Math.max(0, lastUsage.used - dropped), total);
+    await repairToolPairing(s, total, label !== 'tool-round-pre');
+    markShiftCutoff(s, cutIdx);
+    markShiftSplice(s, cut, drop);
+    persistSessionState(sessionId);
+    emit({ type: 'context-shift', sessionId });
+    emitSessionChanged(sessionId);
+    // eslint-disable-next-line no-console
+    console.log(`[context-shift] ${label} shift applied`, {
+      sessionId,
+      freedTokens: dropped,
+      remaining: total - lastUsage.used,
+    });
+    return dropped;
+  }
+
+  // Tool cut: splice right there, keep the tail.
+  if (typeof cut.content !== 'string' || !cut.content) {
+    // Un-splittable array/media tool entry: drop whole.
+    const next: ChatHistoryMsg[] = [];
+    for (let i = 0; i < s.history.length; i += 1) {
+      if (i < systemEnd) next.push(s.history[i]);
+      else if (i < cutIdx) {
+        if (isAttachmentEntry(s.history[i], cs)) next.push(s.history[i]);
+      } else if (i === cutIdx) {
+        // drop whole
+      } else next.push(s.history[i]);
+    }
+    const dropped = accBefore + perMessage[cutIdx];
+    if (dropped <= 0) return 0;
+    s.history = next;
+    anchorUsage(s, Math.max(0, lastUsage.used - dropped), total);
+    await repairToolPairing(s, total, label !== 'tool-round-pre');
+    markShiftCutoff(s, cutIdx + 1);
+    persistSessionState(sessionId);
+    emit({ type: 'context-shift', sessionId });
+    emitSessionChanged(sessionId);
+    // eslint-disable-next-line no-console
+    console.log(`[context-shift] ${label} shift applied`, {
+      sessionId,
+      freedTokens: dropped,
+      remaining: total - lastUsage.used,
+    });
+    return dropped;
+  }
+  // Same owner rule as assistant cuts, but only for the most-recent turn:
+  // older tool turns cut right where they land.
+  let turnOwner = -1;
+  for (let i = cutIdx - 1; i >= systemEnd; i -= 1) {
+    if (s.history[i]?.role === 'user') {
+      turnOwner = i;
+      break;
+    }
+  }
+  const keepOwner = turnOwner === recentUser && recentUser >= 0;
+  const ownerExtra =
+    keepOwner && !isAttachmentEntry(s.history[turnOwner], cs)
+      ? perMessage[turnOwner]
+      : 0;
+  const raw = await findTokenPrefixLength(cut.content, headNeed + ownerExtra);
+  const drop = Math.min(raw, cut.content.length - 1);
+  if (drop <= 0) return 0;
+  const head = cut.content.slice(0, drop);
+  // eslint-disable-next-line no-use-before-define
+  const headTokens = (await tokenize(head)) ?? headNeed + ownerExtra;
+  const kept: ChatHistoryMsg = {
+    role: cut.role,
+    content: cut.content.slice(drop),
+  };
+  if (cut.tool_call_id !== undefined) kept.tool_call_id = cut.tool_call_id;
+  if (cut.msgId !== undefined) kept.msgId = cut.msgId;
+  // Ordinal of this result among its display message's tool segments
+  // (chronological, unaffected by what was dropped ahead of it).
+  let ordinal = 0;
+  for (let i = systemEnd; i < cutIdx; i += 1) {
+    const h = s.history[i];
+    if (
+      h?.role === 'tool' &&
+      typeof h.content === 'string' &&
+      h.content &&
+      cut.msgId !== undefined &&
+      h.msgId === cut.msgId
+    ) {
+      ordinal += 1;
+    }
+  }
+  const next: ChatHistoryMsg[] = [];
+  for (let i = 0; i < s.history.length; i += 1) {
+    if (i < systemEnd) next.push(s.history[i]);
+    else if (i < cutIdx) {
+      if (i === turnOwner && keepOwner) next.push(s.history[i]);
+      else if (isAttachmentEntry(s.history[i], cs)) next.push(s.history[i]);
+    } else if (i === cutIdx) next.push(kept);
+    else next.push(s.history[i]);
+  }
+  const dropped = accBefore - ownerExtra + headTokens;
+  s.history = next;
+  anchorUsage(s, Math.max(0, lastUsage.used - dropped), total);
+  await repairToolPairing(s, total);
+  markShiftCutoff(s, cutIdx);
+  markShiftSplice(s, cut, drop, ordinal);
+  persistSessionState(sessionId);
+  emit({ type: 'context-shift', sessionId });
+  emitSessionChanged(sessionId);
+  // eslint-disable-next-line no-console
+  console.log(`[context-shift] ${label} shift applied`, {
+    sessionId,
+    freedTokens: dropped,
+    remaining: total - lastUsage.used,
+  });
+  return dropped;
+}
+
+// Trigger: tokensRemainingUntilShift decides IF, tokensToShift decides HOW
+// MUCH (X*K to cover the deficit, including any incoming message).
+async function ensureFit(
+  s: SessionStream,
+  sessionId: string,
+  label: string,
+  incomingTokens = 0,
+): Promise<void> {
+  const cs = currentContextShift;
+  if (!cs?.enabled || !lastUsage) return;
+  const total = currentContextSize ?? lastUsage.total;
+  const perShift = shiftTokensToShift(cs);
+  if (perShift <= 0) return;
+  const deficit =
+    lastUsage.used + incomingTokens + cs.tokensRemainingUntilShift - total;
+  if (deficit <= 0) return;
+  const k = Math.max(1, Math.ceil(deficit / perShift));
+  await shiftContext(s, sessionId, perShift * k, total, label);
 }
 
 // Re-anchor the global counters to a session's actual history. Needed
@@ -2205,7 +2388,7 @@ export async function refreshUsageFromHistory(
   if (texts.length === 0) {
     lastUsage = { used: 0, total };
     s.usageBasisTokens = 0;
-    s.usageBasisLen = s.midShiftStreamedLen;
+    s.usageBasisLen = s.streamedLen;
     usageSessionId = sessionId;
     return lastUsage;
   }
@@ -2225,7 +2408,7 @@ export async function refreshUsageFromHistory(
   }
   lastUsage = { used, total };
   s.usageBasisTokens = used;
-  s.usageBasisLen = s.midShiftStreamedLen;
+  s.usageBasisLen = s.streamedLen;
   usageSessionId = sessionId;
   // eslint-disable-next-line no-console
   console.log('[context-shift] usage refreshed from history', {
@@ -2237,482 +2420,11 @@ export async function refreshUsageFromHistory(
   return lastUsage;
 }
 
-// Context shift: when the remaining context budget drops below the profile's
-// threshold, remove ~tokensToShift oldest-first (splitting entries as
-// needed, shielding system and the newest user turn). Display bubbles stay
-// intact; split entries render divided around a cutoff marker.
-async function applyContextShift(s: SessionStream): Promise<void> {
-  const cs = currentContextShift;
-  if (!cs?.enabled || !lastUsage) return;
-
-  const total = currentContextSize ?? lastUsage.total;
-  const remaining = total - lastUsage.used;
-  if (remaining > cs.tokensRemainingUntilShift) return;
-
-  const target = shiftTokensToShift(cs);
-  // eslint-disable-next-line no-use-before-define
-  const { freed } = await runShift(s, s.sessionId, total, target, 'post-turn');
-  // eslint-disable-next-line no-use-before-define
-  if (freed <= 0 && isOverMark()) {
-    // eslint-disable-next-line no-use-before-define
-    await handleHopelessShift(s, s.sessionId);
-  }
-}
-
-// Budget check shared by the enabled-only checkpoints (tool-round, prefetch):
-// integer-only, safe to evaluate anywhere. Unlike shouldRequestMidShift it
-// carries no mid-chat requirement.
-function isOverMark(): boolean {
-  const cs = currentContextShift;
-  if (!cs?.enabled || !lastUsage) return false;
-  const total = currentContextSize ?? lastUsage.total;
-  return total - lastUsage.used <= cs.tokensRemainingUntilShift;
-}
-
 // Id of the live assistant display message taking streamed output, for
 // linking history entries to the bubbles they render in.
 function liveAssistantId(s: SessionStream): number | undefined {
   const m = s.messages[s.messages.length - 1];
   return m?.role === 'assistant' ? m.id : undefined;
-}
-
-// Cheap pre-gate (no tokenize calls): is there at least one
-// guaranteed-removable entry before the newest user turn? Media stubs kept
-// under preserveAttachments do not count.
-function hasTrimmableHistory(
-  s: SessionStream,
-  cs: ContextShiftSettings,
-): boolean {
-  let newestUserIdx = -1;
-  for (let i = s.history.length - 1; i >= 0; i -= 1) {
-    if (s.history[i]?.role === 'user') {
-      newestUserIdx = i;
-      break;
-    }
-  }
-  const sysEnd = s.history[0]?.role === 'system' ? 1 : 0;
-  if (newestUserIdx <= sysEnd) return false;
-  for (let i = sysEnd; i < newestUserIdx; i += 1) {
-    const m = s.history[i];
-    const stubKept =
-      cs.preserveAttachments &&
-      m?.role === 'user' &&
-      Array.isArray(m.content) &&
-      m.content.some((part: any) => part?.type === 'image_url');
-    if (!stubKept) return true;
-  }
-  return false;
-}
-
-// One shift: remove ~targetTokens oldest-first (splitting entries as
-// needed), shield the newest user turn and everything after it, and report
-// what was freed. Returns 0 when there was nothing productive to do —
-// callers then check hopelessness (still over mark) separately.
-async function runShift(
-  s: SessionStream,
-  sessionId: string,
-  total: number,
-  targetTokens: number,
-  label: string,
-): Promise<{ freed: number }> {
-  const cs = currentContextShift;
-  if (!cs || !lastUsage || targetTokens <= 0) return { freed: 0 };
-  if (!hasTrimmableHistory(s, cs)) return { freed: 0 };
-  const emitShiftProgress = (progress: number): void => {
-    emit({
-      type: 'shift-progress',
-      sessionId,
-      progress: Math.max(0, Math.min(100, Math.round(progress))),
-    });
-  };
-  emitShiftProgress(4);
-  const cut = await computeShiftCut(s, cs, targetTokens, (fraction) =>
-    emitShiftProgress(4 + 86 * fraction),
-  );
-  const { systemEnd } = collectShiftIndexes(s);
-  if ((cut.dropTo <= systemEnd && !cut.split) || cut.freedTokens <= 0) {
-    return { freed: 0 };
-  }
-  await applyShiftCut(s, cs, cut, total);
-  emitShiftProgress(96);
-  if (lastUsage) {
-    // eslint-disable-next-line no-console
-    console.log(`[context-shift] ${label} shift applied`, {
-      sessionId,
-      dropTo: cut.dropTo,
-      splitEntry: cut.split?.entryIdx ?? null,
-      freedTokens: cut.freedTokens,
-      remaining: total - lastUsage.used,
-    });
-  }
-  persistSessionState(sessionId);
-  emitShiftProgress(100);
-  emit({ type: 'context-shift', sessionId });
-  emitSessionChanged(sessionId);
-  return { freed: cut.freedTokens };
-}
-
-// Hopeless case: over budget with nothing droppable outside the shields
-// (typically one giant tool result filling the window). Substitute the newest
-// tool entry's content with a short notice so the model understands and the
-// conversation stays workable; display keeps the full output. Returns whether
-// a substitution happened.
-async function handleHopelessShift(
-  s: SessionStream,
-  sessionId: string,
-): Promise<boolean> {
-  for (let i = s.history.length - 1; i >= 0; i -= 1) {
-    const m = s.history[i];
-    if (
-      m?.role === 'tool' &&
-      typeof m.content === 'string' &&
-      m.content &&
-      m.tool_call_id
-    ) {
-      // eslint-disable-next-line no-use-before-define,no-await-in-loop
-      const tokens = (await tokenize(m.content)) ?? 0;
-      const total = currentContextSize ?? lastUsage?.total ?? 0;
-      const notice =
-        `[Context shift: the tool result above (${tokens} tokens) exceeded ` +
-        `the available context window (${total} tokens), so only this notice ` +
-        `was kept in model context. The full output remains visible in chat. ` +
-        `Break the work into smaller steps or ask the user how to proceed.]`;
-      s.history = [
-        ...s.history.slice(0, i),
-        { ...m, content: notice },
-        ...s.history.slice(i + 1),
-      ];
-      // eslint-disable-next-line no-use-before-define,no-await-in-loop
-      const noticeTokens = (await tokenize(notice)) ?? 0;
-      // Only substitute when it actually frees space: replacing a small
-      // result with a longer notice would grow context and stamp a
-      // meaningless marker for negative benefit.
-      if (tokens - noticeTokens <= 0) {
-        // eslint-disable-next-line no-console
-        console.log(
-          '[context-shift] hopeless substitution skipped; no net benefit',
-          { sessionId, entryIdx: i, tokens, keptTokens: noticeTokens },
-        );
-        return false;
-      }
-      if (lastUsage) {
-        anchorUsage(
-          s,
-          Math.max(0, lastUsage.used - Math.max(0, tokens - noticeTokens)),
-          currentContextSize ?? lastUsage.total,
-        );
-      }
-      if (m.msgId !== undefined) {
-        setCutoffOnMessage(s, m.msgId);
-      }
-      persistSessionState(sessionId);
-      emit({ type: 'context-shift', sessionId });
-      emitSessionChanged(sessionId);
-      // eslint-disable-next-line no-console
-      console.log('[context-shift] oversized tool result substituted', {
-        sessionId,
-        entryIdx: i,
-        tokens,
-        keptTokens: noticeTokens,
-      });
-      return true;
-    }
-  }
-  // eslint-disable-next-line no-console
-  console.log('[context-shift] hopeless: nothing droppable, no tool to shed', {
-    sessionId,
-  });
-  return false;
-}
-
-// Chars of fresh output required between mid-chat shifts (~256 tokens at
-// ~4 chars/token). Bounds shift cost without capping shift count.
-const MID_SHIFT_REARM_CHARS = 1024;
-
-// Headroom (tokens) a live splice may free beyond the current overage.
-// Bounds response destruction when the configured per-shift amount exceeds
-// what the live response can satisfy: without this, an unmeetable deficit
-// annihilates the response down to the 1-char anchor and the resumed model
-// babbles to EOS.
-const MID_SPLICE_HEADROOM_TOKENS = 2048;
-
-// Cheap per-token gate: integer compares only, no tokenize calls. Safe to
-// evaluate on every streamed token.
-function shouldRequestMidShift(s: SessionStream): boolean {
-  const cs = currentContextShift;
-  if (!cs?.enabled || !cs?.midChatShiftEnabled || !lastUsage) return false;
-  if (s.aborted || s.midShiftRequested) return false;
-  const total = currentContextSize ?? lastUsage.total;
-  return total - lastUsage.used <= cs.tokensRemainingUntilShift;
-}
-
-// Smallest char prefix of text holding at least target tokens (binary search).
-// Returns text.length when even the whole string is short (caller clamps).
-async function findTokenPrefixLength(
-  text: string,
-  target: number,
-  onProgress?: (fraction: number) => void,
-): Promise<number> {
-  if (target <= 0 || text.length === 0) return 0;
-  // eslint-disable-next-line no-use-before-define
-  const whole = (await tokenize(text)) ?? 0;
-  onProgress?.(0);
-  if (whole < target) {
-    onProgress?.(1);
-    return text.length;
-  }
-  const estTotal = Math.max(1, Math.ceil(Math.log2(text.length)) + 1);
-  let step = 0;
-  let lo = 1;
-  let hi = text.length;
-  while (lo < hi) {
-    const mid = Math.floor((lo + hi) / 2);
-    // eslint-disable-next-line no-use-before-define,no-await-in-loop
-    const n = (await tokenize(text.slice(0, mid))) ?? 0;
-    step += 1;
-    onProgress?.(Math.min(1, step / estTotal));
-    if (n >= target) hi = mid;
-    else lo = mid + 1;
-  }
-  onProgress?.(1);
-  return lo;
-}
-
-// Max extra chars a splice may drop past its token minimum to land on a
-// markdown block boundary. Bounds over-dropping when a giant unbroken block
-// (e.g. a huge code dump) straddles the deficit point.
-const MAX_SPLICE_OVERDROP_CHARS = 2000;
-
-// Snap a splice offset forward to a markdown block boundary so fenced code,
-// tables and quotes stay renderable — and the model can continue cleanly —
-// on both sides of the split. Snapping only ever moves forward, so the token
-// minimum that produced minOffset stays satisfied. Returns minOffset unchanged
-// when already at a boundary or when none is found within the overdrop cap.
-function snapSpliceOffset(
-  text: string,
-  minOffset: number,
-  maxOverdrop: number = MAX_SPLICE_OVERDROP_CHARS,
-): number {
-  if (minOffset <= 0 || minOffset >= text.length) return minOffset;
-  const lines = text.split('\n');
-  const starts: number[] = [];
-  let pos = 0;
-  lines.forEach((line) => {
-    starts.push(pos);
-    pos += line.length + 1;
-  });
-  // Line containing minOffset.
-  let li = 0;
-  while (li < lines.length - 1 && starts[li + 1] <= minOffset) li += 1;
-
-  // Fence state before each line (CommonMark-lite: ``` or ~~~ runs).
-  const inFenceBefore: boolean[] = [];
-  const opensHere: boolean[] = [];
-  const closesHere: boolean[] = [];
-  let open: { char: string; len: number } | null = null;
-  for (let i = 0; i < lines.length; i += 1) {
-    inFenceBefore.push(open !== null);
-    const m = /^ {0,3}(`{3,}|~{3,})/.exec(lines[i]);
-    opensHere.push(!!m && open === null);
-    closesHere.push(false);
-    if (m) {
-      const run = m[1];
-      const rest = lines[i].slice(m[0].length);
-      if (open === null) {
-        open = { char: run[0], len: run.length };
-      } else if (
-        run[0] === open.char &&
-        run.length >= open.len &&
-        rest.trim() === ''
-      ) {
-        closesHere[i] = true;
-        open = null;
-      }
-      // Otherwise: fence-like text inside a block — literal, ignore.
-    }
-  }
-
-  const isBlank = (idx: number): boolean => lines[idx].trim() === '';
-  // Already at a clean block start: line start outside fences, preceded by
-  // start-of-text, a blank line, a fence close, or opening a fresh fence.
-  if (
-    !inFenceBefore[li] &&
-    starts[li] === minOffset &&
-    (li === 0 || isBlank(li - 1) || closesHere[li - 1] || opensHere[li])
-  ) {
-    return minOffset;
-  }
-  // Scan forward for the first clean line start within the overdrop cap.
-  for (let i = li + 1; i < lines.length; i += 1) {
-    const splitAt = starts[i];
-    if (splitAt - minOffset > maxOverdrop) break;
-    if (
-      !inFenceBefore[i] &&
-      (isBlank(i - 1) || closesHere[i - 1] || opensHere[i])
-    ) {
-      return splitAt;
-    }
-  }
-  return minOffset;
-}
-
-// Mid-chat shift: shed ~tokensToShift of old content, then splice the live
-// response for any remainder, and stage the kept remainder as an assistant
-// prefill the resumed leg continues from. The splice covers all generated
-// prose — normal output and thinking alike; display keeps everything and the
-// absolute drop offset is recorded for render-time splitting.
-async function performMidChatShift(
-  s: SessionStream,
-  sessionId: string,
-): Promise<void> {
-  const cs = currentContextShift;
-  if (!cs || !lastUsage) return;
-  const total = currentContextSize ?? lastUsage.total;
-  const targetTokens = shiftTokensToShift(cs);
-  const emitShiftProgress = (progress: number): void => {
-    emit({
-      type: 'shift-progress',
-      sessionId,
-      progress: Math.max(0, Math.min(100, Math.round(progress))),
-    });
-  };
-  // Show immediately: the measurable work (token measuring) follows.
-  emitShiftProgress(4);
-
-  const cut = await computeShiftCut(s, cs, targetTokens, (fraction) =>
-    emitShiftProgress(4 + 70 * fraction),
-  );
-  await applyShiftCut(s, cs, cut, total);
-  const freedOldTurns = cut.freedTokens;
-
-  // Splice over the whole live response in chronological segment order, so
-  // thinking counts exactly like standard output and multi-leg responses
-  // stay consistent (display always holds every leg; no per-leg carry needed
-  // beyond the cumulative token target).
-  const tailMsg = s.messages[s.messages.length - 1];
-  const orderedSegs =
-    tailMsg?.role === 'assistant'
-      ? tailMsg.content.filter(
-          (seg) =>
-            seg.type === 'normal' ||
-            seg.type === 'thought' ||
-            seg.type === 'comment',
-        )
-      : [];
-  const fullText = orderedSegs.map((seg) => seg.text).join('');
-  const prevAbsoluteDrop =
-    tailMsg?.role === 'assistant' ? (tailMsg.contextSpliceChars ?? 0) : 0;
-  let absoluteDrop = prevAbsoluteDrop;
-  let spliceRawDrop = 0;
-  // Bound the live splice to what is needed to recover past the mark plus
-  // headroom — never the whole configured amount. Chasing an unmeetable
-  // deficit would eat the entire live response down to the anchor char.
-  const overage = Math.max(
-    0,
-    (currentContextShift?.tokensRemainingUntilShift ?? 0) -
-      (total - (lastUsage?.used ?? total)),
-  );
-  const deficit = Math.min(
-    Math.max(0, targetTokens - freedOldTurns),
-    overage + MID_SPLICE_HEADROOM_TOKENS,
-  );
-  if (deficit > 0 && fullText.length > 1) {
-    const target = s.midShiftDroppedTokens + deficit;
-    const raw = await findTokenPrefixLength(fullText, target, (fraction) =>
-      emitShiftProgress(74 + 14 * fraction),
-    );
-    spliceRawDrop = raw;
-    // Snap forward to a markdown block boundary so fenced code, tables and
-    // quotes stay renderable (and continuable) on both sides of the split.
-    const snapped = snapSpliceOffset(fullText, raw);
-    // Always keep at least one char of context as the continuation anchor.
-    const drop = Math.min(snapped, fullText.length - 1);
-    if (drop > 0) {
-      absoluteDrop = drop;
-      s.midShiftDroppedTokens = target;
-    }
-  }
-  const keptText =
-    absoluteDrop > 0 ? fullText.slice(absoluteDrop) : fullText;
-
-  // Stage the kept remainder as the prefill (replace the prior leg's
-  // prefill when it is still the last history entry, else push). When no new
-  // splice was needed, this extends the staged prefill over the full live
-  // response, so previously dropped output stays dropped.
-  if (keptText.length > 0) {
-    const prefill: ChatHistoryMsg = { role: 'assistant', content: keptText };
-    const tailId = tailMsg?.role === 'assistant' ? tailMsg.id : undefined;
-    if (tailId !== undefined) prefill.msgId = tailId;
-    const lastIdx = s.history.length - 1;
-    const lastEntry = lastIdx >= 0 ? s.history[lastIdx] : undefined;
-    if (
-      s.midShiftPrefillIndex >= 0 &&
-      lastEntry?.role === 'assistant' &&
-      !lastEntry.tool_calls
-    ) {
-      s.history = [...s.history.slice(0, lastIdx), prefill];
-      s.midShiftPrefillIndex = lastIdx;
-    } else {
-      s.history = [...s.history, prefill];
-      s.midShiftPrefillIndex = s.history.length - 1;
-    }
-  }
-
-  // Record the render-time split point when this shift moved it forward.
-  // Display keeps the full text in both halves.
-  if (absoluteDrop > prevAbsoluteDrop) {
-    const tail = s.messages[s.messages.length - 1];
-    if (tail?.role === 'assistant') {
-      s.messages = [
-        ...s.messages.slice(0, -1),
-        { ...tail, contextSpliceChars: absoluteDrop },
-      ];
-    }
-  }
-
-  if (
-    freedOldTurns <= 0 &&
-    absoluteDrop <= prevAbsoluteDrop &&
-    isOverMark()
-  ) {
-    await handleHopelessShift(s, sessionId);
-  }
-
-  // Re-arm the watermark: the next shift needs ~256 fresh tokens first, so
-  // checks stay cheap and shifts cannot thrash back-to-back. No count cap:
-  // shifts may repeat without limit while tokens keep streaming.
-  s.midShiftNextAllowedAt = s.midShiftStreamedLen + MID_SHIFT_REARM_CHARS;
-  emitShiftProgress(93);
-
-  if (lastUsage) {
-    // eslint-disable-next-line no-console
-    console.log('[context-shift] mid-chat shift applied', {
-      sessionId,
-      dropTo: cut.dropTo,
-      freedOldTurns,
-      tokensToShift: targetTokens,
-      spliceRawDrop,
-      contextDropChars: absoluteDrop,
-      newKeptLen: keptText.length,
-      remaining: total - lastUsage.used,
-    });
-  }
-
-  persistSessionState(sessionId);
-  emitShiftProgress(100);
-  emit({
-    type: 'context-shift',
-    sessionId,
-    midChat: true,
-    ...(lastUsage
-      ? {
-          remaining: total - lastUsage.used,
-          freedTokens: freedOldTurns,
-          threshold: cs.tokensRemainingUntilShift,
-        }
-      : {}),
-  });
-  emitSessionChanged(sessionId);
 }
 
 async function finishSession(
@@ -2728,7 +2440,6 @@ async function finishSession(
       s.messages = [...s.messages.slice(0, -1), { ...last, stats }];
     }
   }
-  await applyContextShift(s);
   s.abortController = null;
   s.currentReader = null;
   s.streamingTool = null;
@@ -2935,37 +2646,9 @@ export async function sendMessage(
   s.history.push({ role: 'user', content: userContent, msgId: userMsg.id });
   persistSessionState(sessionId);
 
-  // Pre-fetch checkpoint: the new user turn just landed and nothing has been
-  // sent yet, so stale history can shift with zero abort cost. Gated on plain
-  // enabled; the current user turn is always shielded.
-  {
-    const csPre = currentContextShift;
-    if (
-      csPre?.enabled &&
-      lastUsage &&
-      hasTrimmableHistory(s, csPre) &&
-      isOverMark()
-    ) {
-      const total = currentContextSize ?? lastUsage.total;
-      // eslint-disable-next-line no-console
-      console.log('[context-shift] pre-fetch trigger', {
-        sessionId,
-        remaining: total - (lastUsage?.used ?? 0),
-        threshold: csPre.tokensRemainingUntilShift,
-        historyLen: s.history.length,
-      });
-      const pre = await runShift(
-        s,
-        sessionId,
-        total,
-        shiftTokensToShift(csPre),
-        'pre-fetch',
-      );
-      if (pre.freed <= 0 && isOverMark()) {
-        await handleHopelessShift(s, sessionId);
-      }
-    }
-  }
+  // Pre-send shift: the new user turn just landed and nothing has been
+  // sent yet. Runs whenever the general toggle is on (no mid-chat gate).
+  await ensureFit(s, sessionId, 'pre-fetch');
 
   s.status = 'generating';
   s.aborted = false;
@@ -2973,11 +2656,8 @@ export async function sendMessage(
   s.abortController = new AbortController();
   s.promptProgress = 0;
   s.streamingTool = null;
-  s.midShiftRequested = false;
-  s.midShiftStreamedLen = 0;
-  s.midShiftNextAllowedAt = 0;
-  s.midShiftDroppedTokens = 0;
-  s.midShiftPrefillIndex = -1;
+  s.streamedLen = 0;
+  s.rescueDone = false;
   // Estimate from here: basis is the refreshed + optimistic total above.
   s.usageBasisTokens = lastUsage?.used ?? 0;
   s.usageBasisLen = 0;
@@ -3176,7 +2856,7 @@ export async function sendMessage(
 
             if (delta.content) {
               fullResponse += delta.content;
-              s.midShiftStreamedLen += delta.content.length;
+              s.streamedLen += delta.content.length;
               responseTokenCount += 1;
               if (s.promptProgress !== 0) {
                 s.promptProgress = 0;
@@ -3200,7 +2880,7 @@ export async function sendMessage(
               }
               thinkingTokenCount += 1;
               fullThinking += delta.reasoning_content;
-              s.midShiftStreamedLen += delta.reasoning_content.length;
+              s.streamedLen += delta.reasoning_content.length;
               appendAssistantToken(s, delta.reasoning_content, 'thought');
               emit({
                 type: 'token',
@@ -3238,7 +2918,7 @@ export async function sendMessage(
                 if (tc.function?.arguments) {
                   toolCalls[tc.index].args += tc.function.arguments;
                   toolTokenCount += 1;
-                  s.midShiftStreamedLen += tc.function.arguments.length;
+                  s.streamedLen += tc.function.arguments.length;
                   if (s.streamingTool) {
                     s.streamingTool = {
                       ...s.streamingTool,
@@ -3262,12 +2942,9 @@ export async function sendMessage(
             if (lastUsage && !data.usage) {
               const est =
                 s.usageBasisTokens +
-                Math.max(
-                  0,
-                  Math.floor((s.midShiftStreamedLen - s.usageBasisLen) / 4),
-                );
+                Math.max(0, Math.floor((s.streamedLen - s.usageBasisLen) / 4));
               lastUsage = { used: est, total: lastUsage.total };
-              if (s.midShiftStreamedLen - s.usageBasisLen >= 2048) {
+              if (s.streamedLen - s.usageBasisLen >= 2048) {
                 const snapText =
                   fullResponse +
                   fullThinking +
@@ -3281,39 +2958,6 @@ export async function sendMessage(
                 }
               }
             }
-
-            // Mid-generation pressure: interrupt plain-text streaming (tool
-            // legs are left to finish) so old context can shift and the
-            // response front can splice before resuming. The re-arm watermark
-            // keeps this to ~1 shift per 256 fresh tokens; the budget compare
-            // itself is integer-only so checking every token is cheap.
-            if (
-              !s.midShiftRequested &&
-              toolCalls.length === 0 &&
-              delta &&
-              (delta.content || delta.reasoning_content) &&
-              (fullResponse.length > 0 || fullThinking.length > 0) &&
-              s.midShiftStreamedLen >= s.midShiftNextAllowedAt &&
-              shouldRequestMidShift(s)
-            ) {
-              if (lastUsage) {
-                // eslint-disable-next-line no-console
-                console.log('[context-shift] mid-generation trigger', {
-                  sessionId,
-                  remaining:
-                    (currentContextSize ?? lastUsage.total) - lastUsage.used,
-                  threshold:
-                    currentContextShift?.tokensRemainingUntilShift ?? null,
-                  streamedLen: s.midShiftStreamedLen,
-                  usageBasis: s.usageBasisTokens,
-                  legNormalLen: fullResponse.length,
-                  legThinkingLen: fullThinking.length,
-                });
-              }
-              s.midShiftRequested = true;
-              s.abortController?.abort();
-              break;
-            }
           } catch (e) {}
         }
       }
@@ -3322,21 +2966,6 @@ export async function sendMessage(
         reader.releaseLock();
       } catch {}
       s.currentReader = null;
-    }
-
-    if (s.midShiftRequested) {
-      // Auto-shift, not a user abort: trim/splice, then continue generating
-      // from the staged prefill (tool-loop precedent for pause-mutate-resume).
-      s.midShiftRequested = false;
-      if (!s.aborted) {
-        await performMidChatShift(s, sessionId);
-        if (!s.aborted) {
-          s.abortController = new AbortController();
-          persistSessionState(sessionId);
-          emitSessionChanged(sessionId);
-          return runCompletion();
-        }
-      }
     }
 
     if (s.aborted) {
@@ -3362,6 +2991,29 @@ export async function sendMessage(
         tool_calls: toolCallRequests,
         ...(toolDisplayId !== undefined ? { msgId: toolDisplayId } : {}),
       });
+      if (lastUsage && !s.aborted) {
+        anchorUsage(s, lastUsage.used + toolCallRequestTokens, lastUsage.total);
+      }
+      // Pre-execution shift: the call record just landed and nothing has
+      // run yet. Calls whose record does not survive are never executed;
+      // their interruption is recorded as the result instead.
+      if (
+        currentContextShift?.enabled &&
+        currentContextShift?.midChatShiftEnabled &&
+        !s.aborted
+      ) {
+        await ensureFit(s, sessionId, 'tool-round-pre');
+      }
+      const liveCallIds = new Set<string>();
+      for (let hi = 0; hi < s.history.length; hi += 1) {
+        const m = s.history[hi];
+        if (m?.role === 'assistant' && m.tool_calls?.length) {
+          for (let ci = 0; ci < m.tool_calls.length; ci += 1) {
+            const c = m.tool_calls[ci];
+            if (c?.id) liveCallIds.add(c.id);
+          }
+        }
+      }
       // Emit all function-call params upfront so every card becomes expandable immediately
       for (const tc of toolCalls) {
         if (chatFunctions[tc.name]?.tags?.includes('web_search'))
@@ -3520,6 +3172,20 @@ export async function sendMessage(
             return;
           }
           const tc = toolCalls[idx];
+          if (!liveCallIds.has(tc.id)) {
+            // Shift dropped this call's record: never run it.
+            const buffered = prepareBuffer(
+              { _response: TOOL_INTERRUPTED_NOTICE },
+              tc,
+            );
+            llmBuffers[idx] = buffered;
+            commitImmediateUI(idx, buffered);
+            firstResults[idx] = {
+              status: 'fulfilled',
+              value: { _interrupted: true },
+            } as PromiseFulfilledResult<any>;
+            return;
+          }
           try {
             const h = chatFunctions[tc.name]?.handler;
             if (!h) throw new Error(`Tool handler not found: ${tc.name}`);
@@ -3651,40 +3317,13 @@ export async function sendMessage(
         persistSessionState(sessionId);
       }
 
-      // Tool-round checkpoint: results just landed in history (often huge),
-      // and no stream is live, so old content can shift with zero abort cost.
-      // Gated on plain enabled; old tool results may split like any text,
-      // the current turn always stays.
-      {
-        const csRound = currentContextShift;
-        if (
-          csRound?.enabled &&
-          lastUsage &&
-          !s.aborted &&
-          hasTrimmableHistory(s, csRound) &&
-          isOverMark()
-        ) {
-          const total = currentContextSize ?? lastUsage.total;
-          if (lastUsage) {
-            // eslint-disable-next-line no-console
-            console.log('[context-shift] tool-round trigger', {
-              sessionId,
-              remaining: total - lastUsage.used,
-              threshold: csRound.tokensRemainingUntilShift,
-              historyLen: s.history.length,
-            });
-          }
-          const round = await runShift(
-            s,
-            sessionId,
-            total,
-            shiftTokensToShift(csRound),
-            'tool-round',
-          );
-          if (round.freed <= 0 && isOverMark()) {
-            await handleHopelessShift(s, sessionId);
-          }
-        }
+      // Tool-round shift: results just landed in history (often huge) and
+      // no stream is live. Record tokens were counted pre-execution above.
+      if (
+        currentContextShift?.enabled &&
+        currentContextShift?.midChatShiftEnabled
+      ) {
+        await ensureFit(s, sessionId, 'tool-round');
       }
 
       currentNewTokens = toolCallRequestTokens + totalResultTokens;
@@ -3696,39 +3335,11 @@ export async function sendMessage(
 
   const driveTurn = async (): Promise<SendMessageResponse> => {
     const result = await runCompletion();
-    // A mid-chat shift staged the kept response front as the last history
-    // entry: merge the final leg into it instead of splitting history into
-    // two adjacent assistant messages.
-    const preIdx = s.midShiftPrefillIndex;
-    if (preIdx >= 0 && preIdx < s.history.length) {
-      const prev = s.history[preIdx];
-      if (
-        prev?.role === 'assistant' &&
-        !prev.tool_calls &&
-        preIdx === s.history.length - 1
-      ) {
-        const prevText = typeof prev.content === 'string' ? prev.content : '';
-        const merged: ChatHistoryMsg = {
-          role: 'assistant',
-          content: `${prevText}${result.content}`,
-        };
-        if (prev.msgId !== undefined) merged.msgId = prev.msgId;
-        s.history = [...s.history.slice(0, preIdx), merged];
-      } else {
-        s.history.push({
-          role: 'assistant',
-          content: result.content,
-          msgId: liveAssistantId(s),
-        });
-      }
-    } else {
-      s.history.push({
-        role: 'assistant',
-        content: result.content,
-        msgId: liveAssistantId(s),
-      });
-    }
-    s.midShiftPrefillIndex = -1;
+    s.history.push({
+      role: 'assistant',
+      content: result.content,
+      msgId: liveAssistantId(s),
+    });
     await finishSession(sessionId, result.stats);
     return result;
   };
@@ -3741,10 +3352,9 @@ export async function sendMessage(
       await finishSession(sessionId);
       return { content: 'Aborted' };
     }
-    // Bounded rescue: on a genuine budget rejection, shed old content once
-    // and retry the turn instead of failing outright. Gated on plain
-    // enabled; the current turn always stays, and an oversized tool result
-    // is substituted rather than dropped blindly.
+    // Rescue: the server proved the prompt too large. Re-establish truth
+    // from history, shift once via the universal method, and retry the turn.
+    // Gated only on the general toggle (no mid-chat gate).
     {
       const csRescue = currentContextShift;
       const rescueCode =
@@ -3753,14 +3363,12 @@ export async function sendMessage(
           : undefined;
       if (
         rescueCode === 'context-exceeded' &&
-        !s.midShiftRescueDone &&
-        csRescue?.enabled &&
-        hasTrimmableHistory(s, csRescue)
+        !s.rescueDone &&
+        csRescue?.enabled
       ) {
-        s.midShiftRescueDone = true;
+        s.rescueDone = true;
         // The server just proved the counters wrong: re-establish truth from
-        // history before deciding the cut. Without this, a stale remaining
-        // sails past the mark gate and the rescue frees nothing.
+        // history before measuring the deficit.
         await refreshUsageFromHistory(sessionId);
         if (!lastUsage) {
           // eslint-disable-next-line no-console
@@ -3768,25 +3376,9 @@ export async function sendMessage(
             sessionId,
           });
         } else {
-          const total = currentContextSize ?? lastUsage.total;
-          // eslint-disable-next-line no-console
-          console.log('[context-shift] rescue attempt', {
-            sessionId,
-            remaining: total - lastUsage.used,
-            historyLen: s.history.length,
-          });
-          const rescuedShift = await runShift(
-            s,
-            sessionId,
-            total,
-            shiftTokensToShift(csRescue),
-            'rescue',
-          );
-          let rescuedProgress = rescuedShift.freed > 0;
-          if (!rescuedProgress && isOverMark()) {
-            rescuedProgress = await handleHopelessShift(s, sessionId);
-          }
-          if (rescuedProgress && !s.aborted) {
+          const usedBefore = lastUsage.used;
+          await ensureFit(s, sessionId, 'rescue');
+          if (lastUsage.used < usedBefore && !s.aborted) {
             s.abortController = new AbortController();
             persistSessionState(sessionId);
             emitSessionChanged(sessionId);
