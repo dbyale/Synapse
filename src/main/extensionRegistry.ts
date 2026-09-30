@@ -8,6 +8,13 @@ import type {
   ExtensionToolDef,
 } from '../extensions/types';
 import {
+  BUILT_IN_EXTENSION_IDS,
+  OFFICIAL_EXTENSION_IDS,
+  isBuiltInExtensionId,
+  isOfficialExtensionId,
+  isReservedExtensionId,
+} from '../extensions/extensionTypes';
+import {
   tools as timeTools,
   manifest as timeManifest,
 } from '../extensions/time';
@@ -66,9 +73,73 @@ const BUILT_IN_EXTENSIONS: Array<{
   },
   { tools: ddgSearchTools, manifest: ddgSearchManifest as ExtensionManifest },
   { tools: sandboxTools, manifest: sandboxManifest as ExtensionManifest },
-  { tools: githubTools, manifest: githubManifest as ExtensionManifest },
   { tools: sessionsTools, manifest: sessionsManifest as ExtensionManifest },
 ];
+
+const OFFICIAL_EXTENSIONS: Array<{
+  tools: Record<string, ExtensionToolDef>;
+  manifest: ExtensionManifest;
+}> = [{ tools: githubTools, manifest: githubManifest as ExtensionManifest }];
+
+function getOfficialSettingsPath(): string {
+  return path.join(
+    app.getPath('userData'),
+    'extension-settings',
+    'official-extensions.json',
+  );
+}
+
+function loadAddedOfficialIds(): string[] {
+  try {
+    const filePath = getOfficialSettingsPath();
+    if (!fs.existsSync(filePath)) return [];
+    const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as unknown;
+    const added = (raw as { added?: unknown }).added;
+    if (!Array.isArray(added)) return [];
+    return added.filter(
+      (id): id is string => typeof id === 'string' && isOfficialExtensionId(id),
+    );
+  } catch {
+    return [];
+  }
+}
+
+function saveAddedOfficialIds(ids: string[]): void {
+  try {
+    const filePath = getOfficialSettingsPath();
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    const unique = [...new Set(ids)].filter((id) => isOfficialExtensionId(id));
+    fs.writeFileSync(
+      filePath,
+      JSON.stringify({ added: unique }, null, 2),
+      'utf-8',
+    );
+  } catch (err) {
+    console.error('[Extensions] Failed to persist official extensions:', err);
+  }
+}
+
+// Strip any manifest-authored type flags; recompute from hardcoded lists.
+// Built-ins are both builtIn AND official (badge is visual only — they stay
+// installed, non-removable, in the built-in section). Only addable official
+// IDs (github) can enter/leave via the catalog.
+function normalizeManifest(
+  input: Record<string, any>,
+  iconSvgData?: string,
+): ExtensionManifest {
+  const rest: Record<string, any> = { ...input };
+  // Discard untrusted type flags — hardcoded allowlists decide (extensionTypes.ts).
+  delete rest.builtIn;
+  delete rest.official;
+  const id = String((rest as { id?: unknown }).id ?? '');
+  const builtIn = isBuiltInExtensionId(id);
+  return {
+    ...(rest as unknown as ExtensionManifest),
+    builtIn,
+    official: builtIn || isOfficialExtensionId(id),
+    ...(iconSvgData !== undefined ? { iconSvgData } : {}),
+  };
+}
 
 class ExtensionRegistry {
   private extensions: Map<string, Extension> = new Map();
@@ -79,22 +150,136 @@ class ExtensionRegistry {
     this.registerBuiltIn();
     this.ensureUserExtensionsDir();
     this.loadUserExtensions();
+    this.loadPersistedOfficialExtensions();
   }
 
   private registerBuiltIn(): void {
     const builtInDir = path.join(app.getAppPath(), 'src', 'extensions');
     for (const ext of BUILT_IN_EXTENSIONS) {
-      const manifest = ext.manifest;
+      const rawId = String((ext.manifest as { id?: unknown }).id ?? '');
+      // Defensive: only allowlisted IDs can register as built-in.
+      if (!isBuiltInExtensionId(rawId)) {
+        console.warn(
+          `[Extensions] Skipping non-allowlisted built-in candidate "${rawId}"`,
+        );
+        continue;
+      }
       const iconSvgData = this.loadSvgIcon(
-        path.join(builtInDir, manifest.id),
-        manifest.icon,
+        path.join(builtInDir, rawId),
+        ext.manifest.icon,
+      );
+      const manifest = normalizeManifest(
+        ext.manifest as unknown as Record<string, any>,
+        iconSvgData,
       );
       this.extensions.set(manifest.id, {
-        manifest: { ...manifest, builtIn: true, iconSvgData },
+        manifest,
         tools: ext.tools,
         enabled: true,
       });
     }
+  }
+
+  private registerOfficialById(id: string): boolean {
+    if (!isOfficialExtensionId(id)) return false;
+    if (this.extensions.has(id)) return true;
+    const found = OFFICIAL_EXTENSIONS.find(
+      (e) => String((e.manifest as { id?: unknown }).id) === id,
+    );
+    if (!found) return false;
+    const builtInDir = path.join(app.getAppPath(), 'src', 'extensions');
+    const iconSvgData = this.loadSvgIcon(
+      path.join(builtInDir, id),
+      found.manifest.icon,
+    );
+    const manifest = normalizeManifest(
+      found.manifest as unknown as Record<string, any>,
+      iconSvgData,
+    );
+    this.extensions.set(manifest.id, {
+      manifest,
+      tools: found.tools,
+      enabled: true,
+    });
+    return true;
+  }
+
+  private loadPersistedOfficialExtensions(): void {
+    for (const id of loadAddedOfficialIds()) {
+      try {
+        this.registerOfficialById(id);
+      } catch (err) {
+        console.error(
+          `[Extensions] Failed to restore official extension "${id}":`,
+          err,
+        );
+      }
+    }
+  }
+
+  getOfficialCatalog(): Array<{
+    manifest: ExtensionManifest;
+    tools: Record<string, ExtensionToolDef>;
+    added: boolean;
+    enabled: boolean;
+  }> {
+    const builtInDir = path.join(app.getAppPath(), 'src', 'extensions');
+    return OFFICIAL_EXTENSION_IDS.map((id) => {
+      const registered = this.extensions.get(id);
+      if (registered) {
+        return {
+          manifest: registered.manifest,
+          tools: registered.tools,
+          added: true,
+          enabled: registered.enabled,
+        };
+      }
+      const found = OFFICIAL_EXTENSIONS.find(
+        (e) => String((e.manifest as { id?: unknown }).id) === id,
+      );
+      if (!found) {
+        throw new Error(`Official extension "${id}" has no bundled code`);
+      }
+      const iconSvgData = this.loadSvgIcon(
+        path.join(builtInDir, id),
+        found.manifest.icon,
+      );
+      return {
+        manifest: normalizeManifest(
+          found.manifest as unknown as Record<string, any>,
+          iconSvgData,
+        ),
+        tools: found.tools,
+        added: false,
+        enabled: false,
+      };
+    });
+  }
+
+  addOfficialExtension(id: string): { success: boolean; error?: string } {
+    if (!isOfficialExtensionId(id)) {
+      return {
+        success: false,
+        error: `Extension "${id}" is not an official extension`,
+      };
+    }
+    if (this.extensions.has(id)) {
+      // Already added — ensure persisted and enabled.
+      const ext = this.extensions.get(id);
+      if (ext && !ext.enabled) ext.enabled = true;
+      const current = loadAddedOfficialIds();
+      if (!current.includes(id)) saveAddedOfficialIds([...current, id]);
+      return { success: true };
+    }
+    const ok = this.registerOfficialById(id);
+    if (!ok) {
+      return {
+        success: false,
+        error: `Official extension "${id}" is not bundled`,
+      };
+    }
+    saveAddedOfficialIds([...loadAddedOfficialIds(), id]);
+    return { success: true };
   }
 
   private ensureUserExtensionsDir(): void {
@@ -141,10 +326,19 @@ class ExtensionRegistry {
       const manifestPath = path.join(extDir, 'manifest.json');
       if (!fs.existsSync(manifestPath)) return;
       const manifestRaw = fs.readFileSync(manifestPath, 'utf-8');
-      const manifest: ExtensionManifest = JSON.parse(manifestRaw);
-      if (this.extensions.has(manifest.id)) {
+      const parsed = JSON.parse(manifestRaw) as Record<string, any>;
+      const rawId = String((parsed as { id?: unknown }).id ?? '');
+      if (!rawId) return;
+      // Reserved IDs can never come from the user extensions dir.
+      if (isReservedExtensionId(rawId)) {
         console.warn(
-          `[Extensions] Extension "${manifest.id}" already registered, skipping`,
+          `[Extensions] Ignoring user extension with reserved id "${rawId}" at ${extDir}`,
+        );
+        return;
+      }
+      if (this.extensions.has(rawId)) {
+        console.warn(
+          `[Extensions] Extension "${rawId}" already registered, skipping`,
         );
         return;
       }
@@ -161,9 +355,10 @@ class ExtensionRegistry {
           }
         }
       }
-      const iconSvgData = this.loadSvgIcon(extDir, manifest.icon);
+      const iconSvgData = this.loadSvgIcon(extDir, String(parsed.icon ?? ''));
+      const manifest = normalizeManifest(parsed, iconSvgData);
       this.extensions.set(manifest.id, {
-        manifest: { ...manifest, builtIn: false, iconSvgData },
+        manifest,
         tools,
         enabled: true,
         extensionDir: extDir,
@@ -224,14 +419,25 @@ class ExtensionRegistry {
         };
       }
       const manifestRaw = fs.readFileSync(sourceManifestPath, 'utf-8');
-      const manifest: ExtensionManifest = JSON.parse(manifestRaw);
-      if (this.extensions.has(manifest.id)) {
+      const parsed = JSON.parse(manifestRaw) as Record<string, any>;
+      const rawId = String((parsed as { id?: unknown }).id ?? '');
+      if (!rawId) {
+        return { success: false, error: 'Extension manifest is missing an id' };
+      }
+      // Block spoofing / collisions with hardcoded IDs.
+      if (isReservedExtensionId(rawId)) {
         return {
           success: false,
-          error: `Extension "${manifest.id}" is already installed`,
+          error: `Extension id "${rawId}" is reserved. Use Add Extensions for official extensions.`,
         };
       }
-      const destDir = path.join(this.userExtensionsDir, manifest.id);
+      if (this.extensions.has(rawId)) {
+        return {
+          success: false,
+          error: `Extension "${rawId}" is already installed`,
+        };
+      }
+      const destDir = path.join(this.userExtensionsDir, rawId);
       if (fs.existsSync(destDir)) {
         return {
           success: false,
@@ -262,9 +468,20 @@ class ExtensionRegistry {
     }
     if (!ext)
       return { success: false, error: `Extension "${idOrName}" not found` };
-    if (ext.manifest.builtIn)
+    const isOfficial = isOfficialExtensionId(ext.manifest.id);
+    const isBuiltIn = isBuiltInExtensionId(ext.manifest.id);
+    if (isBuiltIn && !isOfficial)
       return { success: false, error: 'Cannot remove built-in extension' };
     try {
+      if (isOfficial) {
+        // Official extensions are bundled — "remove" means unregister and
+        // drop from the persisted added list (returns to the catalog).
+        this.extensions.delete(ext.manifest.id);
+        saveAddedOfficialIds(
+          loadAddedOfficialIds().filter((id) => id !== ext!.manifest.id),
+        );
+        return { success: true };
+      }
       const extDir =
         ext.extensionDir || path.join(this.userExtensionsDir, ext.manifest.id);
       if (fs.existsSync(extDir)) {
@@ -304,4 +521,4 @@ export function getExtensionRegistry(): ExtensionRegistry {
   return instance;
 }
 
-export { ExtensionRegistry };
+export { ExtensionRegistry, BUILT_IN_EXTENSION_IDS, OFFICIAL_EXTENSION_IDS };

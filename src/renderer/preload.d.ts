@@ -454,7 +454,11 @@ declare global {
             version: string;
             icon: string;
             builtIn: boolean;
+            // Server-computed from hardcoded allowlists (extensionTypes.ts).
+            // Never trust manifest.json for this.
+            official?: boolean;
             iconSvgData?: string;
+            hasSettings?: boolean;
           };
           tools: Record<
             string,
@@ -476,6 +480,43 @@ declare global {
           extensionDir?: string;
         }>
       >;
+      extensionsListOfficial: () => Promise<
+        Array<{
+          manifest: {
+            id: string;
+            name: string;
+            description: string;
+            author: string;
+            version: string;
+            icon: string;
+            builtIn: boolean;
+            official?: boolean;
+            iconSvgData?: string;
+            hasSettings?: boolean;
+          };
+          tools: Record<
+            string,
+            {
+              meta: {
+                name: string;
+                label: string;
+                description: string;
+                descriptionForHuman?: string;
+                descriptionForModel?: string;
+                icon: string;
+                displayType?: string;
+                tags?: string[];
+              };
+              params: Record<string, any>;
+            }
+          >;
+          enabled: boolean;
+          added: boolean;
+        }>
+      >;
+      extensionsAddOfficial: (
+        id: string,
+      ) => Promise<{ success: boolean; error?: string }>;
       extensionsInstall: () => Promise<{ success: boolean; error?: string }>;
       extensionsRemove: (
         id: string,

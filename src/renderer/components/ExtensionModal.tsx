@@ -43,6 +43,7 @@ interface ExtensionInfo {
     version: string;
     icon: string;
     builtIn: boolean;
+    official?: boolean;
     iconSvgData?: string;
     hasSettings?: boolean;
   };

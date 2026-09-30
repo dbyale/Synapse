@@ -80,6 +80,25 @@ export function registerExtensionIpcHandlers(): void {
     return registry.installExtension(sourcePath);
   });
 
+  ipcMain.handle('extensions:listOfficial', () => {
+    const catalog = registry.getOfficialCatalog();
+    return catalog.map((entry) => ({
+      manifest: entry.manifest,
+      tools: Object.fromEntries(
+        Object.entries(entry.tools).map(([name, tool]) => [
+          name,
+          { meta: tool.meta, params: tool.params },
+        ]),
+      ),
+      enabled: entry.enabled,
+      added: entry.added,
+    }));
+  });
+
+  ipcMain.handle('extensions:addOfficial', (_event, id: string) => {
+    return registry.addOfficialExtension(id);
+  });
+
   ipcMain.handle('extensions:remove', (_event, id: string) => {
     return registry.removeExtension(id);
   });

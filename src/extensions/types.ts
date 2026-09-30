@@ -5,7 +5,12 @@ export interface ExtensionManifest {
   author: string;
   version: string;
   icon: string;
+  // ── Server-computed flags (hardcoded allowlists, NOT manifest-authored) ──
+  // `builtIn` / `official` may appear in on-disk manifest.json for back-compat
+  // but are always stripped and recomputed by ExtensionRegistry from
+  // extensionTypes.ts. Never trust these from disk.
   builtIn: boolean;
+  official?: boolean;
   iconSvgData?: string;
   hasSettings?: boolean;
 }

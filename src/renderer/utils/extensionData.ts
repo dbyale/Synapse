@@ -1,4 +1,4 @@
-type ToolMeta = {
+export type ToolMeta = {
   name: string;
   label: string;
   description: string;
@@ -9,7 +9,7 @@ type ToolMeta = {
   tags?: string[];
 };
 
-type ExtensionInfo = {
+export type ExtensionInfo = {
   manifest: {
     id: string;
     name: string;
@@ -18,6 +18,9 @@ type ExtensionInfo = {
     version: string;
     icon: string;
     builtIn: boolean;
+    // Server-computed from hardcoded allowlists. Never set from manifest.json.
+    official?: boolean;
+    iconSvgData?: string;
     hasSettings?: boolean;
   };
   tools: Record<string, { meta: ToolMeta; params: Record<string, any> }>;
@@ -25,7 +28,12 @@ type ExtensionInfo = {
   extensionDir?: string;
 };
 
+export type OfficialExtensionInfo = ExtensionInfo & {
+  added: boolean;
+};
+
 let cachedExtensions: ExtensionInfo[] | null = null;
+let cachedOfficialExtensions: OfficialExtensionInfo[] | null = null;
 let cachedAllTools: Record<
   string,
   { meta: ToolMeta; params: Record<string, any> }
@@ -56,6 +64,38 @@ export async function fetchExtensionData(): Promise<void> {
     cachedAllTools = {};
   }
   notifyListeners();
+}
+
+export async function fetchOfficialExtensions(): Promise<
+  OfficialExtensionInfo[]
+> {
+  if (!window.electronAPI?.extensionsListOfficial) return [];
+  try {
+    const official = await window.electronAPI.extensionsListOfficial();
+    cachedOfficialExtensions = official;
+    return official;
+  } catch {
+    return cachedOfficialExtensions ?? [];
+  }
+}
+
+export function getOfficialExtensions(): OfficialExtensionInfo[] {
+  return cachedOfficialExtensions ?? [];
+}
+
+export function isOfficialExtension(manifest: { official?: boolean }): boolean {
+  // Server-computed flag only — never infer from id or manifest.json content.
+  // True for addable officials AND built-ins (built-ins show the badge visually only).
+  return manifest.official === true;
+}
+
+export function isAddableOfficialExtension(manifest: {
+  official?: boolean;
+  builtIn?: boolean;
+}): boolean {
+  // Only opt-in officials (github) — built-ins are excluded so they never
+  // change sections and are never add/removable despite showing the badge.
+  return manifest.official === true && manifest.builtIn !== true;
 }
 
 export function getExtensions(): ExtensionInfo[] {
@@ -102,5 +142,6 @@ export function getCategorizedExtensions(): Array<{
 
 export function invalidateCache(): void {
   cachedExtensions = null;
+  cachedOfficialExtensions = null;
   cachedAllTools = null;
 }

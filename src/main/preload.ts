@@ -323,11 +323,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     fileBufferRam: number;
   }> => ipcRenderer.invoke('profile:estimateMemory', params),
 
-  getPlatform: (): Promise<string> =>
-    ipcRenderer.invoke('get-platform'),
+  getPlatform: (): Promise<string> => ipcRenderer.invoke('get-platform'),
 
   // ── Extensions ──
   extensionsList: () => ipcRenderer.invoke('extensions:list'),
+  extensionsListOfficial: () => ipcRenderer.invoke('extensions:listOfficial'),
+  extensionsAddOfficial: (id: string) =>
+    ipcRenderer.invoke('extensions:addOfficial', id),
   extensionsInstall: () => ipcRenderer.invoke('extensions:install'),
   extensionsRemove: (id: string) => ipcRenderer.invoke('extensions:remove', id),
   extensionsToggle: (id: string, enabled: boolean) =>

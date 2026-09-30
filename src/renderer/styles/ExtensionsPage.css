@@ -221,6 +221,17 @@
   color: rgb(129, 140, 248);
 }
 
+.ep-card__official-badge {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(52, 211, 153, 0.15);
+  color: rgb(110, 231, 183);
+}
+
 .ep-card__description {
   margin: 0;
   font-size: 13px;
@@ -264,8 +275,10 @@
 .ep-card__toggle-btn {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 4px;
-  padding: 5px 10px;
+  width: 100%;
+  padding: 8px 10px;
   border-radius: 6px;
   border: 1px solid var(--border);
   background: transparent;
@@ -303,4 +316,82 @@
   to {
     transform: rotate(360deg);
   }
+}
+
+/* ── Sections ── */
+
+.ep-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.ep-section:last-of-type {
+  margin-bottom: 0;
+}
+
+.ep-section__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ep-section__title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.ep-section__count {
+  font-size: 11px;
+  font-weight: 600;
+  min-width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+}
+
+.ep-section__empty {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+  padding: 12px 16px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-lg);
+}
+
+/* ── Full-width bars ── */
+
+.ep-fullwidth-bar {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 14px 16px;
+  border-radius: var(--radius-lg);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.ep-fullwidth-bar--add {
+  border: 1.5px dashed var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.ep-fullwidth-bar--add:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(255, 255, 255, 0.02);
 }
