@@ -1,8 +1,18 @@
 import fs from 'fs';
+import fsPromises from 'fs/promises';
 import path from 'path';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import { app } from 'electron';
 import type { ExtensionToolDef } from '../types';
+import {
+  sanitizePath,
+  normalizePath,
+  validatePath,
+} from '../../main/functions/fileSystem';
 import manifest from './manifest.json';
+
+const execFileAsync = promisify(execFile);
 
 const SETTINGS_FILE = path.join(
   app.getPath('userData'),
@@ -132,6 +142,178 @@ function appendCoAuthor(message: string, settings: GitHubSettings): string {
   const trailer = `\n\nCo-authored-by: ${settings.coAuthorName} <${settings.coAuthorEmail}>`;
   if (message.includes(trailer)) return message;
   return message + trailer;
+}
+
+interface CommitEntry {
+  repoPath: string;
+  content: string;
+}
+
+function normalizeRepoPath(raw: unknown): string {
+  if (typeof raw !== 'string') {
+    throw new Error('Each file must have a non-empty "repoPath" string.');
+  }
+  const trimmed = raw.trim().replace(/^\/+/, '');
+  if (trimmed === '') {
+    throw new Error('Each file must have a non-empty "repoPath" (tree.path cannot be blank).');
+  }
+  if (trimmed.includes('\0')) {
+    throw new Error(`Invalid repoPath "${raw}": contains null byte.`);
+  }
+  const segments = trimmed.split('/');
+  if (segments.some((s) => s === '..')) {
+    throw new Error(`Invalid repoPath "${raw}": ".." segments are not allowed.`);
+  }
+  if (segments.some((s) => s.trim() === '')) {
+    throw new Error(`Invalid repoPath "${raw}": empty path segment.`);
+  }
+  return trimmed;
+}
+
+function requireNonBlank(value: unknown, field: string): string {
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new Error(`Missing required parameter "${field}".`);
+  }
+  return value.trim();
+}
+
+async function resolveCommitBase(
+  octokit: any,
+  owner: string,
+  repo: string,
+  branch: string,
+): Promise<{ commitSha: string; treeSha: string }> {
+  const ref = await octokit.rest.git.getRef({
+    owner,
+    repo,
+    ref: `heads/${branch}`,
+  });
+  const commitSha: string = ref.data.object.sha;
+  const commit = await octokit.rest.git.getCommit({
+    owner,
+    repo,
+    commit_sha: commitSha,
+  });
+  const treeSha: string = commit.data.tree.sha;
+  if (!treeSha) {
+    throw new Error('Failed to resolve base tree for branch.');
+  }
+  return { commitSha, treeSha };
+}
+
+async function commitEntries(
+  octokit: any,
+  owner: string,
+  repoName: string,
+  repoFull: string,
+  branch: string,
+  message: string,
+  settings: GitHubSettings,
+  entries: CommitEntry[],
+): Promise<string> {
+  if (!Array.isArray(entries) || entries.length === 0) {
+    throw new Error('Parameter "files" must be a non-empty array.');
+  }
+  const normalized = entries.map((e: any) => {
+    const repoPath = normalizeRepoPath(e?.repoPath);
+    if (typeof e?.content !== 'string') {
+      throw new Error(`File "${e?.repoPath ?? ''}" must have string "content".`);
+    }
+    return { repoPath, content: e.content as string };
+  });
+
+  const { commitSha, treeSha } = await resolveCommitBase(
+    octokit,
+    owner,
+    repoName,
+    branch,
+  );
+
+  const treeItems = await Promise.all(
+    normalized.map(async (file) => {
+      const blob = await octokit.rest.git.createBlob({
+        owner,
+        repo: repoName,
+        content: file.content,
+        encoding: 'utf-8',
+      });
+      return {
+        path: file.repoPath,
+        mode: '100644' as const,
+        type: 'blob' as const,
+        sha: blob.data.sha,
+      };
+    }),
+  );
+
+  const commitMessage = appendCoAuthor(message, settings);
+  const newTree = await octokit.rest.git.createTree({
+    owner,
+    repo: repoName,
+    base_tree: treeSha,
+    tree: treeItems,
+  });
+  const commit = await octokit.rest.git.createCommit({
+    owner,
+    repo: repoName,
+    message: commitMessage,
+    tree: newTree.data.sha,
+    parents: [commitSha],
+  });
+  await octokit.rest.git.updateRef({
+    owner,
+    repo: repoName,
+    ref: `heads/${branch}`,
+    sha: commit.data.sha,
+  });
+
+  const listed = normalized.map((f) => f.repoPath).join(', ');
+  return `Commit ${commit.data.sha.slice(0, 7)} created on ${branch} in ${repoFull}: ${normalized.length} file(s) (${listed})`;
+}
+
+function normalizeSandboxPosixPath(raw: unknown): string {
+  if (typeof raw !== 'string' || raw.trim() === '') {
+    throw new Error('Each file must have a non-empty "sandboxPath" string.');
+  }
+  if (raw.includes('\0')) {
+    throw new Error('Invalid sandboxPath: contains null byte.');
+  }
+  let p = raw.trim();
+  if (!path.posix.isAbsolute(p)) {
+    p = path.posix.join('/workspace', p);
+  }
+  p = path.posix.normalize(p);
+  if (p === '' || p === '.') {
+    throw new Error('Invalid sandboxPath.');
+  }
+  if (!p.startsWith('/')) {
+    p = `/${p}`;
+  }
+  return p;
+}
+
+function getDockerBinLocal(): string {
+  return process.platform === 'win32' ? 'docker.exe' : 'docker';
+}
+
+async function readSandboxFileUncapped(
+  containerName: string,
+  sandboxPath: string,
+): Promise<string> {
+  const normalized = normalizeSandboxPosixPath(sandboxPath);
+  const bin = getDockerBinLocal();
+  // No size cap here by design: GitHub blob limit is the cap.
+  // Local docker exec (not sandboxReadFile) so sandboxRunner stays untouched.
+  const result = await execFileAsync(bin, ['exec', containerName, 'cat', '--', normalized], {
+    timeout: 120000,
+    maxBuffer: 100 * 1024 * 1024,
+  } as any);
+  const stdout = (result as any)?.stdout ?? '';
+  const stderr = (result as any)?.stderr ?? '';
+  if (stderr && !stdout) {
+    throw new Error(`Failed to read sandbox file "${sandboxPath}": ${stderr}`);
+  }
+  return typeof stdout === 'string' ? stdout : String(stdout ?? '');
 }
 
 const tools: Record<string, ExtensionToolDef> = {
@@ -510,12 +692,12 @@ const tools: Record<string, ExtensionToolDef> = {
     },
   },
 
-  create_commit: {
+  create_commit_text: {
     meta: {
-      name: 'create_commit',
-      label: 'Create Commit',
+      name: 'create_commit_text',
+      label: 'Create Commit with Text',
       description:
-        'Create a commit on a GitHub repository directly via the API. Creates or updates a file and commits it.',
+        'Create a commit on a GitHub repository from raw text. Each file takes inline text and the destination path within the commit.',
       icon: 'GitCommit',
     },
     params: {
@@ -532,76 +714,239 @@ const tools: Record<string, ExtensionToolDef> = {
           items: {
             type: 'object',
             properties: {
-              path: {
+              repoPath: {
                 type: 'string',
-                description: 'File path in the repository',
+                description:
+                  'Destination file path within the commit (e.g. "src/app.ts"). This becomes tree.path.',
               },
-              content: { type: 'string', description: 'File content (text)' },
+              content: {
+                type: 'string',
+                description: 'Raw text content to write to repoPath (text, utf-8)',
+              },
             },
+            required: ['repoPath', 'content'],
           },
           description: 'Array of files to create or update',
         },
       },
+      required: ['repo', 'branch', 'message', 'files'],
     },
     async handler(params: {
       repo: string;
       branch: string;
       message: string;
-      files: Array<{ path: string; content: string }>;
+      files: Array<{ repoPath: string; content: string }>;
     }) {
       try {
-        await ensureRepoAllowed(params.repo);
+        const repoFull = requireNonBlank(params?.repo, 'repo');
+        const branch = requireNonBlank(params?.branch, 'branch');
+        const message = requireNonBlank(params?.message, 'message');
+        await ensureRepoAllowed(repoFull);
         const settings = loadSettings();
         const octokit = await createOctokit(settings);
-        const { owner, repo } = parseRepo(params.repo);
-
-        const latestCommit = await octokit.rest.git.getRef({
+        const { owner, repo } = parseRepo(repoFull);
+        return await commitEntries(
+          octokit,
           owner,
           repo,
-          ref: `heads/${params.branch}`,
-        });
-        const treeSha = latestCommit.data.object.sha;
-
-        const treeItems = await Promise.all(
-          params.files.map(async (file) => {
-            const blob = await octokit.rest.git.createBlob({
-              owner,
-              repo,
-              content: file.content,
-              encoding: 'utf-8',
-            });
-            return {
-              path: file.path,
-              mode: '100644' as const,
-              type: 'blob' as const,
-              sha: blob.data.sha,
-            };
-          }),
+          repoFull,
+          branch,
+          message,
+          settings,
+          params.files as any,
         );
+      } catch (error) {
+        return `Error: ${error instanceof Error ? error.message : String(error)}`;
+      }
+    },
+  },
 
-        const commitMessage = appendCoAuthor(params.message, settings);
+  create_commit_files: {
+    meta: {
+      name: 'create_commit_files',
+      label: 'Create Commit with Host Files',
+      description:
+        'Create a commit on a GitHub repository from host files. Reads each hostPath server-side (uncapped, text utf-8) and commits it to repoPath. Returns status only, never file contents.',
+      icon: 'GitCommit',
+    },
+    params: {
+      type: 'object',
+      properties: {
+        repo: {
+          type: 'string',
+          description: 'Repository in "owner/repo" format',
+        },
+        branch: { type: 'string', description: 'Branch to commit to' },
+        message: { type: 'string', description: 'Commit message' },
+        files: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              repoPath: {
+                type: 'string',
+                description:
+                  'Destination file path within the commit (e.g. "src/app.ts"). This becomes tree.path.',
+              },
+              hostPath: {
+                type: 'string',
+                description:
+                  'Source path on the HOST filesystem to read (text, utf-8). Supports ~ and placeholders; must be within allowedDirectories if set.',
+              },
+            },
+            required: ['repoPath', 'hostPath'],
+          },
+          description: 'Array of host files to read and commit',
+        },
+      },
+      required: ['repo', 'branch', 'message', 'files'],
+    },
+    async handler(params: {
+      repo: string;
+      branch: string;
+      message: string;
+      files: Array<{ repoPath: string; hostPath: string }>;
+    }) {
+      try {
+        const repoFull = requireNonBlank(params?.repo, 'repo');
+        const branch = requireNonBlank(params?.branch, 'branch');
+        const message = requireNonBlank(params?.message, 'message');
+        if (!Array.isArray(params?.files) || params.files.length === 0) {
+          throw new Error('Parameter "files" must be a non-empty array.');
+        }
+        await ensureRepoAllowed(repoFull);
+        const settings = loadSettings();
+        const octokit = await createOctokit(settings);
+        const { owner, repo } = parseRepo(repoFull);
 
-        const newTree = await octokit.rest.git.createTree({
+        // Uncapped server-side read: no maxReadSize check by design.
+        // GitHub blob limit is the cap; errors surface from the API.
+        const entries: CommitEntry[] = [];
+        for (const f of params.files as any[]) {
+          const repoPath = normalizeRepoPath(f?.repoPath);
+          if (typeof f?.hostPath !== 'string' || f.hostPath.trim() === '') {
+            throw new Error(`File "${f?.repoPath ?? ''}" must have a non-empty "hostPath".`);
+          }
+          const p = normalizePath(sanitizePath(f.hostPath));
+          validatePath(p);
+          let content: string;
+          try {
+            content = await fsPromises.readFile(p, 'utf-8');
+          } catch (e) {
+            throw new Error(
+              `Failed to read host file "${f.hostPath}": ${e instanceof Error ? e.message : String(e)}`,
+            );
+          }
+          entries.push({ repoPath, content });
+        }
+
+        return await commitEntries(
+          octokit,
           owner,
           repo,
-          base_tree: treeSha,
-          tree: treeItems,
-        });
-        const commit = await octokit.rest.git.createCommit({
-          owner,
-          repo,
-          message: commitMessage,
-          tree: newTree.data.sha,
-          parents: [treeSha],
-        });
-        await octokit.rest.git.updateRef({
-          owner,
-          repo,
-          ref: `heads/${params.branch}`,
-          sha: commit.data.sha,
-        });
+          repoFull,
+          branch,
+          message,
+          settings,
+          entries,
+        );
+      } catch (error) {
+        return `Error: ${error instanceof Error ? error.message : String(error)}`;
+      }
+    },
+  },
 
-        return `Commit ${commit.data.sha.slice(0, 7)} created on ${params.branch} in ${params.repo}: "${params.message}"`;
+  create_commit_sandbox_files: {
+    meta: {
+      name: 'create_commit_sandbox_files',
+      label: 'Create Commit with Sandbox Files',
+      description:
+        'Create a commit on a GitHub repository from sandbox container files. Reads each sandboxPath server-side via docker exec cat (uncapped, text utf-8) and commits it to repoPath. container_name is required. Returns status only.',
+      icon: 'GitCommit',
+    },
+    params: {
+      type: 'object',
+      properties: {
+        repo: {
+          type: 'string',
+          description: 'Repository in "owner/repo" format',
+        },
+        branch: { type: 'string', description: 'Branch to commit to' },
+        message: { type: 'string', description: 'Commit message' },
+        container_name: {
+          type: 'string',
+          description: 'Name of the sandbox container to read files from (required)',
+        },
+        files: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              repoPath: {
+                type: 'string',
+                description:
+                  'Destination file path within the commit (e.g. "src/app.ts"). This becomes tree.path.',
+              },
+              sandboxPath: {
+                type: 'string',
+                description:
+                  'Source path INSIDE the sandbox container (e.g. "/workspace/out.txt"; relative resolves against /workspace).',
+              },
+            },
+            required: ['repoPath', 'sandboxPath'],
+          },
+          description: 'Array of sandbox files to read and commit',
+        },
+      },
+      required: ['repo', 'branch', 'message', 'container_name', 'files'],
+    },
+    async handler(params: {
+      repo: string;
+      branch: string;
+      message: string;
+      container_name: string;
+      files: Array<{ repoPath: string; sandboxPath: string }>;
+    }) {
+      try {
+        const repoFull = requireNonBlank(params?.repo, 'repo');
+        const branch = requireNonBlank(params?.branch, 'branch');
+        const message = requireNonBlank(params?.message, 'message');
+        const containerName = requireNonBlank(params?.container_name, 'container_name');
+        if (!Array.isArray(params?.files) || params.files.length === 0) {
+          throw new Error('Parameter "files" must be a non-empty array.');
+        }
+        await ensureRepoAllowed(repoFull);
+        const settings = loadSettings();
+        const octokit = await createOctokit(settings);
+        const { owner, repo } = parseRepo(repoFull);
+
+        const entries: CommitEntry[] = [];
+        for (const f of params.files as any[]) {
+          const repoPath = normalizeRepoPath(f?.repoPath);
+          if (typeof f?.sandboxPath !== 'string' || f.sandboxPath.trim() === '') {
+            throw new Error(`File "${f?.repoPath ?? ''}" must have a non-empty "sandboxPath".`);
+          }
+          let content: string;
+          try {
+            content = await readSandboxFileUncapped(containerName, f.sandboxPath);
+          } catch (e) {
+            throw new Error(
+              `Failed to read sandbox file "${f.sandboxPath}" in container "${containerName}": ${e instanceof Error ? e.message : String(e)}`,
+            );
+          }
+          entries.push({ repoPath, content });
+        }
+
+        return await commitEntries(
+          octokit,
+          owner,
+          repo,
+          repoFull,
+          branch,
+          message,
+          settings,
+          entries,
+        );
       } catch (error) {
         return `Error: ${error instanceof Error ? error.message : String(error)}`;
       }
