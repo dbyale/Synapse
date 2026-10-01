@@ -20,7 +20,7 @@
       * When NVIDIA GPU detected
       * Version 12.4 (12.x Requires driver >= 525, < 580)
         * Display warning at end if driver below 525
-      * Version 13.3 (13.x Requires driver >= 580)
+      * Version 13.4 (13.x Requires driver >= 580)
         * Display warning at end if driver below 580
         * Automatically check for and delete 12.4 after installation
     * OpenCL

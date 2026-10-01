@@ -276,10 +276,10 @@ const OTHER_TARGETS: OtherTarget[] = [
     cudart: true,
   },
   {
-    id: 'win-cuda-13.3-x64',
-    label: 'CUDA 13.3 (x64)',
+    id: 'win-cuda-13.4-x64',
+    label: 'CUDA 13.4 (x64)',
     icon: 'cuda',
-    target: 'win-cuda-13.3-x64',
+    target: 'win-cuda-13.4-x64',
     ext: 'zip',
     runtime: 'x64',
     requires: 'nvidia',
@@ -305,10 +305,10 @@ const OTHER_TARGETS: OtherTarget[] = [
     requires: 'qualcomm',
   },
   {
-    id: 'win-openvino-2026.2.1-x64',
+    id: 'win-openvino-2026.4-x64',
     label: 'OpenVINO (x64)',
     icon: 'openvino',
-    target: 'win-openvino-2026.2.1-x64',
+    target: 'win-openvino-2026.4-x64',
     ext: 'zip',
     runtime: 'x64',
     requires: 'intel-npu',
@@ -365,10 +365,10 @@ const OTHER_TARGETS: OtherTarget[] = [
     runtime: 'arm64',
   },
   {
-    id: 'ubuntu-openvino-2026.2.1-x64',
+    id: 'ubuntu-openvino-2026.4-x64',
     label: 'OpenVINO (x64)',
     icon: 'openvino',
-    target: 'ubuntu-openvino-2026.2.1-x64',
+    target: 'ubuntu-openvino-2026.4-x64',
     ext: 'tar.gz',
     runtime: 'x64',
     requires: 'intel-npu',
@@ -475,7 +475,7 @@ function tagOtherTarget(
 
   // CUDA 12.x needs driver >= 525 but < 580; 13.x needs >= 580
   if (
-    target.id === 'win-cuda-13.3-x64' &&
+    target.id === 'win-cuda-13.4-x64' &&
     context.nvidiaDriverMajor !== null &&
     context.nvidiaDriverMajor < 580
   ) {
@@ -614,9 +614,9 @@ export async function getBackendInfo(): Promise<BackendInfo> {
       }
     } else if (hasNvidia(gpuList)) {
       const useCuda13 = nvidiaDriverMajor !== null && nvidiaDriverMajor >= 580;
-      const cudaTarget = useCuda13 ? 'win-cuda-13.3-x64' : 'win-cuda-12.4-x64';
+      const cudaTarget = useCuda13 ? 'win-cuda-13.4-x64' : 'win-cuda-12.4-x64';
       const cudaLabel = useCuda13
-        ? 'NVIDIA CUDA 13.3 (x64)'
+        ? 'NVIDIA CUDA 13.4 (x64)'
         : 'NVIDIA CUDA 12.4 (x64)';
 
       if (nvidiaDriverMajor !== null && nvidiaDriverMajor < 525) {
@@ -629,7 +629,7 @@ export async function getBackendInfo(): Promise<BackendInfo> {
         nvidiaDriverMajor < 580
       ) {
         warnings.push(
-          `NVIDIA driver ${nvidiaDriverMajor} is below 580 — CUDA 13.3 requires driver 580+.`,
+          `NVIDIA driver ${nvidiaDriverMajor} is below 580 — CUDA 13.4 requires driver 580+.`,
         );
       }
 
@@ -710,8 +710,8 @@ export async function getBackendInfo(): Promise<BackendInfo> {
   if (platform !== 'darwin' && intelNpu) {
     const win = platform === 'win32';
     const target = win
-      ? 'win-openvino-2026.2.1-x64'
-      : 'ubuntu-openvino-2026.2.1-x64';
+      ? 'win-openvino-2026.4-x64'
+      : 'ubuntu-openvino-2026.4-x64';
     optional.push(
       buildDownload(
         target,
@@ -827,8 +827,8 @@ export async function getBackendInfo(): Promise<BackendInfo> {
       }
 
       const target = win
-        ? 'win-openvino-2026.2.1-x64'
-        : 'ubuntu-openvino-2026.2.1-x64';
+        ? 'win-openvino-2026.4-x64'
+        : 'ubuntu-openvino-2026.4-x64';
       if (!optionalTaken.has(target)) {
         optional.push(
           buildDownload(

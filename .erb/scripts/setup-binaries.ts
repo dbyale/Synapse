@@ -17,7 +17,7 @@ const TARGETS: [string, string][] = [
   [`llama-${LLAMA_VERSION}-bin-macos-arm64.tar.gz`, 'macos-arm64'],
   [`llama-${LLAMA_VERSION}-bin-macos-x64.tar.gz`, 'macos-x64'],
   [`llama-${LLAMA_VERSION}-bin-win-cuda-12.4-x64.zip`, 'win-cuda-12.4-x64'],
-  [`llama-${LLAMA_VERSION}-bin-win-cuda-13.3-x64.zip`, 'win-cuda-13.3-x64'],
+  [`llama-${LLAMA_VERSION}-bin-win-cuda-13.4-x64.zip`, 'win-cuda-13.4-x64'],
   [`llama-${LLAMA_VERSION}-bin-win-vulkan-x64.zip`, 'win-vulkan-x64'],
   [
     `llama-${LLAMA_VERSION}-bin-win-opencl-adreno-arm64.zip`,
@@ -32,7 +32,7 @@ const TARGETS: [string, string][] = [
 
 const CUDA_RUNTIMES: [string, string][] = [
   [`cudart-llama-bin-win-cuda-12.4-x64.zip`, 'win-cuda-12.4-x64'],
-  [`cudart-llama-bin-win-cuda-13.3-x64.zip`, 'win-cuda-13.3-x64'],
+  [`cudart-llama-bin-win-cuda-13.4-x64.zip`, 'win-cuda-13.4-x64'],
 ];
 
 const PARSER_TARGETS = [

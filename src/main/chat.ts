@@ -647,7 +647,7 @@ async function detectBackend(): Promise<string> {
       if (isNvidia) {
         const driverMajor = await getNvidiaDriverVersion();
         if (driverMajor !== null && driverMajor >= 610) {
-          return 'win-cuda-13.3-x64';
+          return 'win-cuda-13.4-x64';
         }
         return 'win-cuda-12.4-x64';
       }
