@@ -243,7 +243,7 @@ const OTHER_TARGETS: OtherTarget[] = [
   // Windows
   {
     id: 'win-cpu-x64',
-    label: 'CPU (x64)',
+    label: 'CPU (Windows x64)',
     icon: 'cpu',
     target: 'win-cpu-x64',
     ext: 'zip',
@@ -251,7 +251,7 @@ const OTHER_TARGETS: OtherTarget[] = [
   },
   {
     id: 'win-cpu-arm64',
-    label: 'CPU (arm64)',
+    label: 'CPU (Windows arm64)',
     icon: 'cpu',
     target: 'win-cpu-arm64',
     ext: 'zip',
@@ -259,7 +259,7 @@ const OTHER_TARGETS: OtherTarget[] = [
   },
   {
     id: 'win-vulkan-x64',
-    label: 'Vulkan (x64)',
+    label: 'Vulkan (Windows x64)',
     icon: 'vulkan',
     target: 'win-vulkan-x64',
     ext: 'zip',
@@ -267,7 +267,7 @@ const OTHER_TARGETS: OtherTarget[] = [
   },
   {
     id: 'win-cuda-12.4-x64',
-    label: 'CUDA 12.4 (x64)',
+    label: 'CUDA 12.4 (Windows x64)',
     icon: 'cuda',
     target: 'win-cuda-12.4-x64',
     ext: 'zip',
@@ -277,7 +277,7 @@ const OTHER_TARGETS: OtherTarget[] = [
   },
   {
     id: 'win-cuda-13.4-x64',
-    label: 'CUDA 13.4 (x64)',
+    label: 'CUDA 13.4 (Windows x64)',
     icon: 'cuda',
     target: 'win-cuda-13.4-x64',
     ext: 'zip',
@@ -287,7 +287,7 @@ const OTHER_TARGETS: OtherTarget[] = [
   },
   {
     id: 'win-cuda-13.4-arm64',
-    label: 'CUDA 13.4 (arm64, preview)',
+    label: 'CUDA 13.4 (Windows arm64)',
     icon: 'cuda',
     target: 'win-cuda-13.4-arm64',
     ext: 'zip',
@@ -297,7 +297,7 @@ const OTHER_TARGETS: OtherTarget[] = [
   },
   {
     id: 'win-opencl-adreno-arm64',
-    label: 'OpenCL Adreno (arm64)',
+    label: 'OpenCL Adreno (Windows arm64)',
     icon: 'opencl',
     target: 'win-opencl-adreno-arm64',
     ext: 'zip',
@@ -306,7 +306,7 @@ const OTHER_TARGETS: OtherTarget[] = [
   },
   {
     id: 'win-openvino-2026.4-x64',
-    label: 'OpenVINO (x64)',
+    label: 'OpenVINO (Windows x64)',
     icon: 'openvino',
     target: 'win-openvino-2026.4-x64',
     ext: 'zip',
@@ -324,7 +324,7 @@ const OTHER_TARGETS: OtherTarget[] = [
   },
   {
     id: 'win-sycl-x64',
-    label: 'SYCL (x64)',
+    label: 'SYCL (Windows x64)',
     icon: 'sycl',
     target: 'win-sycl-x64',
     ext: 'zip',
@@ -334,7 +334,7 @@ const OTHER_TARGETS: OtherTarget[] = [
   // Linux
   {
     id: 'ubuntu-x64',
-    label: 'CPU (x64)',
+    label: 'CPU (Ubuntu x64)',
     icon: 'cpu',
     target: 'ubuntu-x64',
     ext: 'tar.gz',
@@ -342,15 +342,23 @@ const OTHER_TARGETS: OtherTarget[] = [
   },
   {
     id: 'ubuntu-arm64',
-    label: 'CPU (arm64)',
+    label: 'CPU (Ubuntu arm64)',
     icon: 'cpu',
     target: 'ubuntu-arm64',
     ext: 'tar.gz',
     runtime: 'arm64',
   },
   {
+    id: 'ubuntu-s390x',
+    label: 'CPU (Ubuntu s390x)',
+    icon: 'cpu',
+    target: 'ubuntu-s390x',
+    ext: 'tar.gz',
+    runtime: 's390x',
+  },
+  {
     id: 'ubuntu-vulkan-x64',
-    label: 'Vulkan (x64)',
+    label: 'Vulkan (Ubuntu x64)',
     icon: 'vulkan',
     target: 'ubuntu-vulkan-x64',
     ext: 'tar.gz',
@@ -358,7 +366,7 @@ const OTHER_TARGETS: OtherTarget[] = [
   },
   {
     id: 'ubuntu-vulkan-arm64',
-    label: 'Vulkan (arm64)',
+    label: 'Vulkan (Ubuntu arm64)',
     icon: 'vulkan',
     target: 'ubuntu-vulkan-arm64',
     ext: 'tar.gz',
@@ -366,7 +374,7 @@ const OTHER_TARGETS: OtherTarget[] = [
   },
   {
     id: 'ubuntu-openvino-2026.4-x64',
-    label: 'OpenVINO (x64)',
+    label: 'OpenVINO (Ubuntu x64)',
     icon: 'openvino',
     target: 'ubuntu-openvino-2026.4-x64',
     ext: 'tar.gz',
@@ -384,7 +392,7 @@ const OTHER_TARGETS: OtherTarget[] = [
   },
   {
     id: 'ubuntu-sycl-fp16-x64',
-    label: 'SYCL FP16 (x64)',
+    label: 'Ubuntu: SYCL FP16 (Ubuntu x64)',
     icon: 'sycl',
     target: 'ubuntu-sycl-fp16-x64',
     ext: 'tar.gz',
@@ -393,25 +401,17 @@ const OTHER_TARGETS: OtherTarget[] = [
   },
   {
     id: 'ubuntu-sycl-fp32-x64',
-    label: 'SYCL FP32 (x64)',
+    label: 'Ubuntu: SYCL FP32 (Ubuntu x64)',
     icon: 'sycl',
     target: 'ubuntu-sycl-fp32-x64',
     ext: 'tar.gz',
     runtime: 'x64',
     requires: 'intel-gpu',
   },
-  {
-    id: 'ubuntu-s390x',
-    label: 'CPU (s390x)',
-    icon: 'cpu',
-    target: 'ubuntu-s390x',
-    ext: 'tar.gz',
-    runtime: 's390x',
-  },
   // macOS
   {
     id: 'macos-arm64',
-    label: 'Apple Silicon (Metal) (arm64)',
+    label: 'Apple Silicon (Metal arm64)',
     icon: 'apple',
     target: 'macos-arm64',
     ext: 'tar.gz',
@@ -419,7 +419,7 @@ const OTHER_TARGETS: OtherTarget[] = [
   },
   {
     id: 'macos-x64',
-    label: 'Intel (Metal) (x64)',
+    label: 'Apple Intel (Metal x64)',
     icon: 'apple',
     target: 'macos-x64',
     ext: 'tar.gz',
