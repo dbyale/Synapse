@@ -143,7 +143,7 @@
     "@types/yauzl": "^3.4.0",
     "@typescript-eslint/eslint-plugin": "^8.65.0",
     "@typescript-eslint/parser": "^8.65.0",
-    "adm-zip": "^0.6.0",
+    "adm-zip": "^0.6.1",
     "browserslist-config-erb": "^0.0.3",
     "chalk": "^4.1.2",
     "concurrently": "^10.0.4",
