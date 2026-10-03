@@ -2,8 +2,8 @@
   "name": "Synapse",
   "version": "1.0.0",
   "binaryVersions": {
-    "parser": "v0.26.0"
     "llama": "b11146",
+    "parser": "v0.26.4"
   },
   "description": "A local AI platform",
   "keywords": [
