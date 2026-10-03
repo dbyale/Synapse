@@ -226,8 +226,10 @@ function hasDiscreteGpu(
 // Every prebuilt binary exposed by the llama.cpp release, mirroring
 // .erb/scripts/setup-binaries.ts and the rest of the release assets.
 // `runtime` is the target's hardware class: x64, arm64, or metal (macOS).
+// `os` is the target's operating system family: win, macos, linux, android.
 // Targets whose runtime never matches a desktop system (s390x, android)
-// are always flagged "Wrong Architecture".
+// are always flagged "Wrong Architecture"; anything built for another OS
+// is flagged "Wrong System".
 interface OtherTarget {
   id: string;
   label: string;
@@ -235,6 +237,7 @@ interface OtherTarget {
   target: string;
   ext: 'zip' | 'tar.gz';
   runtime: 'x64' | 'arm64' | 'metal' | 's390x' | 'android';
+  os: 'win' | 'macos' | 'linux' | 'android';
   requires?: 'nvidia' | 'amd' | 'intel-gpu' | 'qualcomm' | 'intel-npu';
   cudart?: boolean;
 }
@@ -248,6 +251,7 @@ const OTHER_TARGETS: OtherTarget[] = [
     target: 'win-cpu-x64',
     ext: 'zip',
     runtime: 'x64',
+    os: 'win',
   },
   {
     id: 'win-cpu-arm64',
@@ -256,6 +260,7 @@ const OTHER_TARGETS: OtherTarget[] = [
     target: 'win-cpu-arm64',
     ext: 'zip',
     runtime: 'arm64',
+    os: 'win',
   },
   {
     id: 'win-vulkan-x64',
@@ -264,6 +269,7 @@ const OTHER_TARGETS: OtherTarget[] = [
     target: 'win-vulkan-x64',
     ext: 'zip',
     runtime: 'x64',
+    os: 'win',
   },
   {
     id: 'win-cuda-12.4-x64',
@@ -272,6 +278,7 @@ const OTHER_TARGETS: OtherTarget[] = [
     target: 'win-cuda-12.4-x64',
     ext: 'zip',
     runtime: 'x64',
+    os: 'win',
     requires: 'nvidia',
     cudart: true,
   },
@@ -282,6 +289,7 @@ const OTHER_TARGETS: OtherTarget[] = [
     target: 'win-cuda-13.4-x64',
     ext: 'zip',
     runtime: 'x64',
+    os: 'win',
     requires: 'nvidia',
     cudart: true,
   },
@@ -292,6 +300,7 @@ const OTHER_TARGETS: OtherTarget[] = [
     target: 'win-cuda-13.4-arm64',
     ext: 'zip',
     runtime: 'arm64',
+    os: 'win',
     requires: 'nvidia',
     cudart: true,
   },
@@ -302,6 +311,7 @@ const OTHER_TARGETS: OtherTarget[] = [
     target: 'win-opencl-adreno-arm64',
     ext: 'zip',
     runtime: 'arm64',
+    os: 'win',
     requires: 'qualcomm',
   },
   {
@@ -311,6 +321,7 @@ const OTHER_TARGETS: OtherTarget[] = [
     target: 'win-openvino-2026.4-x64',
     ext: 'zip',
     runtime: 'x64',
+    os: 'win',
     requires: 'intel-npu',
   },
   {
@@ -320,6 +331,7 @@ const OTHER_TARGETS: OtherTarget[] = [
     target: 'win-rocm-10.0-x64',
     ext: 'zip',
     runtime: 'x64',
+    os: 'win',
     requires: 'amd',
   },
   {
@@ -329,6 +341,7 @@ const OTHER_TARGETS: OtherTarget[] = [
     target: 'win-sycl-x64',
     ext: 'zip',
     runtime: 'x64',
+    os: 'win',
     requires: 'intel-gpu',
   },
   // Linux
@@ -339,6 +352,7 @@ const OTHER_TARGETS: OtherTarget[] = [
     target: 'ubuntu-x64',
     ext: 'tar.gz',
     runtime: 'x64',
+    os: 'linux',
   },
   {
     id: 'ubuntu-arm64',
@@ -347,6 +361,7 @@ const OTHER_TARGETS: OtherTarget[] = [
     target: 'ubuntu-arm64',
     ext: 'tar.gz',
     runtime: 'arm64',
+    os: 'linux',
   },
   {
     id: 'ubuntu-s390x',
@@ -355,6 +370,7 @@ const OTHER_TARGETS: OtherTarget[] = [
     target: 'ubuntu-s390x',
     ext: 'tar.gz',
     runtime: 's390x',
+    os: 'linux',
   },
   {
     id: 'ubuntu-vulkan-x64',
@@ -363,6 +379,7 @@ const OTHER_TARGETS: OtherTarget[] = [
     target: 'ubuntu-vulkan-x64',
     ext: 'tar.gz',
     runtime: 'x64',
+    os: 'linux',
   },
   {
     id: 'ubuntu-vulkan-arm64',
@@ -371,6 +388,7 @@ const OTHER_TARGETS: OtherTarget[] = [
     target: 'ubuntu-vulkan-arm64',
     ext: 'tar.gz',
     runtime: 'arm64',
+    os: 'linux',
   },
   {
     id: 'ubuntu-openvino-2026.4-x64',
@@ -379,6 +397,7 @@ const OTHER_TARGETS: OtherTarget[] = [
     target: 'ubuntu-openvino-2026.4-x64',
     ext: 'tar.gz',
     runtime: 'x64',
+    os: 'linux',
     requires: 'intel-npu',
   },
   {
@@ -388,6 +407,7 @@ const OTHER_TARGETS: OtherTarget[] = [
     target: 'ubuntu-rocm-10.0-x64',
     ext: 'tar.gz',
     runtime: 'x64',
+    os: 'linux',
     requires: 'amd',
   },
   {
@@ -397,6 +417,7 @@ const OTHER_TARGETS: OtherTarget[] = [
     target: 'ubuntu-sycl-fp16-x64',
     ext: 'tar.gz',
     runtime: 'x64',
+    os: 'linux',
     requires: 'intel-gpu',
   },
   {
@@ -406,6 +427,7 @@ const OTHER_TARGETS: OtherTarget[] = [
     target: 'ubuntu-sycl-fp32-x64',
     ext: 'tar.gz',
     runtime: 'x64',
+    os: 'linux',
     requires: 'intel-gpu',
   },
   // macOS
@@ -416,6 +438,7 @@ const OTHER_TARGETS: OtherTarget[] = [
     target: 'macos-arm64',
     ext: 'tar.gz',
     runtime: 'metal',
+    os: 'macos',
   },
   {
     id: 'macos-x64',
@@ -424,6 +447,7 @@ const OTHER_TARGETS: OtherTarget[] = [
     target: 'macos-x64',
     ext: 'tar.gz',
     runtime: 'metal',
+    os: 'macos',
   },
   // Android
   {
@@ -433,6 +457,7 @@ const OTHER_TARGETS: OtherTarget[] = [
     target: 'android-arm64',
     ext: 'tar.gz',
     runtime: 'android',
+    os: 'android',
   },
 ];
 
@@ -440,6 +465,7 @@ function tagOtherTarget(
   target: OtherTarget,
   context: {
     runtime: string;
+    system: string;
     hasNvidia: boolean;
     hasAmd: boolean;
     hasIntelGpu: boolean;
@@ -452,6 +478,9 @@ function tagOtherTarget(
 
   // Built for a different hardware class than this system
   if (target.runtime !== context.runtime) tags.push('wrong-arch');
+
+  // Built for a different operating system than this system
+  if (target.os !== context.system) tags.push('wrong-system');
 
   // Built for a GPU vendor this system does not have (or cannot run).
   // When a discrete NVIDIA GPU is present it is the only GPU backend offered;
@@ -515,8 +544,13 @@ export async function getBackendInfo(): Promise<BackendInfo> {
 
   const intelNpu = await detectIntelNpu(gpuList);
 
+  let system = 'linux';
+  if (platform === 'darwin') system = 'macos';
+  else if (platform === 'win32') system = 'win';
+
   const tagContext = {
     runtime: platform === 'darwin' ? 'metal' : arch,
+    system,
     hasNvidia: hasNvidia(gpuList),
     hasAmd: hasAmd(gpuList),
     hasIntelGpu: hasIntelGpu(gpuList),

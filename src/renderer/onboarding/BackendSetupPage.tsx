@@ -50,6 +50,10 @@ const TAG_BADGES: Record<BackendTag, { label: string; className: string }> = {
     label: 'Wrong Architecture',
     className: 'onb-backend-badge-red',
   },
+  'wrong-system': {
+    label: 'Wrong System',
+    className: 'onb-backend-badge-red',
+  },
   outdated: { label: 'Outdated', className: 'onb-backend-badge-yellow' },
 };
 

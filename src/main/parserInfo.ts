@@ -103,15 +103,16 @@ export function getParserInfo(): ParserInfo {
   ).map((t) => ({ ...buildDownload(t), recommended: true }));
 
   // Every other build is listed under "All Builds", tagged when it cannot run
-  // natively on this system (wrong OS or wrong architecture). Apple Silicon
-  // runs the x64 build via Rosetta, so it stays untagged.
+  // natively on this system (wrong OS and/or wrong architecture).
+  // Apple Silicon runs the x64 build via Rosetta, so it stays untagged.
   const others: BackendDownload[] = PARSER_TARGETS.filter(
     (t) => t.id !== matchId,
   ).map((t) => {
     const download = buildDownload(t);
-    if (!matchesPlatform(t.id, platform) || t.runtime !== systemRuntime) {
-      download.tags = ['wrong-arch'];
-    }
+    const tags: BackendDownload['tags'] = [];
+    if (!matchesPlatform(t.id, platform)) tags.push('wrong-system');
+    if (t.runtime !== systemRuntime) tags.push('wrong-arch');
+    if (tags.length > 0) download.tags = tags;
     return download;
   });
 

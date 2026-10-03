@@ -129,7 +129,7 @@ export interface BackendDownload {
   tags?: BackendTag[];
 }
 
-export type BackendTag = 'no-gpu' | 'wrong-arch' | 'outdated';
+export type BackendTag = 'no-gpu' | 'wrong-arch' | 'wrong-system' | 'outdated';
 
 export interface BackendGpuInfo {
   vendor: string;
