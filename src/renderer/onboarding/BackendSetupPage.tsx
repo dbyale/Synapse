@@ -57,6 +57,28 @@ const TAG_BADGES: Record<BackendTag, { label: string; className: string }> = {
   outdated: { label: 'Outdated', className: 'onb-backend-badge-yellow' },
 };
 
+// Groups for the "All Backends" overlay, in display order:
+// 3. Compatible (correct OS+arch+GPU; outdated OK)
+// 4. GPU Not Found (correct OS+arch)
+// 5. Correct Arch, Incorrect OS
+// 6. Other (anything with wrong-arch)
+type OtherBackendGroup =
+  | 'compatible'
+  | 'gpu-missing'
+  | 'wrong-system'
+  | 'other';
+
+function getOtherBackendGroup(download: BackendDownload): OtherBackendGroup {
+  const tags = download.tags ?? [];
+  const hasArch = tags.includes('wrong-arch');
+  const hasSystem = tags.includes('wrong-system');
+  const hasNoGpu = tags.includes('no-gpu');
+  if (!hasArch && !hasSystem && !hasNoGpu) return 'compatible';
+  if (hasNoGpu && !hasArch && !hasSystem) return 'gpu-missing';
+  if (hasSystem && !hasArch) return 'wrong-system';
+  return 'other';
+}
+
 function BackendCardIcon({ download }: { download: BackendDownload }) {
   const Icon = ICON_MAP[download.icon];
   if (download.icon === 'cuda') {
@@ -373,7 +395,35 @@ export default function BackendSetupPage({
   const optional = info?.optional ?? [];
   const custom = optional.find((d) => d.id === 'custom');
   const others = optional.filter((d) => d.id !== 'custom');
-  const allBackends = info ? [...others, ...info.others] : [];
+  const recommended = info?.recommended ?? [];
+  const compatible: BackendDownload[] = [];
+  const gpuMissing: BackendDownload[] = [];
+  const wrongSystem: BackendDownload[] = [];
+  const otherArch: BackendDownload[] = [];
+  (info?.others ?? []).forEach((download) => {
+    switch (getOtherBackendGroup(download)) {
+      case 'compatible':
+        compatible.push(download);
+        break;
+      case 'gpu-missing':
+        gpuMissing.push(download);
+        break;
+      case 'wrong-system':
+        wrongSystem.push(download);
+        break;
+      default:
+        otherArch.push(download);
+        break;
+    }
+  });
+  const allBackends = [
+    ...recommended,
+    ...others,
+    ...compatible,
+    ...gpuMissing,
+    ...wrongSystem,
+    ...otherArch,
+  ];
   const startedAny = Object.values(dlStatus).some(
     (s) => s === 'completed' || s === 'downloading',
   );
@@ -554,7 +604,7 @@ export default function BackendSetupPage({
                               </span>
                             </span>
                             <span className="onb-backend-card-sublabel">
-                              Every other prebuilt binary
+                              Every prebuilt binary
                             </span>
                           </span>
                           <List
@@ -632,16 +682,100 @@ export default function BackendSetupPage({
               </button>
             </div>
             <div className="onb-backend-overlay-list">
-              {allBackends.map((download) => (
-                <BackendCard
-                  key={download.id}
-                  download={download}
-                  onDownload={handleDownload}
-                  onUninstall={requestUninstall}
-                  status={dlStatus[download.id]}
-                  disabled={false}
-                />
-              ))}
+              {recommended.length > 0 && (
+                <div className="onb-backend-overlay-group">
+                  <p className="onb-professions-hint">Recommended</p>
+                  {recommended.map((download) => (
+                    <BackendCard
+                      key={download.id}
+                      download={download}
+                      onDownload={handleDownload}
+                      onUninstall={requestUninstall}
+                      status={dlStatus[download.id]}
+                      disabled={false}
+                    />
+                  ))}
+                </div>
+              )}
+              {others.length > 0 && (
+                <div className="onb-backend-overlay-group">
+                  <p className="onb-professions-hint">Optional</p>
+                  {others.map((download) => (
+                    <BackendCard
+                      key={download.id}
+                      download={download}
+                      onDownload={handleDownload}
+                      onUninstall={requestUninstall}
+                      status={dlStatus[download.id]}
+                      disabled={false}
+                    />
+                  ))}
+                </div>
+              )}
+              {compatible.length > 0 && (
+                <div className="onb-backend-overlay-group">
+                  <p className="onb-professions-hint">Available</p>
+                  {compatible.map((download) => (
+                    <BackendCard
+                      key={download.id}
+                      download={download}
+                      onDownload={handleDownload}
+                      onUninstall={requestUninstall}
+                      status={dlStatus[download.id]}
+                      disabled={false}
+                    />
+                  ))}
+                </div>
+              )}
+              {gpuMissing.length > 0 && (
+                <div className="onb-backend-overlay-group">
+                  <p className="onb-professions-hint">
+                    Compatible GPU Not Found
+                  </p>
+                  {gpuMissing.map((download) => (
+                    <BackendCard
+                      key={download.id}
+                      download={download}
+                      onDownload={handleDownload}
+                      onUninstall={requestUninstall}
+                      status={dlStatus[download.id]}
+                      disabled={false}
+                    />
+                  ))}
+                </div>
+              )}
+              {wrongSystem.length > 0 && (
+                <div className="onb-backend-overlay-group">
+                  <p className="onb-professions-hint">
+                    Compatible Architecture
+                  </p>
+                  {wrongSystem.map((download) => (
+                    <BackendCard
+                      key={download.id}
+                      download={download}
+                      onDownload={handleDownload}
+                      onUninstall={requestUninstall}
+                      status={dlStatus[download.id]}
+                      disabled={false}
+                    />
+                  ))}
+                </div>
+              )}
+              {otherArch.length > 0 && (
+                <div className="onb-backend-overlay-group">
+                  <p className="onb-professions-hint">Other</p>
+                  {otherArch.map((download) => (
+                    <BackendCard
+                      key={download.id}
+                      download={download}
+                      onDownload={handleDownload}
+                      onUninstall={requestUninstall}
+                      status={dlStatus[download.id]}
+                      disabled={false}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>

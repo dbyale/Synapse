@@ -1093,8 +1093,14 @@
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 16px;
   padding: 16px 24px 20px;
+}
+
+.onb-backend-overlay-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 /* ── Keyframes ── */
