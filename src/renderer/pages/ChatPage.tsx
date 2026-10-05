@@ -5592,16 +5592,17 @@ export default function ChatPage() {
             />
             <div className="chat-backend-group">
               <div className="chat-backend-select" ref={backendMenuRef}>
-                <button
-                  type="button"
-                  className="chat-backend-indicator"
-                  title="Select backend"
-                  onClick={() => setBackendMenuOpen((v) => !v)}
-                >
-                  <Cpu size={12} strokeWidth={2.2} />
-                  {backendDisplay || 'Default'}
-                  <ChevronDown size={12} strokeWidth={2.2} />
-                </button>
+                <InfoTooltip content="Select Backend" hideIcon side="top">
+                  <button
+                    type="button"
+                    className="chat-backend-indicator"
+                    onClick={() => setBackendMenuOpen((v) => !v)}
+                  >
+                    <Cpu size={12} strokeWidth={2.2} />
+                    {backendDisplay || 'Default'}
+                    <ChevronDown size={12} strokeWidth={2.2} />
+                  </button>
+                </InfoTooltip>
                 {backendMenuOpen && (
                   <div className="chat-backend-menu" role="menu">
                     <div className="chat-backend-menu__header">Backend</div>
@@ -5633,16 +5634,21 @@ export default function ChatPage() {
               {isOpenvinoBackend && (
                 <>
                   <div className="chat-backend-select" ref={deviceMenuRef}>
-                    <button
-                      type="button"
-                      className="chat-backend-indicator"
-                      title="Select OpenVINO device"
-                      onClick={() => setDeviceMenuOpen((v) => !v)}
+                    <InfoTooltip
+                      content="Select OpenVINO device"
+                      hideIcon
+                      side="top"
                     >
-                      <Microchip size={12} strokeWidth={2.2} />
-                      {ovDevice}
-                      <ChevronDown size={12} strokeWidth={2.2} />
-                    </button>
+                      <button
+                        type="button"
+                        className="chat-backend-indicator"
+                        onClick={() => setDeviceMenuOpen((v) => !v)}
+                      >
+                        <Microchip size={12} strokeWidth={2.2} />
+                        {ovDevice}
+                        <ChevronDown size={12} strokeWidth={2.2} />
+                      </button>
+                    </InfoTooltip>
                     {deviceMenuOpen && (
                       <div className="chat-backend-menu" role="menu">
                         <div className="chat-backend-menu__header">Device</div>
@@ -5675,23 +5681,28 @@ export default function ChatPage() {
                     }`}
                     ref={stateMenuRef}
                   >
-                    <button
-                      type="button"
-                      className="chat-backend-indicator"
-                      title={
+                    <InfoTooltip
+                      content={
                         ovStateForcedOff
                           ? 'NPU only supports stateless execution'
                           : 'Select OpenVINO execution mode'
                       }
-                      disabled={ovStateForcedOff}
-                      onClick={() => setStateMenuOpen((v) => !v)}
+                      hideIcon
+                      side="top"
                     >
-                      <Database size={12} strokeWidth={2.2} />
-                      {ovStateForcedOff || !ovStateful
-                        ? 'Stateless'
-                        : 'Stateful'}
-                      <ChevronDown size={12} strokeWidth={2.2} />
-                    </button>
+                      <button
+                        type="button"
+                        className="chat-backend-indicator"
+                        disabled={ovStateForcedOff}
+                        onClick={() => setStateMenuOpen((v) => !v)}
+                      >
+                        <Database size={12} strokeWidth={2.2} />
+                        {ovStateForcedOff || !ovStateful
+                          ? 'Stateless'
+                          : 'Stateful'}
+                        <ChevronDown size={12} strokeWidth={2.2} />
+                      </button>
+                    </InfoTooltip>
                     {stateMenuOpen && (
                       <div className="chat-backend-menu" role="menu">
                         <div className="chat-backend-menu__header">
