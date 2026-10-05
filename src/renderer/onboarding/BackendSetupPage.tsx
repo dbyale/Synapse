@@ -374,12 +374,14 @@ export default function BackendSetupPage({
   const custom = optional.find((d) => d.id === 'custom');
   const others = optional.filter((d) => d.id !== 'custom');
   const allBackends = info ? [...others, ...info.others] : [];
-  const completedAny = Object.values(dlStatus).some((s) => s === 'completed');
-  const canContinue = !!info && (completedAny || customBinaries.length > 0);
+  const startedAny = Object.values(dlStatus).some(
+    (s) => s === 'completed' || s === 'downloading',
+  );
+  const canContinue = !!info && (startedAny || customBinaries.length > 0);
   const continueReason = (() => {
     if (!info) return 'Detecting system hardware — please wait…';
     if (saving) return 'Saving configuration…';
-    if (!completedAny && customBinaries.length === 0)
+    if (!startedAny && customBinaries.length === 0)
       return 'Download at least one backend or add a custom binary to continue.';
     return null;
   })();

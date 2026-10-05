@@ -265,12 +265,15 @@ export default function ParserSetupPage({
   // Only one parser is ever allowed: once downloaded or connected, every
   // other option stays disabled until a connected custom path is removed.
   const locked = parserHasDownload || customBinaries.length > 0;
+  const parserStarted = Object.values(dlStatus).some(
+    (s) => s === 'completed' || s === 'downloading',
+  );
   const canContinue =
-    !!info && (parserHasDownload || customBinaries.length > 0);
+    !!info && (parserStarted || customBinaries.length > 0);
   const continueReason = (() => {
     if (!info) return 'Loading parser options — please wait…';
     if (saving) return 'Saving configuration…';
-    if (!parserHasDownload && customBinaries.length === 0)
+    if (!parserStarted && customBinaries.length === 0)
       return 'Download a parser build or add a custom binary to continue.';
     return null;
   })();
