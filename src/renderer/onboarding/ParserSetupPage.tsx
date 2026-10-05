@@ -56,6 +56,22 @@ const TAG_BADGES: Record<BackendTag, { label: string; className: string }> = {
   outdated: { label: 'Outdated', className: 'onb-backend-badge-yellow' },
 };
 
+// Groups for the "All Builds" overlay, in display order (parsers have no
+// GPU checks — only system and arch):
+// 3. Compatible (correct OS+arch)
+// 5. Correct Arch, Incorrect OS
+// 6. Other (anything with wrong-arch)
+type OtherParserGroup = 'compatible' | 'wrong-system' | 'other';
+
+function getOtherParserGroup(download: BackendDownload): OtherParserGroup {
+  const tags = download.tags ?? [];
+  const hasArch = tags.includes('wrong-arch');
+  const hasSystem = tags.includes('wrong-system');
+  if (!hasArch && !hasSystem) return 'compatible';
+  if (hasSystem && !hasArch) return 'wrong-system';
+  return 'other';
+}
+
 function ParserCardIcon({ download }: { download: BackendDownload }) {
   const Icon = ICON_MAP[download.icon];
   if (download.icon === 'cuda') {
@@ -255,7 +271,30 @@ export default function ParserSetupPage({
   const optional = info?.optional ?? [];
   const custom = optional.find((d) => d.id === 'custom');
   const others = optional.filter((d) => d.id !== 'custom');
-  const allBuilds = info ? [...others, ...info.others] : [];
+  const recommended = info?.recommended ?? [];
+  const compatible: BackendDownload[] = [];
+  const wrongSystem: BackendDownload[] = [];
+  const otherArch: BackendDownload[] = [];
+  (info?.others ?? []).forEach((download) => {
+    switch (getOtherParserGroup(download)) {
+      case 'compatible':
+        compatible.push(download);
+        break;
+      case 'wrong-system':
+        wrongSystem.push(download);
+        break;
+      default:
+        otherArch.push(download);
+        break;
+    }
+  });
+  const allBuilds = [
+    ...recommended,
+    ...others,
+    ...compatible,
+    ...wrongSystem,
+    ...otherArch,
+  ];
   const parserHasDownload = Object.values(dlStatus).some(
     (s) => s === 'completed',
   );
@@ -548,7 +587,7 @@ export default function ParserSetupPage({
                               </span>
                             </span>
                             <span className="onb-backend-card-sublabel">
-                              Every other prebuilt binary
+                              Every prebuilt binary
                             </span>
                           </span>
                           <List
@@ -626,19 +665,98 @@ export default function ParserSetupPage({
               </button>
             </div>
             <div className="onb-backend-overlay-list">
-              {allBuilds.map((download) => (
-                <ParserCard
-                  key={download.id}
-                  download={download}
-                  onDownload={handleDownload}
-                  onUninstall={requestUninstall}
-                  status={dlStatus[download.id]}
-                  disabled={
-                    (locked || anyDownloading) &&
-                    dlStatus[download.id] !== 'completed'
-                  }
-                />
-              ))}
+              {recommended.length > 0 && (
+                <div className="onb-backend-overlay-group">
+                  <p className="onb-professions-hint">Recommended</p>
+                  {recommended.map((download) => (
+                    <ParserCard
+                      key={download.id}
+                      download={download}
+                      onDownload={handleDownload}
+                      onUninstall={requestUninstall}
+                      status={dlStatus[download.id]}
+                      disabled={
+                        (locked || anyDownloading) &&
+                        dlStatus[download.id] !== 'completed'
+                      }
+                    />
+                  ))}
+                </div>
+              )}
+              {others.length > 0 && (
+                <div className="onb-backend-overlay-group">
+                  <p className="onb-professions-hint">Optional</p>
+                  {others.map((download) => (
+                    <ParserCard
+                      key={download.id}
+                      download={download}
+                      onDownload={handleDownload}
+                      onUninstall={requestUninstall}
+                      status={dlStatus[download.id]}
+                      disabled={
+                        (locked || anyDownloading) &&
+                        dlStatus[download.id] !== 'completed'
+                      }
+                    />
+                  ))}
+                </div>
+              )}
+              {compatible.length > 0 && (
+                <div className="onb-backend-overlay-group">
+                  <p className="onb-professions-hint">Available</p>
+                  {compatible.map((download) => (
+                    <ParserCard
+                      key={download.id}
+                      download={download}
+                      onDownload={handleDownload}
+                      onUninstall={requestUninstall}
+                      status={dlStatus[download.id]}
+                      disabled={
+                        (locked || anyDownloading) &&
+                        dlStatus[download.id] !== 'completed'
+                      }
+                    />
+                  ))}
+                </div>
+              )}
+              {wrongSystem.length > 0 && (
+                <div className="onb-backend-overlay-group">
+                  <p className="onb-professions-hint">
+                    Compatible Architecture
+                  </p>
+                  {wrongSystem.map((download) => (
+                    <ParserCard
+                      key={download.id}
+                      download={download}
+                      onDownload={handleDownload}
+                      onUninstall={requestUninstall}
+                      status={dlStatus[download.id]}
+                      disabled={
+                        (locked || anyDownloading) &&
+                        dlStatus[download.id] !== 'completed'
+                      }
+                    />
+                  ))}
+                </div>
+              )}
+              {otherArch.length > 0 && (
+                <div className="onb-backend-overlay-group">
+                  <p className="onb-professions-hint">Other</p>
+                  {otherArch.map((download) => (
+                    <ParserCard
+                      key={download.id}
+                      download={download}
+                      onDownload={handleDownload}
+                      onUninstall={requestUninstall}
+                      status={dlStatus[download.id]}
+                      disabled={
+                        (locked || anyDownloading) &&
+                        dlStatus[download.id] !== 'completed'
+                      }
+                    />
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>
