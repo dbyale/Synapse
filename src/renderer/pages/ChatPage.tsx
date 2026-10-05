@@ -360,39 +360,45 @@ const ToolCallSegment = memo(function ToolCallSegmentInner({
           {segment.toolParams && (
             <>
               <div className="tool-call-segment__label">Params</div>
-              <SyntaxHighlighter
-                language="json"
-                style={oneDark}
-                customStyle={{
-                  margin: 0,
-                  borderRadius: 0,
-                  fontSize: 11,
-                  lineHeight: 1.4,
-                  background: 'transparent',
-                }}
-                codeTagProps={{ style: { fontFamily: 'inherit' } }}
-              >
-                {prettyPrintJson(segment.toolParams)}
-              </SyntaxHighlighter>
+              <div className="tool-call-segment__code">
+                <SyntaxHighlighter
+                  language="json"
+                  style={oneDark}
+                  customStyle={{
+                    margin: 0,
+                    borderRadius: 0,
+                    fontSize: 11,
+                    lineHeight: 1.4,
+                    background: 'transparent',
+                    overflow: 'visible',
+                  }}
+                  codeTagProps={{ style: { fontFamily: 'inherit' } }}
+                >
+                  {prettyPrintJson(segment.toolParams)}
+                </SyntaxHighlighter>
+              </div>
             </>
           )}
           {segment.toolResult && (
             <>
               <div className="tool-call-segment__label">Result</div>
-              <SyntaxHighlighter
-                language="json"
-                style={oneDark}
-                customStyle={{
-                  margin: 0,
-                  borderRadius: 0,
-                  fontSize: 11,
-                  lineHeight: 1.4,
-                  background: 'transparent',
-                }}
-                codeTagProps={{ style: { fontFamily: 'inherit' } }}
-              >
-                {prettyPrintJson(segment.toolResult)}
-              </SyntaxHighlighter>
+              <div className="tool-call-segment__code">
+                <SyntaxHighlighter
+                  language="json"
+                  style={oneDark}
+                  customStyle={{
+                    margin: 0,
+                    borderRadius: 0,
+                    fontSize: 11,
+                    lineHeight: 1.4,
+                    background: 'transparent',
+                    overflow: 'visible',
+                  }}
+                  codeTagProps={{ style: { fontFamily: 'inherit' } }}
+                >
+                  {prettyPrintJson(segment.toolResult)}
+                </SyntaxHighlighter>
+              </div>
             </>
           )}
         </div>
