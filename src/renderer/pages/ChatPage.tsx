@@ -2284,11 +2284,7 @@ export default function ChatPage() {
     [syncSessionFromMain],
   );
 
-  useEffect(() => {
-    window.electronAPI
-      .loadSettings()
-      .then((s) => setSettings(s))
-      .catch(() => {});
+  const refreshBackendOptions = useCallback(() => {
     window.electronAPI
       .getBinaryDownloads()
       .then((d) => {
@@ -2308,6 +2304,21 @@ export default function ChatPage() {
       })
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    window.electronAPI
+      .loadSettings()
+      .then((s) => setSettings(s))
+      .catch(() => {});
+    refreshBackendOptions();
+  }, [refreshBackendOptions]);
+
+  // Re-fetch every time the backend dropdown opens. ChatPage stays mounted
+  // (Layout hides it with display:none), so a mount-only fetch goes stale
+  // after downloads/uninstalls/custom-path changes until app restart.
+  useEffect(() => {
+    if (backendMenuOpen) refreshBackendOptions();
+  }, [backendMenuOpen, refreshBackendOptions]);
 
   useEffect(() => {
     if (!backendMenuOpen && !deviceMenuOpen && !stateMenuOpen) return undefined;
