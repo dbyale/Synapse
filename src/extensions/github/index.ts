@@ -155,14 +155,18 @@ function normalizeRepoPath(raw: unknown): string {
   }
   const trimmed = raw.trim().replace(/^\/+/, '');
   if (trimmed === '') {
-    throw new Error('Each file must have a non-empty "repoPath" (tree.path cannot be blank).');
+    throw new Error(
+      'Each file must have a non-empty "repoPath" (tree.path cannot be blank).',
+    );
   }
   if (trimmed.includes('\0')) {
     throw new Error(`Invalid repoPath "${raw}": contains null byte.`);
   }
   const segments = trimmed.split('/');
   if (segments.some((s) => s === '..')) {
-    throw new Error(`Invalid repoPath "${raw}": ".." segments are not allowed.`);
+    throw new Error(
+      `Invalid repoPath "${raw}": ".." segments are not allowed.`,
+    );
   }
   if (segments.some((s) => s.trim() === '')) {
     throw new Error(`Invalid repoPath "${raw}": empty path segment.`);
@@ -217,7 +221,9 @@ async function commitEntries(
   const normalized = entries.map((e: any) => {
     const repoPath = normalizeRepoPath(e?.repoPath);
     if (typeof e?.content !== 'string') {
-      throw new Error(`File "${e?.repoPath ?? ''}" must have string "content".`);
+      throw new Error(
+        `File "${e?.repoPath ?? ''}" must have string "content".`,
+      );
     }
     return { repoPath, content: e.content as string };
   });
@@ -304,10 +310,14 @@ async function readSandboxFileUncapped(
   const bin = getDockerBinLocal();
   // No size cap here by design: GitHub blob limit is the cap.
   // Local docker exec (not sandboxReadFile) so sandboxRunner stays untouched.
-  const result = await execFileAsync(bin, ['exec', containerName, 'cat', '--', normalized], {
-    timeout: 120000,
-    maxBuffer: 100 * 1024 * 1024,
-  } as any);
+  const result = await execFileAsync(
+    bin,
+    ['exec', containerName, 'cat', '--', normalized],
+    {
+      timeout: 120000,
+      maxBuffer: 100 * 1024 * 1024,
+    } as any,
+  );
   const stdout = (result as any)?.stdout ?? '';
   const stderr = (result as any)?.stderr ?? '';
   if (stderr && !stdout) {
@@ -721,7 +731,8 @@ const tools: Record<string, ExtensionToolDef> = {
               },
               content: {
                 type: 'string',
-                description: 'Raw text content to write to repoPath (text, utf-8)',
+                description:
+                  'Raw text content to write to repoPath (text, utf-8)',
               },
             },
             required: ['repoPath', 'content'],
@@ -825,7 +836,9 @@ const tools: Record<string, ExtensionToolDef> = {
         for (const f of params.files as any[]) {
           const repoPath = normalizeRepoPath(f?.repoPath);
           if (typeof f?.hostPath !== 'string' || f.hostPath.trim() === '') {
-            throw new Error(`File "${f?.repoPath ?? ''}" must have a non-empty "hostPath".`);
+            throw new Error(
+              `File "${f?.repoPath ?? ''}" must have a non-empty "hostPath".`,
+            );
           }
           const p = normalizePath(sanitizePath(f.hostPath));
           validatePath(p);
@@ -875,7 +888,8 @@ const tools: Record<string, ExtensionToolDef> = {
         message: { type: 'string', description: 'Commit message' },
         container_name: {
           type: 'string',
-          description: 'Name of the sandbox container to read files from (required)',
+          description:
+            'Name of the sandbox container to read files from (required)',
         },
         files: {
           type: 'array',
@@ -911,7 +925,10 @@ const tools: Record<string, ExtensionToolDef> = {
         const repoFull = requireNonBlank(params?.repo, 'repo');
         const branch = requireNonBlank(params?.branch, 'branch');
         const message = requireNonBlank(params?.message, 'message');
-        const containerName = requireNonBlank(params?.container_name, 'container_name');
+        const containerName = requireNonBlank(
+          params?.container_name,
+          'container_name',
+        );
         if (!Array.isArray(params?.files) || params.files.length === 0) {
           throw new Error('Parameter "files" must be a non-empty array.');
         }
@@ -923,12 +940,20 @@ const tools: Record<string, ExtensionToolDef> = {
         const entries: CommitEntry[] = [];
         for (const f of params.files as any[]) {
           const repoPath = normalizeRepoPath(f?.repoPath);
-          if (typeof f?.sandboxPath !== 'string' || f.sandboxPath.trim() === '') {
-            throw new Error(`File "${f?.repoPath ?? ''}" must have a non-empty "sandboxPath".`);
+          if (
+            typeof f?.sandboxPath !== 'string' ||
+            f.sandboxPath.trim() === ''
+          ) {
+            throw new Error(
+              `File "${f?.repoPath ?? ''}" must have a non-empty "sandboxPath".`,
+            );
           }
           let content: string;
           try {
-            content = await readSandboxFileUncapped(containerName, f.sandboxPath);
+            content = await readSandboxFileUncapped(
+              containerName,
+              f.sandboxPath,
+            );
           } catch (e) {
             throw new Error(
               `Failed to read sandbox file "${f.sandboxPath}" in container "${containerName}": ${e instanceof Error ? e.message : String(e)}`,

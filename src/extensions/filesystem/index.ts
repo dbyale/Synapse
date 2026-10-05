@@ -341,8 +341,7 @@ export const tools: Record<string, ExtensionToolDef> = {
     meta: {
       name: 'display_local_image',
       label: 'Display Local Image',
-      description:
-        'Display a local image file inline in the chat.',
+      description: 'Display a local image file inline in the chat.',
       descriptionForHuman:
         'Requires a vision model (with projector) for image processing.',
       descriptionForModel:

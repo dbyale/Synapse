@@ -80,7 +80,11 @@ export const tools: Record<string, ExtensionToolDef> = {
       },
       required: ['name'],
     },
-    async handler(params: { name: string; memory_limit?: string; cpu_limit?: number }) {
+    async handler(params: {
+      name: string;
+      memory_limit?: string;
+      cpu_limit?: number;
+    }) {
       return await createSandboxEnvironment({
         name: params.name,
         memoryLimit: params.memory_limit,

@@ -183,7 +183,9 @@
   color: inherit;
   cursor: pointer;
   text-align: left;
-  transition: border-color 0.15s ease, background 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
   margin-bottom: 6px;
 }
 
@@ -1426,8 +1428,8 @@
   background: var(--bg-primary);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  font-family: 'Cascadia Code', 'JetBrains Mono', Consolas, 'Courier New',
-    monospace;
+  font-family:
+    'Cascadia Code', 'JetBrains Mono', Consolas, 'Courier New', monospace;
   font-size: 12.5px;
   line-height: 1.8;
   overflow-x: auto;

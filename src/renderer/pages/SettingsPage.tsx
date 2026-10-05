@@ -243,8 +243,6 @@ export default function SettingsPage() {
     }
   }
 
-
-
   if (!settings) {
     return null;
   }
@@ -530,10 +528,16 @@ export default function SettingsPage() {
                   onBlur={() => {
                     const v = settings.toolConcurrencyLimit;
                     const coerced =
-                      v === 0 ? 0 : Number.isFinite(v) ? Math.max(1, Math.floor(v as number)) : 10;
+                      v === 0
+                        ? 0
+                        : Number.isFinite(v)
+                          ? Math.max(1, Math.floor(v as number))
+                          : 10;
                     if (coerced !== v) {
                       setSettings((prev) =>
-                        prev ? { ...prev, toolConcurrencyLimit: coerced } : prev,
+                        prev
+                          ? { ...prev, toolConcurrencyLimit: coerced }
+                          : prev,
                       );
                     }
                     triggerSave({ toolConcurrencyLimit: coerced });

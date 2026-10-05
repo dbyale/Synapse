@@ -218,7 +218,10 @@ function SessionsSidebar({
                       if (renamingId !== session.id) onOpen(session.id);
                     }}
                     onKeyDown={(e) => {
-                      if (renamingId !== session.id && (e.key === 'Enter' || e.key === ' ')) {
+                      if (
+                        renamingId !== session.id &&
+                        (e.key === 'Enter' || e.key === ' ')
+                      ) {
                         e.preventDefault();
                         onOpen(session.id);
                       }

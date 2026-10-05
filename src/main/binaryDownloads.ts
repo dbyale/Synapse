@@ -446,18 +446,29 @@ export function uninstallBinary(
 
   // Cannot uninstall while actively downloading
   if (activeDownloads.has(download.id)) {
-    return { success: false, error: 'Cannot uninstall while download is in progress' };
+    return {
+      success: false,
+      error: 'Cannot uninstall while download is in progress',
+    };
   }
 
   const folder = download.folder;
-  if (!folder || folder.includes('..') || folder.includes('/') || folder.includes('\\')) {
+  if (
+    !folder ||
+    folder.includes('..') ||
+    folder.includes('/') ||
+    folder.includes('\\')
+  ) {
     return { success: false, error: 'Invalid folder name' };
   }
 
   const isZip = download.url.endsWith('.zip');
   const isTarGz = download.url.endsWith('.tar.gz');
   // For archive kinds dest is a folder; for raw parser binary it's a file.
-  const targetPath = isZip || isTarGz ? path.join(targetDir, folder) : path.join(targetDir, folder);
+  const targetPath =
+    isZip || isTarGz
+      ? path.join(targetDir, folder)
+      : path.join(targetDir, folder);
 
   // Safety: ensure targetPath is inside targetDir
   const normalizedTarget = path.resolve(targetPath);
@@ -487,13 +498,22 @@ export function uninstallBinary(
         (d) => d.id !== download.id && d.folder !== folder,
       );
     } else {
-      if (settings.parserDownloads?.id === download.id || settings.parserDownloads?.file === folder) {
+      if (
+        settings.parserDownloads?.id === download.id ||
+        settings.parserDownloads?.file === folder
+      ) {
         settings.parserDownloads = null;
       }
     }
     saveSettings(settings);
   } catch (e: any) {
-    log('uninstall', kind, download.id, 'settings update failed:', e?.message ?? e);
+    log(
+      'uninstall',
+      kind,
+      download.id,
+      'settings update failed:',
+      e?.message ?? e,
+    );
     return { success: false, error: 'Failed to update settings' };
   }
 

@@ -1,4 +1,9 @@
-import { memo, type ComponentType, type CSSProperties, type ReactNode } from 'react';
+import {
+  memo,
+  type ComponentType,
+  type CSSProperties,
+  type ReactNode,
+} from 'react';
 import { Zap, HardDrive, CodeXml, ArrowRight } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { ReactComponent as SynapseMark } from '../../../assets/icon.svg';
@@ -93,25 +98,27 @@ function SetupExperiencePageImpl({
                   }
                   onClick={() => onBegin(option.id)}
                 >
-                <span
-                  className="onb-option-icon"
-                  style={{
-                    background: `${option.color}26`,
-                    color: option.color,
-                  }}
-                >
-                  <Icon size={22} strokeWidth={2} />
-                </span>
-                <span className="onb-option-body">
-                  <span className="onb-option-title">{option.label}</span>
-                  <span className="onb-option-desc">{option.description}</span>
-                </span>
-                <span
-                  className="onb-option-arrow"
-                  style={{ color: option.color }}
-                >
-                  <ArrowRight size={20} strokeWidth={2} />
-                </span>
+                  <span
+                    className="onb-option-icon"
+                    style={{
+                      background: `${option.color}26`,
+                      color: option.color,
+                    }}
+                  >
+                    <Icon size={22} strokeWidth={2} />
+                  </span>
+                  <span className="onb-option-body">
+                    <span className="onb-option-title">{option.label}</span>
+                    <span className="onb-option-desc">
+                      {option.description}
+                    </span>
+                  </span>
+                  <span
+                    className="onb-option-arrow"
+                    style={{ color: option.color }}
+                  >
+                    <ArrowRight size={20} strokeWidth={2} />
+                  </span>
                 </button>
               </div>
             );

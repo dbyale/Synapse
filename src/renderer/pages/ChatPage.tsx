@@ -731,412 +731,419 @@ function MessageViewInner({
                 className="chat-message__bubble"
                 title={isFailedUser ? failedTooltip : undefined}
               >
-              {msg.role === 'assistant' ? (
-                <div className="chat-message__assistant-content">
-                  {(() => {
-                    const elements: ReactNode[] = [];
-                    let batchSegments: MessageSegment[] = [];
-                    let standaloneToolBuffer: MessageSegment[] = [];
+                {msg.role === 'assistant' ? (
+                  <div className="chat-message__assistant-content">
+                    {(() => {
+                      const elements: ReactNode[] = [];
+                      let batchSegments: MessageSegment[] = [];
+                      let standaloneToolBuffer: MessageSegment[] = [];
 
-                    const buildToolGroups = (
-                      tools: MessageSegment[],
-                    ): {
-                      segments: MessageSegment[];
-                      stats: GenerationStatsData | null;
-                    }[] => {
-                      const groups: {
+                      const buildToolGroups = (
+                        tools: MessageSegment[],
+                      ): {
                         segments: MessageSegment[];
                         stats: GenerationStatsData | null;
-                      }[] = [];
-                      let currentGroup: MessageSegment[] = [];
-                      let currentStats: GenerationStatsData | null = null;
+                      }[] => {
+                        const groups: {
+                          segments: MessageSegment[];
+                          stats: GenerationStatsData | null;
+                        }[] = [];
+                        let currentGroup: MessageSegment[] = [];
+                        let currentStats: GenerationStatsData | null = null;
 
-                      for (const tool of tools) {
-                        const stats = tool.reprocessStats ?? null;
-                        if (currentGroup.length > 0 && currentStats !== stats) {
+                        for (const tool of tools) {
+                          const stats = tool.reprocessStats ?? null;
+                          if (
+                            currentGroup.length > 0 &&
+                            currentStats !== stats
+                          ) {
+                            groups.push({
+                              segments: currentGroup,
+                              stats: currentStats,
+                            });
+                            currentGroup = [];
+                          }
+                          currentGroup.push(tool);
+                          currentStats = stats;
+                        }
+
+                        if (currentGroup.length > 0) {
                           groups.push({
                             segments: currentGroup,
                             stats: currentStats,
                           });
-                          currentGroup = [];
                         }
-                        currentGroup.push(tool);
-                        currentStats = stats;
-                      }
 
-                      if (currentGroup.length > 0) {
-                        groups.push({
-                          segments: currentGroup,
-                          stats: currentStats,
-                        });
-                      }
+                        return groups;
+                      };
 
-                      return groups;
-                    };
+                      const renderToolGroup = (
+                        group: {
+                          segments: MessageSegment[];
+                          stats: GenerationStatsData | null;
+                        },
+                        key: string | number,
+                      ): ReactNode => {
+                        if (group.segments.length === 1) {
+                          return (
+                            <ToolCallSegment
+                              key={key}
+                              segment={group.segments[0]}
+                              showInlineStats={!!group.stats}
+                              onImageClick={onImageClick}
+                            />
+                          );
+                        }
 
-                    const renderToolGroup = (
-                      group: {
-                        segments: MessageSegment[];
-                        stats: GenerationStatsData | null;
-                      },
-                      key: string | number,
-                    ): ReactNode => {
-                      if (group.segments.length === 1) {
                         return (
-                          <ToolCallSegment
-                            key={key}
-                            segment={group.segments[0]}
-                            showInlineStats={!!group.stats}
-                            onImageClick={onImageClick}
-                          />
-                        );
-                      }
-
-                      return (
-                        <div
-                          key={`tool-group-${key}`}
-                          className="tool-call-group"
-                        >
-                          <div className="tool-call-group__tools">
-                            {group.segments.map((seg) => (
-                              <ToolCallSegment
-                                key={seg.id}
-                                segment={seg}
-                                showInlineStats={false}
-                                onImageClick={onImageClick}
-                              />
-                            ))}
-                          </div>
-                          {group.stats && (
-                            <div className="tool-call-group__stats">
-                              <InfoTooltip
-                                title="Prompt tokens"
-                                content={PROMPT_TOKENS_STAT_TOOLTIP}
-                                hideIcon
-                                portal
-                              >
-                                <div className="chat-stat-item">
-                                  <Hash size={12} />
-                                  <span>{group.stats.tokens} tokens</span>
-                                </div>
-                              </InfoTooltip>
-                              <InfoTooltip
-                                title="Prompt processing time"
-                                content={PROMPT_TIME_STAT_TOOLTIP}
-                                hideIcon
-                                portal
-                              >
-                                <div className="chat-stat-item">
-                                  <Timer size={12} />
-                                  <span>
-                                    {(group.stats.timeMs / 1000).toFixed(2)}s
-                                  </span>
-                                </div>
-                              </InfoTooltip>
-                              <InfoTooltip
-                                title="Prompt processing speed"
-                                content={PROMPT_SPEED_STAT_TOOLTIP}
-                                hideIcon
-                                portal
-                              >
-                                <div className="chat-stat-item">
-                                  <Zap size={12} />
-                                  <span>
-                                    {group.stats.tokensPerSecond.toFixed(1)} t/s
-                                  </span>
-                                </div>
-                              </InfoTooltip>
+                          <div
+                            key={`tool-group-${key}`}
+                            className="tool-call-group"
+                          >
+                            <div className="tool-call-group__tools">
+                              {group.segments.map((seg) => (
+                                <ToolCallSegment
+                                  key={seg.id}
+                                  segment={seg}
+                                  showInlineStats={false}
+                                  onImageClick={onImageClick}
+                                />
+                              ))}
                             </div>
-                          )}
-                        </div>
-                      );
-                    };
-
-                    const flushStandaloneTools = () => {
-                      if (standaloneToolBuffer.length === 0) return;
-                      const groups = buildToolGroups(standaloneToolBuffer);
-                      for (let i = 0; i < groups.length; i++) {
-                        elements.push(
-                          renderToolGroup(
-                            groups[i],
-                            `solo-${elements.length}-${i}`,
-                          ),
+                            {group.stats && (
+                              <div className="tool-call-group__stats">
+                                <InfoTooltip
+                                  title="Prompt tokens"
+                                  content={PROMPT_TOKENS_STAT_TOOLTIP}
+                                  hideIcon
+                                  portal
+                                >
+                                  <div className="chat-stat-item">
+                                    <Hash size={12} />
+                                    <span>{group.stats.tokens} tokens</span>
+                                  </div>
+                                </InfoTooltip>
+                                <InfoTooltip
+                                  title="Prompt processing time"
+                                  content={PROMPT_TIME_STAT_TOOLTIP}
+                                  hideIcon
+                                  portal
+                                >
+                                  <div className="chat-stat-item">
+                                    <Timer size={12} />
+                                    <span>
+                                      {(group.stats.timeMs / 1000).toFixed(2)}s
+                                    </span>
+                                  </div>
+                                </InfoTooltip>
+                                <InfoTooltip
+                                  title="Prompt processing speed"
+                                  content={PROMPT_SPEED_STAT_TOOLTIP}
+                                  hideIcon
+                                  portal
+                                >
+                                  <div className="chat-stat-item">
+                                    <Zap size={12} />
+                                    <span>
+                                      {group.stats.tokensPerSecond.toFixed(1)}{' '}
+                                      t/s
+                                    </span>
+                                  </div>
+                                </InfoTooltip>
+                              </div>
+                            )}
+                          </div>
                         );
-                      }
-                      standaloneToolBuffer = [];
-                    };
+                      };
 
-                    const buildThoughtItems = (
-                      segments: MessageSegment[],
-                    ): {
-                      kind: 'text' | 'tools';
-                      text?: string;
-                      groups?: {
-                        segments: MessageSegment[];
-                        stats: GenerationStatsData | null;
-                      }[];
-                    }[] => {
-                      const items: {
+                      const flushStandaloneTools = () => {
+                        if (standaloneToolBuffer.length === 0) return;
+                        const groups = buildToolGroups(standaloneToolBuffer);
+                        for (let i = 0; i < groups.length; i++) {
+                          elements.push(
+                            renderToolGroup(
+                              groups[i],
+                              `solo-${elements.length}-${i}`,
+                            ),
+                          );
+                        }
+                        standaloneToolBuffer = [];
+                      };
+
+                      const buildThoughtItems = (
+                        segments: MessageSegment[],
+                      ): {
                         kind: 'text' | 'tools';
                         text?: string;
                         groups?: {
                           segments: MessageSegment[];
                           stats: GenerationStatsData | null;
                         }[];
-                      }[] = [];
-                      let textBuffer: string[] = [];
-                      let toolBuffer: MessageSegment[] = [];
+                      }[] => {
+                        const items: {
+                          kind: 'text' | 'tools';
+                          text?: string;
+                          groups?: {
+                            segments: MessageSegment[];
+                            stats: GenerationStatsData | null;
+                          }[];
+                        }[] = [];
+                        let textBuffer: string[] = [];
+                        let toolBuffer: MessageSegment[] = [];
 
-                      const flushText = () => {
-                        if (textBuffer.length > 0) {
-                          items.push({
-                            kind: 'text',
-                            text: textBuffer.join(''),
-                          });
-                          textBuffer = [];
-                        }
-                      };
+                        const flushText = () => {
+                          if (textBuffer.length > 0) {
+                            items.push({
+                              kind: 'text',
+                              text: textBuffer.join(''),
+                            });
+                            textBuffer = [];
+                          }
+                        };
 
-                      const flushTools = () => {
-                        if (toolBuffer.length > 0) {
-                          const groups = buildToolGroups(toolBuffer);
-                          items.push({ kind: 'tools', groups });
-                          toolBuffer = [];
-                        }
-                      };
+                        const flushTools = () => {
+                          if (toolBuffer.length > 0) {
+                            const groups = buildToolGroups(toolBuffer);
+                            items.push({ kind: 'tools', groups });
+                            toolBuffer = [];
+                          }
+                        };
 
-                      for (const seg of segments) {
-                        if (seg.type === 'tool') {
-                          flushText();
-                          toolBuffer.push(seg);
-                        } else {
-                          flushTools();
-                          if (
-                            seg.type === 'thought' &&
-                            seg.text.trim().length > 0
-                          ) {
-                            textBuffer.push(seg.text);
+                        for (const seg of segments) {
+                          if (seg.type === 'tool') {
+                            flushText();
+                            toolBuffer.push(seg);
+                          } else {
+                            flushTools();
+                            if (
+                              seg.type === 'thought' &&
+                              seg.text.trim().length > 0
+                            ) {
+                              textBuffer.push(seg.text);
+                            }
                           }
                         }
-                      }
-                      flushText();
-                      flushTools();
+                        flushText();
+                        flushTools();
 
-                      return items;
-                    };
+                        return items;
+                      };
 
-                    const flushBatch = (thinkingDone?: boolean) => {
-                      if (batchSegments.length === 0) return;
+                      const flushBatch = (thinkingDone?: boolean) => {
+                        if (batchSegments.length === 0) return;
 
-                      const hasThought = batchSegments.some(
-                        (s) => s.type === 'thought',
-                      );
-
-                      const autoOpen = settings?.autoOpenThinking ?? true;
-                      const autoCloseDone =
-                        settings?.autoCloseThinkingDone ?? false;
-                      const thoughtDefaultOpen = autoOpen
-                        ? !autoCloseDone || !thinkingDone
-                        : false;
-
-                      if (hasThought) {
-                        const items = buildThoughtItems(batchSegments);
-                        elements.push(
-                          <MessageContent
-                            key={`batch-${elements.length}-thought-${!!thinkingDone}`}
-                            segments={[]}
-                            thoughtItems={items}
-                            onImageClick={onImageClick}
-                            defaultOpen={thoughtDefaultOpen}
-                            renderTool={(seg, showInline) => (
-                              <ToolCallSegment
-                                key={seg.id}
-                                segment={seg}
-                                showInlineStats={showInline}
-                                onImageClick={onImageClick}
-                              />
-                            )}
-                          />,
+                        const hasThought = batchSegments.some(
+                          (s) => s.type === 'thought',
                         );
-                      } else {
-                        elements.push(
-                          <MessageContent
-                            key={`batch-${elements.length}`}
-                            segments={batchSegments}
-                            onImageClick={onImageClick}
-                          />,
-                        );
-                      }
 
-                      batchSegments = [];
-                    };
+                        const autoOpen = settings?.autoOpenThinking ?? true;
+                        const autoCloseDone =
+                          settings?.autoCloseThinkingDone ?? false;
+                        const thoughtDefaultOpen = autoOpen
+                          ? !autoCloseDone || !thinkingDone
+                          : false;
 
-                    msg.content.forEach((segment) => {
-                      if (segment.type === 'tool') {
-                        const isInThoughtBatch =
-                          batchSegments.length > 0 &&
-                          batchSegments.every(
-                            (s) => s.type === 'thought' || s.type === 'tool',
+                        if (hasThought) {
+                          const items = buildThoughtItems(batchSegments);
+                          elements.push(
+                            <MessageContent
+                              key={`batch-${elements.length}-thought-${!!thinkingDone}`}
+                              segments={[]}
+                              thoughtItems={items}
+                              onImageClick={onImageClick}
+                              defaultOpen={thoughtDefaultOpen}
+                              renderTool={(seg, showInline) => (
+                                <ToolCallSegment
+                                  key={seg.id}
+                                  segment={seg}
+                                  showInlineStats={showInline}
+                                  onImageClick={onImageClick}
+                                />
+                              )}
+                            />,
                           );
-
-                        if (isInThoughtBatch && !segment.displayedImage) {
-                          batchSegments.push(segment);
-                        } else if (segment.displayedImage && isInThoughtBatch) {
-                          standaloneToolBuffer.push(segment);
                         } else {
-                          flushBatch();
-                          standaloneToolBuffer.push(segment);
-                        }
-                      } else {
-                        const closingBatch =
-                          batchSegments.length > 0 &&
-                          segment.type !== 'thought';
-                        if (closingBatch) {
-                          flushBatch(true);
-                          flushStandaloneTools();
-                        } else if (batchSegments.length === 0) {
-                          flushStandaloneTools();
-                        }
-                        batchSegments.push(segment);
-                      }
-                    });
-
-                    flushBatch();
-                    flushStandaloneTools();
-
-                    return elements;
-                  })()}
-                  {streamingTool && isLast && msg.role === 'assistant' && (
-                    <div className="tool-call-stream">
-                      <div className="tool-call-stream__header">
-                        {(() => {
-                          const meta = streamingTool.name
-                            ? getToolMeta(streamingTool.name)
-                            : undefined;
-                          const IconComp = meta?.icon
-                            ? resolveIcon(meta.icon)
-                            : Wrench;
-                          return (
-                            <IconComp
-                              className="tool-call-stream__icon"
-                              size={16}
-                            />
+                          elements.push(
+                            <MessageContent
+                              key={`batch-${elements.length}`}
+                              segments={batchSegments}
+                              onImageClick={onImageClick}
+                            />,
                           );
-                        })()}
-                        <span className="tool-call-stream__name">
-                          {(streamingTool.name &&
-                            getToolMeta(streamingTool.name)?.label) ??
-                            streamingTool.name}
-                        </span>
-                        <div className="tool-call-stream__spinner" />
-                      </div>
-                      <div
-                        ref={toolStreamRef}
-                        className="tool-call-stream__body"
-                        onScroll={handleToolScroll}
-                      >
-                        <SyntaxHighlighter
-                          language="json"
-                          style={oneDark}
-                          customStyle={{
-                            margin: 0,
-                            borderTop: 'none',
-                            borderRadius: 0,
-                            fontSize: 11,
-                            lineHeight: 1.4,
-                            background: 'transparent',
-                          }}
-                          codeTagProps={{ style: { fontFamily: 'inherit' } }}
-                        >
-                          {streamingDisplayText}
-                        </SyntaxHighlighter>
-                      </div>
-                    </div>
-                  )}
-                  {loading &&
-                    isLast &&
-                    msg.role === 'assistant' &&
-                    executing && (
-                      <div className="chat-message__indicator-box">
-                        <div className="chat-indicator">
-                          <div className="chat-indicator__spinner" />
-                          <span className="chat-indicator__label">
-                            Executing {executing.names.join(', ')} (
-                            {executing.completed}/{executing.total})
+                        }
+
+                        batchSegments = [];
+                      };
+
+                      msg.content.forEach((segment) => {
+                        if (segment.type === 'tool') {
+                          const isInThoughtBatch =
+                            batchSegments.length > 0 &&
+                            batchSegments.every(
+                              (s) => s.type === 'thought' || s.type === 'tool',
+                            );
+
+                          if (isInThoughtBatch && !segment.displayedImage) {
+                            batchSegments.push(segment);
+                          } else if (
+                            segment.displayedImage &&
+                            isInThoughtBatch
+                          ) {
+                            standaloneToolBuffer.push(segment);
+                          } else {
+                            flushBatch();
+                            standaloneToolBuffer.push(segment);
+                          }
+                        } else {
+                          const closingBatch =
+                            batchSegments.length > 0 &&
+                            segment.type !== 'thought';
+                          if (closingBatch) {
+                            flushBatch(true);
+                            flushStandaloneTools();
+                          } else if (batchSegments.length === 0) {
+                            flushStandaloneTools();
+                          }
+                          batchSegments.push(segment);
+                        }
+                      });
+
+                      flushBatch();
+                      flushStandaloneTools();
+
+                      return elements;
+                    })()}
+                    {streamingTool && isLast && msg.role === 'assistant' && (
+                      <div className="tool-call-stream">
+                        <div className="tool-call-stream__header">
+                          {(() => {
+                            const meta = streamingTool.name
+                              ? getToolMeta(streamingTool.name)
+                              : undefined;
+                            const IconComp = meta?.icon
+                              ? resolveIcon(meta.icon)
+                              : Wrench;
+                            return (
+                              <IconComp
+                                className="tool-call-stream__icon"
+                                size={16}
+                              />
+                            );
+                          })()}
+                          <span className="tool-call-stream__name">
+                            {(streamingTool.name &&
+                              getToolMeta(streamingTool.name)?.label) ??
+                              streamingTool.name}
                           </span>
+                          <div className="tool-call-stream__spinner" />
                         </div>
-                      </div>
-                    )}
-                  {loading &&
-                    isLast &&
-                    msg.role === 'assistant' &&
-                    (processing || shifting) &&
-                    !executing &&
-                    !streamingTool && (
-                      <div className="chat-message__indicator-box">
-                        <div className="chat-indicator">
-                          <div className="chat-indicator__spinner" />
-                          <span className="chat-indicator__label">
-                            {shifting
-                              ? `Shifting Context… (${shiftProgressPercent}%)`
-                              : `Processing prompt… (${progressPercent}%)`}
-                          </span>
-                        </div>
-                        <div className="chat-progress-bar">
-                          <div
-                            className="chat-progress-bar__fill"
-                            style={{
-                              width: `${shifting ? shiftProgressPercent : progressPercent}%`,
-                            }}
-                          />
-                        </div>
-                      </div>
-                    )}
-                </div>
-              ) : msg.role === 'system' ? (
-                <>{msg.content[0]?.text || ''}</>
-              ) : (
-                <>
-                  {msg.content[0]?.mediaItems?.map((item, idx) => {
-                    if (item.type === 'image') {
-                      return (
-                        <img
-                          key={`img-${idx}`}
-                          src={item.url}
-                          alt="Attached media"
-                          className="chat-message__user-image"
-                          onClick={() => onImageClick(item.url!)}
-                        />
-                      );
-                    }
-                    if (item.type === 'video') {
-                      return (
-                        <video
-                          key={`vid-${idx}`}
-                          src={item.url}
-                          controls
-                          className="chat-message__user-video"
-                        />
-                      );
-                    }
-                    if (item.type === 'document') {
-                      return (
                         <div
-                          key={`doc-${idx}`}
-                          className="chat-message__user-document"
+                          ref={toolStreamRef}
+                          className="tool-call-stream__body"
+                          onScroll={handleToolScroll}
                         >
-                          <FileText size={20} />
-                          <span className="chat-message__user-document-name">
-                            {item.name}
-                          </span>
+                          <SyntaxHighlighter
+                            language="json"
+                            style={oneDark}
+                            customStyle={{
+                              margin: 0,
+                              borderTop: 'none',
+                              borderRadius: 0,
+                              fontSize: 11,
+                              lineHeight: 1.4,
+                              background: 'transparent',
+                            }}
+                            codeTagProps={{ style: { fontFamily: 'inherit' } }}
+                          >
+                            {streamingDisplayText}
+                          </SyntaxHighlighter>
                         </div>
-                      );
-                    }
-                    return null;
-                  })}
-                  {msg.content[0]?.text || ''}
-                </>
-              )}
+                      </div>
+                    )}
+                    {loading &&
+                      isLast &&
+                      msg.role === 'assistant' &&
+                      executing && (
+                        <div className="chat-message__indicator-box">
+                          <div className="chat-indicator">
+                            <div className="chat-indicator__spinner" />
+                            <span className="chat-indicator__label">
+                              Executing {executing.names.join(', ')} (
+                              {executing.completed}/{executing.total})
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                    {loading &&
+                      isLast &&
+                      msg.role === 'assistant' &&
+                      (processing || shifting) &&
+                      !executing &&
+                      !streamingTool && (
+                        <div className="chat-message__indicator-box">
+                          <div className="chat-indicator">
+                            <div className="chat-indicator__spinner" />
+                            <span className="chat-indicator__label">
+                              {shifting
+                                ? `Shifting Context… (${shiftProgressPercent}%)`
+                                : `Processing prompt… (${progressPercent}%)`}
+                            </span>
+                          </div>
+                          <div className="chat-progress-bar">
+                            <div
+                              className="chat-progress-bar__fill"
+                              style={{
+                                width: `${shifting ? shiftProgressPercent : progressPercent}%`,
+                              }}
+                            />
+                          </div>
+                        </div>
+                      )}
+                  </div>
+                ) : msg.role === 'system' ? (
+                  <>{msg.content[0]?.text || ''}</>
+                ) : (
+                  <>
+                    {msg.content[0]?.mediaItems?.map((item, idx) => {
+                      if (item.type === 'image') {
+                        return (
+                          <img
+                            key={`img-${idx}`}
+                            src={item.url}
+                            alt="Attached media"
+                            className="chat-message__user-image"
+                            onClick={() => onImageClick(item.url!)}
+                          />
+                        );
+                      }
+                      if (item.type === 'video') {
+                        return (
+                          <video
+                            key={`vid-${idx}`}
+                            src={item.url}
+                            controls
+                            className="chat-message__user-video"
+                          />
+                        );
+                      }
+                      if (item.type === 'document') {
+                        return (
+                          <div
+                            key={`doc-${idx}`}
+                            className="chat-message__user-document"
+                          >
+                            <FileText size={20} />
+                            <span className="chat-message__user-document-name">
+                              {item.name}
+                            </span>
+                          </div>
+                        );
+                      }
+                      return null;
+                    })}
+                    {msg.content[0]?.text || ''}
+                  </>
+                )}
               </div>
             </div>
             {isFailedUser && (

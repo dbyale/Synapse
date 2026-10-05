@@ -321,9 +321,7 @@ export class MemoryManager {
     }
   }
 
-  async deleteMemory(
-    title: string,
-  ): Promise<{
+  async deleteMemory(title: string): Promise<{
     success: boolean;
     title: string;
     deleted: boolean;

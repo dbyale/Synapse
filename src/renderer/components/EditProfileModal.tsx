@@ -2039,8 +2039,8 @@ function ContextShiftPage({
         }}
       >
         Automatically clears old conversation context when the context window is
-        running low, removing the configured number of tokens per shift,
-        oldest first.
+        running low, removing the configured number of tokens per shift, oldest
+        first.
       </p>
 
       <label className="epm-perf-toggle-row" style={{ paddingTop: 0 }}>

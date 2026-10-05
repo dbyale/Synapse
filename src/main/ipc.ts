@@ -699,8 +699,9 @@ export function registerIpcHandlers(win: BrowserWindow): void {
 
   // Dedup concurrent onboarding probes so the second navigate-before-ready
   // does not spawn duplicate si.graphics / nvidia-smi / registry scans.
-  let backendInfoPromise: Promise<import('../renderer/preload.d').BackendInfo> | null =
-    null;
+  let backendInfoPromise: Promise<
+    import('../renderer/preload.d').BackendInfo
+  > | null = null;
 
   ipcMain.handle('onboarding:get-backend-info', async () => {
     if (backendInfoPromise) return backendInfoPromise;

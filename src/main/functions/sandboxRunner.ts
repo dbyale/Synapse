@@ -1578,7 +1578,11 @@ export async function sandboxWriteFile(
   try {
     normalizedPath = validateSandboxPosixPath(filePath);
   } catch (err: any) {
-    return { success: false, path: filePath, error: err.message || String(err) };
+    return {
+      success: false,
+      path: filePath,
+      error: err.message || String(err),
+    };
   }
 
   const bin = getDockerBin();

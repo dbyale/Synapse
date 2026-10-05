@@ -350,143 +350,145 @@ export default function ExtensionModal({
         aria-label={`${extension.manifest.name} details`}
       >
         <div className="em-dialog">
-        <div className="em-header">
-          <div className="em-header-left">
-            <div className="em-header-icon">
-              {svgDataUrl ? (
-                <img src={svgDataUrl} alt="" className="em-header-svg-icon" />
-              ) : (
-                (() => {
-                  const IconComp = extension.manifest.icon
-                    ? resolveIcon(extension.manifest.icon)
-                    : Puzzle;
-                  return <IconComp size={20} />;
-                })()
-              )}
-            </div>
-            <div>
-              <h2 className="em-title">{extension.manifest.name}</h2>
-              <span className="em-version">v{extension.manifest.version}</span>
-            </div>
-          </div>
-          <button
-            type="button"
-            className="em-close"
-            onClick={onClose}
-            aria-label="Close"
-          >
-            <X size={18} />
-          </button>
-        </div>
-
-        <div className="em-tabs">
-          <button
-            type="button"
-            className={`em-tab${tab === 'tools' ? ' em-tab--active' : ''}`}
-            onClick={() => setTab('tools')}
-          >
-            <Puzzle size={14} />
-            Tools ({tools.length})
-          </button>
-          {extension.manifest.hasSettings && (
-            <button
-              type="button"
-              className={`em-tab${tab === 'settings' ? ' em-tab--active' : ''}`}
-              onClick={() => setTab('settings')}
-            >
-              <Settings size={14} />
-              Settings
-            </button>
-          )}
-        </div>
-
-        <div className="em-body">
-          {tab === 'tools' &&
-            (selectedTool ? (
-              <ToolDetail
-                tool={selectedTool}
-                onBack={() => setSelectedTool(null)}
-              />
-            ) : (
-              <div className="em-tools">
-                {tools.length === 0 ? (
-                  <div className="em-empty">No tools in this extension.</div>
+          <div className="em-header">
+            <div className="em-header-left">
+              <div className="em-header-icon">
+                {svgDataUrl ? (
+                  <img src={svgDataUrl} alt="" className="em-header-svg-icon" />
                 ) : (
-                  tools.map((tool) => (
-                    <button
-                      type="button"
-                      key={tool.meta.name}
-                      className="em-tool-row"
-                      onClick={() => setSelectedTool(tool)}
-                    >
-                      <div className="em-tool-info">
-                        <div className="em-tool-name">{tool.meta.label}</div>
-                        <div className="em-tool-desc">
-                          {tool.meta.descriptionForHuman ??
-                            tool.meta.description}
-                        </div>
-                        {(tool.meta.displayType === 'projector' ||
-                          tool.meta.displayType === 'image' ||
-                          tool.meta.tags?.includes('input') ||
-                          tool.meta.tags?.includes('sources')) && (
-                          <div className="em-tool-tags">
-                            {tool.meta.tags?.includes('input') && (
-                              <span className="em-tool-badge em-tool-badge--input">
-                                Requires User Input
-                              </span>
-                            )}
-                            {(tool.meta.displayType === 'projector' ||
-                              tool.meta.displayType === 'image') && (
-                              <span className="em-tool-badge em-tool-badge--image">
-                                Displays Image
-                              </span>
-                            )}
-                            {tool.meta.tags?.includes('sources') && (
-                              <span className="em-tool-badge em-tool-badge--sources">
-                                {tool.meta.tags?.includes('top_source')
-                                  ? 'Adds Top Sources'
-                                  : 'Adds Sources'}
-                              </span>
-                            )}
-                            {tool.meta.displayType === 'projector' && (
-                              <div className="em-tool-tags-row">
-                                <span className="em-tool-badge em-tool-badge--vision">
-                                  Requires vision model
-                                </span>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                      <ChevronRight size={16} className="em-tool-chevron" />
-                    </button>
-                  ))
+                  (() => {
+                    const IconComp = extension.manifest.icon
+                      ? resolveIcon(extension.manifest.icon)
+                      : Puzzle;
+                    return <IconComp size={20} />;
+                  })()
                 )}
               </div>
-            ))}
-          {tab === 'settings' && extension.manifest.id === 'filesystem' && (
-            <FileSystemSettings onSaved={handleSettingsSaved} />
-          )}
-          {tab === 'settings' && extension.manifest.id === 'sandbox' && (
-            <SandboxSettings onSaved={handleSettingsSaved} />
-          )}
-          {tab === 'settings' && extension.manifest.id === 'github' && (
-            <GitHubExtensionSettings onSaved={handleSettingsSaved} />
-          )}
-          {tab === 'settings' && extension.manifest.id === 'ddg_search' && (
-            <DDGSearchSettings onSaved={handleSettingsSaved} />
-          )}
-          {tab === 'settings' &&
-            extension.manifest.id !== 'filesystem' &&
-            extension.manifest.id !== 'sandbox' &&
-            extension.manifest.id !== 'github' &&
-            extension.manifest.id !== 'ddg_search' && (
-              <div className="em-empty">
-                Settings configuration is not available for this extension in
-                the UI.
+              <div>
+                <h2 className="em-title">{extension.manifest.name}</h2>
+                <span className="em-version">
+                  v{extension.manifest.version}
+                </span>
               </div>
+            </div>
+            <button
+              type="button"
+              className="em-close"
+              onClick={onClose}
+              aria-label="Close"
+            >
+              <X size={18} />
+            </button>
+          </div>
+
+          <div className="em-tabs">
+            <button
+              type="button"
+              className={`em-tab${tab === 'tools' ? ' em-tab--active' : ''}`}
+              onClick={() => setTab('tools')}
+            >
+              <Puzzle size={14} />
+              Tools ({tools.length})
+            </button>
+            {extension.manifest.hasSettings && (
+              <button
+                type="button"
+                className={`em-tab${tab === 'settings' ? ' em-tab--active' : ''}`}
+                onClick={() => setTab('settings')}
+              >
+                <Settings size={14} />
+                Settings
+              </button>
             )}
-        </div>
+          </div>
+
+          <div className="em-body">
+            {tab === 'tools' &&
+              (selectedTool ? (
+                <ToolDetail
+                  tool={selectedTool}
+                  onBack={() => setSelectedTool(null)}
+                />
+              ) : (
+                <div className="em-tools">
+                  {tools.length === 0 ? (
+                    <div className="em-empty">No tools in this extension.</div>
+                  ) : (
+                    tools.map((tool) => (
+                      <button
+                        type="button"
+                        key={tool.meta.name}
+                        className="em-tool-row"
+                        onClick={() => setSelectedTool(tool)}
+                      >
+                        <div className="em-tool-info">
+                          <div className="em-tool-name">{tool.meta.label}</div>
+                          <div className="em-tool-desc">
+                            {tool.meta.descriptionForHuman ??
+                              tool.meta.description}
+                          </div>
+                          {(tool.meta.displayType === 'projector' ||
+                            tool.meta.displayType === 'image' ||
+                            tool.meta.tags?.includes('input') ||
+                            tool.meta.tags?.includes('sources')) && (
+                            <div className="em-tool-tags">
+                              {tool.meta.tags?.includes('input') && (
+                                <span className="em-tool-badge em-tool-badge--input">
+                                  Requires User Input
+                                </span>
+                              )}
+                              {(tool.meta.displayType === 'projector' ||
+                                tool.meta.displayType === 'image') && (
+                                <span className="em-tool-badge em-tool-badge--image">
+                                  Displays Image
+                                </span>
+                              )}
+                              {tool.meta.tags?.includes('sources') && (
+                                <span className="em-tool-badge em-tool-badge--sources">
+                                  {tool.meta.tags?.includes('top_source')
+                                    ? 'Adds Top Sources'
+                                    : 'Adds Sources'}
+                                </span>
+                              )}
+                              {tool.meta.displayType === 'projector' && (
+                                <div className="em-tool-tags-row">
+                                  <span className="em-tool-badge em-tool-badge--vision">
+                                    Requires vision model
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                        <ChevronRight size={16} className="em-tool-chevron" />
+                      </button>
+                    ))
+                  )}
+                </div>
+              ))}
+            {tab === 'settings' && extension.manifest.id === 'filesystem' && (
+              <FileSystemSettings onSaved={handleSettingsSaved} />
+            )}
+            {tab === 'settings' && extension.manifest.id === 'sandbox' && (
+              <SandboxSettings onSaved={handleSettingsSaved} />
+            )}
+            {tab === 'settings' && extension.manifest.id === 'github' && (
+              <GitHubExtensionSettings onSaved={handleSettingsSaved} />
+            )}
+            {tab === 'settings' && extension.manifest.id === 'ddg_search' && (
+              <DDGSearchSettings onSaved={handleSettingsSaved} />
+            )}
+            {tab === 'settings' &&
+              extension.manifest.id !== 'filesystem' &&
+              extension.manifest.id !== 'sandbox' &&
+              extension.manifest.id !== 'github' &&
+              extension.manifest.id !== 'ddg_search' && (
+                <div className="em-empty">
+                  Settings configuration is not available for this extension in
+                  the UI.
+                </div>
+              )}
+          </div>
         </div>
       </div>
       {showRestartDialog && (

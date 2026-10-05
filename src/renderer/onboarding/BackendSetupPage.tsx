@@ -173,7 +173,9 @@ function BackendCard({
               ? `Uninstall ${download.label}`
               : `Download ${download.label}`
           }
-          onClick={() => (isCompleted ? onUninstall(download) : onDownload(download))}
+          onClick={() =>
+            isCompleted ? onUninstall(download) : onDownload(download)
+          }
           disabled={isDownloading || disabled}
         >
           <DownloadIcon status={status} />

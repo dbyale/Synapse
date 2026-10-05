@@ -50,7 +50,9 @@ export default function Onboarding() {
   const [hwLoading, setHwLoading] = useState(false);
   const [hwReady, setHwReady] = useState(false);
   const hwPromiseRef = useRef<Promise<void> | null>(null);
-  const [activePath, setActivePath] = useState<'simple' | 'advanced' | 'custom' | null>(null);
+  const [activePath, setActivePath] = useState<
+    'simple' | 'advanced' | 'custom' | null
+  >(null);
 
   const fetchHardware = useCallback(() => {
     if (hwPromiseRef.current) return hwPromiseRef.current;
@@ -168,9 +170,7 @@ export default function Onboarding() {
         return (
           <ProfessionsSetupPage
             onBack={() =>
-              navigate(
-                isCustom ? 'security' : isAdvanced ? 'system' : 'setup',
-              )
+              navigate(isCustom ? 'security' : isAdvanced ? 'system' : 'setup')
             }
             onContinue={() =>
               navigate(isAdvanced || isCustom ? 'chatSetup' : 'llamaSetup')
@@ -199,9 +199,7 @@ export default function Onboarding() {
         return (
           <SystemSetupPage
             onBack={() => navigate(isCustom ? 'parser' : 'setup')}
-            onContinue={() =>
-              navigate(isCustom ? 'server' : 'professions')
-            }
+            onContinue={() => navigate(isCustom ? 'server' : 'professions')}
           />
         );
       case 'server':
@@ -229,9 +227,7 @@ export default function Onboarding() {
         return (
           <LlamaSetupPage
             onBack={() =>
-              navigate(
-                isAdvanced || isCustom ? 'chatSetup' : 'professions',
-              )
+              navigate(isAdvanced || isCustom ? 'chatSetup' : 'professions')
             }
           />
         );

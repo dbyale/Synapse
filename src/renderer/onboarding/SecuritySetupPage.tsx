@@ -74,7 +74,8 @@ export default function SecuritySetupPage({
                       prev
                         ? {
                             ...prev,
-                            disableExternalReadmes: !prev.disableExternalReadmes,
+                            disableExternalReadmes:
+                              !prev.disableExternalReadmes,
                           }
                         : prev,
                     )

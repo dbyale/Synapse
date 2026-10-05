@@ -19,8 +19,8 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
-import ConfirmDialog from '../components/ConfirmDialog';
 import type { LucideIcon } from 'lucide-react';
+import ConfirmDialog from '../components/ConfirmDialog';
 import { ReactComponent as NvidiaLogo } from '../../../assets/logos/nvidia.svg';
 import type {
   BackendDownload,
@@ -160,7 +160,9 @@ function ParserCard({
               ? `Uninstall ${download.label}`
               : `Download ${download.label}`
           }
-          onClick={() => (isCompleted ? onUninstall(download) : onDownload(download))}
+          onClick={() =>
+            isCompleted ? onUninstall(download) : onDownload(download)
+          }
           disabled={isDownloading || disabled}
         >
           <DownloadIcon status={status} />
@@ -237,7 +239,9 @@ export default function ParserSetupPage({
   useEffect(() => {
     if (preloaded && !downloadDir) {
       window.electronAPI.loadSettings().then((settings) => {
-        setDownloadDir(settings.parserDirectory || preloaded.defaultDownloadDir);
+        setDownloadDir(
+          settings.parserDirectory || preloaded.defaultDownloadDir,
+        );
       });
     }
   }, [preloaded, downloadDir]);
@@ -307,8 +311,7 @@ export default function ParserSetupPage({
   const parserStarted = Object.values(dlStatus).some(
     (s) => s === 'completed' || s === 'downloading',
   );
-  const canContinue =
-    !!info && (parserStarted || customBinaries.length > 0);
+  const canContinue = !!info && (parserStarted || customBinaries.length > 0);
   const continueReason = (() => {
     if (!info) return 'Loading parser options — please wait…';
     if (saving) return 'Saving configuration…';

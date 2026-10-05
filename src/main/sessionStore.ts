@@ -112,9 +112,7 @@ export function setLiveSessionsProvider(
   liveSessionsProvider = provider;
 }
 
-export function setSessionChangedCallback(
-  cb: (id: string) => void,
-): void {
+export function setSessionChangedCallback(cb: (id: string) => void): void {
   sessionChangedCallback = cb;
 }
 

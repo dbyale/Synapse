@@ -130,7 +130,8 @@ export default function ChatSetupPage({
                         prev
                           ? {
                               ...prev,
-                              autoCloseThinkingDone: !prev.autoCloseThinkingDone,
+                              autoCloseThinkingDone:
+                                !prev.autoCloseThinkingDone,
                             }
                           : prev,
                       );
