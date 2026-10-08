@@ -18,6 +18,8 @@ export interface AppSettings {
   // Wall-clock budgets in seconds. Absent = built-in defaults.
   estimatorTimeoutSec?: number;
   serverTimeoutSec?: number;
+  // Free VRAM left untouched per GPU when fitting. Absent = 512 MB.
+  vramHeadroomMB?: number;
   autoOpenThinking?: boolean;
   autoCloseThinkingDone?: boolean;
   host?: string;

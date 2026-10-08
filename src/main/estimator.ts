@@ -41,6 +41,14 @@ function fitTimeoutMs(): number {
   return (Number.isFinite(sec) && sec > 0 ? sec : 100) * 1000;
 }
 
+// Free VRAM left untouched per GPU when fitting, from settings
+// (vramHeadroomMB, default 512). Read fresh per call so edits apply to the
+// next run without a restart.
+function vramHeadroomMB(): number {
+  const mb = loadSettings().vramHeadroomMB ?? 512;
+  return Number.isFinite(mb) && mb >= 0 ? Math.floor(mb) : 512;
+}
+
 // Developer mode: full fit results are dumped to the main-process console.
 // Same check as the app menu (menu.ts) so it holds under `npm start` and
 // DEBUG_PROD builds, but stays quiet in packaged production.
@@ -526,11 +534,12 @@ async function computeFitMargins(
   vramMB: number | undefined,
   usedNames: string[],
 ): Promise<number[]> {
-  // Automatic allocation (no cap): flat llama.cpp default margin per device —
-  // fit purely to live free memory.
+  // Automatic allocation (no cap): flat headroom margin per device — fit
+  // purely to live free memory.
+  const headroom = vramHeadroomMB() * MiB;
   if (vramMB === undefined) {
     const n = Math.max(1, usedNames.length);
-    return Array.from({ length: n }, () => 1024 * MiB);
+    return Array.from({ length: n }, () => headroom);
   }
   const allocated = vramMB * MiB;
   const all = await getDeviceTotals(fitPath);
@@ -544,14 +553,14 @@ async function computeFitMargins(
     return 0;
   });
   const known = totals.filter((t) => t > 0);
-  if (known.length === 0) return usedNames.map(() => 1024 * MiB);
+  if (known.length === 0) return usedNames.map(() => headroom);
   const sum = known.reduce((a, t) => a + t, 0);
   return totals.map((t) => {
-    if (t <= 0) return 1024 * MiB;
+    if (t <= 0) return headroom;
     const share = allocated * (t / sum);
     // Floor: a zero margin ("leave nothing free") overpacks past what the
-    // driver needs headroom for. Matches llama.cpp's own 1024 default.
-    return Math.max(1024 * MiB, Math.round(t - share));
+    // driver needs headroom for.
+    return Math.max(headroom, Math.round(t - share));
   });
 }
 
@@ -561,7 +570,7 @@ function marginsForCli(margins: number[]): string {
 
 export interface ResolvedBudgets {
   mode: 'automatic' | 'manual';
-  // Undefined in automatic mode: fit to live free memory (flat 1024 MiB
+  // Undefined in automatic mode: fit to live free memory (flat headroom
   // margins) with no fixed caps. Defined in manual mode from the sliders.
   vramMB?: number;
   ramMB?: number;

@@ -17,6 +17,7 @@ import {
   RESOURCE_ALLOCATION_TOOLTIP,
   ESTIMATOR_TIMEOUT_TOOLTIP,
   SERVER_TIMEOUT_TOOLTIP,
+  VRAM_HEADROOM_TOOLTIP,
   MEMORY_ALLOCATOR_TOOLTIP,
   MAX_LABEL_TOOLTIP,
   RAM_LABEL_TOOLTIP,
@@ -36,7 +37,10 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import '../styles/SettingsPage.css';
 import { MemorySlider } from '../components/settingsShared/MemorySlider';
 import { useHardwareStats } from '../components/settingsShared/useHardwareStats';
-import { normalizeTimeoutSec } from '../components/settingsShared/useSettingsBuffer';
+import {
+  normalizeTimeoutSec,
+  normalizeHeadroomMB,
+} from '../components/settingsShared/useSettingsBuffer';
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
@@ -96,6 +100,7 @@ export default function SettingsPage() {
             loaded?.serverTimeoutSec,
             200,
           ),
+          vramHeadroomMB: normalizeHeadroomMB(loaded?.vramHeadroomMB, 512),
           autoOpenThinking: loaded?.autoOpenThinking ?? true,
           autoCloseThinkingDone: loaded?.autoCloseThinkingDone ?? true,
           corsOrigins: loaded?.corsOrigins ?? 'localhost',
@@ -403,6 +408,46 @@ export default function SettingsPage() {
                 ) : null}
               </>
             )}
+
+            <div className="settings-field" style={{ marginTop: '16px' }}>
+              <div className="epm-section__label">VRAM Headroom (MB)</div>
+              <InfoTooltip
+                content={VRAM_HEADROOM_TOOLTIP}
+                side="bottom"
+                stretch
+                className="info-tooltip-stretch--col"
+                title="VRAM Headroom (MB)"
+              >
+                  <input
+                    type="number"
+                    className="settings-input settings-input--no-spinner"
+                    value={settings.vramHeadroomMB?.toString() ?? ''}
+                    onChange={(e) => {
+                      const parsed = parseInt(e.target.value, 10);
+                      setSettings((prev) =>
+                        prev
+                          ? {
+                              ...prev,
+                              vramHeadroomMB: Number.isNaN(parsed)
+                                ? undefined
+                                : parsed,
+                            }
+                          : prev,
+                      );
+                    }}
+                  onBlur={() =>
+                    triggerSave({
+                      vramHeadroomMB: normalizeHeadroomMB(
+                        settings.vramHeadroomMB,
+                        512,
+                      ),
+                    })
+                  }
+                  placeholder="512"
+                  style={{ marginTop: '8px', maxWidth: '240px' }}
+                />
+              </InfoTooltip>
+            </div>
           </div>
 
           <div className="settings-card">

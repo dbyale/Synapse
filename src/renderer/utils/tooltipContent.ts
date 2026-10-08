@@ -295,6 +295,12 @@ export const SERVER_TIMEOUT_TOOLTIP = [
   'Default: 200.',
 ];
 
+export const VRAM_HEADROOM_TOOLTIP = [
+  'Free VRAM left untouched on each GPU when fitting a model, in MB.',
+  'Lower values pack tighter (faster, less headroom for driver spikes); higher values are safer.',
+  'Applies in both automatic and manual allocation. Default: 512.',
+];
+
 export const MEMORY_ALLOCATOR_TOOLTIP = [
   'Controls how much RAM and VRAM Synapse is allowed to reserve for the inference engine.',
   'Setting this too high may cause system instability or out-of-memory errors.',

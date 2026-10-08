@@ -12,6 +12,17 @@ export function normalizeTimeoutSec(
     : fallback;
 }
 
+// VRAM headroom in MB: any non-negative integer is meaningful (0 packs
+// fully), anything else falls back to the default.
+export function normalizeHeadroomMB(
+  value: number | undefined,
+  fallback: number,
+): number {
+  return Number.isFinite(value) && (value as number) >= 0
+    ? Math.floor(value as number)
+    : fallback;
+}
+
 export function useSettingsBuffer() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const savedAllocationsRef = useRef<{
@@ -40,6 +51,7 @@ export function useSettingsBuffer() {
         loaded?.serverTimeoutSec,
         200,
       ),
+      vramHeadroomMB: normalizeHeadroomMB(loaded?.vramHeadroomMB, 512),
       autoOpenThinking: loaded?.autoOpenThinking ?? true,
       autoCloseThinkingDone: loaded?.autoCloseThinkingDone ?? true,
       corsOrigins: loaded?.corsOrigins ?? 'localhost',
