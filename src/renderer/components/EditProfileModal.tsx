@@ -3799,12 +3799,18 @@ function PerformancePage({
                     />
                     <div
                       className={`epm-perf-range-tick-label${speedZone ? ` epm-perf-range-tick-label--${speedZone}` : ''}`}
-                      aria-hidden="true"
                       style={{
                         left: `calc(8px + (100% - 16px) * ${speedPct})`,
                       }}
                     >
-                      <span>Maximum Speed: ≤ {maxSpeedCtx.toLocaleString()}</span>
+                      <button
+                        type="button"
+                        className="epm-perf-range-tick-text"
+                        title={`Set context length to ${maxSpeedCtx.toLocaleString()} and re-solve layers`}
+                        onClick={() => onSetContextSize(maxSpeedCtx)}
+                      >
+                        Maximum Speed: ≤ {maxSpeedCtx.toLocaleString()}
+                      </button>
                     </div>
                   </>
                 )}
