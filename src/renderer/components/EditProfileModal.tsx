@@ -3137,8 +3137,8 @@ function PerformancePage({
       ? (editLayers ?? 0)
       : (editLayers ?? 0);
   const sliderCtx = isAuto
-    ? (editContextSize ?? 512)
-    : (editContextSize ?? 512);
+    ? (editContextSize ?? 4096)
+    : (editContextSize ?? 4096);
 
   const [memory, setMemory] = useState<{
     modelVramUsage: number;
@@ -3166,7 +3166,7 @@ function PerformancePage({
     : isAuto
       ? (editLayers ?? 0)
       : sliderNgl;
-  const activeCtx = isAuto ? (editContextSize ?? 512) : sliderCtx;
+  const activeCtx = isAuto ? (editContextSize ?? 4096) : sliderCtx;
 
   const triggerEstimate = useCallback(
     async (
@@ -3298,7 +3298,16 @@ function PerformancePage({
               onClick={() => {
                 if (optimizerRunning) return;
                 onSetAutoOptimizer('custom');
-                triggerEstimate(activeLayers, activeCtx);
+                // Entering manual mode pins previously-unsolved values:
+                // NGL 0, ctx keeps (or defaults to 4096).
+                const manualLayers = editGpuLayersAuto
+                  ? (editLayers ?? modelMaxLayers)
+                  : (editLayers ?? 0);
+                const manualCtx = editContextSize ?? 4096;
+                if (editLayers === undefined) onSetLayers(0);
+                if (editContextSize === undefined)
+                  onSetContextSize(4096);
+                triggerEstimate(manualLayers, manualCtx);
               }}
               disabled={optimizerRunning}
             >
@@ -4581,6 +4590,7 @@ function ServerSettingsPage({
   launchArgs,
   launchArgsLoading,
   hasModel,
+  unsolvedOptimizer,
   condensed,
   onToggleCondensed,
   editUseCustomLaunch,
@@ -4600,6 +4610,7 @@ function ServerSettingsPage({
   launchArgs: string[] | null;
   launchArgsLoading: boolean;
   hasModel: boolean;
+  unsolvedOptimizer: boolean;
   condensed: boolean;
   onToggleCondensed: (v: boolean) => void;
   editUseCustomLaunch: boolean;
@@ -4614,6 +4625,8 @@ function ServerSettingsPage({
     emptyMessage = 'Building launch arguments…';
   } else if (!hasModel) {
     emptyMessage = 'Select a model to preview its launch arguments.';
+  } else if (unsolvedOptimizer) {
+    emptyMessage = 'Move the context slider to solve GPU layers.';
   }
   void modelFilename;
 
@@ -5341,8 +5354,10 @@ export default function EditProfileModal({
   const [editLayers, setEditLayers] = useState<number | undefined>(
     profile?.layers,
   );
+  // Fresh profiles start at 4096 ctx with layers untouched (undefined) until
+  // the Synapse Optimizer solves or manual mode pins NGL to 0.
   const [editContextSize, setEditContextSize] = useState<number | undefined>(
-    profile?.contextSize,
+    profile?.contextSize ?? 4096,
   );
   // Fitted placement triple from the last optimizer run. Valid only for the
   // exact (ngl, ctx) it was solved for — tracked by editTensorSolvedFor. Any
@@ -5361,7 +5376,7 @@ export default function EditProfileModal({
     profile?.tensorSplit != null || profile?.tensorOverrides != null
       ? {
           ngl: profile?.layers ?? 0,
-          ctx: profile?.contextSize ?? 512,
+          ctx: profile?.contextSize ?? 4096,
         }
       : null,
   );
@@ -5688,9 +5703,18 @@ export default function EditProfileModal({
       // Mirror the launch rule in chat.ts: custom (user-pinned) configs
       // never carry an optimizer triple, even if one is stored. Otherwise
       // only the exact solved-for values may use it.
+      // Unsolved synapse state (no layers yet) previews nothing rather than
+      // a phantom ngl 0 — the parent shows the unsolved hint instead.
+      if (editAutoOptimizer === 'synapse' && editLayers === undefined) {
+        if (launchArgsReqId.current === reqId) {
+          setLaunchArgs(null);
+          setLaunchArgsLoading(false);
+        }
+        return;
+      }
       const solvedTriple = tripleFor(
         editLayers ?? 0,
-        editContextSize ?? 512,
+        editContextSize ?? 4096,
       );
       const previewTriple =
         editAutoOptimizer === 'custom'
@@ -5699,7 +5723,7 @@ export default function EditProfileModal({
       window.electronAPI
         .getLaunchArgs(draft, {
           ngl: editLayers ?? 0,
-          ctx: editContextSize ?? 512,
+          ctx: editContextSize ?? 4096,
           ...previewTriple,
         })
         .then((args) => {
@@ -6728,6 +6752,9 @@ export default function EditProfileModal({
             launchArgs={launchArgs}
             launchArgsLoading={launchArgsLoading}
             hasModel={!!editModelFilename}
+            unsolvedOptimizer={
+              editAutoOptimizer === 'synapse' && editLayers === undefined
+            }
             condensed={launchArgsCondensed}
             onToggleCondensed={setLaunchArgsCondensed}
             editUseCustomLaunch={editUseCustomLaunch}
