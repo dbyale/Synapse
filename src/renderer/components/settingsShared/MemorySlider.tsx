@@ -1,9 +1,8 @@
 import React from 'react';
-import { RefreshCw, AlertTriangle } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import InfoTooltip from '../InfoTooltip';
 import {
   MEMORY_ALLOCATOR_TOOLTIP,
-  MAX_LABEL_TOOLTIP,
   RAM_LABEL_TOOLTIP,
   VRAM_LABEL_TOOLTIP,
 } from '../../utils/tooltipContent';
@@ -98,13 +97,11 @@ export function MemorySlider({
   const appPct = Math.min((stats.appAllocated / stats.total) * 100, 100);
   const otherPct = Math.min((stats.otherUsed / stats.total) * 100, 100);
   const freePct = Math.max(0, 100 - appPct - otherPct);
-  const maxPct = Math.min((stats.maxRecommended / stats.total) * 100, 100);
 
   const freeSpace = Math.max(
     0,
     stats.total - stats.appAllocated - stats.otherUsed,
   );
-  const isExceeded = stats.appAllocated > stats.maxRecommended;
 
   const appGB = formatGB(stats.appAllocated);
   const otherGB = formatGB(stats.otherUsed);
@@ -155,21 +152,9 @@ export function MemorySlider({
           side="bottom"
           hideIcon
           portal
-          className={`mem-segment-app${isExceeded ? ' exceeded' : ''}`}
+          className="mem-segment-app"
           style={{ left: 0, width: `${appPct}%` }}
         />
-        <div className="mem-max-wrapper" style={{ left: `${maxPct}%` }}>
-          <InfoTooltip
-            content={MAX_LABEL_TOOLTIP}
-            side="top"
-            iconSize={10}
-            title="Maximum"
-            portal
-          >
-            <div className="mem-max-label">MAX</div>
-          </InfoTooltip>
-          <div className="mem-max-line" />
-        </div>
         <input
           type="range"
           min={0}
@@ -182,13 +167,13 @@ export function MemorySlider({
             if (e.key === 'ArrowLeft' || e.key === 'ArrowRight')
               handleSliderCommit();
           }}
-          className={`mem-slider ${isExceeded ? 'slider-exceeded' : ''}`}
+          className="mem-slider"
           style={{ left: 0, width: '100%' }}
         />
       </div>
 
       <div className="mem-legend-row">
-        <div className={`mem-legend-box ${isExceeded ? 'exceeded' : ''}`} />
+        <div className="mem-legend-box" />
         <InfoTooltip
           content={MEMORY_ALLOCATOR_TOOLTIP}
           side="right"
@@ -202,15 +187,6 @@ export function MemorySlider({
         </InfoTooltip>
       </div>
 
-      {isExceeded ? (
-        <div className="mem-warning">
-          <AlertTriangle size={14} />
-          <span>
-            Exceeding recommended limits may cause system instability or severe
-            performance drops.
-          </span>
-        </div>
-      ) : null}
     </div>
   );
 }

@@ -19,7 +19,6 @@ import {
   SERVER_TIMEOUT_TOOLTIP,
   VRAM_HEADROOM_TOOLTIP,
   MEMORY_ALLOCATOR_TOOLTIP,
-  MAX_LABEL_TOOLTIP,
   RAM_LABEL_TOOLTIP,
   VRAM_LABEL_TOOLTIP,
   MODEL_WEIGHTS_TOOLTIP,
@@ -166,10 +165,10 @@ export default function SettingsPage() {
         ...overrides,
       };
 
-      if (!manual) {
-        delete payload.allocatedVRAM;
-        delete payload.allocatedRAM;
-      } else {
+      // Automatic mode never writes allocation keys: switching modes must
+      // preserve the stored manual values so switching back restores them.
+      // The estimator fits live memory in automatic and ignores these.
+      if (manual) {
         if (ramStats.total > 0) {
           payload.allocatedRAM =
             overrides.allocatedRAM ?? ramStats.appAllocated;

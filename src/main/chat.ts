@@ -1413,14 +1413,12 @@ export async function loadProfile(
         (profile as any).layers = optResult.ngl;
         (profile as any).contextSize = optResult.ctx;
         (profile as any).autoOptimizer = mode;
-        // Automatic mode stores no fixed budgets; stamping them would fake
-        // a manual cache hit later.
+        // Manual mode stamps the budgets the solution was solved for.
+        // Automatic mode leaves stored allocations untouched: they belong
+        // to manual mode and must survive for switching back.
         if (budgetMode === 'manual') {
           (profile as any).allocatedVRAM = vramMB;
           (profile as any).allocatedRAM = ramMB;
-        } else {
-          delete (profile as any).allocatedVRAM;
-          delete (profile as any).allocatedRAM;
         }
         (profile as any).tensorSplit = optResult.tensorSplit ?? null;
         (profile as any).tensorOverrides = optResult.tensorOverrides ?? null;

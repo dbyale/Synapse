@@ -307,9 +307,6 @@ export const MEMORY_ALLOCATOR_TOOLTIP = [
   'Setting this too low limits the model size and context length you can use.',
 ];
 
-export const MAX_LABEL_TOOLTIP =
-  'Recommended ceiling for Synapse allocation. This accounts for other running processes and a safety buffer. Exceeding this may cause system instability.';
-
 // ── Draft Model (Speculative Decoding) ──
 
 export const DRAFT_MODEL_TOOLTIP = [

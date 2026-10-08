@@ -5940,8 +5940,10 @@ export default function EditProfileModal({
         setEditTensorSplit(res.tensorSplit ?? null);
         setEditTensorOverrides(res.tensorOverrides ?? null);
         setEditTensorSolvedFor({ ngl: res.ngl, ctx: res.ctx });
-        setEditAllocatedVRAM(res.vramMB);
-        setEditAllocatedRAM(res.ramMB);
+        // Budgets come back undefined in automatic mode: leave state (and
+        // the stored manual values it persists) untouched.
+        if (res.vramMB !== undefined) setEditAllocatedVRAM(res.vramMB);
+        if (res.ramMB !== undefined) setEditAllocatedRAM(res.ramMB);
         setOptimizerRunning(false);
         // Estimate with the fresh triple directly (state hasn't re-rendered
         // yet, so tripleFor would miss).

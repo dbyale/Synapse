@@ -565,10 +565,6 @@ body,
   transition: background-color 0.2s ease;
 }
 
-.info-tooltip-wrapper.mem-segment-app.exceeded {
-  background: #f38ba8;
-}
-
 .info-tooltip-wrapper.mem-segment-free {
   background: transparent;
   border-radius: 0 4px 4px 0;
