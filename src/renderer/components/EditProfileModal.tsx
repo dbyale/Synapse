@@ -5414,8 +5414,11 @@ export default function EditProfileModal({
   const [editAllocatedRAM, setEditAllocatedRAM] = useState<number | undefined>(
     profile?.allocatedRAM,
   );
+  // Defaults on: manual mode starts with server-side auto layers.
+  // Synapse mode ignores this (hidden toggle) and always launches the
+  // optimizer's explicit ngl + triple — see buildLlamaServerArgs.
   const [editGpuLayersAuto, setEditGpuLayersAuto] = useState<boolean>(
-    profile?.gpuLayersAuto ?? false,
+    profile?.gpuLayersAuto ?? true,
   );
   const [editKvOffload, setEditKvOffload] = useState<boolean>(
     profile?.kvOffload ?? true,
@@ -5670,6 +5673,7 @@ export default function EditProfileModal({
         flashAttn: editFlashAttn,
         rope: Object.keys(rope).length > 0 ? rope : undefined,
         yarn: Object.keys(yarn).length > 0 ? yarn : undefined,
+        autoOptimizer: editAutoOptimizer ?? undefined,
         gpuLayersAuto: editGpuLayersAuto,
         cpuMoe: editCpuMoe,
         nCpuMoe: parseInt(editNCpuMoe, 10),
@@ -6035,13 +6039,10 @@ export default function EditProfileModal({
 
   // Synapse mode: the ctx slider stages a value; this effect solves layers
   // for it once it settles. Skips when the current values already match a
-  // solved triple, and never on first mount (fresh profiles wait for input).
-  const didMountRef = useRef(false);
+  // solved triple. Runs on mount only while the performance page is active
+  // (fresh profiles solve immediately there); other tabs never trigger fits.
   useEffect(() => {
-    if (!didMountRef.current) {
-      didMountRef.current = true;
-      return;
-    }
+    if (currentPage !== 'performance') return;
     if (editAutoOptimizer !== 'synapse') return;
     if (!editModelFilename || editContextSize === undefined) return;
     if (
@@ -6057,6 +6058,7 @@ export default function EditProfileModal({
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
+    currentPage,
     editAutoOptimizer,
     editModelFilename,
     editModelAuthor,
@@ -6082,8 +6084,10 @@ export default function EditProfileModal({
 
   // Maximum Speed line: largest ctx with the full model on GPU. Recomputed
   // (debounced, cached main-side) when the model, budgets, or fit flags
-  // change. Null = even the floor spills (line hidden).
+  // change. Null = even the floor spills (line hidden). Same performance
+  // page gate as the refit effect above.
   useEffect(() => {
+    if (currentPage !== 'performance') return;
     if (editAutoOptimizer !== 'synapse' || !editModelFilename) return;
     const timer = setTimeout(() => {
       window.electronAPI
@@ -6094,6 +6098,7 @@ export default function EditProfileModal({
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
+    currentPage,
     editAutoOptimizer,
     editModelFilename,
     editModelAuthor,

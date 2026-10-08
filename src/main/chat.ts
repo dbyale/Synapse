@@ -602,7 +602,7 @@ export interface LlamaServerLaunchConfig {
   ngl: number;
   ctx: number;
   // Fitted placement triple from the optimizer. Only meaningful together
-  // with an explicit ngl — never with gpuLayersAuto (see below).
+  // with an explicit ngl — manual-mode gpuLayersAuto only (see below).
   tensorSplit?: string | null;
   tensorOverrides?: string | null;
 }
@@ -721,7 +721,12 @@ export function buildLlamaServerArgs(
   }
   // Model Arguments
   const spawnArgs = ['--model', config.modelPath];
-  const layersAuto = (profile as any).gpuLayersAuto;
+  // Auto layers apply in manual mode only. The Synapse Optimizer always
+  // launches its explicit ngl + triple (the triple is invalid under auto),
+  // so a default-on hidden toggle can never silently drop the solution.
+  const layersAuto =
+    (profile as any).autoOptimizer === 'custom' &&
+    (profile as any).gpuLayersAuto;
   spawnArgs.push(
     '--n-gpu-layers',
     layersAuto ? 'auto' : config.ngl.toString(),
