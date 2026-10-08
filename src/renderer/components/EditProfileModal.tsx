@@ -3072,6 +3072,9 @@ function PerformancePage({
   modelMaxLayers,
   modelMaxContext,
   maxSpeedCtx,
+  fitError,
+  onDismissFitError,
+  onRetryFit,
   onSetAutoOptimizer,
   onSetGpuLayersAuto,
   onSetLayers,
@@ -3092,6 +3095,9 @@ function PerformancePage({
   modelMaxLayers: number;
   modelMaxContext: number;
   maxSpeedCtx: number | null;
+  fitError: string | null;
+  onDismissFitError: () => void;
+  onRetryFit: () => void;
   onSetAutoOptimizer: (v: 'synapse' | 'custom' | null) => void;
   onSetGpuLayersAuto: (v: boolean) => void;
   onSetLayers: (v: number | undefined) => void;
@@ -3237,6 +3243,9 @@ function PerformancePage({
     1 - ramOverheadPct - ramModelPct - ramBufferPct - ramCtxPct,
   );
 
+  const fitTimedOut =
+    fitError !== null && /timed out/i.test(fitError);
+
   return (
     <>
       <h2 className="epm-page-title">Performance</h2>
@@ -3327,6 +3336,34 @@ function PerformancePage({
         >
           <div className="epm-section__label">Estimated Memory Usage</div>
         </InfoTooltip>
+
+        {fitError !== null && (
+          <div className="epm-estimate-notice epm-estimate-notice--error">
+            <AlertTriangle size={14} />
+            <div className="epm-estimate-error-body">
+              <strong>
+                {fitTimedOut ? 'Fit timed out' : 'Optimizer failed'}
+              </strong>
+              <span style={{ overflowWrap: 'anywhere' }}>{fitError}</span>
+              <div className="epm-estimate-error-actions">
+                <button
+                  type="button"
+                  className="btn-accent"
+                  onClick={onRetryFit}
+                >
+                  Retry
+                </button>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={onDismissFitError}
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="epm-estimate-notice">
           <AlertTriangle size={14} />
@@ -5899,11 +5936,16 @@ export default function EditProfileModal({
   // Synapse Optimizer: fit max layers (+triple) for exactly this ctx.
   // Previous in-flight runs are killed main-side; the reqId backstop drops
   // any late response (including the cancel rejection) that is not latest.
+  // Last optimizer failure message; drives the Retry/Dismiss popup in the
+  // performance section. Cleared on every new run.
+  const [fitError, setFitError] = useState<string | null>(null);
+
   const runSynapseFit = (ctx: number) => {
     if (!editModelFilename) return;
     fitReqId.current += 1;
     const reqId = fitReqId.current;
     setOptimizerRunning(true);
+    setFitError(null);
     window.electronAPI
       .runProfileOptimizer({
         modelAuthor: editModelAuthor,
@@ -5951,10 +5993,21 @@ export default function EditProfileModal({
           },
         );
       })
-      .catch(() => {
+      .catch((e: unknown) => {
         if (fitReqId.current !== reqId) return;
         setOptimizerRunning(false);
+        // Superseded runs are killed main-side and reject here; they are
+        // not failures (a newer run is already in flight). Match on the
+        // FitCancelledError message — it crosses IPC as a plain Error.
+        const message = e instanceof Error ? e.message : String(e);
+        if (/\bcancelled\b/i.test(message)) return;
+        setFitError(message);
       });
+  };
+
+  const handleRetryFit = () => {
+    setFitError(null);
+    if (editContextSize !== undefined) runSynapseFit(editContextSize);
   };
 
   // In synapse mode the ctx slider is the input: it stages the value only.
@@ -6701,6 +6754,9 @@ export default function EditProfileModal({
                 : handleContextSizeChange
             }
             maxSpeedCtx={maxSpeedCtx}
+            fitError={fitError}
+            onDismissFitError={() => setFitError(null)}
+            onRetryFit={handleRetryFit}
             onEstimateMemory={handleEstimateMemory}
             initialEstimate={profile?.estimation ?? lastEstimate}
             onNavigate={navigateTo}

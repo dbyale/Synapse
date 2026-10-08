@@ -1365,6 +1365,43 @@
   color: #f9e2af;
 }
 
+/* ── Fit failure banner: red variant above the yellow estimate notice ── */
+
+.epm-estimate-notice--error {
+  border-color: #ef4444;
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.epm-estimate-notice--error svg {
+  color: #ef4444;
+}
+
+.epm-estimate-notice--error strong {
+  display: block;
+  color: var(--text-primary);
+  font-size: 12px;
+  margin-bottom: 2px;
+}
+
+.epm-estimate-error-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+}
+
+.epm-estimate-error-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.epm-estimate-error-actions button {
+  font-size: 12px;
+  padding: 5px 14px;
+}
+
 .epm-estimate-notice a {
   color: var(--accent);
   text-decoration: underline;
