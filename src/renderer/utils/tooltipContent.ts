@@ -177,12 +177,6 @@ export const OPTIMIZATION_MODE_TOOLTIP = [
 export const SYNAPSE_OPTIMIZER_TOOLTIP =
   'Runs the optimizer for the context size on the slider: maximum GPU layers (and tensor placement) for exactly that size.';
 
-export const MAX_SPEED_LINE_TOOLTIP = [
-  'Maximum Speed: at or below this context size the full model stays on the GPU — the fastest configuration.',
-  'Above it, layer parts start spilling to CPU/RAM: still runs, but slower.',
-  'Measured on your hardware with your current settings; moves when budgets or memory options change.',
-];
-
 export const CUSTOM_TOOLTIP =
   'Switch to manual mode to independently adjust GPU layers and context size.';
 
@@ -196,6 +190,7 @@ export const CONTEXT_SIZE_TOOLTIP = [
   'Maximum number of tokens the model can reference for generating each response.',
   'Larger context allows the model to remember more of the conversation but uses significantly more memory.',
   'Increases both VRAM and RAM usage proportionally.',
+  'The gold Maximum Speed marker fused into the track shows the largest context the full model holds on the GPU (fastest); past it, layer parts spill to CPU/RAM. It is measured on your hardware and moves with budgets and memory options.',
 ];
 
 export const KV_CACHE_OFFLOAD_TOOLTIP = [

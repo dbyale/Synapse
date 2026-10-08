@@ -77,7 +77,6 @@ import {
   DRY_SEQUENCE_BREAKERS_TOOLTIP,
   OPTIMIZATION_MODE_TOOLTIP,
   SYNAPSE_OPTIMIZER_TOOLTIP,
-  MAX_SPEED_LINE_TOOLTIP,
   CUSTOM_TOOLTIP,
   GPU_LAYERS_TOOLTIP,
   GPU_LAYERS_AUTO_TOOLTIP,
@@ -3157,6 +3156,25 @@ function PerformancePage({
       : sliderNgl;
   const activeCtx = isAuto ? (editContextSize ?? 4096) : sliderCtx;
 
+  // Maximum Speed marker zone: near an edge the label anchors to that edge
+  // (grows inward) so it never clips off-screen; centered everywhere else.
+  const SPEED_EDGE_ZONE = 0.1;
+  const speedPct =
+    isAuto && maxSpeedCtx !== null
+      ? Math.min(
+          1,
+          Math.max(
+            0,
+            (maxSpeedCtx - 512) / Math.max(1, modelMaxContext - 512),
+          ),
+        )
+      : null;
+  let speedZone: 'left' | 'right' | null = null;
+  if (speedPct !== null) {
+    if (speedPct >= 1 - SPEED_EDGE_ZONE) speedZone = 'right';
+    else if (speedPct <= SPEED_EDGE_ZONE) speedZone = 'left';
+  }
+
   const triggerEstimate = useCallback(
     async (
       ngl: number,
@@ -3752,50 +3770,49 @@ function PerformancePage({
               <label className="epm-perf-slider-label">
                 Context Length: <strong>{sliderCtx.toLocaleString()}</strong>
               </label>
-              <input
-                type="range"
-                min={512}
-                max={modelMaxContext}
-                step={512}
-                value={sliderCtx}
-                className="epm-perf-range"
-                onChange={(e) => {
-                  const v = parseInt(e.target.value, 10);
-                  onSetContextSize(v);
-                  if (!isAuto) triggerEstimate(activeLayers, v);
-                }}
-              />
+              <div className="epm-perf-range-wrap">
+                <input
+                  type="range"
+                  min={512}
+                  max={modelMaxContext}
+                  step={512}
+                  value={sliderCtx}
+                  className="epm-perf-range"
+                  onChange={(e) => {
+                    const v = parseInt(e.target.value, 10);
+                    onSetContextSize(v);
+                    if (!isAuto) triggerEstimate(activeLayers, v);
+                  }}
+                />
+                {isAuto && maxSpeedCtx !== null && speedPct !== null && (
+                  <>
+                    <div
+                      className="epm-perf-range-tick"
+                      aria-hidden="true"
+                      style={{
+                        // Thumb travel spans the track minus one thumb width
+                        // (16px border-box thumb): this centers the 3px bar
+                        // exactly on the thumb stop in every zone, independent
+                        // of label width or edge anchoring.
+                        left: `calc(8px + (100% - 16px) * ${speedPct})`,
+                      }}
+                    />
+                    <div
+                      className={`epm-perf-range-tick-label${speedZone ? ` epm-perf-range-tick-label--${speedZone}` : ''}`}
+                      aria-hidden="true"
+                      style={{
+                        left: `calc(8px + (100% - 16px) * ${speedPct})`,
+                      }}
+                    >
+                      <span>Maximum Speed: ≤ {maxSpeedCtx.toLocaleString()}</span>
+                    </div>
+                  </>
+                )}
+              </div>
               <div className="epm-perf-range-labels">
                 <span>512</span>
                 <span>{modelMaxContext.toLocaleString()}</span>
               </div>
-              {isAuto && maxSpeedCtx !== null && (
-                <div className="epm-perf-speedline">
-                  <InfoTooltip
-                    content={MAX_SPEED_LINE_TOOLTIP}
-                    side="bottom"
-                    hideIcon
-                    title="Maximum Speed"
-                    className="epm-perf-speedline-marker"
-                    style={{
-                      left: `${Math.min(
-                        100,
-                        Math.max(
-                          0,
-                          ((maxSpeedCtx - 512) /
-                            Math.max(1, modelMaxContext - 512)) *
-                            100,
-                        ),
-                      )}%`,
-                    }}
-                  >
-                    <div className="epm-perf-speedline-tick" />
-                  </InfoTooltip>
-                  <div className="epm-perf-speedline-caption">
-                    Maximum Speed: {maxSpeedCtx.toLocaleString()}
-                  </div>
-                </div>
-              )}
             </InfoTooltip>
           </div>
         </div>

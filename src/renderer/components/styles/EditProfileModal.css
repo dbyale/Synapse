@@ -999,32 +999,46 @@
   color: var(--text-tertiary, var(--text-secondary));
 }
 
-/* ── Maximum Speed line (Synapse Optimizer ctx slider) ── */
+/* ── Maximum Speed tick embedded in the ctx slider track ── */
 
-.epm-perf-speedline {
+.epm-perf-range-wrap {
   position: relative;
-  height: 12px;
-  margin-top: 1px;
+  padding-top: 14px;
 }
 
-.epm-perf-speedline-marker {
+.epm-perf-range-tick {
+  position: absolute;
+  /* Track center sits at wrapper padding (14px) + input margin (6px) +
+     half the 6px track = ~23px; the bar spans across it. */
+  top: 12px;
+  height: 18px;
+  transform: translateX(-50%);
+  width: 3px;
+  border-radius: 2px;
+  background: #f9e2af;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+
+.epm-perf-range-tick-label {
   position: absolute;
   top: 0;
   transform: translateX(-50%);
-}
-
-.epm-perf-speedline-tick {
-  width: 2px;
-  height: 9px;
-  border-radius: 1px;
-  background: var(--accent);
-  margin: 0 auto;
-}
-
-.epm-perf-speedline-caption {
   font-size: 10px;
-  color: var(--text-tertiary, var(--text-secondary));
-  margin-top: 12px;
+  line-height: 1.2;
+  white-space: nowrap;
+  color: #f9e2af;
+  pointer-events: none;
+}
+
+.epm-perf-range-tick-label--right {
+  transform: translateX(-100%);
+  text-align: right;
+}
+
+.epm-perf-range-tick-label--left {
+  transform: translateX(0);
+  text-align: left;
 }
 
 /* ── Memory Usage Bars (Apple-style segments) ── */
