@@ -397,6 +397,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     contextRamUsage: number;
     computeOverheadRam: number;
     fileBufferRam: number;
+    projectorSkipped: boolean;
   }> => ipcRenderer.invoke('profile:estimateMemory', params),
 
   getPlatform: (): Promise<string> => ipcRenderer.invoke('get-platform'),

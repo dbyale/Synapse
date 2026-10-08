@@ -1103,6 +1103,9 @@ export async function estimateMemoryAtConfig(
   contextRamUsage: number;
   computeOverheadRam: number;
   fileBufferRam: number;
+  // True when a projector was requested but this fit build cannot measure
+  // it (--mmproj unsupported): the numbers cover the text model only.
+  projectorSkipped: boolean;
 }> {
   const zero = {
     modelVramUsage: 0,
@@ -1112,10 +1115,13 @@ export async function estimateMemoryAtConfig(
     contextRamUsage: 0,
     computeOverheadRam: 0,
     fileBufferRam: 0,
+    projectorSkipped: false,
   };
   try {
     const fitPath = await resolveFitPath();
     const supported = await getSupportedFlags(fitPath);
+    const projectorSkipped =
+      projectorPath !== undefined && !supported.has('--mmproj');
     // Forward the caller's real kvOffload: --no-kv-offload natively moves KV
     // to host in the measurement (no manual fixup needed).
     // Apply the stored placement triple when the caller provides one (the
@@ -1149,6 +1155,7 @@ export async function estimateMemoryAtConfig(
       contextRamUsage: m.host.context,
       computeOverheadRam: m.host.compute,
       fileBufferRam,
+      projectorSkipped,
     };
   } catch (e) {
     // Estimate panel must never break the modal; optimizer stays strict.

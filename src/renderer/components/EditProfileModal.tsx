@@ -38,6 +38,7 @@ import {
   CacheType,
   ContextShiftSettings,
   DEFAULT_CONTEXT_SHIFT,
+  MemoryEstimate,
 } from '../types/profile';
 import type { LocalModel } from '../preload.d';
 import { getToolMeta, getAvailableToolNames } from '../utils/extensionData';
@@ -3075,6 +3076,8 @@ function PerformancePage({
   fitError,
   onDismissFitError,
   onRetryFit,
+  hasProjector,
+  mmprojOffload,
   onSetAutoOptimizer,
   onSetGpuLayersAuto,
   onSetLayers,
@@ -3098,6 +3101,8 @@ function PerformancePage({
   fitError: string | null;
   onDismissFitError: () => void;
   onRetryFit: () => void;
+  hasProjector: boolean;
+  mmprojOffload: boolean;
   onSetAutoOptimizer: (v: 'synapse' | 'custom' | null) => void;
   onSetGpuLayersAuto: (v: boolean) => void;
   onSetLayers: (v: number | undefined) => void;
@@ -3109,24 +3114,8 @@ function PerformancePage({
     mmap?: boolean,
     cacheTypeK?: CacheType,
     cacheTypeV?: CacheType,
-  ) => Promise<{
-    modelVramUsage: number;
-    contextVramUsage: number;
-    computeOverheadVram: number;
-    modelRamUsage: number;
-    contextRamUsage: number;
-    computeOverheadRam: number;
-    fileBufferRam: number;
-  } | null>;
-  initialEstimate: {
-    modelVramUsage: number;
-    contextVramUsage: number;
-    computeOverheadVram: number;
-    modelRamUsage: number;
-    contextRamUsage: number;
-    computeOverheadRam: number;
-    fileBufferRam: number;
-  } | null;
+  ) => Promise<MemoryEstimate | null>;
+  initialEstimate: MemoryEstimate | null;
   onNavigate: (page: string) => void;
   editSpecType: string[];
   editDraftModelFilename: string;
@@ -3146,15 +3135,9 @@ function PerformancePage({
     ? (editContextSize ?? 4096)
     : (editContextSize ?? 4096);
 
-  const [memory, setMemory] = useState<{
-    modelVramUsage: number;
-    contextVramUsage: number;
-    computeOverheadVram: number;
-    modelRamUsage: number;
-    contextRamUsage: number;
-    computeOverheadRam: number;
-    fileBufferRam: number;
-  } | null>(initialEstimate);
+  const [memory, setMemory] = useState<MemoryEstimate | null>(
+    initialEstimate,
+  );
   const [totalVRAM, setTotalVRAM] = useState(0);
   const [totalRAM, setTotalRAM] = useState(0);
   useEffect(() => {
@@ -3365,28 +3348,16 @@ function PerformancePage({
           </div>
         )}
 
-        <div className="epm-estimate-notice">
-          <AlertTriangle size={14} />
-          <InfoTooltip
-            content="Estimates are measured with the llama.cpp fit tool on this machine's actual backend, so they track the real server load more closely than formula-based tools. Actual usage may still differ with driver overhead and concurrent GPU load."
-            side="right"
-            hideIcon
-            title="Memory Estimates"
-          >
+        {hasProjector && memory?.projectorSkipped === true && (
+          <div className="epm-estimate-notice">
+            <AlertTriangle size={14} />
             <span>
-              Memory estimates measured with{' '}
-              <a
-                href="https://github.com/ggml-org/llama.cpp"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                llama.cpp
-              </a>{' '}
-              on your active backend, using the same offload and projector
-              settings the server will launch with.
+              {mmprojOffload
+                ? 'We are unable to optimize with projectors at this time, the projector will take additional space in VRAM. If a crash occurs, try disabling "MMPROJ GPU Offload" in Profile -> Projector, or leave additional overhead in Settings -> System.'
+                : 'We are unable to optimize with projectors at this time, the projector will take additional space in RAM.'}
             </span>
-          </InfoTooltip>
-        </div>
+          </div>
+        )}
 
         {memory && totalVRAM > 0 ? (
           <>
@@ -5862,15 +5833,9 @@ export default function EditProfileModal({
   } | null>(null);
 
   // Cached memory estimate (persisted in profile)
-  const [lastEstimate, setLastEstimate] = useState<{
-    modelVramUsage: number;
-    contextVramUsage: number;
-    computeOverheadVram: number;
-    modelRamUsage: number;
-    contextRamUsage: number;
-    computeOverheadRam: number;
-    fileBufferRam: number;
-  } | null>(profile?.estimation ?? null);
+  const [lastEstimate, setLastEstimate] = useState<MemoryEstimate | null>(
+    profile?.estimation ?? null,
+  );
 
   // Fetch model metadata when model selection changes
   const lastModelKeyRef = useRef<string | null>(null);
@@ -6024,15 +5989,7 @@ export default function EditProfileModal({
     cacheTypeK?: CacheType,
     cacheTypeV?: CacheType,
     triple?: { tensorSplit: string | null; tensorOverrides: string | null },
-  ): Promise<{
-    modelVramUsage: number;
-    contextVramUsage: number;
-    computeOverheadVram: number;
-    modelRamUsage: number;
-    contextRamUsage: number;
-    computeOverheadRam: number;
-    fileBufferRam: number;
-  } | null> => {
+  ): Promise<MemoryEstimate | null> => {
     if (!editModelFilename) return null;
     // Explicit triple (fresh optimizer result) wins; otherwise fall back to
     // the solved-for match, which is null for anything but the exact values.
@@ -6757,6 +6714,8 @@ export default function EditProfileModal({
             fitError={fitError}
             onDismissFitError={() => setFitError(null)}
             onRetryFit={handleRetryFit}
+            hasProjector={!!editProjectorFilename}
+            mmprojOffload={editMmprojOffload}
             onEstimateMemory={handleEstimateMemory}
             initialEstimate={profile?.estimation ?? lastEstimate}
             onNavigate={navigateTo}

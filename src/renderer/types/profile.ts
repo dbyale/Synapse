@@ -24,6 +24,19 @@ export interface ContextShiftSettings {
   minTokensToClear?: number;
 }
 
+export interface MemoryEstimate {
+  modelVramUsage: number;
+  contextVramUsage: number;
+  computeOverheadVram: number;
+  modelRamUsage: number;
+  contextRamUsage: number;
+  computeOverheadRam: number;
+  fileBufferRam: number;
+  // True when a projector was requested but this fit build cannot measure
+  // it: the numbers cover the text model only.
+  projectorSkipped: boolean;
+}
+
 export const DEFAULT_CONTEXT_SHIFT: ContextShiftSettings = {
   enabled: false,
   tokensRemainingUntilShift: 4096,
@@ -115,15 +128,7 @@ export interface Profile {
   maxLayers?: number;
   maxContext?: number;
   maxForModel?: string;
-  estimation?: {
-    modelVramUsage: number;
-    contextVramUsage: number;
-    computeOverheadVram: number;
-    modelRamUsage: number;
-    contextRamUsage: number;
-    computeOverheadRam: number;
-    fileBufferRam: number;
-  };
+  estimation?: MemoryEstimate;
   videoSettings?: {
     fps?: number;
     maxFrames?: number;

@@ -479,6 +479,7 @@ declare global {
         contextRamUsage: number;
         computeOverheadRam: number;
         fileBufferRam: number;
+        projectorSkipped: boolean;
       }>;
 
       // ── Extensions API ──
