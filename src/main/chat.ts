@@ -682,6 +682,31 @@ export function stripBinaryPrefix(args: string[]): string[] {
   return args;
 }
 
+// Best-effort record of ngl/ctx from a FULL manual launch command, for
+// usage tracking and logging only (the server launches the raw tokens).
+// Returns ngl 0 / ctx null when absent or unparseable — both degrade to
+// the existing fallbacks downstream. Exported for preview IPC & tests.
+export function parseManualLaunchRecord(raw: string): {
+  ngl: number;
+  ctx: number | null;
+} {
+  const tokens = stripBinaryPrefix(splitShellArgs(raw));
+  const valueAfter = (...flags: string[]): string | null => {
+    for (let i = 0; i < tokens.length - 1; i += 1) {
+      if (flags.includes(tokens[i])) return tokens[i + 1] ?? null;
+    }
+    return null;
+  };
+  const nglRaw = valueAfter('--n-gpu-layers', '-ngl', '--gpu-layers');
+  const ctxRaw = valueAfter('--ctx-size', '-c');
+  const nglParsed = nglRaw !== null ? parseInt(nglRaw, 10) : NaN;
+  const ctxParsed = ctxRaw !== null ? parseInt(ctxRaw, 10) : NaN;
+  return {
+    ngl: Number.isNaN(nglParsed) ? 0 : nglParsed,
+    ctx: Number.isNaN(ctxParsed) ? null : ctxParsed,
+  };
+}
+
 export function buildLlamaServerArgs(
   profile: Partial<Profile>,
   config: LlamaServerLaunchConfig,
@@ -1316,7 +1341,24 @@ export async function loadProfile(
         'tensorSplit' in (profile as any) &&
         'tensorOverrides' in (profile as any);
 
-      if (hasValidCustom) {
+      // A FULL manual launch command replaces the whole server invocation,
+      // so the optimizer result would be discarded anyway — skip the solve.
+      // (Additional customFlags rows still merge into a fitted launch and
+      // keep the optimizer below.) Empty commands fall through to the
+      // normal path and fail fast at spawn, per spec.
+      const manualCmd = (profile as any).useCustomLaunch
+        ? ((profile as any).customLaunchCommand ?? '').trim()
+        : '';
+      if (manualCmd.length > 0) {
+        const manual = parseManualLaunchRecord(manualCmd);
+        result = {
+          ngl: manual.ngl,
+          ctx: manual.ctx ?? 2048,
+          tensorSplit: null,
+          tensorOverrides: null,
+          memory: null,
+        };
+      } else if (hasValidCustom) {
         // User-pinned ngl/ctx: a stale optimizer triple must NOT ride along,
         // it was solved for different values.
         result = {
