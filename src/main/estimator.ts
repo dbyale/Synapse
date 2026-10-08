@@ -1,4 +1,4 @@
-import { execFile } from 'child_process';
+import { execFile, spawn, ChildProcess } from 'child_process';
 import { promisify } from 'util';
 import fs from 'fs';
 import { loadSettings } from './settings';
@@ -16,6 +16,9 @@ export interface MemoryEstimation {
   // it will try to hold whole layers resident and blow past VRAM.
   tensorSplit: string | null;
   tensorOverrides: string | null;
+  // Host memory beyond the allocated RAM budget. Overflow spills to SSD
+  // swap: it still runs, just slower. The optimizer never refuses on RAM.
+  hostOverflowBytes: number;
   memory: {
     modelVramUsage: number;
     contextVramUsage: number;
@@ -28,12 +31,6 @@ const MiB = 1024 * 1024;
 const FIT_TIMEOUT_MS = 180000;
 const CTX_SNAP = 512;
 const CTX_MIN = 512;
-// Floor context for the most-gpu path: mirrors llama.cpp's own
-// --fit-ctx default so the fitted result always has a usable window.
-const MOST_GPU_FLOOR_CTX = 4096;
-// Upper bound on RAM-backtracking levels for longest-context. Each level is
-// one ctx binary search (~6-8 no_alloc probes at ~0.5-1s each).
-const MAX_RAM_BACKTRACK_LEVELS = 4;
 
 // Developer mode: full fit results are dumped to the main-process console.
 // Same check as the app menu (menu.ts) so it holds under `npm start` and
@@ -283,25 +280,125 @@ export function appendCommonFitArgs(
   }
 }
 
+// Cancellation for superseded fits (e.g. rapid ctx-slider stops). A runId
+// identifies one logical run across its sequential probes; cancelFitRun
+// kills the in-flight child and every subsequent probe throws immediately.
+// Callers distinguish FitCancelledError from real failures and drop it.
+export class FitCancelledError extends Error {
+  constructor() {
+    super('Fit run cancelled');
+    this.name = 'FitCancelledError';
+  }
+}
+
+let fitRunCounter = 0;
+const fitRuns = new Map<
+  number,
+  { cancelled: boolean; child: ChildProcess | null }
+>();
+
+export function createFitRun(): number {
+  const id = fitRunCounter + 1;
+  fitRunCounter = id;
+  fitRuns.set(id, { cancelled: false, child: null });
+  return id;
+}
+
+export function cancelFitRun(id: number): void {
+  const rec = fitRuns.get(id);
+  if (!rec) return;
+  rec.cancelled = true;
+  try {
+    rec.child?.kill();
+  } catch {
+    // Already exited — the cancelled flag still stops later probes.
+  }
+}
+
+function endFitRun(id: number): void {
+  fitRuns.delete(id);
+}
+
+function fitFailure(
+  args: string[],
+  reason: string,
+  stderrTail: string,
+): Error {
+  return new Error(
+    `llama-fit-params failed (${args.join(' ')}): ${reason}${
+      stderrTail ? `\n${stderrTail}` : ''
+    }`,
+  );
+}
+
 async function runFit(
   fitPath: string,
   args: string[],
+  runId?: number,
 ): Promise<{ stdout: string; stderr: string }> {
-  try {
-    const { stdout, stderr } = await execFileAsync(fitPath, args, {
-      timeout: FIT_TIMEOUT_MS,
-      maxBuffer: 16 * MiB,
+  const rec = runId !== undefined ? fitRuns.get(runId) : undefined;
+  if (rec?.cancelled) throw new FitCancelledError();
+  return new Promise((resolve, reject) => {
+    let stdout = '';
+    let stderr = '';
+    let settled = false;
+    let timedOut = false;
+    const finish = (fn: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (rec) rec.child = null;
+      fn();
+    };
+    const timer = setTimeout(() => {
+      timedOut = true;
+      try {
+        child.kill();
+      } catch {
+        // Already exited.
+      }
+    }, FIT_TIMEOUT_MS);
+    const child = spawn(fitPath, args);
+    if (rec) rec.child = child;
+    child.stdout?.on('data', (d: Buffer) => {
+      if (stdout.length < 16 * MiB) stdout += d.toString();
     });
-    return { stdout, stderr };
-  } catch (e: any) {
-    const stderr = e?.stderr ? String(e.stderr).slice(-4000) : '';
-    throw new Error(
-      `llama-fit-params failed (${args.join(' ')}): ` +
-        `${e instanceof Error ? e.message : String(e)}${
-          stderr ? `\n${stderr}` : ''
-        }`,
-    );
-  }
+    child.stderr?.on('data', (d: Buffer) => {
+      if (stderr.length < 16 * MiB) stderr += d.toString();
+    });
+    child.on('error', (err: Error) => {
+      finish(() =>
+        reject(fitFailure(args, err.message, stderr.slice(-4000))),
+      );
+    });
+    child.on('close', (code: number | null) => {
+      if (rec?.cancelled) {
+        finish(() => reject(new FitCancelledError()));
+      } else if (timedOut) {
+        finish(() =>
+          reject(
+            fitFailure(
+              args,
+              `timed out after ${FIT_TIMEOUT_MS}ms`,
+              stderr.slice(-4000),
+            ),
+          ),
+        );
+      } else if (code !== 0) {
+        finish(() =>
+          reject(
+            fitFailure(
+              args,
+              `exit code ${code}`,
+              stderr.slice(-4000),
+            ),
+          ),
+        );
+      } else {
+        finish(() => resolve({ stdout, stderr }));
+      }
+    });
+  });
 }
 
 export function parseFittedArgs(stdout: string): {
@@ -609,7 +706,12 @@ async function measureAtConfig(
   ctx: number,
   projectorPath: string | undefined,
   profile: Partial<Profile>,
-  opts?: { device?: string; tensorSplit?: string | null; overrides?: string | null },
+  opts?: {
+    device?: string;
+    tensorSplit?: string | null;
+    overrides?: string | null;
+    runId?: number;
+  },
 ): Promise<FitPrintResult> {
   const args = ['-m', modelPath, '-c', String(ctx), '-ngl', String(ngl)];
   appendCommonFitArgs(args, supported, profile, projectorPath);
@@ -622,7 +724,7 @@ async function measureAtConfig(
   if (opts?.tensorSplit) args.push('-ts', opts.tensorSplit);
   if (opts?.overrides) args.push('-ot', opts.overrides);
   args.push('--fit-print', 'on');
-  const { stdout } = await runFit(fitPath, args);
+  const { stdout } = await runFit(fitPath, args, opts?.runId);
   return parseFitPrint(stdout);
 }
 
@@ -644,27 +746,35 @@ function vramFits(m: FitPrintResult, budgets: DeviceBudget[]): boolean {
 
 // ── Optimizer ──
 
-// Parameter order is positional API shared with chat.ts/ipc.ts callers.
-/* eslint-disable default-param-last */
-export async function solveMaxConfig(
+// Shared preparation: binary, flags, header, device discovery, budgets.
+// Returned as one object so fitLayersForContext and maxFullOffloadCtx stay
+// consistent (same device set, same margins, same order).
+interface FitPrep {
+  fitPath: string;
+  supported: Set<string>;
+  maxLayers: number;
+  maxModelCtx: number;
+  usedNames: string[];
+  deviceArg: string | undefined;
+  marginsMiB: number[];
+  budgets: DeviceBudget[];
+}
+
+async function prepareFit(
   modelPath: string,
   vramMB: number,
-  ramMB: number,
-  maximizeNGL: boolean = false,
-  projectorPath?: string,
-  profile: Partial<Profile> = {},
-): Promise<MemoryEstimation> {
-  /* eslint-enable default-param-last */
+  projectorPath: string | undefined,
+  profile: Partial<Profile>,
+  discoveryCtx: number,
+  runId?: number,
+): Promise<FitPrep> {
   const fitPath = await resolveFitPath();
   const supported = await getSupportedFlags(fitPath);
-  const ramLimitBytes = ramMB * MiB;
 
   const meta = await readGgufMetadata(modelPath);
   const maxModelCtx = meta.maxContext || 4096;
 
-  const fitCtxFloor = maximizeNGL ? MOST_GPU_FLOOR_CTX : CTX_MIN;
-
-  // 0. Discover which devices llama.cpp actually selects for this model
+  // Discover which devices llama.cpp actually selects for this model
   // (often a subset, e.g. discrete GPU only). Margins are only meaningful
   // for that set, in that order — so pin it via --device for every later
   // probe. The server uses the same default selection, so this stays
@@ -675,13 +785,13 @@ export async function solveMaxConfig(
     supported,
     modelPath,
     discoveryNgl,
-    fitCtxFloor,
+    discoveryCtx,
     projectorPath,
     profile,
+    { runId },
   );
   const usedNames = discovery.devices.map((d) => d.name);
   const deviceArg = usedNames.length > 0 ? usedNames.join(',') : undefined;
-  const measureOpts = deviceArg ? { device: deviceArg } : undefined;
   if (isDev()) {
     console.log(
       `[fit-estimator] devices in use: ${usedNames.length > 0 ? usedNames.join(',') : '(host only)'}`,
@@ -698,221 +808,108 @@ export async function solveMaxConfig(
       margin + vramMB * MiB,
     margin,
   }));
+  return {
+    fitPath,
+    supported,
+    maxLayers: meta.maxLayers,
+    maxModelCtx,
+    usedNames,
+    deviceArg,
+    marginsMiB,
+    budgets,
+  };
+}
 
-  // 1. Let the fitter solve: max layers at the largest context that still
-  // fits device memory (ctx auto from train size down to the floor).
-  const fitArgs = ['-m', modelPath, '-c', '0', '-ngl', 'auto'];
+// Parameter order is positional API shared with chat.ts/ipc.ts callers.
+/* eslint-disable default-param-last */
+export async function fitLayersForContext(
+  modelPath: string,
+  ctxInput: number,
+  vramMB: number,
+  ramMB: number,
+  projectorPath?: string,
+  profile: Partial<Profile> = {},
+  runId?: number,
+): Promise<MemoryEstimation> {
+  /* eslint-enable default-param-last */
+  const ramLimitBytes = ramMB * MiB;
+
+  const prep = await prepareFit(
+    modelPath,
+    vramMB,
+    projectorPath,
+    profile,
+    CTX_MIN,
+    runId,
+  );
+  const {
+    fitPath,
+    supported,
+    maxLayers,
+    maxModelCtx,
+    usedNames,
+    deviceArg,
+    marginsMiB,
+    budgets,
+  } = prep;
+  const measureBase = deviceArg ? { device: deviceArg, runId } : { runId };
+  // Clamp the requested ctx into the valid snapped range.
+  const ctx = Math.min(
+    maxModelCtx,
+    Math.max(CTX_MIN, Math.floor(ctxInput / CTX_SNAP) * CTX_SNAP),
+  );
+  // 1. Let the fitter solve at the requested ctx: max layers (+triple) for
+  // exactly this context size. With explicit -c the fitter never shrinks
+  // ctx itself, so the returned triple is self-consistent by construction —
+  // no search loop, no reconciliation needed.
+  const fitArgs = ['-m', modelPath, '-c', String(ctx), '-ngl', 'auto'];
   appendCommonFitArgs(fitArgs, supported, profile, projectorPath);
   if (deviceArg) {
     pushIfSupported(fitArgs, supported, '--device', deviceArg);
   }
-  fitArgs.push(
-    '--fit',
-    'on',
-    '--fit-target',
-    marginsForCli(marginsMiB),
-    '--fit-ctx',
-    String(fitCtxFloor),
-  );
-  const { stdout, stderr } = await runFit(fitPath, fitArgs);
+  fitArgs.push('--fit', 'on', '--fit-target', marginsForCli(marginsMiB));
+  const { stdout, stderr } = await runFit(fitPath, fitArgs, runId);
   const fitted = parseFittedArgs(stdout);
 
   // The fitter echoes -ngl -1 (full-offload sentinel, verified identical to
   // -ngl 99) when everything fits untouched. Normalize to the model's layer
   // count for the profile/UI; the shared arg parser accepts -1 regardless.
   const normalizeNgl = (ngl: number): number =>
-    ngl < 0 && meta.maxLayers > 0 ? meta.maxLayers : ngl;
-  let bestNgl = normalizeNgl(fitted.ngl);
-  let bestCtx = Math.min(fitted.ctx, maxModelCtx);
+    ngl < 0 && maxLayers > 0 ? maxLayers : ngl;
+  const bestNgl = normalizeNgl(fitted.ngl);
   // Placement triple: ngl alone is not a complete solution when the fitter
   // emits -ts/-ot (partial-layer overflow). The triple travels together from
   // here on, through measurement and all the way to the server launch flags.
-  let triple = {
+  const triple = {
     tensorSplit: fitted.tensorSplit ?? null,
     overrides: fitted.overrides ?? null,
   };
-  let finalMeasure = await measureAtConfig(
-    fitPath,
-    supported,
-    modelPath,
-    bestNgl,
-    bestCtx,
-    projectorPath,
-    profile,
-    {
-      ...measureOpts,
-      tensorSplit: triple.tensorSplit,
-      overrides: triple.overrides,
-    },
-  );
 
   if (isDev()) {
     console.log(
       `[fit-estimator] fitted -c ${fitted.ctx} -ngl ${fitted.ngl}` +
         `${fitted.tensorSplit ? ` -ts ${fitted.tensorSplit}` : ''}` +
-        `${fitted.overrides ? ` -ot "${fitted.overrides}"` : ''}` +
-        ` (maximizeNGL: ${maximizeNGL})`,
+        `${fitted.overrides ? ` -ot "${fitted.overrides}"` : ''}`,
     );
-  }
-
-  // 2. Longest-context only: spend spare RAM by dropping NGL to grow ctx,
-  // mirroring the old parser backtracking loop with live measurements.
-  // Probes are serial by design: each level's search starts from the
-  // previous level's result, and ctx binary search is inherently ordered.
-  /* eslint-disable no-await-in-loop */
-  const solvedNgl = bestNgl;
-  const solvedCtx = bestCtx;
-  if (!maximizeNGL) {
-    let currentNgl = bestNgl;
-    let levels = 0;
-    for (;;) {
-      const hostTotal =
-        finalMeasure.host.model +
-        finalMeasure.host.context +
-        finalMeasure.host.compute;
-      const ramUtilization = hostTotal / ramLimitBytes;
-      if (
-        ramUtilization > 0.9 ||
-        bestCtx >= maxModelCtx ||
-        currentNgl <= 0 ||
-        levels >= MAX_RAM_BACKTRACK_LEVELS
-      ) {
-        if (isDev()) {
-          console.log(
-            `[fit-estimator] stop at NGL ${currentNgl} ` +
-              `(${(ramUtilization * 100).toFixed(1)}% RAM used).`,
-          );
-        }
-        break;
-      }
-      levels += 1;
-      currentNgl -= 1;
-      if (isDev()) {
-        console.log(
-          `[fit-estimator] NGL ${currentNgl + 1} only filled RAM to ` +
-            `${(ramUtilization * 100).toFixed(1)}%. Trying NGL ${currentNgl}...`,
-        );
-      }
-      // Binary search max ctx at this NGL (snapped to 512).
-      let tempBestCtx = CTX_MIN;
-      let tempBestMeasure: FitPrintResult | null = null;
-      let lowCtx = CTX_MIN;
-      let highCtx = maxModelCtx;
-      // Probe the top first: skip levels that cannot beat bestCtx.
-      try {
-        const top = await measureAtConfig(
-          fitPath,
-          supported,
-          modelPath,
-          currentNgl,
-          maxModelCtx,
-          projectorPath,
-          profile,
-          measureOpts,
-        );
-        const hostTop = top.host.model + top.host.context + top.host.compute;
-        if (vramFits(top, budgets) && hostTop <= ramLimitBytes) {
-          tempBestCtx = maxModelCtx;
-          tempBestMeasure = top;
-        } else {
-          while (lowCtx <= highCtx) {
-            let midCtx = Math.floor((lowCtx + highCtx) / 2);
-            midCtx = Math.max(
-              CTX_MIN,
-              Math.floor(midCtx / CTX_SNAP) * CTX_SNAP,
-            );
-            const m = await measureAtConfig(
-              fitPath,
-              supported,
-              modelPath,
-              currentNgl,
-              midCtx,
-              projectorPath,
-              profile,
-              measureOpts,
-            );
-            const hostM = m.host.model + m.host.context + m.host.compute;
-            if (vramFits(m, budgets) && hostM <= ramLimitBytes) {
-              tempBestCtx = midCtx;
-              tempBestMeasure = m;
-              lowCtx = midCtx + CTX_SNAP;
-            } else {
-              highCtx = midCtx - CTX_SNAP;
-            }
-          }
-        }
-      } catch (e) {
-        console.warn(
-          `[fit-estimator] probe at NGL ${currentNgl} failed, keeping NGL ${bestNgl}.`,
-          e instanceof Error ? e.message : e,
-        );
-        break;
-      }
-      if (tempBestMeasure && tempBestCtx >= bestCtx) {
-        bestNgl = currentNgl;
-        bestCtx = tempBestCtx;
-        finalMeasure = tempBestMeasure;
-      } else {
-        break;
-      }
-    }
-  }
-  /* eslint-enable no-await-in-loop */
-
-  // 2b. Reconcile: the RAM loop searches ctx at explicit whole-layer ngl
-  // WITHOUT the fitter's -ts/-ot, so a lowered ngl leaves the solve triple
-  // stale. One fresh fit at the chosen ctx re-solves a self-consistent
-  // (ngl, -ts, -ot) triple under the same margins; ctx is kept, the triple
-  // (and any better-packed ngl) is adopted wholesale.
-  let reconciled = false;
-  if (!maximizeNGL && (bestNgl !== solvedNgl || bestCtx !== solvedCtx)) {
-    const reconArgs = ['-m', modelPath, '-c', String(bestCtx), '-ngl', 'auto'];
-    appendCommonFitArgs(reconArgs, supported, profile, projectorPath);
-    if (deviceArg) {
-      pushIfSupported(reconArgs, supported, '--device', deviceArg);
-    }
-    reconArgs.push(
-      '--fit',
-      'on',
-      '--fit-target',
-      marginsForCli(marginsMiB),
-      '--fit-ctx',
-      String(CTX_MIN),
-    );
-    const reconOut = await runFit(fitPath, reconArgs);
-    const recon = parseFittedArgs(reconOut.stdout);
-    bestNgl = normalizeNgl(recon.ngl);
-    triple = {
-      tensorSplit: recon.tensorSplit ?? null,
-      overrides: recon.overrides ?? null,
-    };
-    reconciled = true;
-    if (isDev()) {
-      console.log(
-        `[fit-estimator] reconciled at ctx ${bestCtx}: -ngl ${recon.ngl}` +
-          `${recon.tensorSplit ? ` -ts ${recon.tensorSplit}` : ''}` +
-          `${recon.overrides ? ' -ot "<patterns>"' : ''}`,
-      );
-    }
   }
 
   const finalOpts = {
-    ...measureOpts,
+    ...measureBase,
     tensorSplit: triple.tensorSplit,
     overrides: triple.overrides,
   };
-  finalMeasure = await measureAtConfig(
+  const finalMeasure = await measureAtConfig(
     fitPath,
     supported,
     modelPath,
     bestNgl,
-    bestCtx,
+    ctx,
     projectorPath,
     profile,
     finalOpts,
   );
 
-  // 3. Breakdown: weights vs context from a ctx=1 probe at bestNgl.
+  // 2. Breakdown: weights vs context from a ctx=1 probe at bestNgl.
   const modelOnly = await measureAtConfig(
     fitPath,
     supported,
@@ -933,12 +930,22 @@ export async function solveMaxConfig(
   const modelRam = sumHost(modelOnly);
   const toGB = (bytes: number) => `${(bytes / 1024 ** 3).toFixed(2)} GB`;
 
+  // Host overflow spills to SSD swap: still runs, just slower. Warn (always,
+  // all environments) instead of refusing or silently degrading.
+  const hostOverflowBytes = Math.max(0, totalRam - ramLimitBytes);
+  if (hostOverflowBytes > 0) {
+    console.warn(
+      `[fit-estimator] ctx ${ctx} needs ${toGB(totalRam)} host memory vs ` +
+        `${toGB(ramLimitBytes)} allocated — overflow will spill to SSD swap. ` +
+        `It will still run, but slower.`,
+    );
+  }
+
   if (isDev()) {
     console.log(`
 --- Optimization Results (llama-fit-params) ---
-Strategy:              ${maximizeNGL ? 'Maximize Speed (NGL)' : 'Maximize Context (RAM)'}
+Requested Context:   ${ctx} tokens
 Best GPU Layers (NGL): ${bestNgl}
-Best Context (CTX):    ${bestCtx} tokens
 
 Memory Breakdown:
 - Model Weights in VRAM:  ${toGB(modelVram)}
@@ -947,7 +954,7 @@ Memory Breakdown:
 
 Hardware Utilization:
 - VRAM: ${toGB(totalVram)} / ${(vramMB / 1024).toFixed(2)} GB
-- RAM:  ${toGB(totalRam)} / ${(ramMB / 1024).toFixed(2)} GB
+- RAM:  ${toGB(totalRam)} / ${(ramMB / 1024).toFixed(2)} GB (${toGB(hostOverflowBytes)} over budget)
 ----------------------------------
 `);
   }
@@ -968,7 +975,7 @@ Hardware Utilization:
       '[fit-estimator:full-result]',
       JSON.stringify(
         {
-          strategy: maximizeNGL ? 'most-gpu' : 'longest-context',
+          strategy: 'synapse',
           modelPath,
           projectorPath: projectorPath ?? null,
           budgetsMiB: { vramMB, ramMB },
@@ -979,25 +986,21 @@ Hardware Utilization:
             marginMiB: toMiB(b.margin),
           })),
           maxModelCtx,
+          requestedCtx: ctxInput,
           fitCommand: [fitPath, ...fitArgs].join(' '),
           fitStdout: stdout.trim(),
           fitStderrTail: stderr.slice(-2048),
           fitted: {
             ctx: fitted.ctx,
             ngl: fitted.ngl,
-            normalizedNgl: solvedNgl,
+            normalizedNgl: bestNgl,
             tensorSplit: fitted.tensorSplit ?? null,
             overrides: fitted.overrides ?? null,
           },
-          reconciled,
-          adopted: {
-            ngl: bestNgl,
-            tensorSplit: triple.tensorSplit,
-            overrides: triple.overrides,
-          },
+          hostOverflowMiB: toMiB(hostOverflowBytes),
           final: {
             ngl: bestNgl,
-            ctx: bestCtx,
+            ctx,
             devices: finalMeasure.devices.map((d) => ({
               name: d.name,
               ...rowMiB(d),
@@ -1020,9 +1023,10 @@ Hardware Utilization:
 
   return {
     ngl: bestNgl,
-    ctx: bestCtx,
+    ctx,
     tensorSplit: triple.tensorSplit,
     tensorOverrides: triple.overrides,
+    hostOverflowBytes,
     memory: {
       modelVramUsage: modelVram,
       modelRamUsage: modelRam,
@@ -1170,18 +1174,25 @@ export async function getOrEstimateMemory(
 }
 
 // ── Shared optimizer state ──
+// Newest request wins per model: starting a run cancels any in-flight run
+// for the same model (rapid ctx-slider stops, profile switches). Cancelled
+// runs reject with FitCancelledError, which callers must tolerate — the UI
+// ignores stale responses by request id.
 
-const pendingOptimizations = new Map<string, Promise<MemoryEstimation>>();
+const activeOptimizations = new Map<
+  string,
+  { key: string; runId: number; promise: Promise<MemoryEstimation> }
+>();
 
 function optimizerCacheKey(
   modelPath: string,
   vramMB: number,
   ramMB: number,
-  maximizeNGL: boolean,
+  ctx: number,
   projectorPath?: string,
   profile: Partial<Profile> = {},
 ): string {
-  return `${modelPath}|${vramMB}|${ramMB}|${maximizeNGL}|${projectorPath ?? ''}|${fitRelevantKey(profile)}`;
+  return `${modelPath}|${vramMB}|${ramMB}|${ctx}|${projectorPath ?? ''}|${fitRelevantKey(profile)}`;
 }
 
 // Parameter order is positional API shared with chat.ts/ipc.ts callers.
@@ -1190,7 +1201,7 @@ export async function getOrRunOptimizer(
   modelPath: string,
   vramMB: number,
   ramMB: number,
-  maximizeNGL: boolean = false,
+  ctx: number,
   projectorPath?: string,
   profile: Partial<Profile> = {},
 ): Promise<MemoryEstimation> {
@@ -1199,26 +1210,165 @@ export async function getOrRunOptimizer(
     modelPath,
     vramMB,
     ramMB,
-    maximizeNGL,
+    ctx,
     projectorPath,
     profile,
   );
-  const existing = pendingOptimizations.get(key);
-  if (existing) return existing;
+  const active = activeOptimizations.get(modelPath);
+  if (active && active.key === key) return active.promise;
+  if (active) cancelFitRun(active.runId);
 
-  const promise = solveMaxConfig(
+  const runId = createFitRun();
+  const promise = fitLayersForContext(
     modelPath,
+    ctx,
     vramMB,
     ramMB,
-    maximizeNGL,
     projectorPath,
     profile,
+    runId,
   );
 
-  pendingOptimizations.set(key, promise);
+  activeOptimizations.set(modelPath, { key, runId, promise });
   try {
     return await promise;
   } finally {
-    pendingOptimizations.delete(key);
+    if (activeOptimizations.get(modelPath)?.promise === promise) {
+      activeOptimizations.delete(modelPath);
+    }
+    endFitRun(runId);
   }
+}
+
+// ── Maximum-speed line ──
+// Strict whole-layer answer to "how far can ctx grow before anything spills
+// off the GPU": largest ctx with maxLayers and NO -ot. Interpolated from two
+// probes (KV cache scales linearly with ctx), verified, then bisected on
+// miss. Returns null when even CTX_MIN spills (line hidden in that case).
+
+const speedLineCache = new Map<string, number | null>();
+
+export async function maxFullOffloadCtx(
+  modelPath: string,
+  vramMB: number,
+  projectorPath?: string,
+  profile: Partial<Profile> = {},
+  runId?: number,
+): Promise<number | null> {
+  const key = `${modelPath}|${vramMB}|${projectorPath ?? ''}|${fitRelevantKey(profile)}`;
+  const cached = speedLineCache.get(key);
+  if (cached !== undefined) return cached;
+
+  const prep = await prepareFit(
+    modelPath,
+    vramMB,
+    projectorPath,
+    profile,
+    CTX_MIN,
+    runId,
+  );
+  const {
+    fitPath,
+    supported,
+    maxLayers,
+    maxModelCtx,
+    deviceArg,
+    budgets,
+  } = prep;
+  if (maxLayers <= 0) {
+    speedLineCache.set(key, null);
+    return null;
+  }
+  const measureOpts = deviceArg ? { device: deviceArg, runId } : { runId };
+  const devTotal = (m: FitPrintResult): number[] =>
+    m.devices.map((d) => d.model + d.context + d.compute);
+
+  // Fast path: train max fits whole → line at the top.
+  const atMax = await measureAtConfig(
+    fitPath,
+    supported,
+    modelPath,
+    maxLayers,
+    maxModelCtx,
+    projectorPath,
+    profile,
+    measureOpts,
+  );
+  if (vramFits(atMax, budgets)) {
+    speedLineCache.set(key, maxModelCtx);
+    return maxModelCtx;
+  }
+  // Floor spills too → no full-offload ctx exists.
+  const atMin = await measureAtConfig(
+    fitPath,
+    supported,
+    modelPath,
+    maxLayers,
+    CTX_MIN,
+    projectorPath,
+    profile,
+    measureOpts,
+  );
+  if (!vramFits(atMin, budgets)) {
+    speedLineCache.set(key, null);
+    return null;
+  }
+  // Interpolate per device, take the binding (smallest) ctx, verify, bisect.
+  const loTotals = devTotal(atMin);
+  const hiTotals = devTotal(atMax);
+  const perToken = hiTotals.map((hi, i) =>
+    Math.max(1, (hi - loTotals[i]) / (maxModelCtx - CTX_MIN)),
+  );
+  const perDeviceBudget = budgets.map((b, i) => b.total - b.margin);
+  let guess = maxModelCtx;
+  if (atMax.devices.length === budgets.length) {
+    guess = Math.min(
+      ...loTotals.map((lo, i) =>
+        CTX_MIN + (perDeviceBudget[i] - lo) / perToken[i],
+      ),
+    );
+  } else {
+    const totalBudget = perDeviceBudget.reduce((a, b) => a + b, 0);
+    const totalLo = loTotals.reduce((a, t) => a + t, 0);
+    const totalPerToken = perToken.reduce((a, t) => a + t, 0);
+    guess = CTX_MIN + (totalBudget - totalLo) / totalPerToken;
+  }
+  let candidate = Math.min(
+    maxModelCtx,
+    Math.max(
+      CTX_MIN,
+      Math.floor(guess / CTX_SNAP) * CTX_SNAP,
+    ),
+  );
+  // At most a few bisection steps: each probe halves the uncertainty.
+  let verified: number | null = null;
+  for (let step = 0; step < 6; step += 1) {
+    const m = await measureAtConfig(
+      fitPath,
+      supported,
+      modelPath,
+      maxLayers,
+      candidate,
+      projectorPath,
+      profile,
+      measureOpts,
+    );
+    if (vramFits(m, budgets)) {
+      verified = candidate;
+      if (candidate >= maxModelCtx) break;
+      candidate = Math.min(
+        maxModelCtx,
+        Math.floor((candidate + maxModelCtx) / 2 / CTX_SNAP) * CTX_SNAP,
+      );
+      if (candidate <= verified) break;
+    } else {
+      candidate =
+        Math.floor((CTX_MIN + candidate) / 2 / CTX_SNAP) * CTX_SNAP;
+      candidate = Math.max(CTX_MIN, candidate);
+      if (verified !== null && candidate <= verified) break;
+    }
+  }
+  const answer = verified;
+  speedLineCache.set(key, answer);
+  return answer;
 }

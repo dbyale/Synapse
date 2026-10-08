@@ -170,16 +170,18 @@ export const DRY_SEQUENCE_BREAKERS_TOOLTIP = [
 // ── Performance / Optimizer ──
 
 export const OPTIMIZATION_MODE_TOOLTIP = [
-  'Longest Context: automatically optimizes for the largest possible context window.',
-  'Most GPU: automatically offloads as many layers as possible to the GPU for maximum speed.',
-  'Custom: allows manual control over GPU layers and context size.',
+  'Synapse Optimizer: pick a context size and the optimizer offloads as many layers as the hardware allows for exactly that size.',
+  'Manual: set GPU layers and context size yourself.',
 ];
 
-export const LONGEST_CONTEXT_TOOLTIP =
-  'Runs the auto-optimizer to find settings that maximize the context window size while staying within hardware limits.';
+export const SYNAPSE_OPTIMIZER_TOOLTIP =
+  'Runs the optimizer for the context size on the slider: maximum GPU layers (and tensor placement) for exactly that size.';
 
-export const MOST_GPU_TOOLTIP =
-  'Runs the auto-optimizer to offload as many layers as possible to the GPU, prioritizing inference speed.';
+export const MAX_SPEED_LINE_TOOLTIP = [
+  'Maximum Speed: at or below this context size the full model stays on the GPU — the fastest configuration.',
+  'Above it, layer parts start spilling to CPU/RAM: still runs, but slower.',
+  'Measured on your hardware with your current settings; moves when budgets or memory options change.',
+];
 
 export const CUSTOM_TOOLTIP =
   'Switch to manual mode to independently adjust GPU layers and context size.';
@@ -205,7 +207,7 @@ export const KV_CACHE_OFFLOAD_TOOLTIP = [
 export const GPU_LAYERS_AUTO_TOOLTIP = [
   'Lets llama-server decide how many layers to offload to the GPU based on available VRAM at startup.',
   'This option may be helpful for systems that frequently change GPUs.',
-  'For the best results on most systems, use "Longest Context" or "Most GPU" modes for quick decisions.',
+  'For the best results on most systems, use the "Synapse Optimizer" mode for quick decisions.',
 ];
 
 export const K_CACHE_TYPE_TOOLTIP = [

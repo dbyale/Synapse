@@ -87,7 +87,9 @@ export interface Profile {
   tensorOverrides?: string | null;
   contextShift?: ContextShiftSettings;
   contextSize?: number;
-  autoOptimizer?: 'longest-context' | 'most-gpu' | 'custom';
+  // 'synapse': pick context, the optimizer picks layers. Anything else
+  // stored (legacy longest-context/most-gpu) falls through to synapse.
+  autoOptimizer?: 'synapse' | 'custom';
   kvOffload?: boolean;
   flashAttn?: 'on' | 'off' | 'auto';
   cacheTypeK?: CacheType;

@@ -29,6 +29,7 @@ import {
   getOrRunOptimizer,
   getOrEstimateMemory,
   getModelMetadata,
+  maxFullOffloadCtx,
 } from './estimator';
 import { registerExtensionIpcHandlers } from './ipcExtensions';
 import { getBackendInfo } from './backendInfo';
@@ -816,7 +817,8 @@ export function registerIpcHandlers(win: BrowserWindow): void {
         modelFolder: string;
         modelFilename: string;
         projectorFilename?: string;
-        mode: 'longest-context' | 'most-gpu';
+        mode: 'synapse';
+        ctx: number;
         kvOffload?: boolean;
         flashAttn?: 'on' | 'off' | 'auto';
         mmap?: boolean;
@@ -857,7 +859,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
         modelPath,
         vramMB,
         ramMB,
-        params.mode === 'most-gpu',
+        params.ctx,
         projectorPath,
         params,
       );
@@ -867,9 +869,64 @@ export function registerIpcHandlers(win: BrowserWindow): void {
         ctx: result.ctx,
         tensorSplit: result.tensorSplit ?? null,
         tensorOverrides: result.tensorOverrides ?? null,
+        hostOverflowBytes: result.hostOverflowBytes ?? 0,
         vramMB,
         ramMB,
       };
+    },
+  );
+
+  ipcMain.handle(
+    'profile:maxSpeedCtx',
+    async (
+      _event,
+      params: {
+        modelAuthor: string;
+        modelFolder: string;
+        modelFilename: string;
+        projectorFilename?: string;
+        kvOffload?: boolean;
+        flashAttn?: 'on' | 'off' | 'auto';
+        mmap?: boolean;
+        mlock?: boolean;
+        repack?: boolean;
+        cacheTypeK?: CacheType;
+        cacheTypeV?: CacheType;
+        parallel?: number;
+        cpuMoe?: boolean;
+        nCpuMoe?: number;
+        mmprojOffload?: boolean;
+        imageMinTokens?: number;
+        imageMaxTokens?: number;
+        mtmdBatchMaxTokens?: number;
+      },
+    ) => {
+      const settings = loadSettings();
+      const vramMB = settings.allocatedVRAM ?? 4096;
+      const modelsDir = getModelsDirectory();
+      const modelPath = path.join(
+        modelsDir,
+        params.modelAuthor,
+        params.modelFolder,
+        params.modelFilename,
+      );
+      const projectorPath = params.projectorFilename
+        ? path.join(
+            modelsDir,
+            params.modelAuthor,
+            params.modelFolder,
+            'projectors',
+            params.projectorFilename,
+          )
+        : undefined;
+
+      const maxSpeedCtx = await maxFullOffloadCtx(
+        modelPath,
+        vramMB,
+        projectorPath,
+        params,
+      );
+      return { maxSpeedCtx };
     },
   );
 

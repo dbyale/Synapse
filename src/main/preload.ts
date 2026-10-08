@@ -318,7 +318,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     modelFolder: string;
     modelFilename: string;
     projectorFilename?: string;
-    mode: 'longest-context' | 'most-gpu';
+    mode: 'synapse';
+    ctx: number;
     kvOffload?: boolean;
     flashAttn?: 'on' | 'off' | 'auto';
     mmap?: boolean;
@@ -338,9 +339,32 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ctx: number;
     tensorSplit: string | null;
     tensorOverrides: string | null;
+    hostOverflowBytes: number;
     vramMB: number;
     ramMB: number;
   }> => ipcRenderer.invoke('profile:runOptimizer', params),
+
+  maxSpeedCtx: (params: {
+    modelAuthor: string;
+    modelFolder: string;
+    modelFilename: string;
+    projectorFilename?: string;
+    kvOffload?: boolean;
+    flashAttn?: 'on' | 'off' | 'auto';
+    mmap?: boolean;
+    mlock?: boolean;
+    repack?: boolean;
+    cacheTypeK?: string;
+    cacheTypeV?: string;
+    parallel?: number;
+    cpuMoe?: boolean;
+    nCpuMoe?: number;
+    mmprojOffload?: boolean;
+    imageMinTokens?: number;
+    imageMaxTokens?: number;
+    mtmdBatchMaxTokens?: number;
+  }): Promise<{ maxSpeedCtx: number | null }> =>
+    ipcRenderer.invoke('profile:maxSpeedCtx', params),
 
   estimateMemory: (params: {
     modelAuthor: string;

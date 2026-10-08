@@ -12,7 +12,7 @@ import type { ContextShiftSettings, Profile } from '../renderer/types/profile';
 import { DEFAULT_CONTEXT_SHIFT } from '../renderer/types/profile';
 // eslint-disable-next-line import/no-cycle
 import { createChatFunctions } from './chatFunctions';
-import { solveMaxConfig, getOrRunOptimizer } from './estimator';
+import { getOrRunOptimizer, FitCancelledError } from './estimator';
 import { addTokenUsage, addWebSearch, getUsage } from './usage';
 import type { UsageStore } from '../renderer/utils/usage';
 import * as store from './sessionStore';
@@ -1326,22 +1326,33 @@ export async function loadProfile(
           memory: null,
         };
       } else {
-        const mode =
-          autoOptimizer && autoOptimizer !== 'custom'
-            ? autoOptimizer
-            : 'longest-context';
+        // Single Synapse Optimizer: the user picks ctx (profile.contextSize),
+        // the fitter picks layers (+triple) for exactly that ctx.
+        const mode = 'synapse';
+        const requestedCtx =
+          typeof (profile as any).contextSize === 'number'
+            ? (profile as any).contextSize
+            : 4096;
         onStatus?.({
           phase: 'solving',
           message: `Optimizing Profile "${profile.name}"…`,
         });
-        const optResult = await getOrRunOptimizer(
-          fullModelPath,
-          vramMB,
-          ramMB,
-          mode === 'most-gpu',
-          fullProjectorPath,
-          profile,
-        );
+        let optResult;
+        try {
+          optResult = await getOrRunOptimizer(
+            fullModelPath,
+            vramMB,
+            ramMB,
+            requestedCtx,
+            fullProjectorPath,
+            profile,
+          );
+        } catch (e) {
+          if (e instanceof FitCancelledError) {
+            throw new Error('Profile load superseded by a newer request');
+          }
+          throw e;
+        }
         result = optResult;
         (profile as any).layers = optResult.ngl;
         (profile as any).contextSize = optResult.ctx;
