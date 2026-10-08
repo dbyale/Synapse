@@ -283,6 +283,18 @@ export const RESOURCE_ALLOCATION_TOOLTIP = [
   'Manual: reserve fixed RAM and VRAM budgets with the sliders below. Switching modes re-optimizes profiles.',
 ];
 
+export const ESTIMATOR_TIMEOUT_TOOLTIP = [
+  'Wall-clock budget in seconds for a single estimator run (llama-fit-params).',
+  'Covers model measuring and fitting, including multi-probe searches. Applies to future runs.',
+  'Default: 100.',
+];
+
+export const SERVER_TIMEOUT_TOOLTIP = [
+  'Wall-clock budget in seconds for a model load: how long to wait for llama-server to become ready.',
+  'Very large models can take minutes. Applies to future loads.',
+  'Default: 200.',
+];
+
 export const MEMORY_ALLOCATOR_TOOLTIP = [
   'Controls how much RAM and VRAM Synapse is allowed to reserve for the inference engine.',
   'Setting this too high may cause system instability or out-of-memory errors.',

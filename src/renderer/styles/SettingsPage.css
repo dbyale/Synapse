@@ -79,6 +79,18 @@
   border-color: var(--accent);
 }
 
+/* Plain numeric entry (e.g. timeouts): no spinner arrows. */
+.settings-input--no-spinner::-webkit-outer-spin-button,
+.settings-input--no-spinner::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.settings-input--no-spinner {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
 .settings-icon-btn {
   width: 42px; /* Matched to new taller input height */
   height: 42px;

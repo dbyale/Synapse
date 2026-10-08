@@ -74,6 +74,8 @@ export interface AppSettings {
   resourceAllocation?: 'automatic' | 'manual';
   allocatedVRAM?: number;
   allocatedRAM?: number;
+  estimatorTimeoutSec?: number;
+  serverTimeoutSec?: number;
   autoOpenThinking?: boolean;
   autoCloseThinkingDone?: boolean;
   host?: string;

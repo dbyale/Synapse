@@ -15,6 +15,9 @@ export interface AppSettings {
   resourceAllocation?: 'automatic' | 'manual';
   allocatedVRAM?: number;
   allocatedRAM?: number;
+  // Wall-clock budgets in seconds. Absent = built-in defaults.
+  estimatorTimeoutSec?: number;
+  serverTimeoutSec?: number;
   autoOpenThinking?: boolean;
   autoCloseThinkingDone?: boolean;
   host?: string;

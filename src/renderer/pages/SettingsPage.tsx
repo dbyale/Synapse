@@ -15,6 +15,8 @@ import {
   MODELS_DIR_TOOLTIP,
   BACKEND_DIR_TOOLTIP,
   RESOURCE_ALLOCATION_TOOLTIP,
+  ESTIMATOR_TIMEOUT_TOOLTIP,
+  SERVER_TIMEOUT_TOOLTIP,
   MEMORY_ALLOCATOR_TOOLTIP,
   MAX_LABEL_TOOLTIP,
   RAM_LABEL_TOOLTIP,
@@ -34,6 +36,7 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import '../styles/SettingsPage.css';
 import { MemorySlider } from '../components/settingsShared/MemorySlider';
 import { useHardwareStats } from '../components/settingsShared/useHardwareStats';
+import { normalizeTimeoutSec } from '../components/settingsShared/useSettingsBuffer';
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
@@ -85,6 +88,14 @@ export default function SettingsPage() {
           resourceAllocation: loaded?.resourceAllocation ?? 'automatic',
           allocatedRAM: loaded?.allocatedRAM,
           allocatedVRAM: loaded?.allocatedVRAM,
+          estimatorTimeoutSec: normalizeTimeoutSec(
+            loaded?.estimatorTimeoutSec,
+            100,
+          ),
+          serverTimeoutSec: normalizeTimeoutSec(
+            loaded?.serverTimeoutSec,
+            200,
+          ),
           autoOpenThinking: loaded?.autoOpenThinking ?? true,
           autoCloseThinkingDone: loaded?.autoCloseThinkingDone ?? true,
           corsOrigins: loaded?.corsOrigins ?? 'localhost',
@@ -204,6 +215,13 @@ export default function SettingsPage() {
   };
 
   const allocMode = settings?.resourceAllocation ?? 'automatic';
+
+  // Timeout inputs in seconds: any positive number allowed, fall back to
+  // the default for garbage/empty/non-positive input.
+  const timeoutOrDefault = (value: number | undefined, fallback: number) => {
+    if (!Number.isFinite(value) || (value as number) <= 0) return fallback;
+    return Math.floor(value as number);
+  };
 
   const handleAllocationMode = (mode: 'automatic' | 'manual') => {
     if (!settings || mode === allocMode) return;
@@ -675,6 +693,108 @@ export default function SettingsPage() {
                 }}
               >
                 <div className="epm-toggle-switch__knob" />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {tab === 'server' && (
+        <div className="settings-card">
+          <h2 className="settings-card-title">Timeouts</h2>
+          <p
+            style={{
+              fontSize: '14px',
+              color: 'var(--text-secondary)',
+              marginBottom: '20px',
+              lineHeight: 1.5,
+            }}
+          >
+            Wall-clock budgets in seconds. Applies to future estimator runs
+            and model loads; already-running processes are not affected.
+          </p>
+
+          <div className="settings-field">
+            <div
+              style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}
+            >
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="epm-section__label">
+                  Estimator Timeout (Seconds)
+                </div>
+                <InfoTooltip
+                  content={ESTIMATOR_TIMEOUT_TOOLTIP}
+                  side="bottom"
+                  stretch
+                  className="info-tooltip-stretch--col"
+                  title="Estimator Timeout (Seconds)"
+                >
+                  <input
+                    type="number"
+                    className="settings-input settings-input--no-spinner"
+                    value={settings.estimatorTimeoutSec?.toString() ?? ''}
+                    onChange={(e) =>
+                      setSettings((prev) =>
+                        prev
+                          ? {
+                              ...prev,
+                              estimatorTimeoutSec:
+                                parseInt(e.target.value, 10) || 100,
+                            }
+                          : prev,
+                      )
+                    }
+                    onBlur={() =>
+                      triggerSave({
+                        estimatorTimeoutSec: timeoutOrDefault(
+                          settings.estimatorTimeoutSec,
+                          100,
+                        ),
+                      })
+                    }
+                    placeholder="100"
+                    style={{ marginTop: '8px' }}
+                  />
+                </InfoTooltip>
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="epm-section__label">
+                  Server Timeout (Seconds)
+                </div>
+                <InfoTooltip
+                  content={SERVER_TIMEOUT_TOOLTIP}
+                  side="bottom"
+                  stretch
+                  className="info-tooltip-stretch--col"
+                  title="Server Timeout (Seconds)"
+                >
+                  <input
+                    type="number"
+                    className="settings-input settings-input--no-spinner"
+                    value={settings.serverTimeoutSec?.toString() ?? ''}
+                    onChange={(e) =>
+                      setSettings((prev) =>
+                        prev
+                          ? {
+                              ...prev,
+                              serverTimeoutSec:
+                                parseInt(e.target.value, 10) || 200,
+                            }
+                          : prev,
+                      )
+                    }
+                    onBlur={() =>
+                      triggerSave({
+                        serverTimeoutSec: timeoutOrDefault(
+                          settings.serverTimeoutSec,
+                          200,
+                        ),
+                      })
+                    }
+                    placeholder="200"
+                    style={{ marginTop: '8px' }}
+                  />
+                </InfoTooltip>
               </div>
             </div>
           </div>

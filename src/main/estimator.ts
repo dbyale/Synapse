@@ -30,9 +30,16 @@ export interface MemoryEstimation {
 }
 
 const MiB = 1024 * 1024;
-const FIT_TIMEOUT_MS = 180000;
 const CTX_SNAP = 512;
 const CTX_MIN = 512;
+
+// Wall-clock budget for a single fit-process run, from settings
+// (estimatorTimeoutSec, default 100s). Read fresh per invocation so a
+// settings change applies to the next run without a restart.
+function fitTimeoutMs(): number {
+  const sec = loadSettings().estimatorTimeoutSec ?? 100;
+  return (Number.isFinite(sec) && sec > 0 ? sec : 100) * 1000;
+}
 
 // Developer mode: full fit results are dumped to the main-process console.
 // Same check as the app menu (menu.ts) so it holds under `npm start` and
@@ -352,6 +359,7 @@ async function runFit(
       if (rec) rec.child = null;
       fn();
     };
+    const timeoutMs = fitTimeoutMs();
     const timer = setTimeout(() => {
       timedOut = true;
       try {
@@ -359,7 +367,7 @@ async function runFit(
       } catch {
         // Already exited.
       }
-    }, FIT_TIMEOUT_MS);
+    }, timeoutMs);
     const child = spawn(fitPath, args);
     if (rec) rec.child = child;
     child.stdout?.on('data', (d: Buffer) => {
@@ -381,7 +389,7 @@ async function runFit(
           reject(
             fitFailure(
               args,
-              `timed out after ${FIT_TIMEOUT_MS}ms`,
+              `timed out after ${timeoutMs}ms (estimator timeout setting)`,
               stderr.slice(-4000),
             ),
           ),

@@ -1550,9 +1550,14 @@ export async function loadProfile(
       });
 
       let ready = false;
-      // Wall-clock budget for the server to become ready. Huge models
-      // (100B+ params) can legitimately take minutes while still loading.
-      const STARTUP_WAIT_SEC = 120;
+      // Wall-clock budget for the server to become ready, from settings
+      // (serverTimeoutSec, default 200s). Huge models (100B+ params) can
+      // legitimately take minutes while still loading.
+      const startupTimeoutSec = (() => {
+        const sec = settings.serverTimeoutSec ?? 200;
+        return Number.isFinite(sec) && sec > 0 ? Math.floor(sec) : 200;
+      })();
+      const STARTUP_WAIT_SEC = startupTimeoutSec;
       for (let i = 0; i < STARTUP_WAIT_SEC; i++) {
         // Abort immediately if server was shut down while still loading (all phases).
         // An unexpected exit (crash) surfaces the friendly preset or stderr
