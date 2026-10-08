@@ -18,6 +18,7 @@ export function useSettingsBuffer() {
       selectedBackend: loaded?.selectedBackend ?? 'Default',
       openvinoDevice: loaded?.openvinoDevice ?? 'CPU',
       openvinoStateful: loaded?.openvinoStateful ?? false,
+      resourceAllocation: loaded?.resourceAllocation ?? 'automatic',
       allocatedRAM: loaded?.allocatedRAM,
       allocatedVRAM: loaded?.allocatedVRAM,
       autoOpenThinking: loaded?.autoOpenThinking ?? true,

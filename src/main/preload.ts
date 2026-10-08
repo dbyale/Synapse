@@ -340,8 +340,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     tensorSplit: string | null;
     tensorOverrides: string | null;
     hostOverflowBytes: number;
-    vramMB: number;
-    ramMB: number;
+    vramMB?: number;
+    ramMB?: number;
   }> => ipcRenderer.invoke('profile:runOptimizer', params),
 
   maxSpeedCtx: (params: {

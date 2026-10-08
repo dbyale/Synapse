@@ -12,7 +12,11 @@ import type { ContextShiftSettings, Profile } from '../renderer/types/profile';
 import { DEFAULT_CONTEXT_SHIFT } from '../renderer/types/profile';
 // eslint-disable-next-line import/no-cycle
 import { createChatFunctions } from './chatFunctions';
-import { getOrRunOptimizer, FitCancelledError } from './estimator';
+import {
+  getOrRunOptimizer,
+  FitCancelledError,
+  resolveBudgets,
+} from './estimator';
 import { addTokenUsage, addWebSearch, getUsage } from './usage';
 import type { UsageStore } from '../renderer/utils/usage';
 import * as store from './sessionStore';
@@ -1274,8 +1278,7 @@ export async function loadProfile(
       const { backendFolder, serverPath } = await resolveBackend(settings);
       console.log(`Backend: ${backendFolder}`);
 
-      const vramMB = settings.allocatedVRAM ?? 4096;
-      const ramMB = settings.allocatedRAM ?? 8192;
+      const { mode: budgetMode, vramMB, ramMB } = resolveBudgets(settings);
 
       const fullProjectorPath = profile.projector
         ? path.join(getModelsDirectory(), profile.projector)
@@ -1295,13 +1298,19 @@ export async function loadProfile(
         autoOptimizer === 'custom' &&
         typeof (profile as any).layers === 'number' &&
         typeof (profile as any).contextSize === 'number';
+      // Manual mode pins fixed budgets and caches the solution; automatic
+      // fits live free memory, so it always re-solves on load rather than
+      // trusting a possibly-stale cached placement.
+      const budgetsMatch =
+        (profile as any).allocatedVRAM === vramMB &&
+        (profile as any).allocatedRAM === ramMB;
       const hasValidCached =
+        budgetMode !== 'automatic' &&
         autoOptimizer &&
         autoOptimizer !== 'custom' &&
         typeof (profile as any).layers === 'number' &&
         typeof (profile as any).contextSize === 'number' &&
-        (profile as any).allocatedVRAM === vramMB &&
-        (profile as any).allocatedRAM === ramMB &&
+        budgetsMatch &&
         // Triple-aware caches only: profiles optimized before -ts/-ot
         // forwarding existed carry no triple and must re-solve once.
         'tensorSplit' in (profile as any) &&
@@ -1357,8 +1366,15 @@ export async function loadProfile(
         (profile as any).layers = optResult.ngl;
         (profile as any).contextSize = optResult.ctx;
         (profile as any).autoOptimizer = mode;
-        (profile as any).allocatedVRAM = vramMB;
-        (profile as any).allocatedRAM = ramMB;
+        // Automatic mode stores no fixed budgets; stamping them would fake
+        // a manual cache hit later.
+        if (budgetMode === 'manual') {
+          (profile as any).allocatedVRAM = vramMB;
+          (profile as any).allocatedRAM = ramMB;
+        } else {
+          delete (profile as any).allocatedVRAM;
+          delete (profile as any).allocatedRAM;
+        }
         (profile as any).tensorSplit = optResult.tensorSplit ?? null;
         (profile as any).tensorOverrides = optResult.tensorOverrides ?? null;
         updatedProfile = { ...profile };

@@ -14,6 +14,7 @@ import InfoTooltip from '../components/InfoTooltip';
 import {
   MODELS_DIR_TOOLTIP,
   BACKEND_DIR_TOOLTIP,
+  RESOURCE_ALLOCATION_TOOLTIP,
   MEMORY_ALLOCATOR_TOOLTIP,
   MAX_LABEL_TOOLTIP,
   RAM_LABEL_TOOLTIP,
@@ -68,6 +69,7 @@ export default function SettingsPage() {
     let mounted = true;
 
     async function init() {
+      let initialMode: 'automatic' | 'manual' = 'automatic';
       try {
         const loaded = await window.electronAPI.loadSettings();
         if (!mounted) return;
@@ -80,6 +82,7 @@ export default function SettingsPage() {
           selectedBackend: loaded?.selectedBackend ?? 'Default',
           openvinoDevice: loaded?.openvinoDevice ?? 'CPU',
           openvinoStateful: loaded?.openvinoStateful ?? false,
+          resourceAllocation: loaded?.resourceAllocation ?? 'automatic',
           allocatedRAM: loaded?.allocatedRAM,
           allocatedVRAM: loaded?.allocatedVRAM,
           autoOpenThinking: loaded?.autoOpenThinking ?? true,
@@ -106,6 +109,7 @@ export default function SettingsPage() {
         };
 
         setSettings(normalized);
+        initialMode = normalized.resourceAllocation ?? 'automatic';
       } catch {
         // Silently fail
       }
@@ -114,7 +118,11 @@ export default function SettingsPage() {
         // Detect RAM/VRAM in background — do not block page/tab rendering.
         // The RAM bar shows "Detecting hardware…" via ramLoading until resolved.
         // VRAM bar stays hidden until resolved (see showVramSection).
-        fetchHardware().catch(() => {});
+        // Skipped entirely under automatic allocation: the sliders are
+        // unrendered and the fit measures live memory itself.
+        if (initialMode === 'manual') {
+          fetchHardware().catch(() => {});
+        }
       }
     }
 
@@ -130,21 +138,38 @@ export default function SettingsPage() {
 
     setSaveStatus('saving');
     try {
+      // Automatic mode stores no fixed budgets. In manual mode, slider
+      // state is only sourced once probed (total > 0) — never persist
+      // empty-slider zeros over stored allocations.
+      const manual =
+        (overrides.resourceAllocation ??
+          settings.resourceAllocation ??
+          'automatic') === 'manual';
       const payload: AppSettings = {
         ...settings,
-        allocatedRAM: ramStats.appAllocated,
         ...overrides,
       };
 
-      if (vramStats.total > 0) {
-        payload.allocatedVRAM =
-          overrides.allocatedVRAM ?? vramStats.appAllocated;
-      } else {
+      if (!manual) {
         delete payload.allocatedVRAM;
+        delete payload.allocatedRAM;
+      } else {
+        if (ramStats.total > 0) {
+          payload.allocatedRAM =
+            overrides.allocatedRAM ?? ramStats.appAllocated;
+        }
+        if (vramStats.total > 0) {
+          payload.allocatedVRAM =
+            overrides.allocatedVRAM ?? vramStats.appAllocated;
+        } else {
+          delete payload.allocatedVRAM;
+        }
       }
 
       const isMemChange =
-        'allocatedRAM' in overrides || 'allocatedVRAM' in overrides;
+        'allocatedRAM' in overrides ||
+        'allocatedVRAM' in overrides ||
+        'resourceAllocation' in overrides;
       let shouldPrompt = false;
       if (isMemChange) {
         const currentProfile = await window.electronAPI.chatGetCurrentProfile();
@@ -176,6 +201,17 @@ export default function SettingsPage() {
     } catch {
       setSaveStatus('idle');
     }
+  };
+
+  const allocMode = settings?.resourceAllocation ?? 'automatic';
+
+  const handleAllocationMode = (mode: 'automatic' | 'manual') => {
+    if (!settings || mode === allocMode) return;
+    setSettings({ ...settings, resourceAllocation: mode });
+    // Probing is skipped under automatic: fetch on entering manual so the
+    // freshly mounted sliders have hardware data.
+    if (mode === 'manual') fetchHardware().catch(() => {});
+    triggerSave({ resourceAllocation: mode });
   };
 
   const handleRestartNow = async () => {
@@ -282,31 +318,73 @@ export default function SettingsPage() {
               <h2 className="settings-card-title">System Resource Allocator</h2>
             </InfoTooltip>
 
-            <MemorySlider
-              title={ramTitle}
-              stats={ramStats}
-              onChange={(newVal) =>
-                setRamStats((prev) => ({ ...prev, appAllocated: newVal }))
-              }
-              onSave={(newVal) => triggerSave({ allocatedRAM: newVal })}
-              onRefresh={fetchHardware}
-              loading={ramLoading}
-              unavailableMessage="RAM information unavailable"
-            />
+            <InfoTooltip
+              content={RESOURCE_ALLOCATION_TOOLTIP}
+              side="right"
+              hideIcon
+              title="Resource Allocation"
+            >
+              <div
+                className="settings-alloc-toggle"
+                role="group"
+                aria-label="Resource allocation mode"
+              >
+                <button
+                  type="button"
+                  className={`settings-alloc-btn${allocMode === 'automatic' ? ' settings-alloc-btn--active' : ''}`}
+                  onClick={() => handleAllocationMode('automatic')}
+                >
+                  Automatic
+                </button>
+                <button
+                  type="button"
+                  className={`settings-alloc-btn${allocMode === 'manual' ? ' settings-alloc-btn--active' : ''}`}
+                  onClick={() => handleAllocationMode('manual')}
+                >
+                  Manual
+                </button>
+              </div>
+            </InfoTooltip>
+            <p className="settings-alloc-hint">
+              {allocMode === 'automatic'
+                ? 'Fits models to live free memory via llama.cpp — no fixed budgets.'
+                : 'Reserve fixed RAM and VRAM budgets with the sliders below.'}
+            </p>
 
-            {showVramSection ? (
-              <MemorySlider
-                title={vramTitle}
-                stats={vramStats}
-                onChange={(newVal) =>
-                  setVramStats((prev) => ({ ...prev, appAllocated: newVal }))
-                }
-                onSave={(newVal) => triggerSave({ allocatedVRAM: newVal })}
-                onRefresh={fetchHardware}
-                loading={gpuLoading}
-                unavailableMessage="GPU memory information unavailable"
-              />
-            ) : null}
+            {allocMode === 'manual' && (
+              <>
+                <MemorySlider
+                  title={ramTitle}
+                  stats={ramStats}
+                  onChange={(newVal) =>
+                    setRamStats((prev) => ({ ...prev, appAllocated: newVal }))
+                  }
+                  onSave={(newVal) => triggerSave({ allocatedRAM: newVal })}
+                  onRefresh={fetchHardware}
+                  loading={ramLoading}
+                  unavailableMessage="RAM information unavailable"
+                />
+
+                {showVramSection ? (
+                  <MemorySlider
+                    title={vramTitle}
+                    stats={vramStats}
+                    onChange={(newVal) =>
+                      setVramStats((prev) => ({
+                        ...prev,
+                        appAllocated: newVal,
+                      }))
+                    }
+                    onSave={(newVal) =>
+                      triggerSave({ allocatedVRAM: newVal })
+                    }
+                    onRefresh={fetchHardware}
+                    loading={gpuLoading}
+                    unavailableMessage="GPU memory information unavailable"
+                  />
+                ) : null}
+              </>
+            )}
           </div>
 
           <div className="settings-card">

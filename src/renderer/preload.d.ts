@@ -71,6 +71,7 @@ export interface AppSettings {
   selectedBackend: string;
   openvinoDevice?: 'CPU' | 'GPU' | 'NPU';
   openvinoStateful?: boolean;
+  resourceAllocation?: 'automatic' | 'manual';
   allocatedVRAM?: number;
   allocatedRAM?: number;
   autoOpenThinking?: boolean;
@@ -419,8 +420,9 @@ declare global {
         tensorSplit: string | null;
         tensorOverrides: string | null;
         hostOverflowBytes: number;
-        vramMB: number;
-        ramMB: number;
+        // Undefined in automatic mode (no fixed budgets).
+        vramMB?: number;
+        ramMB?: number;
       }>;
 
       maxSpeedCtx: (params: {

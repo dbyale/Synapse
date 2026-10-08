@@ -278,6 +278,11 @@ export const MODELS_DIR_TOOLTIP =
 export const BACKEND_DIR_TOOLTIP =
   'Directory where the llama.cpp backends (CUDA, Vulkan, CPU) are downloaded and extracted. Defaults to a folder next to the Models Directory.';
 
+export const RESOURCE_ALLOCATION_TOOLTIP = [
+  'Automatic: fit models to live free memory via llama.cpp — no fixed budgets, no sliders.',
+  'Manual: reserve fixed RAM and VRAM budgets with the sliders below. Switching modes re-optimizes profiles.',
+];
+
 export const MEMORY_ALLOCATOR_TOOLTIP = [
   'Controls how much RAM and VRAM Synapse is allowed to reserve for the inference engine.',
   'Setting this too high may cause system instability or out-of-memory errors.',

@@ -10,6 +10,9 @@ export interface AppSettings {
   selectedBackend: string;
   openvinoDevice?: 'CPU' | 'GPU' | 'NPU';
   openvinoStateful?: boolean;
+  // 'automatic': fit to live free memory (llama.cpp defaults), sliders hidden.
+  // 'manual': reserve fixed budgets via the memory sliders. Absent = automatic.
+  resourceAllocation?: 'automatic' | 'manual';
   allocatedVRAM?: number;
   allocatedRAM?: number;
   autoOpenThinking?: boolean;
@@ -153,9 +156,13 @@ export function saveSettings(
   // Notify listeners only when memory settings actually changed
   const vramChanged = previous?.allocatedVRAM !== settings.allocatedVRAM;
   const ramChanged = previous?.allocatedRAM !== settings.allocatedRAM;
-  if (vramChanged || ramChanged) {
+  const modeChanged =
+    (previous?.resourceAllocation ?? 'automatic') !==
+    (settings.resourceAllocation ?? 'automatic');
+  if (vramChanged || ramChanged || modeChanged) {
     console.log(
       `[Settings] Memory settings changed — ` +
+        `mode: ${previous?.resourceAllocation ?? 'automatic'} → ${settings.resourceAllocation ?? 'automatic'}, ` +
         `VRAM: ${previous?.allocatedVRAM ?? '?'} → ${settings.allocatedVRAM ?? '?'} MB, ` +
         `RAM: ${previous?.allocatedRAM ?? '?'} → ${settings.allocatedRAM ?? '?'} MB`,
     );

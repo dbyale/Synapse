@@ -1,7 +1,9 @@
 import { execFile, spawn, ChildProcess } from 'child_process';
 import { promisify } from 'util';
 import fs from 'fs';
+import os from 'os';
 import { loadSettings } from './settings';
+import type { AppSettings } from './settings';
 import { resolveFitBinary } from './backendPaths';
 import type { Profile } from '../renderer/types/profile';
 
@@ -513,9 +515,15 @@ async function getDeviceTotals(
 // --device so margin order matches the fitter's device order.
 async function computeFitMargins(
   fitPath: string,
-  vramMB: number,
+  vramMB: number | undefined,
   usedNames: string[],
 ): Promise<number[]> {
+  // Automatic allocation (no cap): flat llama.cpp default margin per device —
+  // fit purely to live free memory.
+  if (vramMB === undefined) {
+    const n = Math.max(1, usedNames.length);
+    return Array.from({ length: n }, () => 1024 * MiB);
+  }
   const allocated = vramMB * MiB;
   const all = await getDeviceTotals(fitPath);
   const byName = new Map(all.map((d) => [d.name, d.total]));
@@ -541,6 +549,27 @@ async function computeFitMargins(
 
 function marginsForCli(margins: number[]): string {
   return margins.map((m) => String(Math.round(m / MiB))).join(',');
+}
+
+export interface ResolvedBudgets {
+  mode: 'automatic' | 'manual';
+  // Undefined in automatic mode: fit to live free memory (flat 1024 MiB
+  // margins) with no fixed caps. Defined in manual mode from the sliders.
+  vramMB?: number;
+  ramMB?: number;
+}
+
+// Single translation from stored settings to optimizer budgets, shared by
+// the runOptimizer/maxSpeedCtx IPC handlers and chat loadProfile.
+export function resolveBudgets(settings: AppSettings): ResolvedBudgets {
+  if ((settings.resourceAllocation ?? 'automatic') === 'automatic') {
+    return { mode: 'automatic', vramMB: undefined, ramMB: undefined };
+  }
+  return {
+    mode: 'manual',
+    vramMB: settings.allocatedVRAM ?? 4096,
+    ramMB: settings.allocatedRAM ?? 8192,
+  };
 }
 
 // ── Minimal GGUF header reader (replaces parser metadata) ──
@@ -762,7 +791,7 @@ interface FitPrep {
 
 async function prepareFit(
   modelPath: string,
-  vramMB: number,
+  vramMB: number | undefined,
   projectorPath: string | undefined,
   profile: Partial<Profile>,
   discoveryCtx: number,
@@ -805,7 +834,10 @@ async function prepareFit(
     total:
       byName.get(usedNames[i]) ??
       deviceTotals[i]?.total ??
-      margin + vramMB * MiB,
+      // Last resort when totals are unknown: manual assumes the margin
+      // leaves the requested budget usable; automatic (no budget) does not
+      // gate on VRAM at all.
+      (vramMB !== undefined ? margin + vramMB * MiB : Number.POSITIVE_INFINITY),
     margin,
   }));
   return {
@@ -825,14 +857,21 @@ async function prepareFit(
 export async function fitLayersForContext(
   modelPath: string,
   ctxInput: number,
-  vramMB: number,
-  ramMB: number,
+  vramMB: number | undefined,
+  ramMB: number | undefined,
   projectorPath?: string,
   profile: Partial<Profile> = {},
   runId?: number,
 ): Promise<MemoryEstimation> {
   /* eslint-enable default-param-last */
-  const ramLimitBytes = ramMB * MiB;
+  // Automatic mode (no caps): overflow is measured against total physical
+  // RAM — the only true SSD-spill signal when nothing is reserved.
+  const totalSystemRAM = os.totalmem();
+  const ramLimitBytes = ramMB !== undefined ? ramMB * MiB : totalSystemRAM;
+  const ramBudgetLabel =
+    ramMB !== undefined
+      ? `${(ramMB / 1024).toFixed(2)} GB allocated`
+      : `${(totalSystemRAM / 1024 ** 3).toFixed(2)} GB total system RAM`;
 
   const prep = await prepareFit(
     modelPath,
@@ -929,6 +968,10 @@ export async function fitLayersForContext(
   const modelVram = sumDev(modelOnly);
   const modelRam = sumHost(modelOnly);
   const toGB = (bytes: number) => `${(bytes / 1024 ** 3).toFixed(2)} GB`;
+  const vramDisplay =
+    vramMB !== undefined
+      ? `${(vramMB / 1024).toFixed(2)} GB allocated`
+      : `${(budgets.reduce((a, b) => a + b.total, 0) / 1024 ** 3).toFixed(2)} GB total device`;
 
   // Host overflow spills to SSD swap: still runs, just slower. Warn (always,
   // all environments) instead of refusing or silently degrading.
@@ -936,7 +979,7 @@ export async function fitLayersForContext(
   if (hostOverflowBytes > 0) {
     console.warn(
       `[fit-estimator] ctx ${ctx} needs ${toGB(totalRam)} host memory vs ` +
-        `${toGB(ramLimitBytes)} allocated — overflow will spill to SSD swap. ` +
+        `${ramBudgetLabel} — overflow will spill to SSD swap. ` +
         `It will still run, but slower.`,
     );
   }
@@ -953,8 +996,8 @@ Memory Breakdown:
 - Context RAM (KV Cache): ${toGB(Math.max(0, totalRam - modelRam))}
 
 Hardware Utilization:
-- VRAM: ${toGB(totalVram)} / ${(vramMB / 1024).toFixed(2)} GB
-- RAM:  ${toGB(totalRam)} / ${(ramMB / 1024).toFixed(2)} GB (${toGB(hostOverflowBytes)} over budget)
+- VRAM: ${toGB(totalVram)} / ${vramDisplay}
+- RAM:  ${toGB(totalRam)} / ${ramBudgetLabel} (${toGB(hostOverflowBytes)} over budget)
 ----------------------------------
 `);
   }
@@ -1186,21 +1229,23 @@ const activeOptimizations = new Map<
 
 function optimizerCacheKey(
   modelPath: string,
-  vramMB: number,
-  ramMB: number,
+  vramMB: number | undefined,
+  ramMB: number | undefined,
   ctx: number,
   projectorPath?: string,
   profile: Partial<Profile> = {},
 ): string {
-  return `${modelPath}|${vramMB}|${ramMB}|${ctx}|${projectorPath ?? ''}|${fitRelevantKey(profile)}`;
+  // Undefined budgets (automatic mode) stringify distinctly from numbers,
+  // so mode switches never collide in the key.
+  return `${modelPath}|${vramMB ?? 'auto'}|${ramMB ?? 'auto'}|${ctx}|${projectorPath ?? ''}|${fitRelevantKey(profile)}`;
 }
 
 // Parameter order is positional API shared with chat.ts/ipc.ts callers.
 /* eslint-disable default-param-last */
 export async function getOrRunOptimizer(
   modelPath: string,
-  vramMB: number,
-  ramMB: number,
+  vramMB: number | undefined,
+  ramMB: number | undefined,
   ctx: number,
   projectorPath?: string,
   profile: Partial<Profile> = {},
@@ -1250,7 +1295,7 @@ const speedLineCache = new Map<string, number | null>();
 
 export async function maxFullOffloadCtx(
   modelPath: string,
-  vramMB: number,
+  vramMB: number | undefined,
   projectorPath?: string,
   profile: Partial<Profile> = {},
   runId?: number,

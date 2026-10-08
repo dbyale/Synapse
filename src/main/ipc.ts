@@ -30,6 +30,7 @@ import {
   getOrEstimateMemory,
   getModelMetadata,
   maxFullOffloadCtx,
+  resolveBudgets,
 } from './estimator';
 import { registerExtensionIpcHandlers } from './ipcExtensions';
 import { getBackendInfo } from './backendInfo';
@@ -836,8 +837,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
       },
     ) => {
       const settings = loadSettings();
-      const vramMB = settings.allocatedVRAM ?? 4096;
-      const ramMB = settings.allocatedRAM ?? 8192;
+      const { vramMB, ramMB } = resolveBudgets(settings);
       const modelsDir = getModelsDirectory();
       const modelPath = path.join(
         modelsDir,
@@ -902,7 +902,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
       },
     ) => {
       const settings = loadSettings();
-      const vramMB = settings.allocatedVRAM ?? 4096;
+      const { vramMB } = resolveBudgets(settings);
       const modelsDir = getModelsDirectory();
       const modelPath = path.join(
         modelsDir,
