@@ -10,7 +10,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   pickDirectory: () => ipcRenderer.invoke('settings:pick-directory'),
   getVramStats: () => ipcRenderer.invoke('get-vram-stats'),
   getBackendInfo: () => ipcRenderer.invoke('onboarding:get-backend-info'),
-  getParserInfo: () => ipcRenderer.invoke('onboarding:get-parser-info'),
   downloadBinary: (kind: string, download: unknown, dir: string) =>
     ipcRenderer.invoke('binaries:download', kind, download, dir),
   cancelBinaryDownload: (id: string) =>
@@ -120,7 +119,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   chatGetCurrentProfile: () => ipcRenderer.invoke('chat:getCurrentProfile'),
   getLaunchArgs: (
     profile: unknown,
-    resolved?: { ngl: number; ctx: number } | null,
+    resolved?: {
+      ngl: number;
+      ctx: number;
+      tensorSplit?: string | null;
+      tensorOverrides?: string | null;
+    } | null,
   ) => ipcRenderer.invoke('chat:getLaunchArgs', profile, resolved),
   chatSend: (
     sessionId: string,
@@ -318,10 +322,25 @@ contextBridge.exposeInMainWorld('electronAPI', {
     kvOffload?: boolean;
     flashAttn?: 'on' | 'off' | 'auto';
     mmap?: boolean;
+    mlock?: boolean;
+    repack?: boolean;
     cacheTypeK?: string;
     cacheTypeV?: string;
-  }): Promise<{ ngl: number; ctx: number; vramMB: number; ramMB: number }> =>
-    ipcRenderer.invoke('profile:runOptimizer', params),
+    parallel?: number;
+    cpuMoe?: boolean;
+    nCpuMoe?: number;
+    mmprojOffload?: boolean;
+    imageMinTokens?: number;
+    imageMaxTokens?: number;
+    mtmdBatchMaxTokens?: number;
+  }): Promise<{
+    ngl: number;
+    ctx: number;
+    tensorSplit: string | null;
+    tensorOverrides: string | null;
+    vramMB: number;
+    ramMB: number;
+  }> => ipcRenderer.invoke('profile:runOptimizer', params),
 
   estimateMemory: (params: {
     modelAuthor: string;
@@ -333,8 +352,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
     kvOffload?: boolean;
     flashAttn?: 'on' | 'off' | 'auto';
     mmap?: boolean;
+    mlock?: boolean;
+    repack?: boolean;
     cacheTypeK?: string;
     cacheTypeV?: string;
+    parallel?: number;
+    cpuMoe?: boolean;
+    nCpuMoe?: number;
+    mmprojOffload?: boolean;
+    imageMinTokens?: number;
+    imageMaxTokens?: number;
+    mtmdBatchMaxTokens?: number;
+    tensorSplit?: string | null;
+    tensorOverrides?: string | null;
   }): Promise<{
     modelVramUsage: number;
     contextVramUsage: number;

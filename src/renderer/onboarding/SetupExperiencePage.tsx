@@ -46,7 +46,7 @@ const SETUP_OPTIONS: SetupOption[] = [
     icon: CodeXml,
     color: '#f87171',
     description:
-      'Shows all setup options, allowing you to skip installing unwanted components, or set up custom parsers or binaries.',
+      'Shows all setup options, allowing you to skip installing unwanted components, or set up custom binaries.',
   },
 ];
 

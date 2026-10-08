@@ -5,24 +5,23 @@ import fs from 'fs';
 import * as tar from 'tar';
 import * as yauzl from 'yauzl';
 import type { ClientRequest } from 'http';
-import { getModelsDirectory, loadSettings, saveSettings } from './settings';
+import { loadSettings, saveSettings } from './settings';
 import type {
   BackendDownload,
   BackendDownloadRecord,
   DownloadProgress,
-  ParserDownloadRecord,
 } from '../renderer/preload.d';
 
 interface ActiveBinaryDownload {
   id: string;
-  kind: 'backend' | 'parser';
+  kind: 'backend';
   reqs: ClientRequest[];
   tempPath: string;
   cancelled: boolean;
 }
 
 interface LastStarted {
-  kind: 'backend' | 'parser';
+  kind: 'backend';
   download: BackendDownload;
   dir: string;
 }
@@ -62,7 +61,7 @@ function sendProgress(
   }
 }
 
-function recordDownload(kind: 'backend' | 'parser', download: BackendDownload) {
+function recordDownload(kind: 'backend', download: BackendDownload) {
   const settings = loadSettings();
   if (kind === 'backend') {
     const existing = settings.backendDownloads ?? [];
@@ -74,27 +73,16 @@ function recordDownload(kind: 'backend' | 'parser', download: BackendDownload) {
       };
       settings.backendDownloads = [...existing, record];
     }
-  } else {
-    const record: ParserDownloadRecord = {
-      id: download.id,
-      label: download.label,
-      file: download.folder,
-    };
-    settings.parserDownloads = record;
   }
   saveSettings(settings);
 }
 
-function resolveTargetDir(kind: 'backend' | 'parser', dir: string): string {
+function resolveTargetDir(kind: 'backend', dir: string): string {
   const settings = loadSettings();
   if (kind === 'backend') {
     return dir || settings.backendDirectory;
   }
-  return (
-    dir ||
-    settings.parserDirectory ||
-    path.join(path.dirname(getModelsDirectory()), 'parser')
-  );
+  return dir || settings.backendDirectory;
 }
 
 // Streaming zip extraction (yauzl): entries are decompressed and written
@@ -161,7 +149,7 @@ function extractZip(
 function downloadToFile(
   url: string,
   tempPath: string,
-  kind: 'backend' | 'parser',
+  kind: 'backend',
   download: BackendDownload,
   win: BrowserWindow | null,
   aggregate: AggregateProgress,
@@ -264,7 +252,7 @@ function downloadToFile(
 }
 
 export async function startBinaryDownload(
-  kind: 'backend' | 'parser',
+  kind: 'backend',
   download: BackendDownload,
   dir: string,
   win: BrowserWindow | null = null,
@@ -272,8 +260,7 @@ export async function startBinaryDownload(
   const targetDir = resolveTargetDir(kind, dir);
   const isZip = download.url.endsWith('.zip');
   const isTarGz = download.url.endsWith('.tar.gz');
-  const rawFileName =
-    kind === 'parser' ? download.folder : `download-${download.folder}`;
+  const rawFileName = `download-${download.folder}`;
   const tempPath = path.join(targetDir, `.${rawFileName}.part`);
   const extras = (download.files ?? []).slice(1);
   const extraTempPaths = extras.map((extraFile) =>
@@ -353,7 +340,10 @@ export async function startBinaryDownload(
         await extractZip(
           tempPath,
           destDir,
-          (name) => name.includes('llama-server') || name.endsWith('.dll'),
+          (name) =>
+            name.includes('llama-server') ||
+            name.includes('llama-fit-params') ||
+            name.endsWith('.dll'),
           download.id,
         );
         fs.unlinkSync(tempPath);
@@ -375,7 +365,9 @@ export async function startBinaryDownload(
           cwd: destDir,
           strip: 1,
           filter: (p: string) =>
-            p.includes('llama-server') || p.endsWith('.dylib'),
+            p.includes('llama-server') ||
+            p.includes('llama-fit-params') ||
+            p.endsWith('.dylib'),
         });
         fs.unlinkSync(tempPath);
       }
@@ -438,7 +430,7 @@ export function findBinaryById(id: string): LastStarted | null {
 }
 
 export function uninstallBinary(
-  kind: 'backend' | 'parser',
+  kind: 'backend',
   download: BackendDownload,
   dir: string,
 ): { success: boolean; error?: string } {
@@ -464,7 +456,7 @@ export function uninstallBinary(
 
   const isZip = download.url.endsWith('.zip');
   const isTarGz = download.url.endsWith('.tar.gz');
-  // For archive kinds dest is a folder; for raw parser binary it's a file.
+  // Archive kinds extract to a folder.
   const targetPath =
     isZip || isTarGz
       ? path.join(targetDir, folder)
@@ -497,13 +489,6 @@ export function uninstallBinary(
       settings.backendDownloads = before.filter(
         (d) => d.id !== download.id && d.folder !== folder,
       );
-    } else {
-      if (
-        settings.parserDownloads?.id === download.id ||
-        settings.parserDownloads?.file === folder
-      ) {
-        settings.parserDownloads = null;
-      }
     }
     saveSettings(settings);
   } catch (e: any) {
@@ -523,15 +508,11 @@ export function uninstallBinary(
 
 export function listBinaryDownloads(): {
   backends: BackendDownloadRecord[];
-  parser: ParserDownloadRecord | null;
   customBackendPaths: string[];
-  customParserPaths: string[];
 } {
   const settings = loadSettings();
   return {
     backends: settings.backendDownloads ?? [],
-    parser: settings.parserDownloads ?? null,
     customBackendPaths: settings.customBinaryPaths ?? [],
-    customParserPaths: settings.parserCustomBinaryPaths ?? [],
   };
 }

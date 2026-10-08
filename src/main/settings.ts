@@ -6,10 +6,7 @@ export interface AppSettings {
   modelsDirectory: string;
   backendDirectory: string;
   customBinaryPaths: string[];
-  parserDirectory: string;
-  parserCustomBinaryPaths: string[];
   backendDownloads: { id: string; label: string; folder: string }[];
-  parserDownloads: { id: string; label: string; file: string } | null;
   selectedBackend: string;
   openvinoDevice?: 'CPU' | 'GPU' | 'NPU';
   openvinoStateful?: boolean;
@@ -36,10 +33,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   modelsDirectory: DEFAULT_MODELS_DIR,
   backendDirectory: DEFAULT_BACKEND_DIR,
   customBinaryPaths: [],
-  parserDirectory: '',
-  parserCustomBinaryPaths: [],
   backendDownloads: [],
-  parserDownloads: null,
   selectedBackend: 'Default',
   openvinoDevice: 'CPU',
   openvinoStateful: false,

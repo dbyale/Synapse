@@ -40,18 +40,9 @@
     - Always downloaded as backup
   * Ensure that laptops with disabled GPU still detect properly
 
-## ParserSetupPage.tsx
-
-- Same layout as BackendSetupPage.tsx
-- Inform users that installation will continue in background after continuing
-- Show and pick install location
-- Display latest GGUF-Parser-Go for installation
-  - amd64/arm64
-  - windows/linux/darwin (macOs)
-
 ## SystemSetupPage.tsx
 
-- Show install locations from Settings Page (Models / Backend / Parser directories) — exact parity with Settings → System → Application Setup
+- Show install locations from Settings Page (Models / Backend directories) — exact parity with Settings → System → Application Setup
 - Show system resource allocator from Settings Page (RAM + VRAM MemorySlider, buffered save on Continue)
 
 ## SecuritySetupPage.tsx
@@ -86,12 +77,11 @@
 
 ## FinalInstallPage.tsx
 
-- Show llama binary install progress
-- Show GGUF-Parser-Go install progress
+- Show llama binary install progress (llama-server + llama-fit-params estimator)
 - Show warnings
   - Non-Ubuntu compatibility warning
   - NVIDIA Driver update warning
-  - Any dependency (binary/parser) failure warnings
+  - Any dependency (binary) failure warnings
     - Failed to download
     - Failed to allocate space
 - Show model download progress
@@ -107,7 +97,6 @@
 4. FinalInstallPage
 
 - Install backends in background (macOs || CUDA/OpenCL + Vulkan || Vulkan)
-- Install GGUF-Parser-Go in background
 
 # Advanced Path (Simple sees none of these — per spec)
 
@@ -119,8 +108,7 @@
 # Custom Path
 
 1. BackendSetupPage
-2. ParserSetupPage
-3. SystemSetupPage
+2. SystemSetupPage
 4. ServerSetupPage
 5. SecuritySetupPage
 6. ProfessionsSetupPage

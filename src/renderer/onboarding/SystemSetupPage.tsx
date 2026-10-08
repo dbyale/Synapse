@@ -7,7 +7,6 @@ import InfoTooltip from '../components/InfoTooltip';
 import {
   MODELS_DIR_TOOLTIP,
   BACKEND_DIR_TOOLTIP,
-  PARSER_DIR_TOOLTIP,
   MEMORY_ALLOCATOR_TOOLTIP,
 } from '../utils/tooltipContent';
 import '../styles/SettingsPage.css';
@@ -69,20 +68,6 @@ export default function SystemSetupPage({
       // Silently fail
     }
   };
-  const handlePickParser = async () => {
-    if (!settings) return;
-    try {
-      const dir = await window.electronAPI.pickDirectory();
-      if (dir && dir !== settings.parserDirectory) {
-        setSettings((prev) =>
-          prev ? { ...prev, parserDirectory: dir } : prev,
-        );
-      }
-    } catch {
-      // Silently fail
-    }
-  };
-
   const handleContinue = async () => {
     if (saving || !settings) return;
     setSaving(true);
@@ -248,32 +233,6 @@ export default function SystemSetupPage({
               </InfoTooltip>
             </div>
 
-            <div className="settings-field">
-              <InfoTooltip
-                content={PARSER_DIR_TOOLTIP}
-                side="bottom"
-                hideIcon
-                title="Parser Directory"
-                className="parser-dir-tooltip"
-              >
-                <span className="settings-label">Parser Directory</span>
-                <div className="settings-row">
-                  <input
-                    className="settings-input"
-                    value={settings.parserDirectory}
-                    readOnly
-                  />
-                  <button
-                    type="button"
-                    className="settings-icon-btn"
-                    onClick={handlePickParser}
-                    title="Browse"
-                  >
-                    <FolderOpen size={16} />
-                  </button>
-                </div>
-              </InfoTooltip>
-            </div>
           </div>
         </div>
       </div>

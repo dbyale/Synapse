@@ -80,6 +80,11 @@ export interface Profile {
   tools?: string[];
   layers?: number;
   gpuLayersAuto?: boolean;
+  // Fitted tensor placement from the auto-optimizer (-ts/-ot). Only valid
+  // together with the layers/contextSize values they were solved for; the
+  // main process nulls them for custom (user-pinned) configs.
+  tensorSplit?: string | null;
+  tensorOverrides?: string | null;
   contextShift?: ContextShiftSettings;
   contextSize?: number;
   autoOptimizer?: 'longest-context' | 'most-gpu' | 'custom';

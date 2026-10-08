@@ -32,7 +32,6 @@ import {
 } from './estimator';
 import { registerExtensionIpcHandlers } from './ipcExtensions';
 import { getBackendInfo } from './backendInfo';
-import { getParserInfo } from './parserInfo';
 import * as binaryDownloads from './binaryDownloads';
 import type { SearchFilter } from '../renderer/preload.d';
 import type { CacheType, Profile } from '../renderer/types/profile';
@@ -452,7 +451,12 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     (
       _event,
       profile: Partial<Profile>,
-      resolved?: { ngl: number; ctx: number } | null,
+      resolved?: {
+        ngl: number;
+        ctx: number;
+        tensorSplit?: string | null;
+        tensorOverrides?: string | null;
+      } | null,
     ) => {
       if (!profile?.modelFilename) return null;
       const modelsDir = getModelsDirectory();
@@ -473,11 +477,20 @@ export function registerIpcHandlers(win: BrowserWindow): void {
         : undefined;
       const ngl = resolved?.ngl ?? profile.layers ?? 0;
       const ctx = resolved?.ctx ?? profile.contextSize ?? 512;
+      // An explicit null in resolved clears a stored profile triple (e.g.
+      // custom mode); absent keys fall back to the profile. (?? alone cannot
+      // express this: null ?? x yields x.)
+      const triple = (k: 'tensorSplit' | 'tensorOverrides') =>
+        resolved != null && k in resolved
+          ? (resolved[k] ?? null)
+          : (profile[k] ?? null);
       return chatService.buildLlamaServerArgs(profile, {
         modelPath,
         projectorPath,
         ngl,
         ctx,
+        tensorSplit: triple('tensorSplit'),
+        tensorOverrides: triple('tensorOverrides'),
       });
     },
   );
@@ -722,30 +735,9 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     return backendInfoPromise;
   });
 
-  let parserInfoPromise: Promise<
-    import('../renderer/preload.d').ParserInfo
-  > | null = null;
-
-  ipcMain.handle('onboarding:get-parser-info', async () => {
-    if (parserInfoPromise) return parserInfoPromise;
-    parserInfoPromise = (async () => {
-      try {
-        return await getParserInfo();
-      } catch (error) {
-        console.error('[Parser] Failed to detect parser builds:', error);
-        throw error;
-      } finally {
-        setTimeout(() => {
-          parserInfoPromise = null;
-        }, 1000);
-      }
-    })();
-    return parserInfoPromise;
-  });
-
   ipcMain.handle(
     'binaries:download',
-    async (event, kind: 'backend' | 'parser', download: any, dir: string) => {
+    async (event, kind: 'backend', download: any, dir: string) => {
       try {
         const downloadWin = BrowserWindow.fromWebContents(event.sender);
         return await binaryDownloads.startBinaryDownload(
@@ -767,7 +759,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
 
   ipcMain.handle(
     'binaries:uninstall',
-    async (_event, kind: 'backend' | 'parser', download: any, dir: string) => {
+    async (_event, kind: 'backend', download: any, dir: string) => {
       return binaryDownloads.uninstallBinary(kind, download, dir);
     },
   );
@@ -826,10 +818,19 @@ export function registerIpcHandlers(win: BrowserWindow): void {
         projectorFilename?: string;
         mode: 'longest-context' | 'most-gpu';
         kvOffload?: boolean;
+        flashAttn?: 'on' | 'off' | 'auto';
         mmap?: boolean;
+        mlock?: boolean;
+        repack?: boolean;
         cacheTypeK?: CacheType;
         cacheTypeV?: CacheType;
         parallel?: number;
+        cpuMoe?: boolean;
+        nCpuMoe?: number;
+        mmprojOffload?: boolean;
+        imageMinTokens?: number;
+        imageMaxTokens?: number;
+        mtmdBatchMaxTokens?: number;
       },
     ) => {
       const settings = loadSettings();
@@ -864,6 +865,8 @@ export function registerIpcHandlers(win: BrowserWindow): void {
       return {
         ngl: result.ngl,
         ctx: result.ctx,
+        tensorSplit: result.tensorSplit ?? null,
+        tensorOverrides: result.tensorOverrides ?? null,
         vramMB,
         ramMB,
       };
@@ -914,10 +917,21 @@ export function registerIpcHandlers(win: BrowserWindow): void {
         ngl: number;
         ctx: number;
         kvOffload?: boolean;
+        flashAttn?: 'on' | 'off' | 'auto';
         mmap?: boolean;
+        mlock?: boolean;
+        repack?: boolean;
         cacheTypeK?: CacheType;
         cacheTypeV?: CacheType;
         parallel?: number;
+        cpuMoe?: boolean;
+        nCpuMoe?: number;
+        mmprojOffload?: boolean;
+        imageMinTokens?: number;
+        imageMaxTokens?: number;
+        mtmdBatchMaxTokens?: number;
+        tensorSplit?: string | null;
+        tensorOverrides?: string | null;
       },
     ) => {
       const modelsDir = getModelsDirectory();

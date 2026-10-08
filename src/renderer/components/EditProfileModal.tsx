@@ -3350,22 +3350,22 @@ function PerformancePage({
         <div className="epm-estimate-notice">
           <AlertTriangle size={14} />
           <InfoTooltip
-            content="The GGUF Parser Go library does not account for all Synapse-specific memory optimizations, so actual usage may differ."
+            content="Estimates are measured with the llama.cpp fit tool on this machine's actual backend, so they track the real server load more closely than formula-based tools. Actual usage may still differ with driver overhead and concurrent GPU load."
             side="right"
             hideIcon
             title="Memory Estimates"
           >
             <span>
-              Memory estimates provided by{' '}
+              Memory estimates measured with{' '}
               <a
-                href="https://github.com/gpustack/gguf-parser-go"
+                href="https://github.com/ggml-org/llama.cpp"
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                GGUF Parser Go
-              </a>
-              , which does not support all of Synapse's features, leading to
-              inaccurate estimations.
+                llama.cpp
+              </a>{' '}
+              on your active backend, using the same offload and projector
+              settings the server will launch with.
             </span>
           </InfoTooltip>
         </div>
@@ -5333,6 +5333,52 @@ export default function EditProfileModal({
   const [editContextSize, setEditContextSize] = useState<number | undefined>(
     profile?.contextSize,
   );
+  // Fitted placement triple from the last optimizer run. Valid only for the
+  // exact (ngl, ctx) it was solved for — tracked by editTensorSolvedFor. Any
+  // manual layers/ctx edit or model change clears it, and custom (user-pinned)
+  // configs never carry one.
+  const [editTensorSplit, setEditTensorSplit] = useState<string | null>(
+    profile?.tensorSplit ?? null,
+  );
+  const [editTensorOverrides, setEditTensorOverrides] = useState<string | null>(
+    profile?.tensorOverrides ?? null,
+  );
+  const [editTensorSolvedFor, setEditTensorSolvedFor] = useState<{
+    ngl: number;
+    ctx: number;
+  } | null>(
+    profile?.tensorSplit != null || profile?.tensorOverrides != null
+      ? {
+          ngl: profile?.layers ?? 0,
+          ctx: profile?.contextSize ?? 512,
+        }
+      : null,
+  );
+  const clearTensorTriple = () => {
+    setEditTensorSplit(null);
+    setEditTensorOverrides(null);
+    setEditTensorSolvedFor(null);
+  };
+  const handleLayersChange = (v: number | undefined) => {
+    setEditLayers(v);
+    clearTensorTriple();
+  };
+  const handleContextSizeChange = (v: number | undefined) => {
+    setEditContextSize(v);
+    clearTensorTriple();
+  };
+  // The triple applies to a (ngl, ctx) pair only when it matches the values
+  // it was solved for. Guards against stale-state races between slider
+  // updates and estimate/preview calls.
+  const tripleFor = (ngl: number, ctx: number) =>
+    editTensorSolvedFor !== null &&
+    editTensorSolvedFor.ngl === ngl &&
+    editTensorSolvedFor.ctx === ctx
+      ? {
+          tensorSplit: editTensorSplit ?? null,
+          tensorOverrides: editTensorOverrides ?? null,
+        }
+      : { tensorSplit: null, tensorOverrides: null };
   const [editAllocatedVRAM, setEditAllocatedVRAM] = useState<
     number | undefined
   >(profile?.allocatedVRAM);
@@ -5623,10 +5669,22 @@ export default function EditProfileModal({
           ? editCustomLaunchCommand
           : undefined,
       };
+      // Mirror the launch rule in chat.ts: custom (user-pinned) configs
+      // never carry an optimizer triple, even if one is stored. Otherwise
+      // only the exact solved-for values may use it.
+      const solvedTriple = tripleFor(
+        editLayers ?? 0,
+        editContextSize ?? 512,
+      );
+      const previewTriple =
+        editAutoOptimizer === 'custom'
+          ? { tensorSplit: null, tensorOverrides: null }
+          : solvedTriple;
       window.electronAPI
         .getLaunchArgs(draft, {
           ngl: editLayers ?? 0,
           ctx: editContextSize ?? 512,
+          ...previewTriple,
         })
         .then((args) => {
           if (launchArgsReqId.current === reqId) {
@@ -5692,6 +5750,9 @@ export default function EditProfileModal({
     editCustomLaunchCommand,
     editLayers,
     editContextSize,
+    editAutoOptimizer,
+    editTensorSplit,
+    editTensorOverrides,
   ]);
 
   const [editVideoFps, setEditVideoFps] = useState<string>(
@@ -5732,9 +5793,21 @@ export default function EditProfileModal({
   } | null>(profile?.estimation ?? null);
 
   // Fetch model metadata when model selection changes
+  const lastModelKeyRef = useRef<string | null>(null);
   useEffect(() => {
     if (!editModelFilename) return;
     const currentModelPath = `${editModelAuthor}/${editModelFolder}/${editModelFilename}`;
+    // A different model/projector invalidates the solved-for triple (it was
+    // measured for other weights). Skipped on first mount via the ref guard
+    // so freshly loaded profiles keep their stored triple.
+    const modelKey = `${currentModelPath}|${editProjectorFilename ?? ''}`;
+    if (
+      lastModelKeyRef.current !== null &&
+      lastModelKeyRef.current !== modelKey
+    ) {
+      clearTensorTriple();
+    }
+    lastModelKeyRef.current = modelKey;
     if (
       profile?.maxForModel === currentModelPath &&
       profile?.maxLayers &&
@@ -5796,14 +5869,25 @@ export default function EditProfileModal({
         kvOffload: editKvOffload,
         flashAttn: editFlashAttn,
         mmap: editMmap,
+        mlock: editMlock,
+        repack: editRepack,
         cacheTypeK: editCacheTypeK,
         cacheTypeV: editCacheTypeV,
         parallel: effectiveParallel,
+        cpuMoe: editCpuMoe,
+        nCpuMoe: parseInt(editNCpuMoe, 10) || undefined,
+        mmprojOffload: editMmprojOffload,
+        imageMinTokens: parseInt(editImageMinTokens, 10) || undefined,
+        imageMaxTokens: parseInt(editImageMaxTokens, 10) || undefined,
+        mtmdBatchMaxTokens: parseInt(editMtmdBatchMaxTokens, 10) || undefined,
       })
       .then((res) => {
         setEditAutoOptimizer(mode);
         setEditLayers(res.ngl);
         setEditContextSize(res.ctx);
+        setEditTensorSplit(res.tensorSplit ?? null);
+        setEditTensorOverrides(res.tensorOverrides ?? null);
+        setEditTensorSolvedFor({ ngl: res.ngl, ctx: res.ctx });
         setEditAllocatedVRAM(res.vramMB);
         setEditAllocatedRAM(res.ramMB);
         setOptimizerRunning(null);
@@ -5830,6 +5914,7 @@ export default function EditProfileModal({
     fileBufferRam: number;
   } | null> => {
     if (!editModelFilename) return null;
+    const solvedTriple = tripleFor(ngl, ctx);
     const result = await window.electronAPI.estimateMemory({
       modelAuthor: editModelAuthor,
       modelFolder: editModelFolder,
@@ -5840,9 +5925,19 @@ export default function EditProfileModal({
       kvOffload: kvOffload ?? editKvOffload,
       flashAttn: editFlashAttn,
       mmap: mmap ?? editMmap,
+      mlock: editMlock,
+      repack: editRepack,
       cacheTypeK: cacheTypeK ?? editCacheTypeK,
       cacheTypeV: cacheTypeV ?? editCacheTypeV,
       parallel: effectiveParallel,
+      cpuMoe: editCpuMoe,
+      nCpuMoe: parseInt(editNCpuMoe, 10) || undefined,
+      mmprojOffload: editMmprojOffload,
+      imageMinTokens: parseInt(editImageMinTokens, 10) || undefined,
+      imageMaxTokens: parseInt(editImageMaxTokens, 10) || undefined,
+      mtmdBatchMaxTokens: parseInt(editMtmdBatchMaxTokens, 10) || undefined,
+      tensorSplit: solvedTriple.tensorSplit ?? undefined,
+      tensorOverrides: solvedTriple.tensorOverrides ?? undefined,
     });
     setLastEstimate(result);
     return result;
@@ -6178,6 +6273,10 @@ export default function EditProfileModal({
             allocatedRAM: editAllocatedRAM,
           }
         : {}),
+      // Always written (null when cleared) so the key survives JSON
+      // persistence and the launch cache-freshness check keeps working.
+      tensorSplit: editTensorSplit ?? null,
+      tensorOverrides: editTensorOverrides ?? null,
       videoSettings: buildVideoSettings(),
       specType: editSpecType.length > 0 ? editSpecType : undefined,
       draftModelAuthor:
@@ -6417,8 +6516,8 @@ export default function EditProfileModal({
             modelMaxContext={modelMeta?.maxContext ?? 131072}
             onSetAutoOptimizer={setEditAutoOptimizer}
             onSetGpuLayersAuto={setEditGpuLayersAuto}
-            onSetLayers={setEditLayers}
-            onSetContextSize={setEditContextSize}
+            onSetLayers={handleLayersChange}
+            onSetContextSize={handleContextSizeChange}
             onRunOptimizer={handleRunOptimizer}
             onEstimateMemory={handleEstimateMemory}
             initialEstimate={profile?.estimation ?? lastEstimate}

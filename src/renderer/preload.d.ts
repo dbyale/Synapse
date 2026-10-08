@@ -67,10 +67,7 @@ export interface AppSettings {
   modelsDirectory: string;
   backendDirectory: string;
   customBinaryPaths: string[];
-  parserDirectory: string;
-  parserCustomBinaryPaths: string[];
   backendDownloads: BackendDownloadRecord[];
-  parserDownloads: ParserDownloadRecord | null;
   selectedBackend: string;
   openvinoDevice?: 'CPU' | 'GPU' | 'NPU';
   openvinoStateful?: boolean;
@@ -95,12 +92,6 @@ export interface BackendDownloadRecord {
   folder: string;
 }
 
-export interface ParserDownloadRecord {
-  id: string;
-  label: string;
-  file: string;
-}
-
 export type BackendIcon =
   | 'cuda'
   | 'opencl'
@@ -111,7 +102,6 @@ export type BackendIcon =
   | 'rocm'
   | 'sycl'
   | 'android'
-  | 'parser'
   | 'custom';
 
 export interface BackendDownload {
@@ -151,15 +141,6 @@ export interface BackendInfo {
   gpus: BackendGpuInfo[];
   nvidiaDriverMajor: number | null;
   distro: string | null;
-}
-
-export interface ParserInfo {
-  platform: string;
-  arch: string;
-  defaultDownloadDir: string;
-  recommended: BackendDownload[];
-  optional: BackendDownload[];
-  others: BackendDownload[];
 }
 
 export interface HardwareGpuInfo {
@@ -230,23 +211,20 @@ declare global {
       getMemoryStats: () => Promise<SystemMemStats>;
       getVramStats: () => Promise<HardwareStats>;
       getBackendInfo: () => Promise<BackendInfo>;
-      getParserInfo: () => Promise<ParserInfo>;
       downloadBinary: (
-        kind: 'backend' | 'parser',
+        kind: 'backend',
         download: BackendDownload,
         dir: string,
       ) => Promise<string>;
       cancelBinaryDownload: (id: string) => Promise<boolean>;
       uninstallBinary: (
-        kind: 'backend' | 'parser',
+        kind: 'backend',
         download: BackendDownload,
         dir: string,
       ) => Promise<{ success: boolean; error?: string }>;
       getBinaryDownloads: () => Promise<{
         backends: BackendDownloadRecord[];
-        parser: ParserDownloadRecord | null;
         customBackendPaths: string[];
-        customParserPaths: string[];
       }>;
       chatMemoryUsage: () => Promise<{
         modelVramUsage: number;
@@ -270,7 +248,12 @@ declare global {
       chatGetCurrentProfile: () => Promise<Profile | null>;
       getLaunchArgs: (
         profile: Partial<Profile>,
-        resolved?: { ngl: number; ctx: number } | null,
+        resolved?: {
+          ngl: number;
+          ctx: number;
+          tensorSplit?: string | null;
+          tensorOverrides?: string | null;
+        } | null,
       ) => Promise<string[] | null>;
       chatHasProjector: () => Promise<boolean>;
       chatSend: (
@@ -418,12 +401,22 @@ declare global {
         kvOffload?: boolean;
         flashAttn?: 'on' | 'off' | 'auto';
         mmap?: boolean;
+        mlock?: boolean;
+        repack?: boolean;
         cacheTypeK?: string;
         cacheTypeV?: string;
         parallel?: number;
+        cpuMoe?: boolean;
+        nCpuMoe?: number;
+        mmprojOffload?: boolean;
+        imageMinTokens?: number;
+        imageMaxTokens?: number;
+        mtmdBatchMaxTokens?: number;
       }) => Promise<{
         ngl: number;
         ctx: number;
+        tensorSplit: string | null;
+        tensorOverrides: string | null;
         vramMB: number;
         ramMB: number;
       }>;
@@ -438,9 +431,19 @@ declare global {
         kvOffload?: boolean;
         flashAttn?: 'on' | 'off' | 'auto';
         mmap?: boolean;
+        mlock?: boolean;
+        repack?: boolean;
         cacheTypeK?: string;
         cacheTypeV?: string;
         parallel?: number;
+        cpuMoe?: boolean;
+        nCpuMoe?: number;
+        mmprojOffload?: boolean;
+        imageMinTokens?: number;
+        imageMaxTokens?: number;
+        mtmdBatchMaxTokens?: number;
+        tensorSplit?: string | null;
+        tensorOverrides?: string | null;
       }) => Promise<{
         modelVramUsage: number;
         contextVramUsage: number;

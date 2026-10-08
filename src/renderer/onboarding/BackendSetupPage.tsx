@@ -3,7 +3,6 @@ import {
   Apple,
   ArrowLeft,
   ArrowRight,
-  Binary,
   Cpu,
   Download,
   FolderOpen,
@@ -40,7 +39,6 @@ const ICON_MAP: Record<BackendDownload['icon'], LucideIcon> = {
   rocm: Gpu,
   sycl: Gpu,
   android: Smartphone,
-  parser: Binary,
   custom: HardDrive,
 };
 

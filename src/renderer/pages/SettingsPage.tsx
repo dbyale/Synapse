@@ -14,7 +14,6 @@ import InfoTooltip from '../components/InfoTooltip';
 import {
   MODELS_DIR_TOOLTIP,
   BACKEND_DIR_TOOLTIP,
-  PARSER_DIR_TOOLTIP,
   MEMORY_ALLOCATOR_TOOLTIP,
   MAX_LABEL_TOOLTIP,
   RAM_LABEL_TOOLTIP,
@@ -76,11 +75,8 @@ export default function SettingsPage() {
         const normalized: AppSettings = {
           modelsDirectory: loaded?.modelsDirectory || '',
           backendDirectory: loaded?.backendDirectory || '',
-          parserDirectory: loaded?.parserDirectory || '',
           customBinaryPaths: loaded?.customBinaryPaths ?? [],
-          parserCustomBinaryPaths: loaded?.parserCustomBinaryPaths ?? [],
           backendDownloads: loaded?.backendDownloads ?? [],
-          parserDownloads: loaded?.parserDownloads ?? null,
           selectedBackend: loaded?.selectedBackend ?? 'Default',
           openvinoDevice: loaded?.openvinoDevice ?? 'CPU',
           openvinoStateful: loaded?.openvinoStateful ?? false,
@@ -221,22 +217,6 @@ export default function SettingsPage() {
           prev ? { ...prev, backendDirectory: dir } : prev,
         );
         triggerSave({ backendDirectory: dir });
-      }
-    } catch {
-      // Silently fail
-    }
-  }
-
-  async function handlePickParserDirectory() {
-    if (!settings) return;
-
-    try {
-      const dir = await window.electronAPI.pickDirectory();
-      if (dir && dir !== settings.parserDirectory) {
-        setSettings((prev) =>
-          prev ? { ...prev, parserDirectory: dir } : prev,
-        );
-        triggerSave({ parserDirectory: dir });
       }
     } catch {
       // Silently fail
@@ -394,32 +374,6 @@ export default function SettingsPage() {
               </InfoTooltip>
             </div>
 
-            <div className="settings-field">
-              <InfoTooltip
-                content={PARSER_DIR_TOOLTIP}
-                side="bottom"
-                hideIcon
-                title="Parser Directory"
-                className="parser-dir-tooltip"
-              >
-                <span className="settings-label">Parser Directory</span>
-                <div className="settings-row">
-                  <input
-                    className="settings-input"
-                    value={settings.parserDirectory}
-                    readOnly
-                  />
-                  <button
-                    type="button"
-                    className="settings-icon-btn"
-                    onClick={handlePickParserDirectory}
-                    title="Browse"
-                  >
-                    <FolderOpen size={16} />
-                  </button>
-                </div>
-              </InfoTooltip>
-            </div>
           </div>
         </>
       )}

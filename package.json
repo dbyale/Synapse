@@ -2,8 +2,7 @@
   "name": "Synapse",
   "version": "1.0.0",
   "binaryVersions": {
-    "llama": "b11146",
-    "parser": "v0.26.4"
+    "llama": "b11146"
   },
   "description": "A local AI platform",
   "keywords": [
@@ -225,7 +224,6 @@
       "gatekeeperAssess": false,
       "extraResources": [
         "./assets/bin/macos-*/**",
-        "./assets/bin/utils/**",
         "./assets/icons/**",
         "./assets/logos/**",
         "./assets/entitlements.mac.plist"
@@ -251,7 +249,6 @@
       ],
       "extraResources": [
         "./assets/bin/win-*/**",
-        "./assets/bin/utils/**",
         "./assets/icons/**",
         "./assets/logos/**"
       ]
@@ -263,7 +260,6 @@
       "category": "Development",
       "extraResources": [
         "./assets/bin/ubuntu-*/**",
-        "./assets/bin/utils/**",
         "./assets/icons/**",
         "./assets/logos/**"
       ]

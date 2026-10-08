@@ -13,11 +13,8 @@ export function useSettingsBuffer() {
     const normalized: AppSettings = {
       modelsDirectory: loaded?.modelsDirectory || '',
       backendDirectory: loaded?.backendDirectory || '',
-      parserDirectory: loaded?.parserDirectory || '',
       customBinaryPaths: loaded?.customBinaryPaths ?? [],
-      parserCustomBinaryPaths: loaded?.parserCustomBinaryPaths ?? [],
       backendDownloads: loaded?.backendDownloads ?? [],
-      parserDownloads: loaded?.parserDownloads ?? null,
       selectedBackend: loaded?.selectedBackend ?? 'Default',
       openvinoDevice: loaded?.openvinoDevice ?? 'CPU',
       openvinoStateful: loaded?.openvinoStateful ?? false,
