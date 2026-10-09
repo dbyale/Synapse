@@ -5959,6 +5959,13 @@ export default function EditProfileModal({
       })
       .then((res) => {
         if (fitReqId.current !== reqId) return;
+        // Superseded runs resolve benignly instead of rejecting (a newer
+        // request for the same model owns the UI state; stale responses
+        // already returned above).
+        if (res.cancelled === true) {
+          setOptimizerRunning(false);
+          return;
+        }
         setEditLayers(res.ngl);
         setEditTensorSplit(res.tensorSplit ?? null);
         setEditTensorOverrides(res.tensorOverrides ?? null);

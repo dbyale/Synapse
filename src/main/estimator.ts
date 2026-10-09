@@ -308,6 +308,14 @@ export class FitCancelledError extends Error {
   }
 }
 
+// Single choke point for cancellation logging: one exact line per kill,
+// greppable, no stack. Context names which entry point owned the run.
+export function logFitCancelled(
+  context: 'optimizer' | 'speed-line' | 'chat-load',
+): void {
+  console.log(`[fit-estimator] Fit Run Cancelled (${context})`);
+}
+
 let fitRunCounter = 0;
 const fitRuns = new Map<
   number,
@@ -332,7 +340,7 @@ export function cancelFitRun(id: number): void {
   }
 }
 
-function endFitRun(id: number): void {
+export function endFitRun(id: number): void {
   fitRuns.delete(id);
 }
 

@@ -16,6 +16,7 @@ import {
   getOrRunOptimizer,
   FitCancelledError,
   resolveBudgets,
+  logFitCancelled,
 } from './estimator';
 import { addTokenUsage, addWebSearch, getUsage } from './usage';
 import type { UsageStore } from '../renderer/utils/usage';
@@ -1278,6 +1279,7 @@ export async function loadProfile(
 ): Promise<{
   success: boolean;
   error?: string;
+  cancelled?: boolean;
   profile?: any;
   backend?: string;
 }> {
@@ -1393,22 +1395,14 @@ export async function loadProfile(
           phase: 'solving',
           message: `Optimizing Profile "${profile.name}"…`,
         });
-        let optResult;
-        try {
-          optResult = await getOrRunOptimizer(
-            fullModelPath,
-            vramMB,
-            ramMB,
-            requestedCtx,
-            fullProjectorPath,
-            profile,
-          );
-        } catch (e) {
-          if (e instanceof FitCancelledError) {
-            throw new Error('Profile load superseded by a newer request');
-          }
-          throw e;
-        }
+        const optResult = await getOrRunOptimizer(
+          fullModelPath,
+          vramMB,
+          ramMB,
+          requestedCtx,
+          fullProjectorPath,
+          profile,
+        );
         result = optResult;
         (profile as any).layers = optResult.ngl;
         (profile as any).contextSize = optResult.ctx;
@@ -1637,6 +1631,17 @@ export async function loadProfile(
       return { success: true, backend: backendFolder };
     } catch (error: any) {
       onStatus?.({ phase: 'ready', message: '' });
+      // A superseded optimizer run is not a failure: a newer request for
+      // the same model is already driving state. Log one line (no stack)
+      // and report cancellation so the UI stays quiet.
+      if (error instanceof FitCancelledError) {
+        logFitCancelled('chat-load');
+        return {
+          success: false,
+          error: 'Profile load superseded by a newer request',
+          cancelled: true,
+        };
+      }
       return { success: false, error: error.message };
     }
   } finally {

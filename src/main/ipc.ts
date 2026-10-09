@@ -31,7 +31,17 @@ import {
   getModelMetadata,
   maxFullOffloadCtx,
   resolveBudgets,
+  FitCancelledError,
+  createFitRun,
+  cancelFitRun,
+  endFitRun,
+  logFitCancelled,
 } from './estimator';
+
+// Newest speed-line computation wins per model: a recompute (flag/model
+// change) kills the superseded run, whose FitCancelledError resolves to a
+// hidden line instead of an Electron handler error (see handler below).
+const activeSpeedRuns = new Map<string, number>();
 import { registerExtensionIpcHandlers } from './ipcExtensions';
 import { getBackendInfo } from './backendInfo';
 import * as binaryDownloads from './binaryDownloads';
@@ -855,24 +865,45 @@ export function registerIpcHandlers(win: BrowserWindow): void {
           )
         : undefined;
 
-      const result = await getOrRunOptimizer(
-        modelPath,
-        vramMB,
-        ramMB,
-        params.ctx,
-        projectorPath,
-        params,
-      );
+      // A cancelled run is always superseded by definition (cancellation
+      // only fires for a newer run on the same model). Resolve benignly so
+      // Electron never logs "Error occurred in handler" with a stack — the
+      // renderer's request-id guard drops the stale response regardless.
+      try {
+        const result = await getOrRunOptimizer(
+          modelPath,
+          vramMB,
+          ramMB,
+          params.ctx,
+          projectorPath,
+          params,
+        );
 
-      return {
-        ngl: result.ngl,
-        ctx: result.ctx,
-        tensorSplit: result.tensorSplit ?? null,
-        tensorOverrides: result.tensorOverrides ?? null,
-        hostOverflowBytes: result.hostOverflowBytes ?? 0,
-        vramMB,
-        ramMB,
-      };
+        return {
+          ngl: result.ngl,
+          ctx: result.ctx,
+          tensorSplit: result.tensorSplit ?? null,
+          tensorOverrides: result.tensorOverrides ?? null,
+          hostOverflowBytes: result.hostOverflowBytes ?? 0,
+          vramMB,
+          ramMB,
+        };
+      } catch (e) {
+        if (e instanceof FitCancelledError) {
+          logFitCancelled('optimizer');
+          return {
+            cancelled: true as const,
+            ngl: 0,
+            ctx: params.ctx,
+            tensorSplit: null,
+            tensorOverrides: null,
+            hostOverflowBytes: 0,
+            vramMB,
+            ramMB,
+          };
+        }
+        throw e;
+      }
     },
   );
 
@@ -920,13 +951,31 @@ export function registerIpcHandlers(win: BrowserWindow): void {
           )
         : undefined;
 
-      const maxSpeedCtx = await maxFullOffloadCtx(
-        modelPath,
-        vramMB,
-        projectorPath,
-        params,
-      );
-      return { maxSpeedCtx };
+      const prevSpeedRun = activeSpeedRuns.get(modelPath);
+      if (prevSpeedRun !== undefined) cancelFitRun(prevSpeedRun);
+      const runId = createFitRun();
+      activeSpeedRuns.set(modelPath, runId);
+      try {
+        const maxSpeedCtx = await maxFullOffloadCtx(
+          modelPath,
+          vramMB,
+          projectorPath,
+          params,
+          runId,
+        );
+        return { maxSpeedCtx };
+      } catch (e) {
+        if (e instanceof FitCancelledError) {
+          logFitCancelled('speed-line');
+          return { maxSpeedCtx: null };
+        }
+        throw e;
+      } finally {
+        if (activeSpeedRuns.get(modelPath) === runId) {
+          activeSpeedRuns.delete(modelPath);
+        }
+        endFitRun(runId);
+      }
     },
   );
 

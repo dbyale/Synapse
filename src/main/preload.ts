@@ -335,6 +335,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     imageMaxTokens?: number;
     mtmdBatchMaxTokens?: number;
   }): Promise<{
+    cancelled?: boolean;
     ngl: number;
     ctx: number;
     tensorSplit: string | null;

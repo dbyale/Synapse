@@ -418,6 +418,9 @@ declare global {
         imageMaxTokens?: number;
         mtmdBatchMaxTokens?: number;
       }) => Promise<{
+        // Present only when the run was superseded (cancelled): the caller
+        // must ignore the response; a newer run owns the UI state.
+        cancelled?: boolean;
         ngl: number;
         ctx: number;
         tensorSplit: string | null;
