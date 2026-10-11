@@ -412,7 +412,7 @@ const OTHER_TARGETS: OtherTarget[] = [
   },
   {
     id: 'ubuntu-sycl-fp16-x64',
-    label: 'Ubuntu: SYCL FP16 (Ubuntu x64)',
+    label: 'SYCL FP16 (Ubuntu x64)',
     icon: 'sycl',
     target: 'ubuntu-sycl-fp16-x64',
     ext: 'tar.gz',
@@ -422,7 +422,7 @@ const OTHER_TARGETS: OtherTarget[] = [
   },
   {
     id: 'ubuntu-sycl-fp32-x64',
-    label: 'Ubuntu: SYCL FP32 (Ubuntu x64)',
+    label: 'SYCL FP32 (Ubuntu x64)',
     icon: 'sycl',
     target: 'ubuntu-sycl-fp32-x64',
     ext: 'tar.gz',
