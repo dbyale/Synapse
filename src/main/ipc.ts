@@ -464,8 +464,8 @@ export function registerIpcHandlers(win: BrowserWindow): void {
       _event,
       profile: Partial<Profile>,
       resolved?: {
-        ngl: number;
-        ctx: number;
+        ngl: number | null;
+        ctx: number | null;
         tensorSplit?: string | null;
         tensorOverrides?: string | null;
       } | null,
@@ -487,8 +487,17 @@ export function registerIpcHandlers(win: BrowserWindow): void {
             profile.projectorFilename,
           )
         : undefined;
-      const ngl = resolved?.ngl ?? profile.layers ?? 0;
-      const ctx = resolved?.ctx ?? profile.contextSize ?? 512;
+      // An explicit null in resolved omits the flag (unsolved optimizer
+      // preview); absent keys fall back to the profile. (?? alone cannot
+      // express this: null ?? x yields x.)
+      const ngl =
+        resolved != null && 'ngl' in resolved
+          ? resolved.ngl
+          : (profile.layers ?? 0);
+      const ctx =
+        resolved != null && 'ctx' in resolved
+          ? resolved.ctx
+          : (profile.contextSize ?? 512);
       // An explicit null in resolved clears a stored profile triple (e.g.
       // custom mode); absent keys fall back to the profile. (?? alone cannot
       // express this: null ?? x yields x.)

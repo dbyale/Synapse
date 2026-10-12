@@ -4656,8 +4656,6 @@ function ServerSettingsPage({
     emptyMessage = 'Building launch arguments…';
   } else if (!hasModel) {
     emptyMessage = 'Select a model to preview its launch arguments.';
-  } else if (unsolvedOptimizer) {
-    emptyMessage = 'Move the context slider to solve GPU layers.';
   }
   void modelFilename;
 
@@ -4903,6 +4901,19 @@ function ServerSettingsPage({
               Preview of the exact command line passed to llama-server when this
               profile is loaded.
             </div>
+            {unsolvedOptimizer && hasModel && !launchArgsLoading && (
+              <div
+                className="epm-estimate-notice"
+                style={{ marginTop: '10px', marginBottom: '10px' }}
+              >
+                <AlertTriangle size={14} />
+                <span>
+                  GPU layers are not solved yet, so --n-gpu-layers and
+                  --ctx-size are omitted from this preview. Load the Model
+                  or Edit Context Length to solve GPU layers.
+                </span>
+              </div>
+            )}
             <div
               className={`epm-launch-args${condensed ? ' epm-launch-args--condensed' : ''}`}
             >
@@ -5738,27 +5749,21 @@ export default function EditProfileModal({
       // Mirror the launch rule in chat.ts: custom (user-pinned) configs
       // never carry an optimizer triple, even if one is stored. Otherwise
       // only the exact solved-for values may use it.
-      // Unsolved synapse state (no layers yet) previews nothing rather than
-      // a phantom ngl 0 — the parent shows the unsolved hint instead.
-      if (editAutoOptimizer === 'synapse' && editLayers === undefined) {
-        if (launchArgsReqId.current === reqId) {
-          setLaunchArgs(null);
-          setLaunchArgsLoading(false);
-        }
-        return;
-      }
-      const solvedTriple = tripleFor(
-        editLayers ?? 0,
-        editContextSize ?? 4096,
-      );
+      // Unsolved synapse state (no layers yet) omits NGL + context from the
+      // command rather than previewing a phantom ngl 0.
+      const isUnsolved =
+        editAutoOptimizer === 'synapse' && editLayers === undefined;
+      const solvedTriple = isUnsolved
+        ? { tensorSplit: null, tensorOverrides: null }
+        : tripleFor(editLayers ?? 0, editContextSize ?? 4096);
       const previewTriple =
         editAutoOptimizer === 'custom'
           ? { tensorSplit: null, tensorOverrides: null }
           : solvedTriple;
       window.electronAPI
         .getLaunchArgs(draft, {
-          ngl: editLayers ?? 0,
-          ctx: editContextSize ?? 4096,
+          ngl: isUnsolved ? null : (editLayers ?? 0),
+          ctx: isUnsolved ? null : (editContextSize ?? 4096),
           ...previewTriple,
         })
         .then((args) => {

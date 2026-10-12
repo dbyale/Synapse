@@ -120,8 +120,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getLaunchArgs: (
     profile: unknown,
     resolved?: {
-      ngl: number;
-      ctx: number;
+      ngl: number | null;
+      ctx: number | null;
       tensorSplit?: string | null;
       tensorOverrides?: string | null;
     } | null,

@@ -253,8 +253,8 @@ declare global {
       getLaunchArgs: (
         profile: Partial<Profile>,
         resolved?: {
-          ngl: number;
-          ctx: number;
+          ngl: number | null;
+          ctx: number | null;
           tensorSplit?: string | null;
           tensorOverrides?: string | null;
         } | null,

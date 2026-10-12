@@ -600,10 +600,12 @@ function getServerUrl(path: string = ''): string {
 export interface LlamaServerLaunchConfig {
   modelPath: string;
   projectorPath?: string;
-  ngl: number;
-  ctx: number;
+  ngl: number | null;
+  ctx: number | null;
   // Fitted placement triple from the optimizer. Only meaningful together
   // with an explicit ngl — manual-mode gpuLayersAuto only (see below).
+  // Null ngl/ctx omits the corresponding flags from the command (used for
+  // the unsolved-optimizer preview where layers aren't solved yet).
   tensorSplit?: string | null;
   tensorOverrides?: string | null;
 }
@@ -728,17 +730,25 @@ export function buildLlamaServerArgs(
   const layersAuto =
     (profile as any).autoOptimizer === 'custom' &&
     (profile as any).gpuLayersAuto;
-  spawnArgs.push(
-    '--n-gpu-layers',
-    layersAuto ? 'auto' : config.ngl.toString(),
-    '--ctx-size',
-    config.ctx.toString(),
-  );
+  // Unsolved Synapse state (ngl/ctx null) omits both flags from the command
+  // rather than previewing a phantom 0. With gpuLayersAuto the server fits
+  // live, so 'auto' is still emitted even when no explicit ngl is set.
+  if (config.ngl != null) {
+    spawnArgs.push(
+      '--n-gpu-layers',
+      layersAuto ? 'auto' : config.ngl.toString(),
+    );
+  } else if (layersAuto) {
+    spawnArgs.push('--n-gpu-layers', 'auto');
+  }
+  if (config.ctx != null) {
+    spawnArgs.push('--ctx-size', config.ctx.toString());
+  }
   // Fitted tensor placement from the optimizer. Part of the (ngl, -ts, -ot)
   // triple: only valid with an explicit ngl. With gpuLayersAuto the server
   // fits live at startup, and pinned overrides would make its fit throw when
   // it needs to adjust — so omit both and let the server solve.
-  if (!layersAuto) {
+  if (!layersAuto && config.ngl != null) {
     if (config.tensorSplit) spawnArgs.push('-ts', config.tensorSplit);
     if (config.tensorOverrides)
       spawnArgs.push('-ot', config.tensorOverrides);
