@@ -103,6 +103,13 @@ let chatFunctions: any = null;
 let activeTools: any[] = [];
 let emitStreamEvent: ((payload: StreamEventPayload) => void) | null = null;
 
+// Manual-launch server defaults. A manual command fully replaces the server
+// invocation (profile host/port are ignored), so a blank host/port must fall
+// back to the llama-server defaults. Keep as exported constants — the server
+// default port will change later and should only need a one-line update here.
+export const DEFAULT_MANUAL_SERVER_HOST = '127.0.0.1';
+export const DEFAULT_MANUAL_SERVER_PORT = 8080;
+
 // --- llama-server stderr tail + crash propagation ---
 // Persistent (module-scope) so a crash AFTER a successful load can still
 // surface its last ~5 stderr lines. Previously this buffer was local to
@@ -587,12 +594,6 @@ export function renameSessionSynced(
   return updated;
 }
 
-function getServerUrl(path: string = ''): string {
-  const host = currentProfile?.host || '127.0.0.1';
-  const port = currentProfile?.port || 9931;
-  return `http://${host}:${port}${path}`;
-}
-
 // --- Build llama-server launch arguments ---
 // Single source of truth used by loadProfile() and exposed to the renderer
 // (chat:getLaunchArgs) so previews always match the real server invocation.
@@ -685,29 +686,80 @@ export function stripBinaryPrefix(args: string[]): string[] {
   return args;
 }
 
-// Best-effort record of ngl/ctx from a FULL manual launch command, for
-// usage tracking and logging only (the server launches the raw tokens).
-// Returns ngl 0 / ctx null when absent or unparseable — both degrade to
-// the existing fallbacks downstream. Exported for preview IPC & tests.
+// Best-effort record of ngl/ctx/host/port from a FULL manual launch command,
+// for usage tracking, logging, and endpoint resolution (the server launches
+// the raw tokens). Missing or unparseable values degrade to the existing
+// fallbacks downstream. Exported for preview IPC & tests.
 export function parseManualLaunchRecord(raw: string): {
   ngl: number;
   ctx: number | null;
+  host: string | null;
+  port: number | null;
 } {
   const tokens = stripBinaryPrefix(splitShellArgs(raw));
   const valueAfter = (...flags: string[]): string | null => {
-    for (let i = 0; i < tokens.length - 1; i += 1) {
-      if (flags.includes(tokens[i])) return tokens[i + 1] ?? null;
+    // Last occurrence wins (matches CLI behavior when a flag repeats).
+    // Supports both '--flag value' and '--flag=value' forms.
+    for (let i = tokens.length - 1; i >= 0; i -= 1) {
+      const token = tokens[i];
+      for (const flag of flags) {
+        if (token === flag) {
+          const next = tokens[i + 1];
+          // A missing value or a next token that looks like another flag
+          // means this occurrence is value-less - keep scanning backwards.
+          if (next === undefined || next.startsWith('-')) continue;
+          return next;
+        }
+        if (token.startsWith(`${flag}=`)) {
+          return token.slice(flag.length + 1);
+        }
+      }
     }
     return null;
   };
   const nglRaw = valueAfter('--n-gpu-layers', '-ngl', '--gpu-layers');
   const ctxRaw = valueAfter('--ctx-size', '-c');
+  const hostRaw = valueAfter('--host');
+  const portRaw = valueAfter('--port');
   const nglParsed = nglRaw !== null ? parseInt(nglRaw, 10) : NaN;
   const ctxParsed = ctxRaw !== null ? parseInt(ctxRaw, 10) : NaN;
+  const portParsed = portRaw !== null ? parseInt(portRaw, 10) : NaN;
+  const hostTrimmed = hostRaw?.trim() ?? '';
   return {
     ngl: Number.isNaN(nglParsed) ? 0 : nglParsed,
     ctx: Number.isNaN(ctxParsed) ? null : ctxParsed,
+    host: hostTrimmed.length > 0 ? hostTrimmed : null,
+    port: Number.isNaN(portParsed) ? null : portParsed,
   };
+}
+
+// Effective host/port the server will listen on for a given profile.
+// Manual mode fully replaces the server invocation, so profile host/port are
+// ignored: the endpoint comes from the manual command, falling back to the
+// llama-server defaults (DEFAULT_MANUAL_SERVER_*). Non-manual mode keeps the
+// existing profile host/port fallbacks. Exported for tests.
+export function resolveServerEndpoint(profile: Partial<Profile> | null): {
+  host: string;
+  port: number;
+} {
+  const useManual = (profile as any)?.useCustomLaunch === true;
+  if (useManual) {
+    const raw = ((profile as any)?.customLaunchCommand ?? '').trim();
+    const manual = parseManualLaunchRecord(raw);
+    return {
+      host: manual.host ?? DEFAULT_MANUAL_SERVER_HOST,
+      port: manual.port ?? DEFAULT_MANUAL_SERVER_PORT,
+    };
+  }
+  return {
+    host: (profile as any)?.host || DEFAULT_MANUAL_SERVER_HOST,
+    port: (profile as any)?.port || 9931,
+  };
+}
+
+function getServerUrl(path: string = ''): string {
+  const { host, port } = resolveServerEndpoint(currentProfile);
+  return `http://${host}:${port}${path}`;
 }
 
 export function buildLlamaServerArgs(
@@ -1573,8 +1625,7 @@ export async function loadProfile(
           throw new Error(`Inference server crashed.\n${detail}`);
         }
         try {
-          const host = (profile as any).host ?? '127.0.0.1';
-          const port = (profile as any).port ?? 9931;
+          const { host, port } = resolveServerEndpoint(profile);
           const res = await fetch(`http://${host}:${port}/health`);
           if (res.ok) {
             ready = true;
