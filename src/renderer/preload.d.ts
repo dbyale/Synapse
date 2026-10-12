@@ -67,15 +67,16 @@ export interface AppSettings {
   modelsDirectory: string;
   backendDirectory: string;
   customBinaryPaths: string[];
-  parserDirectory: string;
-  parserCustomBinaryPaths: string[];
   backendDownloads: BackendDownloadRecord[];
-  parserDownloads: ParserDownloadRecord | null;
   selectedBackend: string;
   openvinoDevice?: 'CPU' | 'GPU' | 'NPU';
   openvinoStateful?: boolean;
+  resourceAllocation?: 'automatic' | 'manual';
   allocatedVRAM?: number;
   allocatedRAM?: number;
+  estimatorTimeoutSec?: number;
+  serverTimeoutSec?: number;
+  vramHeadroomMB?: number;
   autoOpenThinking?: boolean;
   autoCloseThinkingDone?: boolean;
   host?: string;
@@ -95,12 +96,6 @@ export interface BackendDownloadRecord {
   folder: string;
 }
 
-export interface ParserDownloadRecord {
-  id: string;
-  label: string;
-  file: string;
-}
-
 export type BackendIcon =
   | 'cuda'
   | 'opencl'
@@ -111,7 +106,6 @@ export type BackendIcon =
   | 'rocm'
   | 'sycl'
   | 'android'
-  | 'parser'
   | 'custom';
 
 export interface BackendDownload {
@@ -151,15 +145,6 @@ export interface BackendInfo {
   gpus: BackendGpuInfo[];
   nvidiaDriverMajor: number | null;
   distro: string | null;
-}
-
-export interface ParserInfo {
-  platform: string;
-  arch: string;
-  defaultDownloadDir: string;
-  recommended: BackendDownload[];
-  optional: BackendDownload[];
-  others: BackendDownload[];
 }
 
 export interface HardwareGpuInfo {
@@ -230,23 +215,20 @@ declare global {
       getMemoryStats: () => Promise<SystemMemStats>;
       getVramStats: () => Promise<HardwareStats>;
       getBackendInfo: () => Promise<BackendInfo>;
-      getParserInfo: () => Promise<ParserInfo>;
       downloadBinary: (
-        kind: 'backend' | 'parser',
+        kind: 'backend',
         download: BackendDownload,
         dir: string,
       ) => Promise<string>;
       cancelBinaryDownload: (id: string) => Promise<boolean>;
       uninstallBinary: (
-        kind: 'backend' | 'parser',
+        kind: 'backend',
         download: BackendDownload,
         dir: string,
       ) => Promise<{ success: boolean; error?: string }>;
       getBinaryDownloads: () => Promise<{
         backends: BackendDownloadRecord[];
-        parser: ParserDownloadRecord | null;
         customBackendPaths: string[];
-        customParserPaths: string[];
       }>;
       chatMemoryUsage: () => Promise<{
         modelVramUsage: number;
@@ -270,7 +252,12 @@ declare global {
       chatGetCurrentProfile: () => Promise<Profile | null>;
       getLaunchArgs: (
         profile: Partial<Profile>,
-        resolved?: { ngl: number; ctx: number } | null,
+        resolved?: {
+          ngl: number;
+          ctx: number;
+          tensorSplit?: string | null;
+          tensorOverrides?: string | null;
+        } | null,
       ) => Promise<string[] | null>;
       chatHasProjector: () => Promise<boolean>;
       chatSend: (
@@ -414,19 +401,56 @@ declare global {
         modelFolder: string;
         modelFilename: string;
         projectorFilename?: string;
-        mode: 'longest-context' | 'most-gpu';
+        mode: 'synapse';
+        ctx: number;
         kvOffload?: boolean;
         flashAttn?: 'on' | 'off' | 'auto';
         mmap?: boolean;
+        mlock?: boolean;
+        repack?: boolean;
         cacheTypeK?: string;
         cacheTypeV?: string;
         parallel?: number;
+        cpuMoe?: boolean;
+        nCpuMoe?: number;
+        mmprojOffload?: boolean;
+        imageMinTokens?: number;
+        imageMaxTokens?: number;
+        mtmdBatchMaxTokens?: number;
       }) => Promise<{
+        // Present only when the run was superseded (cancelled): the caller
+        // must ignore the response; a newer run owns the UI state.
+        cancelled?: boolean;
         ngl: number;
         ctx: number;
-        vramMB: number;
-        ramMB: number;
+        tensorSplit: string | null;
+        tensorOverrides: string | null;
+        hostOverflowBytes: number;
+        // Undefined in automatic mode (no fixed budgets).
+        vramMB?: number;
+        ramMB?: number;
       }>;
+
+      maxSpeedCtx: (params: {
+        modelAuthor: string;
+        modelFolder: string;
+        modelFilename: string;
+        projectorFilename?: string;
+        kvOffload?: boolean;
+        flashAttn?: 'on' | 'off' | 'auto';
+        mmap?: boolean;
+        mlock?: boolean;
+        repack?: boolean;
+        cacheTypeK?: string;
+        cacheTypeV?: string;
+        parallel?: number;
+        cpuMoe?: boolean;
+        nCpuMoe?: number;
+        mmprojOffload?: boolean;
+        imageMinTokens?: number;
+        imageMaxTokens?: number;
+        mtmdBatchMaxTokens?: number;
+      }) => Promise<{ maxSpeedCtx: number | null }>;
 
       estimateMemory: (params: {
         modelAuthor: string;
@@ -438,9 +462,19 @@ declare global {
         kvOffload?: boolean;
         flashAttn?: 'on' | 'off' | 'auto';
         mmap?: boolean;
+        mlock?: boolean;
+        repack?: boolean;
         cacheTypeK?: string;
         cacheTypeV?: string;
         parallel?: number;
+        cpuMoe?: boolean;
+        nCpuMoe?: number;
+        mmprojOffload?: boolean;
+        imageMinTokens?: number;
+        imageMaxTokens?: number;
+        mtmdBatchMaxTokens?: number;
+        tensorSplit?: string | null;
+        tensorOverrides?: string | null;
       }) => Promise<{
         modelVramUsage: number;
         contextVramUsage: number;
@@ -449,6 +483,7 @@ declare global {
         contextRamUsage: number;
         computeOverheadRam: number;
         fileBufferRam: number;
+        projectorSkipped: boolean;
       }>;
 
       // ── Extensions API ──

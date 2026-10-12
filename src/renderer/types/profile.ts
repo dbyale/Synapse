@@ -24,6 +24,19 @@ export interface ContextShiftSettings {
   minTokensToClear?: number;
 }
 
+export interface MemoryEstimate {
+  modelVramUsage: number;
+  contextVramUsage: number;
+  computeOverheadVram: number;
+  modelRamUsage: number;
+  contextRamUsage: number;
+  computeOverheadRam: number;
+  fileBufferRam: number;
+  // True when a projector was requested but this fit build cannot measure
+  // it: the numbers cover the text model only.
+  projectorSkipped: boolean;
+}
+
 export const DEFAULT_CONTEXT_SHIFT: ContextShiftSettings = {
   enabled: false,
   tokensRemainingUntilShift: 4096,
@@ -80,9 +93,16 @@ export interface Profile {
   tools?: string[];
   layers?: number;
   gpuLayersAuto?: boolean;
+  // Fitted tensor placement from the auto-optimizer (-ts/-ot). Only valid
+  // together with the layers/contextSize values they were solved for; the
+  // main process nulls them for custom (user-pinned) configs.
+  tensorSplit?: string | null;
+  tensorOverrides?: string | null;
   contextShift?: ContextShiftSettings;
   contextSize?: number;
-  autoOptimizer?: 'longest-context' | 'most-gpu' | 'custom';
+  // 'synapse': pick context, the optimizer picks layers. Anything else
+  // stored (legacy longest-context/most-gpu) falls through to synapse.
+  autoOptimizer?: 'synapse' | 'custom';
   kvOffload?: boolean;
   flashAttn?: 'on' | 'off' | 'auto';
   cacheTypeK?: CacheType;
@@ -108,15 +128,7 @@ export interface Profile {
   maxLayers?: number;
   maxContext?: number;
   maxForModel?: string;
-  estimation?: {
-    modelVramUsage: number;
-    contextVramUsage: number;
-    computeOverheadVram: number;
-    modelRamUsage: number;
-    contextRamUsage: number;
-    computeOverheadRam: number;
-    fileBufferRam: number;
-  };
+  estimation?: MemoryEstimate;
   videoSettings?: {
     fps?: number;
     maxFrames?: number;

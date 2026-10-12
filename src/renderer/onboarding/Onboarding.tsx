@@ -2,21 +2,19 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import SetupExperiencePage from './SetupExperiencePage';
 import ProfessionsSetupPage from './ProfessionsSetupPage';
 import BackendSetupPage from './BackendSetupPage';
-import ParserSetupPage from './ParserSetupPage';
 import SystemSetupPage from './SystemSetupPage';
 import ServerSetupPage from './ServerSetupPage';
 import SecuritySetupPage from './SecuritySetupPage';
 import ChatSetupPage from './ChatSetupPage';
 import LlamaSetupPage from './LlamaSetupPage';
 import DownloadManager from '../components/DownloadManager';
-import type { BackendInfo, ParserInfo } from '../preload.d';
+import type { BackendInfo } from '../preload.d';
 import './onboarding.css';
 
 type Step =
   | 'setup'
   | 'professions'
   | 'backend'
-  | 'parser'
   | 'system'
   | 'server'
   | 'security'
@@ -44,9 +42,6 @@ export default function Onboarding() {
   const [preloadedBackend, setPreloadedBackend] = useState<BackendInfo | null>(
     null,
   );
-  const [preloadedParser, setPreloadedParser] = useState<ParserInfo | null>(
-    null,
-  );
   const [hwLoading, setHwLoading] = useState(false);
   const [hwReady, setHwReady] = useState(false);
   const hwPromiseRef = useRef<Promise<void> | null>(null);
@@ -62,10 +57,6 @@ export default function Onboarding() {
       window.electronAPI
         .getBackendInfo()
         .then((info) => setPreloadedBackend(info))
-        .catch(() => {}),
-      window.electronAPI
-        .getParserInfo()
-        .then((info) => setPreloadedParser(info))
         .catch(() => {}),
     ])
       .then(() => undefined)
@@ -85,7 +76,6 @@ export default function Onboarding() {
     setOpen(true);
     // Clear any stale session data and block first render until probe resolves
     setPreloadedBackend(null);
-    setPreloadedParser(null);
     setHwLoading(false);
     setHwReady(false);
     setActivePath(null);
@@ -109,7 +99,6 @@ export default function Onboarding() {
       setClosing(false);
       // Discard temporary session cache
       setPreloadedBackend(null);
-      setPreloadedParser(null);
       setHwLoading(false);
       setHwReady(false);
       setActivePath(null);
@@ -183,22 +172,13 @@ export default function Onboarding() {
             preloaded={preloadedBackend}
             preloadedLoading={hwLoading}
             onBack={() => navigate('setup')}
-            onContinue={() => navigate('parser')}
-          />
-        );
-      case 'parser':
-        return (
-          <ParserSetupPage
-            preloaded={preloadedParser}
-            preloadedLoading={hwLoading}
-            onBack={() => navigate('backend')}
             onContinue={() => navigate('system')}
           />
         );
       case 'system':
         return (
           <SystemSetupPage
-            onBack={() => navigate(isCustom ? 'parser' : 'setup')}
+            onBack={() => navigate(isCustom ? 'backend' : 'setup')}
             onContinue={() => navigate(isCustom ? 'server' : 'professions')}
           />
         );

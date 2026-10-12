@@ -3020,10 +3020,12 @@ export default function ChatPage() {
         } else {
           persistentLoadedProfileId = '';
           // Don't show error toast if load was intentionally aborted (shutdown during any loading phase)
+          // or superseded by a newer optimizer run (a fresh load is driving state).
           if (
             !abortController.cancelled &&
             myLoadId === persistentLastLoadId &&
-            res.error !== 'Server shutdown requested'
+            res.error !== 'Server shutdown requested' &&
+            (res as any).cancelled !== true
           ) {
             setLoadError(res.error || 'Failed to load profile');
           }

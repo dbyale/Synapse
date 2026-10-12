@@ -999,6 +999,65 @@
   color: var(--text-tertiary, var(--text-secondary));
 }
 
+/* ── Maximum Speed tick embedded in the ctx slider track ── */
+
+.epm-perf-range-wrap {
+  position: relative;
+  padding-top: 14px;
+}
+
+.epm-perf-range-tick {
+  position: absolute;
+  /* Track center sits at wrapper padding (14px) + input margin (6px) +
+     half the 6px track = ~23px; the bar spans across it. */
+  top: 12px;
+  height: 18px;
+  transform: translateX(-50%);
+  width: 3px;
+  border-radius: 2px;
+  background: #f9e2af;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+
+.epm-perf-range-tick-label {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+}
+
+.epm-perf-range-tick-text {
+  display: block;
+  width: 100%;
+  margin: 0;
+  text-align: inherit;
+  font-size: 10px;
+  line-height: 1.2;
+  white-space: nowrap;
+  color: #f9e2af;
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.epm-perf-range-tick-text:hover {
+  text-decoration: underline;
+}
+
+.epm-perf-range-tick-label--right {
+  transform: translateX(-100%);
+  text-align: right;
+}
+
+.epm-perf-range-tick-label--left {
+  transform: translateX(0);
+  text-align: left;
+}
+
 /* ── Memory Usage Bars (Apple-style segments) ── */
 
 .epm-mem-legend {
@@ -1335,6 +1394,43 @@
   flex-shrink: 0;
   margin-top: 1px;
   color: #f9e2af;
+}
+
+/* ── Fit failure banner: red variant above the yellow estimate notice ── */
+
+.epm-estimate-notice--error {
+  border-color: #ef4444;
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.epm-estimate-notice--error svg {
+  color: #ef4444;
+}
+
+.epm-estimate-notice--error strong {
+  display: block;
+  color: var(--text-primary);
+  font-size: 12px;
+  margin-bottom: 2px;
+}
+
+.epm-estimate-error-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+}
+
+.epm-estimate-error-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.epm-estimate-error-actions button {
+  font-size: 12px;
+  padding: 5px 14px;
 }
 
 .epm-estimate-notice a {

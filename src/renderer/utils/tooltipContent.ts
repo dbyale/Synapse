@@ -10,8 +10,8 @@ export const PROJECTOR_TOOLTIP =
 
 export const MMPROJ_OFFLOAD_TOOLTIP = [
   'Controls whether the multimodal projector is offloaded to the GPU.',
-  'When enabled (default), projector weights are loaded into VRAM for faster vision processing.',
-  'Disable to keep the projector in CPU memory.',
+  'When disabled (default), the projector is kept in CPU memory.',
+  'Enable to load projector weights into VRAM for faster vision processing.',
 ];
 
 export const IMAGE_MIN_TOKENS_TOOLTIP = [
@@ -170,16 +170,12 @@ export const DRY_SEQUENCE_BREAKERS_TOOLTIP = [
 // ── Performance / Optimizer ──
 
 export const OPTIMIZATION_MODE_TOOLTIP = [
-  'Longest Context: automatically optimizes for the largest possible context window.',
-  'Most GPU: automatically offloads as many layers as possible to the GPU for maximum speed.',
-  'Custom: allows manual control over GPU layers and context size.',
+  'Synapse Optimizer: pick a context size and the optimizer offloads as many layers as the hardware allows for exactly that size.',
+  'Manual: set GPU layers and context size yourself.',
 ];
 
-export const LONGEST_CONTEXT_TOOLTIP =
-  'Runs the auto-optimizer to find settings that maximize the context window size while staying within hardware limits.';
-
-export const MOST_GPU_TOOLTIP =
-  'Runs the auto-optimizer to offload as many layers as possible to the GPU, prioritizing inference speed.';
+export const SYNAPSE_OPTIMIZER_TOOLTIP =
+  'Runs the optimizer for the context size on the slider: maximum GPU layers (and tensor placement) for exactly that size.';
 
 export const CUSTOM_TOOLTIP =
   'Switch to manual mode to independently adjust GPU layers and context size.';
@@ -194,6 +190,7 @@ export const CONTEXT_SIZE_TOOLTIP = [
   'Maximum number of tokens the model can reference for generating each response.',
   'Larger context allows the model to remember more of the conversation but uses significantly more memory.',
   'Increases both VRAM and RAM usage proportionally.',
+  'The gold Maximum Speed marker fused into the track shows the largest context the full model holds on the GPU (fastest); past it, layer parts spill to CPU/RAM. It is measured on your hardware and moves with budgets and memory options.',
 ];
 
 export const KV_CACHE_OFFLOAD_TOOLTIP = [
@@ -205,7 +202,7 @@ export const KV_CACHE_OFFLOAD_TOOLTIP = [
 export const GPU_LAYERS_AUTO_TOOLTIP = [
   'Lets llama-server decide how many layers to offload to the GPU based on available VRAM at startup.',
   'This option may be helpful for systems that frequently change GPUs.',
-  'For the best results on most systems, use "Longest Context" or "Most GPU" modes for quick decisions.',
+  'For the best results on most systems, use the "Synapse Optimizer" mode for quick decisions.',
 ];
 
 export const K_CACHE_TYPE_TOOLTIP = [
@@ -276,17 +273,34 @@ export const MODELS_DIR_TOOLTIP =
 export const BACKEND_DIR_TOOLTIP =
   'Directory where the llama.cpp backends (CUDA, Vulkan, CPU) are downloaded and extracted. Defaults to a folder next to the Models Directory.';
 
-export const PARSER_DIR_TOOLTIP =
-  'Directory where the GGUF Parser Go binary is downloaded. It estimates model memory requirements. Defaults to a folder next to the Models Directory.';
+export const RESOURCE_ALLOCATION_TOOLTIP = [
+  'Automatic: fit models to live free memory via llama.cpp — no fixed budgets, no sliders.',
+  'Manual: reserve fixed RAM and VRAM budgets with the sliders below. Switching modes re-optimizes profiles.',
+];
+
+export const ESTIMATOR_TIMEOUT_TOOLTIP = [
+  'Wall-clock budget in seconds for a single estimator run (llama-fit-params).',
+  'Covers model measuring and fitting, including multi-probe searches. Applies to future runs.',
+  'Default: 100.',
+];
+
+export const SERVER_TIMEOUT_TOOLTIP = [
+  'Wall-clock budget in seconds for a model load: how long to wait for llama-server to become ready.',
+  'Very large models can take minutes. Applies to future loads.',
+  'Default: 200.',
+];
+
+export const VRAM_HEADROOM_TOOLTIP = [
+  'Free VRAM left untouched on each GPU when fitting a model, in MB.',
+  'Lower values pack tighter (faster, less headroom for driver spikes); higher values are safer.',
+  'Applies in both automatic and manual allocation. Default: 512.',
+];
 
 export const MEMORY_ALLOCATOR_TOOLTIP = [
   'Controls how much RAM and VRAM Synapse is allowed to reserve for the inference engine.',
   'Setting this too high may cause system instability or out-of-memory errors.',
   'Setting this too low limits the model size and context length you can use.',
 ];
-
-export const MAX_LABEL_TOOLTIP =
-  'Recommended ceiling for Synapse allocation. This accounts for other running processes and a safety buffer. Exceeding this may cause system instability.';
 
 // ── Draft Model (Speculative Decoding) ──
 

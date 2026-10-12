@@ -7,7 +7,7 @@ import InfoTooltip from '../components/InfoTooltip';
 import {
   MODELS_DIR_TOOLTIP,
   BACKEND_DIR_TOOLTIP,
-  PARSER_DIR_TOOLTIP,
+  RESOURCE_ALLOCATION_TOOLTIP,
   MEMORY_ALLOCATOR_TOOLTIP,
 } from '../utils/tooltipContent';
 import '../styles/SettingsPage.css';
@@ -37,9 +37,22 @@ export default function SystemSetupPage({
     if (settings) setSettingsReady(true);
   }, [settings]);
 
+  const allocMode = settings?.resourceAllocation ?? 'automatic';
   useEffect(() => {
-    if (settingsReady) fetchHardware().catch(() => {});
-  }, [settingsReady, fetchHardware]);
+    // Hardware probing is skipped under automatic allocation: the sliders
+    // are unrendered and the fit measures live memory itself.
+    if (settingsReady && allocMode === 'manual') {
+      fetchHardware().catch(() => {});
+    }
+  }, [settingsReady, allocMode, fetchHardware]);
+
+  const handleAllocationMode = (mode: 'automatic' | 'manual') => {
+    if (!settings || mode === allocMode) return;
+    setSettings((prev) =>
+      prev ? { ...prev, resourceAllocation: mode } : prev,
+    );
+    if (mode === 'manual') fetchHardware().catch(() => {});
+  };
 
   const [saving, setSaving] = useState(false);
 
@@ -69,28 +82,21 @@ export default function SystemSetupPage({
       // Silently fail
     }
   };
-  const handlePickParser = async () => {
-    if (!settings) return;
-    try {
-      const dir = await window.electronAPI.pickDirectory();
-      if (dir && dir !== settings.parserDirectory) {
-        setSettings((prev) =>
-          prev ? { ...prev, parserDirectory: dir } : prev,
-        );
-      }
-    } catch {
-      // Silently fail
-    }
-  };
-
   const handleContinue = async () => {
     if (saving || !settings) return;
     setSaving(true);
     try {
+      // Automatic mode carries no fixed budgets: leave any stored
+      // allocations untouched instead of persisting empty-slider zeros.
       const payload = {
         ...settings,
-        allocatedRAM: ramStats.appAllocated,
-        allocatedVRAM: vramStats.total > 0 ? vramStats.appAllocated : undefined,
+        ...(allocMode === 'manual'
+          ? {
+              allocatedRAM: ramStats.appAllocated,
+              allocatedVRAM:
+                vramStats.total > 0 ? vramStats.appAllocated : undefined,
+            }
+          : {}),
       } as typeof settings;
       if (vramStats.total <= 0) delete (payload as any).allocatedVRAM;
       await window.electronAPI.saveSettingsSilent(payload);
@@ -153,34 +159,74 @@ export default function SystemSetupPage({
               <h2 className="settings-card-title">System Resource Allocator</h2>
             </InfoTooltip>
 
-            <MemorySlider
-              title={ramTitle}
-              stats={ramStats}
-              onChange={(newVal) =>
-                setRamStats((prev) => ({ ...prev, appAllocated: newVal }))
-              }
-              onSave={() => {}}
-              onRefresh={fetchHardware}
-              loading={ramLoading}
-              unavailableMessage="RAM information unavailable"
-            />
+            <InfoTooltip
+              content={RESOURCE_ALLOCATION_TOOLTIP}
+              side="right"
+              hideIcon
+              title="Resource Allocation"
+            >
+              <div
+                className="settings-alloc-toggle"
+                role="group"
+                aria-label="Resource allocation mode"
+              >
+                <button
+                  type="button"
+                  className={`settings-alloc-btn${allocMode === 'automatic' ? ' settings-alloc-btn--active' : ''}`}
+                  onClick={() => handleAllocationMode('automatic')}
+                >
+                  Automatic
+                </button>
+                <button
+                  type="button"
+                  className={`settings-alloc-btn${allocMode === 'manual' ? ' settings-alloc-btn--active' : ''}`}
+                  onClick={() => handleAllocationMode('manual')}
+                >
+                  Manual
+                </button>
+              </div>
+            </InfoTooltip>
+            <p className="settings-alloc-hint">
+              {allocMode === 'automatic'
+                ? 'Fits models to live free memory via llama.cpp — no fixed budgets.'
+                : 'Reserve fixed RAM and VRAM budgets with the sliders below.'}
+            </p>
 
-            {showVramSection ? (
+            {allocMode === 'manual' && (
               <>
-                <div style={{ height: 32 }} />
                 <MemorySlider
-                  title={vramTitle}
-                  stats={vramStats}
+                  title={ramTitle}
+                  stats={ramStats}
                   onChange={(newVal) =>
-                    setVramStats((prev) => ({ ...prev, appAllocated: newVal }))
+                    setRamStats((prev) => ({ ...prev, appAllocated: newVal }))
                   }
                   onSave={() => {}}
                   onRefresh={fetchHardware}
-                  loading={false}
-                  unavailableMessage="GPU memory information unavailable"
+                  loading={ramLoading}
+                  unavailableMessage="RAM information unavailable"
                 />
+
+                {showVramSection ? (
+                  <>
+                    <div style={{ height: 32 }} />
+                    <MemorySlider
+                      title={vramTitle}
+                      stats={vramStats}
+                      onChange={(newVal) =>
+                        setVramStats((prev) => ({
+                          ...prev,
+                          appAllocated: newVal,
+                        }))
+                      }
+                      onSave={() => {}}
+                      onRefresh={fetchHardware}
+                      loading={false}
+                      unavailableMessage="GPU memory information unavailable"
+                    />
+                  </>
+                ) : null}
               </>
-            ) : null}
+            )}
           </div>
 
           <div className="onb-backend-section onb-rise onb-delay-2">
@@ -248,32 +294,6 @@ export default function SystemSetupPage({
               </InfoTooltip>
             </div>
 
-            <div className="settings-field">
-              <InfoTooltip
-                content={PARSER_DIR_TOOLTIP}
-                side="bottom"
-                hideIcon
-                title="Parser Directory"
-                className="parser-dir-tooltip"
-              >
-                <span className="settings-label">Parser Directory</span>
-                <div className="settings-row">
-                  <input
-                    className="settings-input"
-                    value={settings.parserDirectory}
-                    readOnly
-                  />
-                  <button
-                    type="button"
-                    className="settings-icon-btn"
-                    onClick={handlePickParser}
-                    title="Browse"
-                  >
-                    <FolderOpen size={16} />
-                  </button>
-                </div>
-              </InfoTooltip>
-            </div>
           </div>
         </div>
       </div>

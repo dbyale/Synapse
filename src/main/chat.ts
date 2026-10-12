@@ -1,21 +1,23 @@
 import * as fs from 'fs';
-import { spawn, exec, ChildProcess } from 'child_process';
-import { app } from 'electron';
+import { spawn, ChildProcess } from 'child_process';
 import path from 'path';
-import util from 'util';
 import { randomUUID } from 'crypto';
-import { graphics } from 'systeminformation';
 import {
   loadSettings,
   onMemorySettingsChanged,
   getModelsDirectory,
 } from './settings';
-import type { AppSettings } from './settings';
+import { resolveBackend } from './backendPaths';
 import type { ContextShiftSettings, Profile } from '../renderer/types/profile';
 import { DEFAULT_CONTEXT_SHIFT } from '../renderer/types/profile';
 // eslint-disable-next-line import/no-cycle
 import { createChatFunctions } from './chatFunctions';
-import { solveMaxConfig, getOrRunOptimizer } from './estimator';
+import {
+  getOrRunOptimizer,
+  FitCancelledError,
+  resolveBudgets,
+  logFitCancelled,
+} from './estimator';
 import { addTokenUsage, addWebSearch, getUsage } from './usage';
 import type { UsageStore } from '../renderer/utils/usage';
 import * as store from './sessionStore';
@@ -213,8 +215,6 @@ let usageSessionId: string | null = null;
 export function getCumulativeTokenUsage(): UsageStore {
   return getUsage();
 }
-
-const execAsync = util.promisify(exec);
 
 export function setStreamEventCallback(
   cb: (payload: StreamEventPayload) => void,
@@ -587,132 +587,6 @@ export function renameSessionSynced(
   return updated;
 }
 
-async function getNvidiaDriverVersion(): Promise<number | null> {
-  try {
-    const { stdout } = await execAsync(
-      'nvidia-smi --query-gpu=driver_version --format=csv,noheader',
-      { timeout: 5000 },
-    );
-    const v = stdout.trim().split('\n')[0]?.trim();
-    if (v) {
-      const major = parseInt(v.split('.')[0], 10);
-      if (!isNaN(major)) return major;
-    }
-  } catch {}
-
-  try {
-    const gpu = await graphics();
-    for (const ctrl of gpu.controllers) {
-      if (ctrl.vendor.toLowerCase().includes('nvidia') && ctrl.driverVersion) {
-        const parts = ctrl.driverVersion.split('.');
-        if (parts.length === 4) {
-          const last = parseInt(parts[3], 10);
-          if (!isNaN(last)) return Math.floor(last / 100);
-        } else {
-          const major = parseInt(parts[0], 10);
-          if (!isNaN(major)) return major;
-        }
-      }
-    }
-  } catch {}
-
-  return null;
-}
-
-function getAssetPath(...paths: string[]): string {
-  const base = app.isPackaged
-    ? path.join(process.resourcesPath, 'assets')
-    : path.join(__dirname, '../../assets');
-  return path.join(base, ...paths);
-}
-
-async function detectBackend(): Promise<string> {
-  const { platform, arch } = process;
-
-  if (platform === 'darwin') return `macos-${arch}`;
-
-  if (platform === 'linux') {
-    return arch === 'arm64' ? 'ubuntu-vulkan-arm64' : 'ubuntu-vulkan-x64';
-  }
-
-  if (platform === 'win32') {
-    if (arch === 'arm64') return 'win-adreno-arm64';
-
-    try {
-      const gpu = await graphics();
-      const isNvidia = gpu.controllers.some((c) =>
-        c.vendor.toLowerCase().includes('nvidia'),
-      );
-
-      if (isNvidia) {
-        const driverMajor = await getNvidiaDriverVersion();
-        if (driverMajor !== null && driverMajor >= 610) {
-          return 'win-cuda-13.4-x64';
-        }
-        return 'win-cuda-12.4-x64';
-      }
-
-      return 'win-vulkan-x64';
-    } catch {
-      return 'win-vulkan-x64';
-    }
-  }
-
-  return 'win-cpu-x64';
-}
-
-function getServerBinName(): string {
-  return process.platform === 'win32' ? 'llama-server.exe' : 'llama-server';
-}
-
-// Resolves which llama-server binary to launch. Explicit selection wins, then
-// the "Default" backend (first recommended download, preferring CUDA, then
-// OpenCL/Adreno, then Vulkan), then the first download, then bundled assets.
-async function resolveBackend(
-  settings: AppSettings,
-): Promise<{ backendFolder: string; serverPath: string }> {
-  const serverBin = getServerBinName();
-  const downloads = settings.backendDownloads ?? [];
-  const backendDir =
-    settings.backendDirectory ||
-    path.join(path.dirname(getModelsDirectory()), 'llama');
-  const customPaths = settings.customBinaryPaths ?? [];
-  const pathFor = (folder: string) => path.join(backendDir, folder, serverBin);
-
-  const selected = settings.selectedBackend;
-  if (selected && selected !== 'Default') {
-    if (customPaths.includes(selected) && fs.existsSync(selected)) {
-      return { backendFolder: selected, serverPath: selected };
-    }
-    const match = downloads.find((d) => d.folder === selected);
-    if (match && fs.existsSync(pathFor(match.folder))) {
-      return { backendFolder: match.folder, serverPath: pathFor(match.folder) };
-    }
-  }
-
-  const patterns = [/cuda/i, /opencl|adreno/i, /vulkan/i];
-  const hit = patterns
-    .map((pattern) =>
-      downloads.find(
-        (d) => pattern.test(d.folder) && fs.existsSync(pathFor(d.folder)),
-      ),
-    )
-    .find(Boolean);
-  if (hit) {
-    return { backendFolder: hit.folder, serverPath: pathFor(hit.folder) };
-  }
-
-  const first = downloads.find((d) => fs.existsSync(pathFor(d.folder)));
-  if (first)
-    return { backendFolder: first.folder, serverPath: pathFor(first.folder) };
-
-  const folder = await detectBackend();
-  return {
-    backendFolder: folder,
-    serverPath: getAssetPath('bin', folder, serverBin),
-  };
-}
-
 function getServerUrl(path: string = ''): string {
   const host = currentProfile?.host || '127.0.0.1';
   const port = currentProfile?.port || 9931;
@@ -728,6 +602,10 @@ export interface LlamaServerLaunchConfig {
   projectorPath?: string;
   ngl: number;
   ctx: number;
+  // Fitted placement triple from the optimizer. Only meaningful together
+  // with an explicit ngl — manual-mode gpuLayersAuto only (see below).
+  tensorSplit?: string | null;
+  tensorOverrides?: string | null;
 }
 
 /**
@@ -805,6 +683,31 @@ export function stripBinaryPrefix(args: string[]): string[] {
   return args;
 }
 
+// Best-effort record of ngl/ctx from a FULL manual launch command, for
+// usage tracking and logging only (the server launches the raw tokens).
+// Returns ngl 0 / ctx null when absent or unparseable — both degrade to
+// the existing fallbacks downstream. Exported for preview IPC & tests.
+export function parseManualLaunchRecord(raw: string): {
+  ngl: number;
+  ctx: number | null;
+} {
+  const tokens = stripBinaryPrefix(splitShellArgs(raw));
+  const valueAfter = (...flags: string[]): string | null => {
+    for (let i = 0; i < tokens.length - 1; i += 1) {
+      if (flags.includes(tokens[i])) return tokens[i + 1] ?? null;
+    }
+    return null;
+  };
+  const nglRaw = valueAfter('--n-gpu-layers', '-ngl', '--gpu-layers');
+  const ctxRaw = valueAfter('--ctx-size', '-c');
+  const nglParsed = nglRaw !== null ? parseInt(nglRaw, 10) : NaN;
+  const ctxParsed = ctxRaw !== null ? parseInt(ctxRaw, 10) : NaN;
+  return {
+    ngl: Number.isNaN(nglParsed) ? 0 : nglParsed,
+    ctx: Number.isNaN(ctxParsed) ? null : ctxParsed,
+  };
+}
+
 export function buildLlamaServerArgs(
   profile: Partial<Profile>,
   config: LlamaServerLaunchConfig,
@@ -819,18 +722,33 @@ export function buildLlamaServerArgs(
   }
   // Model Arguments
   const spawnArgs = ['--model', config.modelPath];
+  // Auto layers apply in manual mode only. The Synapse Optimizer always
+  // launches its explicit ngl + triple (the triple is invalid under auto),
+  // so a default-on hidden toggle can never silently drop the solution.
+  const layersAuto =
+    (profile as any).autoOptimizer === 'custom' &&
+    (profile as any).gpuLayersAuto;
   spawnArgs.push(
     '--n-gpu-layers',
-    (profile as any).gpuLayersAuto ? 'auto' : config.ngl.toString(),
+    layersAuto ? 'auto' : config.ngl.toString(),
     '--ctx-size',
     config.ctx.toString(),
   );
+  // Fitted tensor placement from the optimizer. Part of the (ngl, -ts, -ot)
+  // triple: only valid with an explicit ngl. With gpuLayersAuto the server
+  // fits live at startup, and pinned overrides would make its fit throw when
+  // it needs to adjust — so omit both and let the server solve.
+  if (!layersAuto) {
+    if (config.tensorSplit) spawnArgs.push('-ts', config.tensorSplit);
+    if (config.tensorOverrides)
+      spawnArgs.push('-ot', config.tensorOverrides);
+  }
 
   // Projector Arguments
   if (config.projectorPath) {
     spawnArgs.push('--mmproj', config.projectorPath);
   }
-  if ((profile as any).mmprojOffload === false) {
+  if ((profile as any).mmprojOffload !== true) {
     spawnArgs.push('--no-mmproj-offload');
   }
   if (
@@ -1361,6 +1279,7 @@ export async function loadProfile(
 ): Promise<{
   success: boolean;
   error?: string;
+  cancelled?: boolean;
   profile?: any;
   backend?: string;
 }> {
@@ -1391,14 +1310,19 @@ export async function loadProfile(
       const { backendFolder, serverPath } = await resolveBackend(settings);
       console.log(`Backend: ${backendFolder}`);
 
-      const vramMB = settings.allocatedVRAM ?? 4096;
-      const ramMB = settings.allocatedRAM ?? 8192;
+      const { mode: budgetMode, vramMB, ramMB } = resolveBudgets(settings);
 
       const fullProjectorPath = profile.projector
         ? path.join(getModelsDirectory(), profile.projector)
         : undefined;
 
-      let result: { ngl: number; ctx: number; memory: any };
+      let result: {
+        ngl: number;
+        ctx: number;
+        tensorSplit?: string | null;
+        tensorOverrides?: string | null;
+        memory: any;
+      };
       let updatedProfile: any;
 
       const { autoOptimizer } = profile as any;
@@ -1406,25 +1330,67 @@ export async function loadProfile(
         autoOptimizer === 'custom' &&
         typeof (profile as any).layers === 'number' &&
         typeof (profile as any).contextSize === 'number';
+      // Manual mode pins fixed budgets and caches the solution; automatic
+      // fits live free memory, so it always re-solves on load rather than
+      // trusting a possibly-stale cached placement.
+      const budgetsMatch =
+        (profile as any).allocatedVRAM === vramMB &&
+        (profile as any).allocatedRAM === ramMB;
       const hasValidCached =
+        budgetMode !== 'automatic' &&
         autoOptimizer &&
         autoOptimizer !== 'custom' &&
         typeof (profile as any).layers === 'number' &&
         typeof (profile as any).contextSize === 'number' &&
-        (profile as any).allocatedVRAM === vramMB &&
-        (profile as any).allocatedRAM === ramMB;
+        budgetsMatch &&
+        // Triple-aware caches only: profiles optimized before -ts/-ot
+        // forwarding existed carry no triple and must re-solve once.
+        'tensorSplit' in (profile as any) &&
+        'tensorOverrides' in (profile as any);
 
-      if (hasValidCustom || hasValidCached) {
+      // A FULL manual launch command replaces the whole server invocation,
+      // so the optimizer result would be discarded anyway — skip the solve.
+      // (Additional customFlags rows still merge into a fitted launch and
+      // keep the optimizer below.) Empty commands fall through to the
+      // normal path and fail fast at spawn, per spec.
+      const manualCmd = (profile as any).useCustomLaunch
+        ? ((profile as any).customLaunchCommand ?? '').trim()
+        : '';
+      if (manualCmd.length > 0) {
+        const manual = parseManualLaunchRecord(manualCmd);
+        result = {
+          ngl: manual.ngl,
+          ctx: manual.ctx ?? 2048,
+          tensorSplit: null,
+          tensorOverrides: null,
+          memory: null,
+        };
+      } else if (hasValidCustom) {
+        // User-pinned ngl/ctx: a stale optimizer triple must NOT ride along,
+        // it was solved for different values.
         result = {
           ngl: (profile as any).layers,
           ctx: (profile as any).contextSize,
+          tensorSplit: null,
+          tensorOverrides: null,
+          memory: null,
+        };
+      } else if (hasValidCached) {
+        result = {
+          ngl: (profile as any).layers,
+          ctx: (profile as any).contextSize,
+          tensorSplit: (profile as any).tensorSplit ?? null,
+          tensorOverrides: (profile as any).tensorOverrides ?? null,
           memory: null,
         };
       } else {
-        const mode =
-          autoOptimizer && autoOptimizer !== 'custom'
-            ? autoOptimizer
-            : 'longest-context';
+        // Single Synapse Optimizer: the user picks ctx (profile.contextSize),
+        // the fitter picks layers (+triple) for exactly that ctx.
+        const mode = 'synapse';
+        const requestedCtx =
+          typeof (profile as any).contextSize === 'number'
+            ? (profile as any).contextSize
+            : 4096;
         onStatus?.({
           phase: 'solving',
           message: `Optimizing Profile "${profile.name}"…`,
@@ -1433,7 +1399,7 @@ export async function loadProfile(
           fullModelPath,
           vramMB,
           ramMB,
-          mode === 'most-gpu',
+          requestedCtx,
           fullProjectorPath,
           profile,
         );
@@ -1441,8 +1407,15 @@ export async function loadProfile(
         (profile as any).layers = optResult.ngl;
         (profile as any).contextSize = optResult.ctx;
         (profile as any).autoOptimizer = mode;
-        (profile as any).allocatedVRAM = vramMB;
-        (profile as any).allocatedRAM = ramMB;
+        // Manual mode stamps the budgets the solution was solved for.
+        // Automatic mode leaves stored allocations untouched: they belong
+        // to manual mode and must survive for switching back.
+        if (budgetMode === 'manual') {
+          (profile as any).allocatedVRAM = vramMB;
+          (profile as any).allocatedRAM = ramMB;
+        }
+        (profile as any).tensorSplit = optResult.tensorSplit ?? null;
+        (profile as any).tensorOverrides = optResult.tensorOverrides ?? null;
         updatedProfile = { ...profile };
       }
 
@@ -1491,6 +1464,8 @@ export async function loadProfile(
         projectorPath: fullProjectorPath,
         ngl: result.ngl,
         ctx: result.ctx,
+        tensorSplit: result.tensorSplit ?? null,
+        tensorOverrides: result.tensorOverrides ?? null,
       });
 
       if (fullProjectorPath) {
@@ -1567,7 +1542,15 @@ export async function loadProfile(
       });
 
       let ready = false;
-      for (let i = 0; i < 45; i++) {
+      // Wall-clock budget for the server to become ready, from settings
+      // (serverTimeoutSec, default 200s). Huge models (100B+ params) can
+      // legitimately take minutes while still loading.
+      const startupTimeoutSec = (() => {
+        const sec = settings.serverTimeoutSec ?? 200;
+        return Number.isFinite(sec) && sec > 0 ? Math.floor(sec) : 200;
+      })();
+      const STARTUP_WAIT_SEC = startupTimeoutSec;
+      for (let i = 0; i < STARTUP_WAIT_SEC; i++) {
         // Abort immediately if server was shut down while still loading (all phases).
         // An unexpected exit (crash) surfaces the friendly preset or stderr
         // tail instead of the generic shutdown message so the error card has
@@ -1592,11 +1575,30 @@ export async function loadProfile(
       }
 
       if (!ready) {
+        const detail = getServerErrorDetail();
+        // A dead process here means it crashed mid-load (the loop above
+        // throws for that case, so this is a fallback). A LIVE process means
+        // the model simply needed longer than the wait budget — the common
+        // case for very large models — which deserves its own message rather
+        // than the generic startup-failure text.
+        if (serverProcess === proc && proc.exitCode === null) {
+          console.error(
+            `[llama-server] Startup timed out after ${STARTUP_WAIT_SEC}s waiting for /health ` +
+              `(model=${path.basename(fullModelPath)}, ` +
+              `NGL=${result.ngl}, Context=${result.ctx}). ` +
+              `The server process is still alive, so the model was likely still loading — ` +
+              `very large models can take several minutes. Last server output:\n` +
+              `${lastServerStderr.slice(-4000)}`,
+          );
+          throw new Error(
+            `Inference server timed out after ${STARTUP_WAIT_SEC}s while loading the model.\n` +
+              `The server was still running, so a large model may simply need more time to load.\n${detail}`,
+          );
+        }
         console.error(
           '[llama-server] Startup failed. Logs:\n',
           lastServerStderr,
         );
-        const detail = getServerErrorDetail();
         throw new Error(`Inference server failed to respond.\n${detail}`);
       }
 
@@ -1629,6 +1631,17 @@ export async function loadProfile(
       return { success: true, backend: backendFolder };
     } catch (error: any) {
       onStatus?.({ phase: 'ready', message: '' });
+      // A superseded optimizer run is not a failure: a newer request for
+      // the same model is already driving state. Log one line (no stack)
+      // and report cancellation so the UI stays quiet.
+      if (error instanceof FitCancelledError) {
+        logFitCancelled('chat-load');
+        return {
+          success: false,
+          error: 'Profile load superseded by a newer request',
+          cancelled: true,
+        };
+      }
       return { success: false, error: error.message };
     }
   } finally {

@@ -6,15 +6,20 @@ export interface AppSettings {
   modelsDirectory: string;
   backendDirectory: string;
   customBinaryPaths: string[];
-  parserDirectory: string;
-  parserCustomBinaryPaths: string[];
   backendDownloads: { id: string; label: string; folder: string }[];
-  parserDownloads: { id: string; label: string; file: string } | null;
   selectedBackend: string;
   openvinoDevice?: 'CPU' | 'GPU' | 'NPU';
   openvinoStateful?: boolean;
+  // 'automatic': fit to live free memory (llama.cpp defaults), sliders hidden.
+  // 'manual': reserve fixed budgets via the memory sliders. Absent = automatic.
+  resourceAllocation?: 'automatic' | 'manual';
   allocatedVRAM?: number;
   allocatedRAM?: number;
+  // Wall-clock budgets in seconds. Absent = built-in defaults.
+  estimatorTimeoutSec?: number;
+  serverTimeoutSec?: number;
+  // Free VRAM left untouched per GPU when fitting. Absent = 512 MB.
+  vramHeadroomMB?: number;
   autoOpenThinking?: boolean;
   autoCloseThinkingDone?: boolean;
   host?: string;
@@ -36,10 +41,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   modelsDirectory: DEFAULT_MODELS_DIR,
   backendDirectory: DEFAULT_BACKEND_DIR,
   customBinaryPaths: [],
-  parserDirectory: '',
-  parserCustomBinaryPaths: [],
   backendDownloads: [],
-  parserDownloads: null,
   selectedBackend: 'Default',
   openvinoDevice: 'CPU',
   openvinoStateful: false,
@@ -159,9 +161,13 @@ export function saveSettings(
   // Notify listeners only when memory settings actually changed
   const vramChanged = previous?.allocatedVRAM !== settings.allocatedVRAM;
   const ramChanged = previous?.allocatedRAM !== settings.allocatedRAM;
-  if (vramChanged || ramChanged) {
+  const modeChanged =
+    (previous?.resourceAllocation ?? 'automatic') !==
+    (settings.resourceAllocation ?? 'automatic');
+  if (vramChanged || ramChanged || modeChanged) {
     console.log(
       `[Settings] Memory settings changed — ` +
+        `mode: ${previous?.resourceAllocation ?? 'automatic'} → ${settings.resourceAllocation ?? 'automatic'}, ` +
         `VRAM: ${previous?.allocatedVRAM ?? '?'} → ${settings.allocatedVRAM ?? '?'} MB, ` +
         `RAM: ${previous?.allocatedRAM ?? '?'} → ${settings.allocatedRAM ?? '?'} MB`,
     );

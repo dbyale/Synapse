@@ -11,7 +11,6 @@ const packageJson = JSON.parse(fs.readFileSync(JSON_PATH, 'utf8'));
 
 // NOTICE: Some versions like CUDA may vary depending on the targeted build
 const LLAMA_VERSION = packageJson.binaryVersions.llama;
-const PARSER_VERSION = packageJson.binaryVersions.parser;
 
 const TARGETS: [string, string][] = [
   [`llama-${LLAMA_VERSION}-bin-macos-arm64.tar.gz`, 'macos-arm64'],
@@ -35,15 +34,8 @@ const CUDA_RUNTIMES: [string, string][] = [
   [`cudart-llama-bin-win-cuda-13.4-x64.zip`, 'win-cuda-13.4-x64'],
 ];
 
-const PARSER_TARGETS = [
-  'gguf-parser-windows-arm64.exe',
-  'gguf-parser-windows-amd64.exe',
-  'gguf-parser-darwin-arm64',
-  'gguf-parser-darwin-amd64',
-  'gguf-parser-linux-arm64',
-  'gguf-parser-linux-amd64',
-];
-
+// Binaries kept from each llama.cpp release bundle: the server plus the
+// llama-fit-params estimator (which must match the server's build/backend).
 async function downloadAndExtract(url: string, targetFolder: string) {
   const targetDir = path.join(ASSETS_BIN, targetFolder);
   if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
@@ -60,6 +52,7 @@ async function downloadAndExtract(url: string, targetFolder: string) {
     zip.getEntries().forEach((entry: AdmZip.IZipEntry) => {
       if (
         entry.entryName.includes('llama-server') ||
+        entry.entryName.includes('llama-fit-params') ||
         entry.entryName.endsWith('.dll')
       ) {
         zip.extractEntryTo(entry, targetDir, false, true);
@@ -72,27 +65,27 @@ async function downloadAndExtract(url: string, targetFolder: string) {
       file: tempTar,
       cwd: targetDir,
       strip: 1,
-      filter: (p: string) => p.includes('llama-server') || p.endsWith('.dylib'),
+      filter: (p: string) =>
+        p.includes('llama-server') ||
+        p.includes('llama-fit-params') ||
+        p.endsWith('.dylib'),
     });
     fs.unlinkSync(tempTar);
   } else {
-    // Handling raw binary files from gguf-parser releases (no extension)
-    const fileName = path.basename(url);
-    const filePath = path.join(targetDir, fileName);
-    fs.writeFileSync(filePath, buffer);
-    if (process.platform !== 'win32') fs.chmodSync(filePath, '755');
+    throw new Error(`Unsupported binary bundle URL: ${url}`);
   }
 
   // Set executable permissions for Unix
   if (process.platform !== 'win32') {
-    const binPath = path.join(targetDir, 'llama-server');
-    if (fs.existsSync(binPath)) fs.chmodSync(binPath, '755');
+    for (const bin of ['llama-server', 'llama-fit-params']) {
+      const binPath = path.join(targetDir, bin);
+      if (fs.existsSync(binPath)) fs.chmodSync(binPath, '755');
+    }
   }
 }
 
 async function run() {
   const llamaBase = `https://github.com/ggerganov/llama.cpp/releases/download/${LLAMA_VERSION}`;
-  const parserBase = `https://github.com/gpustack/gguf-parser-go/releases/download/${PARSER_VERSION}`;
 
   console.log('--- Starting Binary Setup ---');
 
@@ -107,11 +100,6 @@ async function run() {
   // 2. Download CUDA Runtimes
   for (const [file, folder] of CUDA_RUNTIMES) {
     await downloadAndExtract(`${llamaBase}/${file}`, folder);
-  }
-
-  // 3. Download All GGUF Parser Variants
-  for (const file of PARSER_TARGETS) {
-    await downloadAndExtract(`${parserBase}/${file}`, 'utils');
   }
 
   console.log('--- All binaries set up successfully ---');

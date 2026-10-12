@@ -14,9 +14,11 @@ import InfoTooltip from '../components/InfoTooltip';
 import {
   MODELS_DIR_TOOLTIP,
   BACKEND_DIR_TOOLTIP,
-  PARSER_DIR_TOOLTIP,
+  RESOURCE_ALLOCATION_TOOLTIP,
+  ESTIMATOR_TIMEOUT_TOOLTIP,
+  SERVER_TIMEOUT_TOOLTIP,
+  VRAM_HEADROOM_TOOLTIP,
   MEMORY_ALLOCATOR_TOOLTIP,
-  MAX_LABEL_TOOLTIP,
   RAM_LABEL_TOOLTIP,
   VRAM_LABEL_TOOLTIP,
   MODEL_WEIGHTS_TOOLTIP,
@@ -34,6 +36,10 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import '../styles/SettingsPage.css';
 import { MemorySlider } from '../components/settingsShared/MemorySlider';
 import { useHardwareStats } from '../components/settingsShared/useHardwareStats';
+import {
+  normalizeTimeoutSec,
+  normalizeHeadroomMB,
+} from '../components/settingsShared/useSettingsBuffer';
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
@@ -69,6 +75,7 @@ export default function SettingsPage() {
     let mounted = true;
 
     async function init() {
+      let initialMode: 'automatic' | 'manual' = 'automatic';
       try {
         const loaded = await window.electronAPI.loadSettings();
         if (!mounted) return;
@@ -76,16 +83,23 @@ export default function SettingsPage() {
         const normalized: AppSettings = {
           modelsDirectory: loaded?.modelsDirectory || '',
           backendDirectory: loaded?.backendDirectory || '',
-          parserDirectory: loaded?.parserDirectory || '',
           customBinaryPaths: loaded?.customBinaryPaths ?? [],
-          parserCustomBinaryPaths: loaded?.parserCustomBinaryPaths ?? [],
           backendDownloads: loaded?.backendDownloads ?? [],
-          parserDownloads: loaded?.parserDownloads ?? null,
           selectedBackend: loaded?.selectedBackend ?? 'Default',
           openvinoDevice: loaded?.openvinoDevice ?? 'CPU',
           openvinoStateful: loaded?.openvinoStateful ?? false,
+          resourceAllocation: loaded?.resourceAllocation ?? 'automatic',
           allocatedRAM: loaded?.allocatedRAM,
           allocatedVRAM: loaded?.allocatedVRAM,
+          estimatorTimeoutSec: normalizeTimeoutSec(
+            loaded?.estimatorTimeoutSec,
+            100,
+          ),
+          serverTimeoutSec: normalizeTimeoutSec(
+            loaded?.serverTimeoutSec,
+            200,
+          ),
+          vramHeadroomMB: normalizeHeadroomMB(loaded?.vramHeadroomMB, 512),
           autoOpenThinking: loaded?.autoOpenThinking ?? true,
           autoCloseThinkingDone: loaded?.autoCloseThinkingDone ?? true,
           corsOrigins: loaded?.corsOrigins ?? 'localhost',
@@ -110,6 +124,7 @@ export default function SettingsPage() {
         };
 
         setSettings(normalized);
+        initialMode = normalized.resourceAllocation ?? 'automatic';
       } catch {
         // Silently fail
       }
@@ -118,7 +133,11 @@ export default function SettingsPage() {
         // Detect RAM/VRAM in background — do not block page/tab rendering.
         // The RAM bar shows "Detecting hardware…" via ramLoading until resolved.
         // VRAM bar stays hidden until resolved (see showVramSection).
-        fetchHardware().catch(() => {});
+        // Skipped entirely under automatic allocation: the sliders are
+        // unrendered and the fit measures live memory itself.
+        if (initialMode === 'manual') {
+          fetchHardware().catch(() => {});
+        }
       }
     }
 
@@ -134,21 +153,38 @@ export default function SettingsPage() {
 
     setSaveStatus('saving');
     try {
+      // Automatic mode stores no fixed budgets. In manual mode, slider
+      // state is only sourced once probed (total > 0) — never persist
+      // empty-slider zeros over stored allocations.
+      const manual =
+        (overrides.resourceAllocation ??
+          settings.resourceAllocation ??
+          'automatic') === 'manual';
       const payload: AppSettings = {
         ...settings,
-        allocatedRAM: ramStats.appAllocated,
         ...overrides,
       };
 
-      if (vramStats.total > 0) {
-        payload.allocatedVRAM =
-          overrides.allocatedVRAM ?? vramStats.appAllocated;
-      } else {
-        delete payload.allocatedVRAM;
+      // Automatic mode never writes allocation keys: switching modes must
+      // preserve the stored manual values so switching back restores them.
+      // The estimator fits live memory in automatic and ignores these.
+      if (manual) {
+        if (ramStats.total > 0) {
+          payload.allocatedRAM =
+            overrides.allocatedRAM ?? ramStats.appAllocated;
+        }
+        if (vramStats.total > 0) {
+          payload.allocatedVRAM =
+            overrides.allocatedVRAM ?? vramStats.appAllocated;
+        } else {
+          delete payload.allocatedVRAM;
+        }
       }
 
       const isMemChange =
-        'allocatedRAM' in overrides || 'allocatedVRAM' in overrides;
+        'allocatedRAM' in overrides ||
+        'allocatedVRAM' in overrides ||
+        'resourceAllocation' in overrides;
       let shouldPrompt = false;
       if (isMemChange) {
         const currentProfile = await window.electronAPI.chatGetCurrentProfile();
@@ -180,6 +216,24 @@ export default function SettingsPage() {
     } catch {
       setSaveStatus('idle');
     }
+  };
+
+  const allocMode = settings?.resourceAllocation ?? 'automatic';
+
+  // Timeout inputs in seconds: any positive number allowed, fall back to
+  // the default for garbage/empty/non-positive input.
+  const timeoutOrDefault = (value: number | undefined, fallback: number) => {
+    if (!Number.isFinite(value) || (value as number) <= 0) return fallback;
+    return Math.floor(value as number);
+  };
+
+  const handleAllocationMode = (mode: 'automatic' | 'manual') => {
+    if (!settings || mode === allocMode) return;
+    setSettings({ ...settings, resourceAllocation: mode });
+    // Probing is skipped under automatic: fetch on entering manual so the
+    // freshly mounted sliders have hardware data.
+    if (mode === 'manual') fetchHardware().catch(() => {});
+    triggerSave({ resourceAllocation: mode });
   };
 
   const handleRestartNow = async () => {
@@ -221,22 +275,6 @@ export default function SettingsPage() {
           prev ? { ...prev, backendDirectory: dir } : prev,
         );
         triggerSave({ backendDirectory: dir });
-      }
-    } catch {
-      // Silently fail
-    }
-  }
-
-  async function handlePickParserDirectory() {
-    if (!settings) return;
-
-    try {
-      const dir = await window.electronAPI.pickDirectory();
-      if (dir && dir !== settings.parserDirectory) {
-        setSettings((prev) =>
-          prev ? { ...prev, parserDirectory: dir } : prev,
-        );
-        triggerSave({ parserDirectory: dir });
       }
     } catch {
       // Silently fail
@@ -302,31 +340,113 @@ export default function SettingsPage() {
               <h2 className="settings-card-title">System Resource Allocator</h2>
             </InfoTooltip>
 
-            <MemorySlider
-              title={ramTitle}
-              stats={ramStats}
-              onChange={(newVal) =>
-                setRamStats((prev) => ({ ...prev, appAllocated: newVal }))
-              }
-              onSave={(newVal) => triggerSave({ allocatedRAM: newVal })}
-              onRefresh={fetchHardware}
-              loading={ramLoading}
-              unavailableMessage="RAM information unavailable"
-            />
+            <InfoTooltip
+              content={RESOURCE_ALLOCATION_TOOLTIP}
+              side="right"
+              hideIcon
+              title="Resource Allocation"
+            >
+              <div
+                className="settings-alloc-toggle"
+                role="group"
+                aria-label="Resource allocation mode"
+              >
+                <button
+                  type="button"
+                  className={`settings-alloc-btn${allocMode === 'automatic' ? ' settings-alloc-btn--active' : ''}`}
+                  onClick={() => handleAllocationMode('automatic')}
+                >
+                  Automatic
+                </button>
+                <button
+                  type="button"
+                  className={`settings-alloc-btn${allocMode === 'manual' ? ' settings-alloc-btn--active' : ''}`}
+                  onClick={() => handleAllocationMode('manual')}
+                >
+                  Manual
+                </button>
+              </div>
+            </InfoTooltip>
+            <p className="settings-alloc-hint">
+              {allocMode === 'automatic'
+                ? 'Fits models to live free memory via llama.cpp — no fixed budgets.'
+                : 'Reserve fixed RAM and VRAM budgets with the sliders below.'}
+            </p>
 
-            {showVramSection ? (
-              <MemorySlider
-                title={vramTitle}
-                stats={vramStats}
-                onChange={(newVal) =>
-                  setVramStats((prev) => ({ ...prev, appAllocated: newVal }))
-                }
-                onSave={(newVal) => triggerSave({ allocatedVRAM: newVal })}
-                onRefresh={fetchHardware}
-                loading={gpuLoading}
-                unavailableMessage="GPU memory information unavailable"
-              />
-            ) : null}
+            {allocMode === 'manual' && (
+              <>
+                <MemorySlider
+                  title={ramTitle}
+                  stats={ramStats}
+                  onChange={(newVal) =>
+                    setRamStats((prev) => ({ ...prev, appAllocated: newVal }))
+                  }
+                  onSave={(newVal) => triggerSave({ allocatedRAM: newVal })}
+                  onRefresh={fetchHardware}
+                  loading={ramLoading}
+                  unavailableMessage="RAM information unavailable"
+                />
+
+                {showVramSection ? (
+                  <MemorySlider
+                    title={vramTitle}
+                    stats={vramStats}
+                    onChange={(newVal) =>
+                      setVramStats((prev) => ({
+                        ...prev,
+                        appAllocated: newVal,
+                      }))
+                    }
+                    onSave={(newVal) =>
+                      triggerSave({ allocatedVRAM: newVal })
+                    }
+                    onRefresh={fetchHardware}
+                    loading={gpuLoading}
+                    unavailableMessage="GPU memory information unavailable"
+                  />
+                ) : null}
+              </>
+            )}
+
+            <div className="settings-field" style={{ marginTop: '16px' }}>
+              <div className="epm-section__label">VRAM Headroom (MB)</div>
+              <InfoTooltip
+                content={VRAM_HEADROOM_TOOLTIP}
+                side="bottom"
+                stretch
+                className="info-tooltip-stretch--col"
+                title="VRAM Headroom (MB)"
+              >
+                  <input
+                    type="number"
+                    className="settings-input settings-input--no-spinner"
+                    value={settings.vramHeadroomMB?.toString() ?? ''}
+                    onChange={(e) => {
+                      const parsed = parseInt(e.target.value, 10);
+                      setSettings((prev) =>
+                        prev
+                          ? {
+                              ...prev,
+                              vramHeadroomMB: Number.isNaN(parsed)
+                                ? undefined
+                                : parsed,
+                            }
+                          : prev,
+                      );
+                    }}
+                  onBlur={() =>
+                    triggerSave({
+                      vramHeadroomMB: normalizeHeadroomMB(
+                        settings.vramHeadroomMB,
+                        512,
+                      ),
+                    })
+                  }
+                  placeholder="512"
+                  style={{ marginTop: '8px', maxWidth: '240px' }}
+                />
+              </InfoTooltip>
+            </div>
           </div>
 
           <div className="settings-card">
@@ -394,32 +514,6 @@ export default function SettingsPage() {
               </InfoTooltip>
             </div>
 
-            <div className="settings-field">
-              <InfoTooltip
-                content={PARSER_DIR_TOOLTIP}
-                side="bottom"
-                hideIcon
-                title="Parser Directory"
-                className="parser-dir-tooltip"
-              >
-                <span className="settings-label">Parser Directory</span>
-                <div className="settings-row">
-                  <input
-                    className="settings-input"
-                    value={settings.parserDirectory}
-                    readOnly
-                  />
-                  <button
-                    type="button"
-                    className="settings-icon-btn"
-                    onClick={handlePickParserDirectory}
-                    title="Browse"
-                  >
-                    <FolderOpen size={16} />
-                  </button>
-                </div>
-              </InfoTooltip>
-            </div>
           </div>
         </>
       )}
@@ -643,6 +737,108 @@ export default function SettingsPage() {
                 }}
               >
                 <div className="epm-toggle-switch__knob" />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {tab === 'server' && (
+        <div className="settings-card">
+          <h2 className="settings-card-title">Timeouts</h2>
+          <p
+            style={{
+              fontSize: '14px',
+              color: 'var(--text-secondary)',
+              marginBottom: '20px',
+              lineHeight: 1.5,
+            }}
+          >
+            Wall-clock budgets in seconds. Applies to future estimator runs
+            and model loads; already-running processes are not affected.
+          </p>
+
+          <div className="settings-field">
+            <div
+              style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}
+            >
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="epm-section__label">
+                  Estimator Timeout (Seconds)
+                </div>
+                <InfoTooltip
+                  content={ESTIMATOR_TIMEOUT_TOOLTIP}
+                  side="bottom"
+                  stretch
+                  className="info-tooltip-stretch--col"
+                  title="Estimator Timeout (Seconds)"
+                >
+                  <input
+                    type="number"
+                    className="settings-input settings-input--no-spinner"
+                    value={settings.estimatorTimeoutSec?.toString() ?? ''}
+                    onChange={(e) =>
+                      setSettings((prev) =>
+                        prev
+                          ? {
+                              ...prev,
+                              estimatorTimeoutSec:
+                                parseInt(e.target.value, 10) || 100,
+                            }
+                          : prev,
+                      )
+                    }
+                    onBlur={() =>
+                      triggerSave({
+                        estimatorTimeoutSec: timeoutOrDefault(
+                          settings.estimatorTimeoutSec,
+                          100,
+                        ),
+                      })
+                    }
+                    placeholder="100"
+                    style={{ marginTop: '8px' }}
+                  />
+                </InfoTooltip>
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="epm-section__label">
+                  Server Timeout (Seconds)
+                </div>
+                <InfoTooltip
+                  content={SERVER_TIMEOUT_TOOLTIP}
+                  side="bottom"
+                  stretch
+                  className="info-tooltip-stretch--col"
+                  title="Server Timeout (Seconds)"
+                >
+                  <input
+                    type="number"
+                    className="settings-input settings-input--no-spinner"
+                    value={settings.serverTimeoutSec?.toString() ?? ''}
+                    onChange={(e) =>
+                      setSettings((prev) =>
+                        prev
+                          ? {
+                              ...prev,
+                              serverTimeoutSec:
+                                parseInt(e.target.value, 10) || 200,
+                            }
+                          : prev,
+                      )
+                    }
+                    onBlur={() =>
+                      triggerSave({
+                        serverTimeoutSec: timeoutOrDefault(
+                          settings.serverTimeoutSec,
+                          200,
+                        ),
+                      })
+                    }
+                    placeholder="200"
+                    style={{ marginTop: '8px' }}
+                  />
+                </InfoTooltip>
               </div>
             </div>
           </div>

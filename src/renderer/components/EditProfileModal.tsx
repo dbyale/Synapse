@@ -21,7 +21,6 @@ import {
   Loader2,
   Zap,
   FileText,
-  Flame,
   SlidersHorizontal,
   AlertTriangle,
   Puzzle,
@@ -39,6 +38,7 @@ import {
   CacheType,
   ContextShiftSettings,
   DEFAULT_CONTEXT_SHIFT,
+  MemoryEstimate,
 } from '../types/profile';
 import type { LocalModel } from '../preload.d';
 import { getToolMeta, getAvailableToolNames } from '../utils/extensionData';
@@ -76,8 +76,7 @@ import {
   DRY_PENALTY_LAST_N_TOOLTIP,
   DRY_SEQUENCE_BREAKERS_TOOLTIP,
   OPTIMIZATION_MODE_TOOLTIP,
-  LONGEST_CONTEXT_TOOLTIP,
-  MOST_GPU_TOOLTIP,
+  SYNAPSE_OPTIMIZER_TOOLTIP,
   CUSTOM_TOOLTIP,
   GPU_LAYERS_TOOLTIP,
   GPU_LAYERS_AUTO_TOOLTIP,
@@ -1164,12 +1163,8 @@ function ToolCategoryCard({
 
 // ── Page content components ──
 
-const autoOptimizerLabel = (v: 'longest-context' | 'most-gpu' | 'custom') =>
-  v === 'longest-context'
-    ? 'Longest Context'
-    : v === 'most-gpu'
-      ? 'Most GPU'
-      : 'Custom';
+const autoOptimizerLabel = (v: 'synapse' | 'custom') =>
+  v === 'synapse' ? 'Synapse Optimizer' : 'Manual';
 
 function MainPage({
   editName,
@@ -1208,7 +1203,7 @@ function MainPage({
   }>;
   onOpenModelModal: () => void;
   onNavigate: (page: string) => void;
-  editAutoOptimizer: 'longest-context' | 'most-gpu' | 'custom' | null;
+  editAutoOptimizer: 'synapse' | 'custom' | null;
   editLayers: number | undefined;
   editContextSize: number | undefined;
   modelMaxLayers: number;
@@ -1320,7 +1315,9 @@ function MainPage({
             title="Performance"
             preview={
               editAutoOptimizer
-                ? autoOptimizerLabel(editAutoOptimizer)
+                ? autoOptimizerLabel(
+                    editAutoOptimizer === 'custom' ? 'custom' : 'synapse',
+                  )
                 : 'Not configured'
             }
             onClick={() => onNavigate('performance')}
@@ -3074,11 +3071,16 @@ function PerformancePage({
   optimizerRunning,
   modelMaxLayers,
   modelMaxContext,
+  maxSpeedCtx,
+  fitError,
+  onDismissFitError,
+  onRetryFit,
+  hasProjector,
+  mmprojOffload,
   onSetAutoOptimizer,
   onSetGpuLayersAuto,
   onSetLayers,
   onSetContextSize,
-  onRunOptimizer,
   onEstimateMemory,
   initialEstimate,
   onNavigate,
@@ -3087,20 +3089,23 @@ function PerformancePage({
   editCsEnabled,
   editCsTokensRemaining,
 }: {
-  editAutoOptimizer: 'longest-context' | 'most-gpu' | 'custom' | null;
+  editAutoOptimizer: 'synapse' | 'custom' | null;
   editLayers: number | undefined;
   editContextSize: number | undefined;
   editGpuLayersAuto: boolean;
-  optimizerRunning: 'longest-context' | 'most-gpu' | null;
+  optimizerRunning: boolean;
   modelMaxLayers: number;
   modelMaxContext: number;
-  onSetAutoOptimizer: (
-    v: 'longest-context' | 'most-gpu' | 'custom' | null,
-  ) => void;
+  maxSpeedCtx: number | null;
+  fitError: string | null;
+  onDismissFitError: () => void;
+  onRetryFit: () => void;
+  hasProjector: boolean;
+  mmprojOffload: boolean;
+  onSetAutoOptimizer: (v: 'synapse' | 'custom' | null) => void;
   onSetGpuLayersAuto: (v: boolean) => void;
   onSetLayers: (v: number | undefined) => void;
   onSetContextSize: (v: number | undefined) => void;
-  onRunOptimizer: (mode: 'longest-context' | 'most-gpu') => void;
   onEstimateMemory: (
     ngl: number,
     ctx: number,
@@ -3108,24 +3113,8 @@ function PerformancePage({
     mmap?: boolean,
     cacheTypeK?: CacheType,
     cacheTypeV?: CacheType,
-  ) => Promise<{
-    modelVramUsage: number;
-    contextVramUsage: number;
-    computeOverheadVram: number;
-    modelRamUsage: number;
-    contextRamUsage: number;
-    computeOverheadRam: number;
-    fileBufferRam: number;
-  } | null>;
-  initialEstimate: {
-    modelVramUsage: number;
-    contextVramUsage: number;
-    computeOverheadVram: number;
-    modelRamUsage: number;
-    contextRamUsage: number;
-    computeOverheadRam: number;
-    fileBufferRam: number;
-  } | null;
+  ) => Promise<MemoryEstimate | null>;
+  initialEstimate: MemoryEstimate | null;
   onNavigate: (page: string) => void;
   editSpecType: string[];
   editDraftModelFilename: string;
@@ -3142,18 +3131,12 @@ function PerformancePage({
       ? (editLayers ?? 0)
       : (editLayers ?? 0);
   const sliderCtx = isAuto
-    ? (editContextSize ?? 512)
-    : (editContextSize ?? 512);
+    ? (editContextSize ?? 4096)
+    : (editContextSize ?? 4096);
 
-  const [memory, setMemory] = useState<{
-    modelVramUsage: number;
-    contextVramUsage: number;
-    computeOverheadVram: number;
-    modelRamUsage: number;
-    contextRamUsage: number;
-    computeOverheadRam: number;
-    fileBufferRam: number;
-  } | null>(initialEstimate);
+  const [memory, setMemory] = useState<MemoryEstimate | null>(
+    initialEstimate,
+  );
   const [totalVRAM, setTotalVRAM] = useState(0);
   const [totalRAM, setTotalRAM] = useState(0);
   useEffect(() => {
@@ -3171,7 +3154,26 @@ function PerformancePage({
     : isAuto
       ? (editLayers ?? 0)
       : sliderNgl;
-  const activeCtx = isAuto ? (editContextSize ?? 512) : sliderCtx;
+  const activeCtx = isAuto ? (editContextSize ?? 4096) : sliderCtx;
+
+  // Maximum Speed marker zone: near an edge the label anchors to that edge
+  // (grows inward) so it never clips off-screen; centered everywhere else.
+  const SPEED_EDGE_ZONE = 0.1;
+  const speedPct =
+    isAuto && maxSpeedCtx !== null
+      ? Math.min(
+          1,
+          Math.max(
+            0,
+            (maxSpeedCtx - 512) / Math.max(1, modelMaxContext - 512),
+          ),
+        )
+      : null;
+  let speedZone: 'left' | 'right' | null = null;
+  if (speedPct !== null) {
+    if (speedPct >= 1 - SPEED_EDGE_ZONE) speedZone = 'right';
+    else if (speedPct <= SPEED_EDGE_ZONE) speedZone = 'left';
+  }
 
   const triggerEstimate = useCallback(
     async (
@@ -3242,6 +3244,9 @@ function PerformancePage({
     1 - ramOverheadPct - ramModelPct - ramBufferPct - ramCtxPct,
   );
 
+  const fitTimedOut =
+    fitError !== null && /timed out/i.test(fitError);
+
   return (
     <>
       <h2 className="epm-page-title">Performance</h2>
@@ -3269,55 +3274,32 @@ function PerformancePage({
         </InfoTooltip>
         <div className="epm-perf-three-toggle">
           <InfoTooltip
-            content={LONGEST_CONTEXT_TOOLTIP}
+            content={SYNAPSE_OPTIMIZER_TOOLTIP}
             hideIcon
-            title="Longest Context"
+            title="Synapse Optimizer"
             className="epm-perf-btn-wrapper"
           >
             <button
               type="button"
-              className={`epm-perf-btn${editAutoOptimizer === 'longest-context' ? ' epm-perf-btn--active' : ''}${optimizerRunning === 'longest-context' ? ' epm-perf-btn--loading' : ''}`}
+              className={`epm-perf-btn${editAutoOptimizer === 'synapse' ? ' epm-perf-btn--active' : ''}${optimizerRunning ? ' epm-perf-btn--loading' : ''}`}
               onClick={() => {
                 if (optimizerRunning) return;
-                onRunOptimizer('longest-context');
+                onSetAutoOptimizer('synapse');
               }}
-              disabled={!!optimizerRunning}
+              disabled={optimizerRunning}
             >
-              {optimizerRunning === 'longest-context' ? (
+              {optimizerRunning ? (
                 <Loader2 size={16} className="epm-perf-spinner" />
               ) : (
-                <FileText size={16} />
+                <Zap size={16} />
               )}
-              <span>Longest Context</span>
-            </button>
-          </InfoTooltip>
-          <InfoTooltip
-            content={MOST_GPU_TOOLTIP}
-            hideIcon
-            title="Most GPU"
-            className="epm-perf-btn-wrapper"
-          >
-            <button
-              type="button"
-              className={`epm-perf-btn${editAutoOptimizer === 'most-gpu' ? ' epm-perf-btn--active' : ''}${optimizerRunning === 'most-gpu' ? ' epm-perf-btn--loading' : ''}`}
-              onClick={() => {
-                if (optimizerRunning) return;
-                onRunOptimizer('most-gpu');
-              }}
-              disabled={!!optimizerRunning}
-            >
-              {optimizerRunning === 'most-gpu' ? (
-                <Loader2 size={16} className="epm-perf-spinner" />
-              ) : (
-                <Flame size={16} />
-              )}
-              <span>Most GPU</span>
+              <span>Synapse Optimizer</span>
             </button>
           </InfoTooltip>
           <InfoTooltip
             content={CUSTOM_TOOLTIP}
             hideIcon
-            title="Custom"
+            title="Manual"
             className="epm-perf-btn-wrapper"
           >
             <button
@@ -3326,12 +3308,21 @@ function PerformancePage({
               onClick={() => {
                 if (optimizerRunning) return;
                 onSetAutoOptimizer('custom');
-                triggerEstimate(activeLayers, activeCtx);
+                // Entering manual mode pins previously-unsolved values:
+                // NGL 0, ctx keeps (or defaults to 4096).
+                const manualLayers = editGpuLayersAuto
+                  ? (editLayers ?? modelMaxLayers)
+                  : (editLayers ?? 0);
+                const manualCtx = editContextSize ?? 4096;
+                if (editLayers === undefined) onSetLayers(0);
+                if (editContextSize === undefined)
+                  onSetContextSize(4096);
+                triggerEstimate(manualLayers, manualCtx);
               }}
-              disabled={!!optimizerRunning}
+              disabled={optimizerRunning}
             >
               <SlidersHorizontal size={16} />
-              <span>Custom</span>
+              <span>Manual</span>
             </button>
           </InfoTooltip>
         </div>
@@ -3347,28 +3338,44 @@ function PerformancePage({
           <div className="epm-section__label">Estimated Memory Usage</div>
         </InfoTooltip>
 
-        <div className="epm-estimate-notice">
-          <AlertTriangle size={14} />
-          <InfoTooltip
-            content="The GGUF Parser Go library does not account for all Synapse-specific memory optimizations, so actual usage may differ."
-            side="right"
-            hideIcon
-            title="Memory Estimates"
-          >
+        {fitError !== null && (
+          <div className="epm-estimate-notice epm-estimate-notice--error">
+            <AlertTriangle size={14} />
+            <div className="epm-estimate-error-body">
+              <strong>
+                {fitTimedOut ? 'Fit timed out' : 'Optimizer failed'}
+              </strong>
+              <span style={{ overflowWrap: 'anywhere' }}>{fitError}</span>
+              <div className="epm-estimate-error-actions">
+                <button
+                  type="button"
+                  className="btn-accent"
+                  onClick={onRetryFit}
+                >
+                  Retry
+                </button>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={onDismissFitError}
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {hasProjector && memory?.projectorSkipped === true && (
+          <div className="epm-estimate-notice">
+            <AlertTriangle size={14} />
             <span>
-              Memory estimates provided by{' '}
-              <a
-                href="https://github.com/gpustack/gguf-parser-go"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                GGUF Parser Go
-              </a>
-              , which does not support all of Synapse's features, leading to
-              inaccurate estimations.
+              {mmprojOffload
+                ? 'We are unable to optimize with projectors at this time, the projector will take additional space in VRAM. If a crash occurs, try disabling "MMPROJ GPU Offload" in Profile -> Projector, or leave additional overhead in Settings -> System.'
+                : 'We are unable to optimize with projectors at this time, the projector will take additional space in RAM.'}
             </span>
-          </InfoTooltip>
-        </div>
+          </div>
+        )}
 
         {memory && totalVRAM > 0 ? (
           <>
@@ -3676,66 +3683,81 @@ function PerformancePage({
           <div className="epm-section__label">Settings</div>
         </InfoTooltip>
         <div className="epm-perf-sliders">
-          <div className="epm-perf-slider-group">
-            <label className="epm-perf-toggle-row" style={{ paddingTop: 0 }}>
+          {!isAuto && (
+            <div className="epm-perf-slider-group">
+              <label className="epm-perf-toggle-row" style={{ paddingTop: 0 }}>
+                <InfoTooltip
+                  content={GPU_LAYERS_AUTO_TOOLTIP}
+                  side="right"
+                  stretch
+                  className="info-tooltip-stretch--row"
+                  title="GPU Layers Auto"
+                >
+                  <span className="epm-perf-toggle-label">GPU Layers Auto</span>
+                  <div
+                    className={`epm-toggle-switch${editGpuLayersAuto ? ' epm-toggle-switch--on' : ''}`}
+                    onClick={() => onSetGpuLayersAuto(!editGpuLayersAuto)}
+                    role="switch"
+                    aria-checked={editGpuLayersAuto}
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === ' ' || e.key === 'Enter') {
+                        e.preventDefault();
+                        onSetGpuLayersAuto(!editGpuLayersAuto);
+                      }
+                    }}
+                  >
+                    <div className="epm-toggle-switch__knob" />
+                  </div>
+                </InfoTooltip>
+              </label>
               <InfoTooltip
-                content={GPU_LAYERS_AUTO_TOOLTIP}
-                side="right"
+                content={GPU_LAYERS_TOOLTIP}
+                side="bottom"
                 stretch
-                className="info-tooltip-stretch--row"
-                title="GPU Layers Auto"
+                className="info-tooltip-stretch--col"
+                title="GPU Layers (NGL)"
               >
-                <span className="epm-perf-toggle-label">GPU Layers Auto</span>
-                <div
-                  className={`epm-toggle-switch${editGpuLayersAuto ? ' epm-toggle-switch--on' : ''}`}
-                  onClick={() => onSetGpuLayersAuto(!editGpuLayersAuto)}
-                  role="switch"
-                  aria-checked={editGpuLayersAuto}
-                  tabIndex={0}
-                  onKeyDown={(e) => {
-                    if (e.key === ' ' || e.key === 'Enter') {
-                      e.preventDefault();
-                      onSetGpuLayersAuto(!editGpuLayersAuto);
+                <label className="epm-perf-slider-label">
+                  GPU Layers (NGL):{' '}
+                  <strong>{editGpuLayersAuto ? 'Auto' : sliderNgl}</strong>
+                </label>
+                <input
+                  type="range"
+                  min={0}
+                  max={modelMaxLayers}
+                  step={1}
+                  value={sliderNgl}
+                  disabled={layersDisabled}
+                  className={`epm-perf-range${layersDisabled ? ' epm-perf-range--disabled' : ''}`}
+                  onChange={(e) => {
+                    if (!layersDisabled) {
+                      const v = parseInt(e.target.value, 10);
+                      onSetLayers(v);
+                      triggerEstimate(v, activeCtx);
                     }
                   }}
-                >
-                  <div className="epm-toggle-switch__knob" />
+                />
+                <div className="epm-perf-range-labels">
+                  <span>0</span>
+                  <span>{modelMaxLayers}</span>
                 </div>
               </InfoTooltip>
-            </label>
-            <InfoTooltip
-              content={GPU_LAYERS_TOOLTIP}
-              side="bottom"
-              stretch
-              className="info-tooltip-stretch--col"
-              title="GPU Layers (NGL)"
-            >
-              <label className="epm-perf-slider-label">
+            </div>
+          )}
+
+          {isAuto && (
+            <div className="epm-perf-slider-group">
+              <span className="epm-perf-slider-label">
                 GPU Layers (NGL):{' '}
-                <strong>{editGpuLayersAuto ? 'Auto' : sliderNgl}</strong>
-              </label>
-              <input
-                type="range"
-                min={0}
-                max={modelMaxLayers}
-                step={1}
-                value={sliderNgl}
-                disabled={layersDisabled}
-                className={`epm-perf-range${layersDisabled ? ' epm-perf-range--disabled' : ''}`}
-                onChange={(e) => {
-                  if (!layersDisabled) {
-                    const v = parseInt(e.target.value, 10);
-                    onSetLayers(v);
-                    triggerEstimate(v, activeCtx);
-                  }
-                }}
-              />
-              <div className="epm-perf-range-labels">
-                <span>0</span>
-                <span>{modelMaxLayers}</span>
-              </div>
-            </InfoTooltip>
-          </div>
+                <strong>
+                  {optimizerRunning
+                    ? 'Optimizing…'
+                    : (editLayers ?? 'Not solved yet')}
+                </strong>
+              </span>
+            </div>
+          )}
 
           <div className="epm-perf-slider-group" style={{ marginTop: '16px' }}>
             <InfoTooltip
@@ -3748,22 +3770,51 @@ function PerformancePage({
               <label className="epm-perf-slider-label">
                 Context Length: <strong>{sliderCtx.toLocaleString()}</strong>
               </label>
-              <input
-                type="range"
-                min={512}
-                max={modelMaxContext}
-                step={512}
-                value={sliderCtx}
-                disabled={isAuto}
-                className={`epm-perf-range${isAuto ? ' epm-perf-range--disabled' : ''}`}
-                onChange={(e) => {
-                  if (!isAuto) {
+              <div className="epm-perf-range-wrap">
+                <input
+                  type="range"
+                  min={512}
+                  max={modelMaxContext}
+                  step={512}
+                  value={sliderCtx}
+                  className="epm-perf-range"
+                  onChange={(e) => {
                     const v = parseInt(e.target.value, 10);
                     onSetContextSize(v);
-                    triggerEstimate(activeLayers, v);
-                  }
-                }}
-              />
+                    if (!isAuto) triggerEstimate(activeLayers, v);
+                  }}
+                />
+                {isAuto && maxSpeedCtx !== null && speedPct !== null && (
+                  <>
+                    <div
+                      className="epm-perf-range-tick"
+                      aria-hidden="true"
+                      style={{
+                        // Thumb travel spans the track minus one thumb width
+                        // (16px border-box thumb): this centers the 3px bar
+                        // exactly on the thumb stop in every zone, independent
+                        // of label width or edge anchoring.
+                        left: `calc(8px + (100% - 16px) * ${speedPct})`,
+                      }}
+                    />
+                    <div
+                      className={`epm-perf-range-tick-label${speedZone ? ` epm-perf-range-tick-label--${speedZone}` : ''}`}
+                      style={{
+                        left: `calc(8px + (100% - 16px) * ${speedPct})`,
+                      }}
+                    >
+                      <button
+                        type="button"
+                        className="epm-perf-range-tick-text"
+                        title={`Set context length to ${maxSpeedCtx.toLocaleString()} and re-solve layers`}
+                        onClick={() => onSetContextSize(maxSpeedCtx)}
+                      >
+                        Maximum Speed: ≤ {maxSpeedCtx.toLocaleString()}
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
               <div className="epm-perf-range-labels">
                 <span>512</span>
                 <span>{modelMaxContext.toLocaleString()}</span>
@@ -4570,6 +4621,7 @@ function ServerSettingsPage({
   launchArgs,
   launchArgsLoading,
   hasModel,
+  unsolvedOptimizer,
   condensed,
   onToggleCondensed,
   editUseCustomLaunch,
@@ -4589,6 +4641,7 @@ function ServerSettingsPage({
   launchArgs: string[] | null;
   launchArgsLoading: boolean;
   hasModel: boolean;
+  unsolvedOptimizer: boolean;
   condensed: boolean;
   onToggleCondensed: (v: boolean) => void;
   editUseCustomLaunch: boolean;
@@ -4603,6 +4656,8 @@ function ServerSettingsPage({
     emptyMessage = 'Building launch arguments…';
   } else if (!hasModel) {
     emptyMessage = 'Select a model to preview its launch arguments.';
+  } else if (unsolvedOptimizer) {
+    emptyMessage = 'Move the context slider to solve GPU layers.';
   }
   void modelFilename;
 
@@ -5255,7 +5310,7 @@ export default function EditProfileModal({
     profile?.projectorFilename ?? '',
   );
   const [editMmprojOffload, setEditMmprojOffload] = useState<boolean>(
-    profile?.mmprojOffload ?? true,
+    profile?.mmprojOffload ?? false,
   );
   const [editImageMinTokens, setEditImageMinTokens] = useState<string>(
     profile?.imageMinTokens !== undefined ? String(profile.imageMinTokens) : '',
@@ -5323,15 +5378,66 @@ export default function EditProfileModal({
       : '',
   );
 
-  // Performance options
+  // Performance options. Legacy stored modes fall through to synapse.
   const [editAutoOptimizer, setEditAutoOptimizer] = useState<
-    'longest-context' | 'most-gpu' | 'custom' | null
-  >(profile?.autoOptimizer ?? 'longest-context');
+    'synapse' | 'custom' | null
+  >(profile?.autoOptimizer === 'custom' ? 'custom' : 'synapse');
   const [editLayers, setEditLayers] = useState<number | undefined>(
     profile?.layers,
   );
+  // Fresh profiles start at 4096 ctx with layers untouched (undefined) until
+  // the Synapse Optimizer solves or manual mode pins NGL to 0.
   const [editContextSize, setEditContextSize] = useState<number | undefined>(
-    profile?.contextSize,
+    profile?.contextSize ?? 4096,
+  );
+  // Fitted placement triple from the last optimizer run. Valid only for the
+  // exact (ngl, ctx) it was solved for — tracked by editTensorSolvedFor. Any
+  // manual layers/ctx edit or model change clears it, and custom (user-pinned)
+  // configs never carry one.
+  const [editTensorSplit, setEditTensorSplit] = useState<string | null>(
+    profile?.tensorSplit ?? null,
+  );
+  const [editTensorOverrides, setEditTensorOverrides] = useState<string | null>(
+    profile?.tensorOverrides ?? null,
+  );
+  const [editTensorSolvedFor, setEditTensorSolvedFor] = useState<{
+    ngl: number;
+    ctx: number;
+  } | null>(
+    profile?.tensorSplit != null || profile?.tensorOverrides != null
+      ? {
+          ngl: profile?.layers ?? 0,
+          ctx: profile?.contextSize ?? 4096,
+        }
+      : null,
+  );
+  const clearTensorTriple = () => {
+    setEditTensorSplit(null);
+    setEditTensorOverrides(null);
+    setEditTensorSolvedFor(null);
+  };
+  const handleLayersChange = (v: number | undefined) => {
+    setEditLayers(v);
+    clearTensorTriple();
+  };
+  const handleContextSizeChange = (v: number | undefined) => {
+    setEditContextSize(v);
+    clearTensorTriple();
+  };
+  // The triple applies to a (ngl, ctx) pair only when it matches the values
+  // it was solved for. Guards against stale-state races between slider
+  // updates and estimate/preview calls.
+  const tripleFor = useCallback(
+    (ngl: number, ctx: number) =>
+      editTensorSolvedFor !== null &&
+      editTensorSolvedFor.ngl === ngl &&
+      editTensorSolvedFor.ctx === ctx
+        ? {
+            tensorSplit: editTensorSplit ?? null,
+            tensorOverrides: editTensorOverrides ?? null,
+          }
+        : { tensorSplit: null, tensorOverrides: null },
+    [editTensorSolvedFor, editTensorSplit, editTensorOverrides],
   );
   const [editAllocatedVRAM, setEditAllocatedVRAM] = useState<
     number | undefined
@@ -5339,8 +5445,11 @@ export default function EditProfileModal({
   const [editAllocatedRAM, setEditAllocatedRAM] = useState<number | undefined>(
     profile?.allocatedRAM,
   );
+  // Defaults on: manual mode starts with server-side auto layers.
+  // Synapse mode ignores this (hidden toggle) and always launches the
+  // optimizer's explicit ngl + triple — see buildLlamaServerArgs.
   const [editGpuLayersAuto, setEditGpuLayersAuto] = useState<boolean>(
-    profile?.gpuLayersAuto ?? false,
+    profile?.gpuLayersAuto ?? true,
   );
   const [editKvOffload, setEditKvOffload] = useState<boolean>(
     profile?.kvOffload ?? true,
@@ -5440,9 +5549,11 @@ export default function EditProfileModal({
   const [editYarnBetaFast, setEditYarnBetaFast] = useState<string>(
     profile?.yarn?.betaFast !== undefined ? String(profile.yarn.betaFast) : '',
   );
-  const [optimizerRunning, setOptimizerRunning] = useState<
-    'longest-context' | 'most-gpu' | null
-  >(null);
+  const [optimizerRunning, setOptimizerRunning] = useState<boolean>(false);
+  // Latest fit request wins: stale responses (killed or superseded runs)
+  // are ignored so rapid slider stops can't apply out-of-order results.
+  const fitReqId = useRef(0);
+  const [maxSpeedCtx, setMaxSpeedCtx] = useState<number | null>(null);
 
   // Draft model (speculative decoding) options
   const [editSpecType, setEditSpecType] = useState<string[]>(
@@ -5593,6 +5704,7 @@ export default function EditProfileModal({
         flashAttn: editFlashAttn,
         rope: Object.keys(rope).length > 0 ? rope : undefined,
         yarn: Object.keys(yarn).length > 0 ? yarn : undefined,
+        autoOptimizer: editAutoOptimizer ?? undefined,
         gpuLayersAuto: editGpuLayersAuto,
         cpuMoe: editCpuMoe,
         nCpuMoe: parseInt(editNCpuMoe, 10),
@@ -5623,10 +5735,31 @@ export default function EditProfileModal({
           ? editCustomLaunchCommand
           : undefined,
       };
+      // Mirror the launch rule in chat.ts: custom (user-pinned) configs
+      // never carry an optimizer triple, even if one is stored. Otherwise
+      // only the exact solved-for values may use it.
+      // Unsolved synapse state (no layers yet) previews nothing rather than
+      // a phantom ngl 0 — the parent shows the unsolved hint instead.
+      if (editAutoOptimizer === 'synapse' && editLayers === undefined) {
+        if (launchArgsReqId.current === reqId) {
+          setLaunchArgs(null);
+          setLaunchArgsLoading(false);
+        }
+        return;
+      }
+      const solvedTriple = tripleFor(
+        editLayers ?? 0,
+        editContextSize ?? 4096,
+      );
+      const previewTriple =
+        editAutoOptimizer === 'custom'
+          ? { tensorSplit: null, tensorOverrides: null }
+          : solvedTriple;
       window.electronAPI
         .getLaunchArgs(draft, {
           ngl: editLayers ?? 0,
-          ctx: editContextSize ?? 512,
+          ctx: editContextSize ?? 4096,
+          ...previewTriple,
         })
         .then((args) => {
           if (launchArgsReqId.current === reqId) {
@@ -5692,6 +5825,8 @@ export default function EditProfileModal({
     editCustomLaunchCommand,
     editLayers,
     editContextSize,
+    editAutoOptimizer,
+    tripleFor,
   ]);
 
   const [editVideoFps, setEditVideoFps] = useState<string>(
@@ -5721,20 +5856,26 @@ export default function EditProfileModal({
   } | null>(null);
 
   // Cached memory estimate (persisted in profile)
-  const [lastEstimate, setLastEstimate] = useState<{
-    modelVramUsage: number;
-    contextVramUsage: number;
-    computeOverheadVram: number;
-    modelRamUsage: number;
-    contextRamUsage: number;
-    computeOverheadRam: number;
-    fileBufferRam: number;
-  } | null>(profile?.estimation ?? null);
+  const [lastEstimate, setLastEstimate] = useState<MemoryEstimate | null>(
+    profile?.estimation ?? null,
+  );
 
   // Fetch model metadata when model selection changes
+  const lastModelKeyRef = useRef<string | null>(null);
   useEffect(() => {
     if (!editModelFilename) return;
     const currentModelPath = `${editModelAuthor}/${editModelFolder}/${editModelFilename}`;
+    // A different model/projector invalidates the solved-for triple (it was
+    // measured for other weights). Skipped on first mount via the ref guard
+    // so freshly loaded profiles keep their stored triple.
+    const modelKey = `${currentModelPath}|${editProjectorFilename ?? ''}`;
+    if (
+      lastModelKeyRef.current !== null &&
+      lastModelKeyRef.current !== modelKey
+    ) {
+      clearTensorTriple();
+    }
+    lastModelKeyRef.current = modelKey;
     if (
       profile?.maxForModel === currentModelPath &&
       profile?.maxLayers &&
@@ -5780,37 +5921,96 @@ export default function EditProfileModal({
     }, 100);
   };
 
-  const handleRunOptimizer = (mode: 'longest-context' | 'most-gpu') => {
-    setOptimizerRunning(mode);
-    if (!editModelFilename) {
-      setOptimizerRunning(null);
-      return;
-    }
+  // Synapse Optimizer: fit max layers (+triple) for exactly this ctx.
+  // Previous in-flight runs are killed main-side; the reqId backstop drops
+  // any late response (including the cancel rejection) that is not latest.
+  // Last optimizer failure message; drives the Retry/Dismiss popup in the
+  // performance section. Cleared on every new run.
+  const [fitError, setFitError] = useState<string | null>(null);
+
+  const runSynapseFit = (ctx: number) => {
+    if (!editModelFilename) return;
+    fitReqId.current += 1;
+    const reqId = fitReqId.current;
+    setOptimizerRunning(true);
+    setFitError(null);
     window.electronAPI
       .runProfileOptimizer({
         modelAuthor: editModelAuthor,
         modelFolder: editModelFolder,
         modelFilename: editModelFilename,
         projectorFilename: editProjectorFilename || undefined,
-        mode,
+        mode: 'synapse',
+        ctx,
         kvOffload: editKvOffload,
         flashAttn: editFlashAttn,
         mmap: editMmap,
+        mlock: editMlock,
+        repack: editRepack,
         cacheTypeK: editCacheTypeK,
         cacheTypeV: editCacheTypeV,
         parallel: effectiveParallel,
+        cpuMoe: editCpuMoe,
+        nCpuMoe: parseInt(editNCpuMoe, 10) || undefined,
+        mmprojOffload: editMmprojOffload,
+        imageMinTokens: parseInt(editImageMinTokens, 10) || undefined,
+        imageMaxTokens: parseInt(editImageMaxTokens, 10) || undefined,
+        mtmdBatchMaxTokens: parseInt(editMtmdBatchMaxTokens, 10) || undefined,
       })
       .then((res) => {
-        setEditAutoOptimizer(mode);
+        if (fitReqId.current !== reqId) return;
+        // Superseded runs resolve benignly instead of rejecting (a newer
+        // request for the same model owns the UI state; stale responses
+        // already returned above).
+        if (res.cancelled === true) {
+          setOptimizerRunning(false);
+          return;
+        }
         setEditLayers(res.ngl);
-        setEditContextSize(res.ctx);
-        setEditAllocatedVRAM(res.vramMB);
-        setEditAllocatedRAM(res.ramMB);
-        setOptimizerRunning(null);
+        setEditTensorSplit(res.tensorSplit ?? null);
+        setEditTensorOverrides(res.tensorOverrides ?? null);
+        setEditTensorSolvedFor({ ngl: res.ngl, ctx: res.ctx });
+        // Budgets come back undefined in automatic mode: leave state (and
+        // the stored manual values it persists) untouched.
+        if (res.vramMB !== undefined) setEditAllocatedVRAM(res.vramMB);
+        if (res.ramMB !== undefined) setEditAllocatedRAM(res.ramMB);
+        setOptimizerRunning(false);
+        // Estimate with the fresh triple directly (state hasn't re-rendered
+        // yet, so tripleFor would miss).
+        void handleEstimateMemory(
+          res.ngl,
+          res.ctx,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          {
+            tensorSplit: res.tensorSplit ?? null,
+            tensorOverrides: res.tensorOverrides ?? null,
+          },
+        );
       })
-      .catch(() => {
-        setOptimizerRunning(null);
+      .catch((e: unknown) => {
+        if (fitReqId.current !== reqId) return;
+        setOptimizerRunning(false);
+        // Superseded runs are killed main-side and reject here; they are
+        // not failures (a newer run is already in flight). Match on the
+        // FitCancelledError message — it crosses IPC as a plain Error.
+        const message = e instanceof Error ? e.message : String(e);
+        if (/\bcancelled\b/i.test(message)) return;
+        setFitError(message);
       });
+  };
+
+  const handleRetryFit = () => {
+    setFitError(null);
+    if (editContextSize !== undefined) runSynapseFit(editContextSize);
+  };
+
+  // In synapse mode the ctx slider is the input: it stages the value only.
+  // A debounced effect below solves layers for it.
+  const handleSynapseCtxChange = (v: number | undefined) => {
+    setEditContextSize(v);
   };
 
   const handleEstimateMemory = async (
@@ -5820,16 +6020,12 @@ export default function EditProfileModal({
     mmap?: boolean,
     cacheTypeK?: CacheType,
     cacheTypeV?: CacheType,
-  ): Promise<{
-    modelVramUsage: number;
-    contextVramUsage: number;
-    computeOverheadVram: number;
-    modelRamUsage: number;
-    contextRamUsage: number;
-    computeOverheadRam: number;
-    fileBufferRam: number;
-  } | null> => {
+    triple?: { tensorSplit: string | null; tensorOverrides: string | null },
+  ): Promise<MemoryEstimate | null> => {
     if (!editModelFilename) return null;
+    // Explicit triple (fresh optimizer result) wins; otherwise fall back to
+    // the solved-for match, which is null for anything but the exact values.
+    const solvedTriple = triple ?? tripleFor(ngl, ctx);
     const result = await window.electronAPI.estimateMemory({
       modelAuthor: editModelAuthor,
       modelFolder: editModelFolder,
@@ -5840,13 +6036,132 @@ export default function EditProfileModal({
       kvOffload: kvOffload ?? editKvOffload,
       flashAttn: editFlashAttn,
       mmap: mmap ?? editMmap,
+      mlock: editMlock,
+      repack: editRepack,
       cacheTypeK: cacheTypeK ?? editCacheTypeK,
       cacheTypeV: cacheTypeV ?? editCacheTypeV,
       parallel: effectiveParallel,
+      cpuMoe: editCpuMoe,
+      nCpuMoe: parseInt(editNCpuMoe, 10) || undefined,
+      mmprojOffload: editMmprojOffload,
+      imageMinTokens: parseInt(editImageMinTokens, 10) || undefined,
+      imageMaxTokens: parseInt(editImageMaxTokens, 10) || undefined,
+      mtmdBatchMaxTokens: parseInt(editMtmdBatchMaxTokens, 10) || undefined,
+      tensorSplit: solvedTriple.tensorSplit ?? undefined,
+      tensorOverrides: solvedTriple.tensorOverrides ?? undefined,
     });
     setLastEstimate(result);
     return result;
   };
+
+  // Snapshot of every modal flag that changes the fit, shared by the
+  // refit and max-speed-line effects below.
+  const fitFlagParams = () => ({
+    kvOffload: editKvOffload,
+    flashAttn: editFlashAttn,
+    mmap: editMmap,
+    mlock: editMlock,
+    repack: editRepack,
+    cacheTypeK: editCacheTypeK,
+    cacheTypeV: editCacheTypeV,
+    parallel: effectiveParallel,
+    cpuMoe: editCpuMoe,
+    nCpuMoe: parseInt(editNCpuMoe, 10) || undefined,
+    mmprojOffload: editMmprojOffload,
+    imageMinTokens: parseInt(editImageMinTokens, 10) || undefined,
+    imageMaxTokens: parseInt(editImageMaxTokens, 10) || undefined,
+    mtmdBatchMaxTokens: parseInt(editMtmdBatchMaxTokens, 10) || undefined,
+  });
+  const fitModelParams = () => ({
+    modelAuthor: editModelAuthor,
+    modelFolder: editModelFolder,
+    modelFilename: editModelFilename,
+    projectorFilename: editProjectorFilename || undefined,
+  });
+
+  // Synapse mode: the ctx slider stages a value; this effect solves layers
+  // for it once it settles. Skips when the current values already match a
+  // solved triple. Runs on mount only while the performance page is active
+  // (fresh profiles solve immediately there); other tabs never trigger fits.
+  useEffect(() => {
+    if (currentPage !== 'performance') return;
+    if (editAutoOptimizer !== 'synapse') return;
+    if (!editModelFilename || editContextSize === undefined) return;
+    if (
+      editTensorSolvedFor !== null &&
+      editTensorSolvedFor.ngl === editLayers &&
+      editTensorSolvedFor.ctx === editContextSize
+    ) {
+      return;
+    }
+    const timer = setTimeout(() => {
+      runSynapseFit(editContextSize);
+    }, 400);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    currentPage,
+    editAutoOptimizer,
+    editModelFilename,
+    editModelAuthor,
+    editModelFolder,
+    editProjectorFilename,
+    editContextSize,
+    editLayers,
+    editKvOffload,
+    editFlashAttn,
+    editMmap,
+    editMlock,
+    editRepack,
+    editCacheTypeK,
+    editCacheTypeV,
+    effectiveParallel,
+    editCpuMoe,
+    editNCpuMoe,
+    editMmprojOffload,
+    editImageMinTokens,
+    editImageMaxTokens,
+    editMtmdBatchMaxTokens,
+  ]);
+
+  // Maximum Speed line: largest ctx with the full model on GPU. Recomputed
+  // (debounced, cached main-side) when the model, budgets, or fit flags
+  // change. Null = even the floor spills (line hidden). Same performance
+  // page gate as the refit effect above.
+  useEffect(() => {
+    if (currentPage !== 'performance') return;
+    if (editAutoOptimizer !== 'synapse' || !editModelFilename) return;
+    const timer = setTimeout(() => {
+      window.electronAPI
+        .maxSpeedCtx({ ...fitModelParams(), ...fitFlagParams() })
+        .then((res) => setMaxSpeedCtx(res.maxSpeedCtx))
+        .catch(() => setMaxSpeedCtx(null));
+    }, 600);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    currentPage,
+    editAutoOptimizer,
+    editModelFilename,
+    editModelAuthor,
+    editModelFolder,
+    editProjectorFilename,
+    editAllocatedVRAM,
+    editKvOffload,
+    editFlashAttn,
+    editMmap,
+    editMlock,
+    editRepack,
+    editCacheTypeK,
+    editCacheTypeV,
+    effectiveParallel,
+    editCpuMoe,
+    editNCpuMoe,
+    editMmprojOffload,
+    editImageMinTokens,
+    editImageMaxTokens,
+    editMtmdBatchMaxTokens,
+  ]);
 
   const handleOverlayClick = (e: MouseEvent<HTMLDivElement>) => {
     if (e.target === e.currentTarget) {
@@ -6178,6 +6493,10 @@ export default function EditProfileModal({
             allocatedRAM: editAllocatedRAM,
           }
         : {}),
+      // Always written (null when cleared) so the key survives JSON
+      // persistence and the launch cache-freshness check keeps working.
+      tensorSplit: editTensorSplit ?? null,
+      tensorOverrides: editTensorOverrides ?? null,
       videoSettings: buildVideoSettings(),
       specType: editSpecType.length > 0 ? editSpecType : undefined,
       draftModelAuthor:
@@ -6417,9 +6736,18 @@ export default function EditProfileModal({
             modelMaxContext={modelMeta?.maxContext ?? 131072}
             onSetAutoOptimizer={setEditAutoOptimizer}
             onSetGpuLayersAuto={setEditGpuLayersAuto}
-            onSetLayers={setEditLayers}
-            onSetContextSize={setEditContextSize}
-            onRunOptimizer={handleRunOptimizer}
+            onSetLayers={handleLayersChange}
+            onSetContextSize={
+              editAutoOptimizer === 'synapse'
+                ? handleSynapseCtxChange
+                : handleContextSizeChange
+            }
+            maxSpeedCtx={maxSpeedCtx}
+            fitError={fitError}
+            onDismissFitError={() => setFitError(null)}
+            onRetryFit={handleRetryFit}
+            hasProjector={!!editProjectorFilename}
+            mmprojOffload={editMmprojOffload}
             onEstimateMemory={handleEstimateMemory}
             initialEstimate={profile?.estimation ?? lastEstimate}
             onNavigate={navigateTo}
@@ -6476,6 +6804,9 @@ export default function EditProfileModal({
             launchArgs={launchArgs}
             launchArgsLoading={launchArgsLoading}
             hasModel={!!editModelFilename}
+            unsolvedOptimizer={
+              editAutoOptimizer === 'synapse' && editLayers === undefined
+            }
             condensed={launchArgsCondensed}
             onToggleCondensed={setLaunchArgsCondensed}
             editUseCustomLaunch={editUseCustomLaunch}

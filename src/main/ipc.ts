@@ -29,10 +29,21 @@ import {
   getOrRunOptimizer,
   getOrEstimateMemory,
   getModelMetadata,
+  maxFullOffloadCtx,
+  resolveBudgets,
+  FitCancelledError,
+  createFitRun,
+  cancelFitRun,
+  endFitRun,
+  logFitCancelled,
 } from './estimator';
+
+// Newest speed-line computation wins per model: a recompute (flag/model
+// change) kills the superseded run, whose FitCancelledError resolves to a
+// hidden line instead of an Electron handler error (see handler below).
+const activeSpeedRuns = new Map<string, number>();
 import { registerExtensionIpcHandlers } from './ipcExtensions';
 import { getBackendInfo } from './backendInfo';
-import { getParserInfo } from './parserInfo';
 import * as binaryDownloads from './binaryDownloads';
 import type { SearchFilter } from '../renderer/preload.d';
 import type { CacheType, Profile } from '../renderer/types/profile';
@@ -452,7 +463,12 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     (
       _event,
       profile: Partial<Profile>,
-      resolved?: { ngl: number; ctx: number } | null,
+      resolved?: {
+        ngl: number;
+        ctx: number;
+        tensorSplit?: string | null;
+        tensorOverrides?: string | null;
+      } | null,
     ) => {
       if (!profile?.modelFilename) return null;
       const modelsDir = getModelsDirectory();
@@ -473,11 +489,20 @@ export function registerIpcHandlers(win: BrowserWindow): void {
         : undefined;
       const ngl = resolved?.ngl ?? profile.layers ?? 0;
       const ctx = resolved?.ctx ?? profile.contextSize ?? 512;
+      // An explicit null in resolved clears a stored profile triple (e.g.
+      // custom mode); absent keys fall back to the profile. (?? alone cannot
+      // express this: null ?? x yields x.)
+      const triple = (k: 'tensorSplit' | 'tensorOverrides') =>
+        resolved != null && k in resolved
+          ? (resolved[k] ?? null)
+          : (profile[k] ?? null);
       return chatService.buildLlamaServerArgs(profile, {
         modelPath,
         projectorPath,
         ngl,
         ctx,
+        tensorSplit: triple('tensorSplit'),
+        tensorOverrides: triple('tensorOverrides'),
       });
     },
   );
@@ -722,30 +747,9 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     return backendInfoPromise;
   });
 
-  let parserInfoPromise: Promise<
-    import('../renderer/preload.d').ParserInfo
-  > | null = null;
-
-  ipcMain.handle('onboarding:get-parser-info', async () => {
-    if (parserInfoPromise) return parserInfoPromise;
-    parserInfoPromise = (async () => {
-      try {
-        return await getParserInfo();
-      } catch (error) {
-        console.error('[Parser] Failed to detect parser builds:', error);
-        throw error;
-      } finally {
-        setTimeout(() => {
-          parserInfoPromise = null;
-        }, 1000);
-      }
-    })();
-    return parserInfoPromise;
-  });
-
   ipcMain.handle(
     'binaries:download',
-    async (event, kind: 'backend' | 'parser', download: any, dir: string) => {
+    async (event, kind: 'backend', download: any, dir: string) => {
       try {
         const downloadWin = BrowserWindow.fromWebContents(event.sender);
         return await binaryDownloads.startBinaryDownload(
@@ -767,7 +771,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
 
   ipcMain.handle(
     'binaries:uninstall',
-    async (_event, kind: 'backend' | 'parser', download: any, dir: string) => {
+    async (_event, kind: 'backend', download: any, dir: string) => {
       return binaryDownloads.uninstallBinary(kind, download, dir);
     },
   );
@@ -824,17 +828,26 @@ export function registerIpcHandlers(win: BrowserWindow): void {
         modelFolder: string;
         modelFilename: string;
         projectorFilename?: string;
-        mode: 'longest-context' | 'most-gpu';
+        mode: 'synapse';
+        ctx: number;
         kvOffload?: boolean;
+        flashAttn?: 'on' | 'off' | 'auto';
         mmap?: boolean;
+        mlock?: boolean;
+        repack?: boolean;
         cacheTypeK?: CacheType;
         cacheTypeV?: CacheType;
         parallel?: number;
+        cpuMoe?: boolean;
+        nCpuMoe?: number;
+        mmprojOffload?: boolean;
+        imageMinTokens?: number;
+        imageMaxTokens?: number;
+        mtmdBatchMaxTokens?: number;
       },
     ) => {
       const settings = loadSettings();
-      const vramMB = settings.allocatedVRAM ?? 4096;
-      const ramMB = settings.allocatedRAM ?? 8192;
+      const { vramMB, ramMB } = resolveBudgets(settings);
       const modelsDir = getModelsDirectory();
       const modelPath = path.join(
         modelsDir,
@@ -852,21 +865,117 @@ export function registerIpcHandlers(win: BrowserWindow): void {
           )
         : undefined;
 
-      const result = await getOrRunOptimizer(
-        modelPath,
-        vramMB,
-        ramMB,
-        params.mode === 'most-gpu',
-        projectorPath,
-        params,
-      );
+      // A cancelled run is always superseded by definition (cancellation
+      // only fires for a newer run on the same model). Resolve benignly so
+      // Electron never logs "Error occurred in handler" with a stack — the
+      // renderer's request-id guard drops the stale response regardless.
+      try {
+        const result = await getOrRunOptimizer(
+          modelPath,
+          vramMB,
+          ramMB,
+          params.ctx,
+          projectorPath,
+          params,
+        );
 
-      return {
-        ngl: result.ngl,
-        ctx: result.ctx,
-        vramMB,
-        ramMB,
-      };
+        return {
+          ngl: result.ngl,
+          ctx: result.ctx,
+          tensorSplit: result.tensorSplit ?? null,
+          tensorOverrides: result.tensorOverrides ?? null,
+          hostOverflowBytes: result.hostOverflowBytes ?? 0,
+          vramMB,
+          ramMB,
+        };
+      } catch (e) {
+        if (e instanceof FitCancelledError) {
+          logFitCancelled('optimizer');
+          return {
+            cancelled: true as const,
+            ngl: 0,
+            ctx: params.ctx,
+            tensorSplit: null,
+            tensorOverrides: null,
+            hostOverflowBytes: 0,
+            vramMB,
+            ramMB,
+          };
+        }
+        throw e;
+      }
+    },
+  );
+
+  ipcMain.handle(
+    'profile:maxSpeedCtx',
+    async (
+      _event,
+      params: {
+        modelAuthor: string;
+        modelFolder: string;
+        modelFilename: string;
+        projectorFilename?: string;
+        kvOffload?: boolean;
+        flashAttn?: 'on' | 'off' | 'auto';
+        mmap?: boolean;
+        mlock?: boolean;
+        repack?: boolean;
+        cacheTypeK?: CacheType;
+        cacheTypeV?: CacheType;
+        parallel?: number;
+        cpuMoe?: boolean;
+        nCpuMoe?: number;
+        mmprojOffload?: boolean;
+        imageMinTokens?: number;
+        imageMaxTokens?: number;
+        mtmdBatchMaxTokens?: number;
+      },
+    ) => {
+      const settings = loadSettings();
+      const { vramMB } = resolveBudgets(settings);
+      const modelsDir = getModelsDirectory();
+      const modelPath = path.join(
+        modelsDir,
+        params.modelAuthor,
+        params.modelFolder,
+        params.modelFilename,
+      );
+      const projectorPath = params.projectorFilename
+        ? path.join(
+            modelsDir,
+            params.modelAuthor,
+            params.modelFolder,
+            'projectors',
+            params.projectorFilename,
+          )
+        : undefined;
+
+      const prevSpeedRun = activeSpeedRuns.get(modelPath);
+      if (prevSpeedRun !== undefined) cancelFitRun(prevSpeedRun);
+      const runId = createFitRun();
+      activeSpeedRuns.set(modelPath, runId);
+      try {
+        const maxSpeedCtx = await maxFullOffloadCtx(
+          modelPath,
+          vramMB,
+          projectorPath,
+          params,
+          runId,
+        );
+        return { maxSpeedCtx };
+      } catch (e) {
+        if (e instanceof FitCancelledError) {
+          logFitCancelled('speed-line');
+          return { maxSpeedCtx: null };
+        }
+        throw e;
+      } finally {
+        if (activeSpeedRuns.get(modelPath) === runId) {
+          activeSpeedRuns.delete(modelPath);
+        }
+        endFitRun(runId);
+      }
     },
   );
 
@@ -914,10 +1023,21 @@ export function registerIpcHandlers(win: BrowserWindow): void {
         ngl: number;
         ctx: number;
         kvOffload?: boolean;
+        flashAttn?: 'on' | 'off' | 'auto';
         mmap?: boolean;
+        mlock?: boolean;
+        repack?: boolean;
         cacheTypeK?: CacheType;
         cacheTypeV?: CacheType;
         parallel?: number;
+        cpuMoe?: boolean;
+        nCpuMoe?: number;
+        mmprojOffload?: boolean;
+        imageMinTokens?: number;
+        imageMaxTokens?: number;
+        mtmdBatchMaxTokens?: number;
+        tensorSplit?: string | null;
+        tensorOverrides?: string | null;
       },
     ) => {
       const modelsDir = getModelsDirectory();

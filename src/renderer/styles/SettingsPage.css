@@ -79,6 +79,18 @@
   border-color: var(--accent);
 }
 
+/* Plain numeric entry (e.g. timeouts): no spinner arrows. */
+.settings-input--no-spinner::-webkit-outer-spin-button,
+.settings-input--no-spinner::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.settings-input--no-spinner {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
 .settings-icon-btn {
   width: 42px; /* Matched to new taller input height */
   height: 42px;
@@ -222,6 +234,40 @@
   animation: fadeInOut 2s ease forwards;
 }
 
+/* ── Resource allocation mode toggle ── */
+
+.settings-alloc-toggle {
+  display: inline-flex;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-input);
+  margin-bottom: 8px;
+}
+
+.settings-alloc-btn {
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 6px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.settings-alloc-btn--active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.settings-alloc-hint {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin: 0 0 12px;
+}
+
 @keyframes fadeInOut {
   0% {
     opacity: 0;
@@ -286,32 +332,6 @@
   transform: translateZ(0);
 }
 
-/* Updated MAX Label & Line alignment using flexbox */
-.mem-max-wrapper {
-  position: absolute;
-  top: -20px;
-  bottom: -6px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  z-index: 30;
-  pointer-events: none;
-  transform: translateX(-50%);
-}
-
-.mem-max-label {
-  color: #f38ba8;
-  font-size: 10px;
-  font-weight: 800;
-  text-transform: uppercase;
-  white-space: nowrap;
-  margin-bottom: 2px;
-}
-
-.mem-max-wrapper .info-tooltip-wrapper {
-  pointer-events: auto;
-}
-
 .mem-title-tooltip {
   display: block;
   width: 100%;
@@ -339,12 +359,6 @@
   flex-direction: column;
   gap: 8px;
   align-items: stretch;
-}
-
-.mem-max-line {
-  width: 2px;
-  flex: 1;
-  background: #f38ba8;
 }
 
 /* ============================================================================
@@ -399,11 +413,6 @@
   transform: scale(1.1);
 }
 
-.slider-exceeded::-webkit-slider-thumb {
-  background: #f38ba8;
-  border-color: rgba(243, 139, 168, 0.5);
-}
-
 .mem-legend-row {
   display: flex;
   align-items: center;
@@ -418,23 +427,6 @@
   background: var(--text-primary);
   border-radius: 2px;
   transition: background-color 0.2s ease;
-}
-
-.mem-legend-box.exceeded {
-  background: #f38ba8;
-}
-
-.mem-warning {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: #f38ba8;
-  font-size: 13px;
-  margin-top: 4px;
-  background: rgba(243, 139, 168, 0.08);
-  border: 1px solid rgba(243, 139, 168, 0.3);
-  padding: 10px 14px;
-  border-radius: var(--radius-sm);
 }
 
 /* ============================================================================
