@@ -296,6 +296,9 @@ declare global {
         callback: (payload: ChatStreamEvent) => void,
       ) => () => void;
       chatAbort: (sessionId?: string | null) => Promise<void>;
+      chatSkipThinking: (
+        sessionId?: string | null,
+      ) => Promise<{ skipped: boolean; error?: string }>;
       chatUnload: () => Promise<void>;
       chatHasConversation: () => Promise<boolean>;
       chatIsRunning: () => Promise<boolean>;

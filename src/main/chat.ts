@@ -93,6 +93,10 @@ interface SessionStream {
   streamedLen: number;
   /** Context-limit retry used this turn (single rescue per turn). */
   rescueDone: boolean;
+  /** OpenAI completion id of the active stream (for reasoning_end control). */
+  activeCompletionId: string | null;
+  /** Skip-thinking control request in flight (double-click guard). */
+  skipThinkingPending: boolean;
 }
 
 // --- State ---
@@ -419,6 +423,8 @@ function getSessionState(sessionId: string): SessionStream | null {
       usageBasisLen: 0,
       streamedLen: 0,
       rescueDone: false,
+      activeCompletionId: null,
+      skipThinkingPending: false,
     };
     sessions.set(sessionId, s);
   }
@@ -485,6 +491,8 @@ export function startSession(profileId: string, title: string): string {
     usageBasisLen: 0,
     streamedLen: 0,
     rescueDone: false,
+    activeCompletionId: null,
+    skipThinkingPending: false,
   };
   sessions.set(sessionId, state);
   persistSessionState(sessionId);
@@ -2636,6 +2644,8 @@ async function finishSession(
   s.currentReader = null;
   s.streamingTool = null;
   s.promptProgress = 0;
+  s.activeCompletionId = null;
+  s.skipThinkingPending = false;
   cancelPendingInput(s);
   persistSessionState(sessionId);
   emit({ type: 'done', sessionId, ...(stats ? { stats } : {}) });
@@ -2671,6 +2681,8 @@ export function failSession(
   s.abortController = null;
   s.currentReader = null;
   s.status = 'idle';
+  s.activeCompletionId = null;
+  s.skipThinkingPending = false;
   cancelPendingInput(s);
   persistSessionState(sessionId);
   emit({ type: 'done', sessionId });
@@ -2715,6 +2727,8 @@ function failUserTurnAsFailed(
   s.abortController = null;
   s.currentReader = null;
   s.status = 'idle';
+  s.activeCompletionId = null;
+  s.skipThinkingPending = false;
   cancelPendingInput(s);
   persistSessionState(sessionId);
   emit({ type: 'done', sessionId });
@@ -2850,6 +2864,8 @@ export async function sendMessage(
   s.streamingTool = null;
   s.streamedLen = 0;
   s.rescueDone = false;
+  s.activeCompletionId = null;
+  s.skipThinkingPending = false;
   // Estimate from here: basis is the refreshed + optimistic total above.
   s.usageBasisTokens = lastUsage?.used ?? 0;
   s.usageBasisLen = 0;
@@ -2875,6 +2891,10 @@ export async function sendMessage(
   let toolTokenCount = 0;
 
   const runCompletion = async (): Promise<SendMessageResponse> => {
+    // Each tool-loop round is a new POST with a new completion id — reset so
+    // Skip Thinking always targets the live round, never a finished one.
+    s.activeCompletionId = null;
+    s.skipThinkingPending = false;
     let response: Response;
     try {
       response = await fetch(getServerUrl('/v1/chat/completions'), {
@@ -2952,6 +2972,13 @@ export async function sendMessage(
 
           try {
             const data = JSON.parse(dataStr);
+
+            // Capture the OpenAI completion id for the reasoning_end control
+            // endpoint (Skip Thinking). First id per turn wins; cleared on
+            // turn start / finish / abort / failure.
+            if (!s.activeCompletionId && typeof data?.id === 'string') {
+              s.activeCompletionId = data.id;
+            }
 
             // Progress event during prompt processing (return_progress: true sends prompt_progress)
             if (data.prompt_progress && !data.usage) {
@@ -3633,6 +3660,8 @@ export async function abort(sessionId?: string | null) {
     const s = sessions.get(sessionId);
     if (!s) return;
     s.aborted = true;
+    s.activeCompletionId = null;
+    s.skipThinkingPending = false;
     cancelPendingInput(s);
     if (s.abortController) {
       s.abortController.abort();
@@ -3643,6 +3672,8 @@ export async function abort(sessionId?: string | null) {
   // Abort every live stream (teardown)
   sessions.forEach((s) => {
     s.aborted = true;
+    s.activeCompletionId = null;
+    s.skipThinkingPending = false;
     cancelPendingInput(s);
     if (s.abortController) {
       s.abortController.abort();
@@ -3653,9 +3684,54 @@ export async function abort(sessionId?: string | null) {
   // Do NOT cancel the reader — that leaves the llhttp parser paused.
 }
 
+/**
+ * Skip Thinking: end the reasoning block of the running completion without
+ * aborting the stream. Mirrors llama.cpp webui stopReasoning():
+ * POST /v1/chat/completions/control {action:'reasoning_end', id}.
+ * The server forces </think> and continues the same stream with the answer.
+ * Never touches abortController/reader. Returns {skipped} — failures only
+ * log (caller decides UI fallback).
+ */
+export async function skipThinking(
+  sessionId?: string | null,
+): Promise<{ skipped: boolean; error?: string }> {
+  if (!sessionId) return { skipped: false, error: 'No session' };
+  const s = sessions.get(sessionId);
+  if (!s) return { skipped: false, error: 'Unknown session' };
+  if (s.aborted || s.status === 'idle')
+    return { skipped: false, error: 'Not streaming' };
+  if (s.skipThinkingPending) return { skipped: false, error: 'In flight' };
+  const completionId = s.activeCompletionId;
+  if (!completionId) return { skipped: false, error: 'No completion id yet' };
+  s.skipThinkingPending = true;
+  try {
+    const res = await fetch(getServerUrl('/v1/chat/completions/control'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'reasoning_end', id: completionId }),
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok || data?.success !== true) {
+      const msg = `control failed: HTTP ${res.status}`;
+      console.warn('[chat] skipThinking:', msg, data);
+      return { skipped: false, error: msg };
+    }
+    return { skipped: true };
+  } catch (e: any) {
+    const msg = e?.message ?? 'control request failed';
+    console.warn('[chat] skipThinking:', msg);
+    return { skipped: false, error: msg };
+  } finally {
+    const live = sessions.get(sessionId);
+    if (live) live.skipThinkingPending = false;
+  }
+}
+
 function abortAllStreams(): void {
   sessions.forEach((s) => {
     s.aborted = true;
+    s.activeCompletionId = null;
+    s.skipThinkingPending = false;
     cancelPendingInput(s);
     if (s.abortController) {
       s.abortController.abort();

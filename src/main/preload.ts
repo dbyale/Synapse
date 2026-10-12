@@ -164,6 +164,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('chat:respond-input', sessionId, response),
   chatAbort: (sessionId?: string | null) =>
     ipcRenderer.invoke('chat:abort', sessionId),
+  chatSkipThinking: (
+    sessionId?: string | null,
+  ): Promise<{ skipped: boolean; error?: string }> =>
+    ipcRenderer.invoke('chat:skip-thinking', sessionId),
   chatUnload: () => ipcRenderer.invoke('chat:unload'),
   chatHasConversation: () => ipcRenderer.invoke('chat:hasConversation'),
   chatIsRunning: () => ipcRenderer.invoke('chat:isRunning'),

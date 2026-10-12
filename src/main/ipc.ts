@@ -606,6 +606,13 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     await chatService.abort(sessionId);
   });
 
+  ipcMain.handle(
+    'chat:skip-thinking',
+    async (_event, sessionId?: string | null) => {
+      return chatService.skipThinking(sessionId);
+    },
+  );
+
   ipcMain.handle('chat:unload', async () => {
     await chatService.unloadModel();
   });

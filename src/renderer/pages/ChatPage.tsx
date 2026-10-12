@@ -44,6 +44,7 @@ import {
   Power,
   ArrowDown,
   Search,
+  FastForward,
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -1775,6 +1776,9 @@ export default function ChatPage() {
   // ── Scroll to bottom button ────────────────────────────────────────────
   const [showScrollButton, setShowScrollButton] = useState(false);
   const SCROLL_THRESHOLD_PX = 200;
+
+  // ── Skip Thinking (reasoning_end control, non-destructive) ───────────────
+  const [skipPending, setSkipPending] = useState(false);
 
   // ── Collapsed UI state (clean separation: not stored in Message) ────────
   const [collapsedIds, setCollapsedIds] = useState<Set<number>>(
@@ -4640,6 +4644,66 @@ export default function ChatPage() {
   const handleAbort = () =>
     window.electronAPI.chatAbort(activeSessionIdRef.current);
 
+  // Skip Thinking: end reasoning block via control endpoint, keep streaming
+  // the answer. Distinct from Stop (abort). Visible while the active assistant
+  // turn has thought content but no normal answer yet; stays through tool
+  // calls until normal prose starts.
+  const showSkipThinking = useMemo(() => {
+    if (!loading || !activeSessionId) return false;
+    if (processing || shifting) return false;
+    try {
+      if (readThinkingTokens(selectedProfileId) === 0) return false;
+    } catch {
+      // fall through — show based on streamed content
+    }
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      const m = messages[i];
+      if (!m || m.role !== 'assistant') continue;
+      const hasThought = m.content.some(
+        (seg) => seg.type === 'thought' && seg.text.trim().length > 0,
+      );
+      if (!hasThought) return false;
+      const hasAnswer = m.content.some(
+        (seg) => seg.type === 'normal' && seg.text.trim().length > 0,
+      );
+      return !hasAnswer;
+    }
+    return false;
+  }, [
+    loading,
+    activeSessionId,
+    processing,
+    shifting,
+    messages,
+    selectedProfileId,
+  ]);
+
+  // Reset pending guard when the turn ends, session switches, or answer starts
+  useEffect(() => {
+    if (!loading || !showSkipThinking) setSkipPending(false);
+  }, [loading, showSkipThinking, activeSessionId]);
+
+  const handleSkipThinking = useCallback(async () => {
+    const sid = activeSessionIdRef.current;
+    if (!sid || skipPending) return;
+    setSkipPending(true);
+    try {
+      const res = await window.electronAPI.chatSkipThinking(sid);
+      if (!res?.skipped) {
+        // Per spec: just log, keep stream alive. Reset so user can retry
+        // once the completion id arrives (early-click race).
+        // eslint-disable-next-line no-console
+        console.warn('[chat] skip thinking failed:', res?.error ?? 'unknown');
+        setSkipPending(false);
+      }
+      // On success keep pending (disabled) until normal answer/done hides pill
+    } catch (e: any) {
+      // eslint-disable-next-line no-console
+      console.warn('[chat] skip thinking error:', e?.message ?? e);
+      setSkipPending(false);
+    }
+  }, [skipPending]);
+
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -5443,6 +5507,18 @@ export default function ChatPage() {
         )}
 
         <div className="chat-input-wrapper">
+          {showSkipThinking && (
+            <button
+              type="button"
+              className="chat-skip-thinking"
+              onClick={handleSkipThinking}
+              disabled={skipPending}
+              title="End reasoning now and jump straight to the answer (keeps streaming)"
+            >
+              <FastForward size={14} />
+              <span>{skipPending ? 'Skipping…' : 'Skip Thinking'}</span>
+            </button>
+          )}
           <div className="chat-input-row">
             <InfoTooltip
               content={
