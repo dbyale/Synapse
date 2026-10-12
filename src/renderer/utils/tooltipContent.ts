@@ -10,8 +10,8 @@ export const PROJECTOR_TOOLTIP =
 
 export const MMPROJ_OFFLOAD_TOOLTIP = [
   'Controls whether the multimodal projector is offloaded to the GPU.',
-  'When enabled (default), projector weights are loaded into VRAM for faster vision processing.',
-  'Disable to keep the projector in CPU memory.',
+  'When disabled (default), the projector is kept in CPU memory.',
+  'Enable to load projector weights into VRAM for faster vision processing.',
 ];
 
 export const IMAGE_MIN_TOKENS_TOOLTIP = [

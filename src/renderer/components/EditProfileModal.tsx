@@ -5310,7 +5310,7 @@ export default function EditProfileModal({
     profile?.projectorFilename ?? '',
   );
   const [editMmprojOffload, setEditMmprojOffload] = useState<boolean>(
-    profile?.mmprojOffload ?? true,
+    profile?.mmprojOffload ?? false,
   );
   const [editImageMinTokens, setEditImageMinTokens] = useState<string>(
     profile?.imageMinTokens !== undefined ? String(profile.imageMinTokens) : '',

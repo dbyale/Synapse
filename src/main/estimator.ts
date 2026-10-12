@@ -262,7 +262,7 @@ export function appendCommonFitArgs(
       `vision projector measurement for ${projectorPath}`,
     );
   }
-  if (p.mmprojOffload === false) {
+  if (p.mmprojOffload !== true) {
     pushIfSupported(
       args,
       supported,
@@ -1201,7 +1201,7 @@ function fitRelevantKey(profile: Partial<Profile> = {}): string {
     parallel: getParallel(profile),
     cpuMoe: profile.cpuMoe ?? false,
     nCpuMoe: profile.nCpuMoe ?? 0,
-    mmprojOffload: p.mmprojOffload ?? true,
+    mmprojOffload: p.mmprojOffload ?? false,
     imageMinTokens: p.imageMinTokens ?? 0,
     imageMaxTokens: p.imageMaxTokens ?? 0,
     mtmdBatchMaxTokens: p.mtmdBatchMaxTokens ?? 1024,

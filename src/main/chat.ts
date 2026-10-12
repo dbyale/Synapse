@@ -748,7 +748,7 @@ export function buildLlamaServerArgs(
   if (config.projectorPath) {
     spawnArgs.push('--mmproj', config.projectorPath);
   }
-  if ((profile as any).mmprojOffload === false) {
+  if ((profile as any).mmprojOffload !== true) {
     spawnArgs.push('--no-mmproj-offload');
   }
   if (
