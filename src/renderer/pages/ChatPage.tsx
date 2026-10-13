@@ -1779,6 +1779,28 @@ export default function ChatPage() {
 
   // ── Skip Thinking (reasoning_end control, non-destructive) ───────────────
   const [skipPending, setSkipPending] = useState(false);
+  // Live wire phase: last streamed section per session ('thought' shows pill).
+  // Updated at SSE arrival, not at typewriter drain, so no message-scan edge cases.
+  const [livePhaseBySession, setLivePhaseBySession] = useState<
+    Record<string, 'thought' | 'normal' | 'comment' | 'tool'>
+  >({});
+  const setLivePhase = useCallback(
+    (sessionId: string, phase: 'thought' | 'normal' | 'comment' | 'tool') => {
+      setLivePhaseBySession((prev) => {
+        if (prev[sessionId] === phase) return prev;
+        return { ...prev, [sessionId]: phase };
+      });
+    },
+    [],
+  );
+  const clearLivePhase = useCallback((sessionId: string) => {
+    setLivePhaseBySession((prev) => {
+      if (!(sessionId in prev)) return prev;
+      const next = { ...prev };
+      delete next[sessionId];
+      return next;
+    });
+  }, []);
 
   // ── Collapsed UI state (clean separation: not stored in Message) ────────
   const [collapsedIds, setCollapsedIds] = useState<Set<number>>(
@@ -3450,6 +3472,7 @@ export default function ChatPage() {
                 TYPEWRITER_INTERVAL_MS,
               );
             }
+            if ((token ?? '').length > 0) setLivePhase(sessionId, 'tool');
             return;
           }
 
@@ -3496,6 +3519,16 @@ export default function ChatPage() {
             typewriterTimersRef.current[sessionId] = setInterval(
               () => drainTypewriterQueue(sessionId),
               TYPEWRITER_INTERVAL_MS,
+            );
+          }
+          if ((token ?? '').length > 0) {
+            setLivePhase(
+              sessionId,
+              segmentType === 'thought'
+                ? 'thought'
+                : segmentType === 'comment'
+                  ? 'comment'
+                  : 'normal',
             );
           }
           return;
@@ -3954,6 +3987,7 @@ export default function ChatPage() {
             lastTokenSnapshot.current = null;
           }
           delete appliedProgressTruthRef.current[sessionId];
+          clearLivePhase(sessionId);
           refreshCumulativeTokens();
           return;
         }
@@ -3984,6 +4018,7 @@ export default function ChatPage() {
           } else {
             queueSessionSync(sessionId);
           }
+          clearLivePhase(sessionId);
           return;
         }
 
@@ -4000,6 +4035,7 @@ export default function ChatPage() {
             delete next[sessionId];
             return next;
           });
+          clearLivePhase(sessionId);
           showSlotBanner();
           return;
         }
@@ -4053,6 +4089,8 @@ export default function ChatPage() {
     drainToolTypewriterQueue,
     clearTypewriterSession,
     getEffectiveCPS,
+    setLivePhase,
+    clearLivePhase,
   ]);
 
   useEffect(() => {
@@ -4542,6 +4580,7 @@ export default function ChatPage() {
 
       setLoadingSessions((prev) => ({ ...prev, [sessionId]: true }));
       setProcessingSessions((prev) => ({ ...prev, [sessionId]: true }));
+      clearLivePhase(sessionId);
       progressRef.current[sessionId] = 0;
       if (sessionId === activeSessionIdRef.current) setProgressPercent(0);
       setStreamingTool(null);
@@ -4645,38 +4684,12 @@ export default function ChatPage() {
     window.electronAPI.chatAbort(activeSessionIdRef.current);
 
   // Skip Thinking: end reasoning block via control endpoint, keep streaming
-  // the answer. Distinct from Stop (abort). Visible while the active assistant
-  // turn has thought content but no normal answer yet; stays through tool
-  // calls until normal prose starts.
+  // the answer. Distinct from Stop (abort). Driven solely by the live wire
+  // phase — visible only while the currently-output section is thought.
   const showSkipThinking = useMemo(() => {
     if (!loading || !activeSessionId) return false;
-    if (processing || shifting) return false;
-    try {
-      if (readThinkingTokens(selectedProfileId) === 0) return false;
-    } catch {
-      // fall through — show based on streamed content
-    }
-    for (let i = messages.length - 1; i >= 0; i -= 1) {
-      const m = messages[i];
-      if (!m || m.role !== 'assistant') continue;
-      const hasThought = m.content.some(
-        (seg) => seg.type === 'thought' && seg.text.trim().length > 0,
-      );
-      if (!hasThought) return false;
-      const hasAnswer = m.content.some(
-        (seg) => seg.type === 'normal' && seg.text.trim().length > 0,
-      );
-      return !hasAnswer;
-    }
-    return false;
-  }, [
-    loading,
-    activeSessionId,
-    processing,
-    shifting,
-    messages,
-    selectedProfileId,
-  ]);
+    return livePhaseBySession[activeSessionId] === 'thought';
+  }, [loading, activeSessionId, livePhaseBySession]);
 
   // Reset pending guard when the turn ends, session switches, or answer starts
   useEffect(() => {
@@ -4899,6 +4912,7 @@ export default function ChatPage() {
     (id: string) => {
       window.electronAPI.chatDeleteSession(id).catch(() => {});
       clearTypewriterSession(id);
+      clearLivePhase(id);
       removeSessionSources(id);
       delete collapsedBySessionRef.current[id];
       delete seenIdsRef.current[id];
@@ -4910,7 +4924,7 @@ export default function ChatPage() {
         setCollapsedIds(new Set());
       }
     },
-    [removeSessionSources, clearTypewriterSession],
+    [removeSessionSources, clearTypewriterSession, clearLivePhase],
   );
 
   const handleDeleteFailedMessage = useCallback(
