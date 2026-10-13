@@ -417,7 +417,7 @@ export const CORS_CREDENTIALS_TOOLTIP = [
   'Default: enabled.',
 ];
 
-// ── Context Shift (Performance) ──
+// ── Context Shift ──
 
 export const CONTEXT_SHIFT_ENABLED_TOOLTIP = [
   'When enabled, old conversation messages are automatically cleared from the model context after a response finishes, if the context window is running low.',

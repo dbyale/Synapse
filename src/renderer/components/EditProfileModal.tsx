@@ -210,7 +210,7 @@ const PAGE_DEPTH: Record<string, number> = {
   'rope-scaling': 2,
   'draft-model': 2,
   'moe-options': 2,
-  'context-shift': 2,
+  'context-shift': 1,
   'server-settings': 1,
   'cors-settings': 2,
   'custom-flags': 2,
@@ -238,7 +238,7 @@ const BREADCRUMB_MAP: Record<string, { label: string; parent: string | null }> =
     },
     'draft-model': { label: 'Draft Model', parent: 'performance' },
     'moe-options': { label: 'Mixture of Experts', parent: 'performance' },
-    'context-shift': { label: 'Context Shift', parent: 'performance' },
+    'context-shift': { label: 'Context Shift', parent: 'main' },
     'server-settings': { label: 'Server Settings', parent: 'main' },
     'cors-settings': { label: 'CORS', parent: 'server-settings' },
     'custom-flags': { label: 'Custom Flags', parent: 'server-settings' },
@@ -309,6 +309,12 @@ const SEARCH_INDEX: SearchIndexEntry[] = [
     id: 'main:tools-card',
     label: 'Tools',
     keywords: ['tools', 'extensions', 'function calling'],
+    page: 'main',
+  },
+  {
+    id: 'main:context-shift-card',
+    label: 'Context Shift',
+    keywords: ['context', 'shift', 'clear', 'window'],
     page: 'main',
   },
   {
@@ -1181,6 +1187,8 @@ function MainPage({
   modelMaxLayers,
   modelMaxContext,
   editParallel,
+  editCsEnabled,
+  editCsTokensRemaining,
 }: {
   editName: string;
   setEditName: (v: string) => void;
@@ -1209,6 +1217,8 @@ function MainPage({
   modelMaxLayers: number;
   modelMaxContext: number;
   editParallel: string;
+  editCsEnabled: boolean;
+  editCsTokensRemaining: string;
 }) {
   return (
     <div className="epm-main-grid">
@@ -1350,6 +1360,16 @@ function MainPage({
           title="Tools"
           preview="Enable AI tools like file I/O and web search."
           onClick={() => onNavigate('tools')}
+        />
+        <SectionCard
+          icon={<Scissors size={20} />}
+          title="Context Shift"
+          preview={
+            editCsEnabled
+              ? `Shifts when ${editCsTokensRemaining} tokens remain.`
+              : 'Disabled'
+          }
+          onClick={() => onNavigate('context-shift')}
         />
         <SectionCard
           icon={<Settings size={20} />}
@@ -3086,8 +3106,6 @@ function PerformancePage({
   onNavigate,
   editSpecType,
   editDraftModelFilename,
-  editCsEnabled,
-  editCsTokensRemaining,
 }: {
   editAutoOptimizer: 'synapse' | 'custom' | null;
   editLayers: number | undefined;
@@ -3118,8 +3136,6 @@ function PerformancePage({
   onNavigate: (page: string) => void;
   editSpecType: string[];
   editDraftModelFilename: string;
-  editCsEnabled: boolean;
-  editCsTokensRemaining: string;
 }) {
   const isAuto =
     editAutoOptimizer !== null &&
@@ -3898,24 +3914,6 @@ function PerformancePage({
               <div className="epm-section-card__title">Mixture of Experts</div>
               <div className="epm-section-card__preview">
                 Control where MoE weights are loaded.
-              </div>
-            </div>
-            <ChevronRight size={16} className="epm-section-card__chevron" />
-          </button>
-          <button
-            type="button"
-            className="epm-section-card"
-            onClick={() => onNavigate('context-shift')}
-          >
-            <div className="epm-section-card__icon">
-              <Scissors size={18} />
-            </div>
-            <div className="epm-section-card__body">
-              <div className="epm-section-card__title">Context Shift</div>
-              <div className="epm-section-card__preview">
-                {editCsEnabled
-                  ? `Shifts when ${editCsTokensRemaining} tokens remain.`
-                  : 'Disabled'}
               </div>
             </div>
             <ChevronRight size={16} className="epm-section-card__chevron" />
@@ -6679,6 +6677,8 @@ export default function EditProfileModal({
             modelMaxLayers={modelMeta?.maxLayers ?? 200}
             modelMaxContext={modelMeta?.maxContext ?? 131072}
             editParallel={editParallel}
+            editCsEnabled={editCsEnabled}
+            editCsTokensRemaining={editCsTokensRemaining}
           />
         );
       case 'system-prompt':
@@ -6758,8 +6758,6 @@ export default function EditProfileModal({
             onNavigate={navigateTo}
             editSpecType={editSpecType}
             editDraftModelFilename={editDraftModelFilename}
-            editCsEnabled={editCsEnabled}
-            editCsTokensRemaining={editCsTokensRemaining}
           />
         );
       case 'moe-options':
