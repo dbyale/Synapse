@@ -98,6 +98,12 @@ export function getFitParamsBinName(): string {
     : 'llama-fit-params';
 }
 
+export function getSplitBinName(): string {
+  return process.platform === 'win32'
+    ? 'llama-gguf-split.exe'
+    : 'llama-gguf-split';
+}
+
 function getBackendDir(settings: AppSettings): string {
   return (
     settings.backendDirectory ||
@@ -223,5 +229,74 @@ export async function resolveFitBinary(
   return {
     backendFolder,
     fitParamsPath: path.join(backendDir, backendFolder, fitBin),
+  };
+}
+
+// Resolves the llama-gguf-split merge binary from the SAME backend folder
+// as the server. Mirrors resolveFitBinary's selection order.
+export async function resolveSplitBinary(
+  settings: AppSettings,
+): Promise<{ backendFolder: string; splitPath: string }> {
+  const splitBin = getSplitBinName();
+  const downloads = settings.backendDownloads ?? [];
+  const backendDir = getBackendDir(settings);
+  const customPaths = settings.customBinaryPaths ?? [];
+  const splitPathFor = (folder: string) =>
+    path.join(backendDir, folder, splitBin);
+
+  const selected = settings.selectedBackend;
+  if (selected && selected !== 'Default') {
+    if (customPaths.includes(selected) && fs.existsSync(selected)) {
+      const base = path.basename(selected).toLowerCase();
+      if (base.includes('gguf-split')) {
+        return { backendFolder: selected, splitPath: selected };
+      }
+      const sibling = path.join(path.dirname(selected), splitBin);
+      if (fs.existsSync(sibling)) {
+        return { backendFolder: selected, splitPath: sibling };
+      }
+    } else {
+      const match = downloads.find((d) => d.folder === selected);
+      if (match && fs.existsSync(splitPathFor(match.folder))) {
+        return {
+          backendFolder: match.folder,
+          splitPath: splitPathFor(match.folder),
+        };
+      }
+    }
+  }
+
+  const patterns = [/cuda/i, /opencl|adreno/i, /vulkan/i];
+  const hit = patterns
+    .map((pattern) =>
+      downloads.find(
+        (d) => pattern.test(d.folder) && fs.existsSync(splitPathFor(d.folder)),
+      ),
+    )
+    .find(Boolean);
+  if (hit) {
+    return { backendFolder: hit.folder, splitPath: splitPathFor(hit.folder) };
+  }
+
+  const firstSplit = downloads.find((d) =>
+    fs.existsSync(splitPathFor(d.folder)),
+  );
+  if (firstSplit) {
+    return {
+      backendFolder: firstSplit.folder,
+      splitPath: splitPathFor(firstSplit.folder),
+    };
+  }
+
+  const { backendFolder, serverPath } = await resolveBackend(settings);
+  if (customPaths.includes(backendFolder) && fs.existsSync(backendFolder)) {
+    return {
+      backendFolder,
+      splitPath: path.join(path.dirname(serverPath), splitBin),
+    };
+  }
+  return {
+    backendFolder,
+    splitPath: path.join(backendDir, backendFolder, splitBin),
   };
 }

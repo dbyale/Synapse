@@ -18,7 +18,7 @@ import { ModelCardHeader } from './ModelCard';
 interface ActiveDownload {
   filename: string;
   percent: number;
-  status?: 'downloading' | 'cancelled' | 'failed' | string;
+  status?: 'downloading' | 'merging' | 'cancelled' | 'failed' | string;
 }
 
 interface FileGroup {
@@ -37,6 +37,7 @@ interface ModelDetailPanelProps {
   localModelKeys: Set<string>;
   systemMemoryMB: number;
   onDownload: (repoId: string, filename: string) => void;
+  onDownloadSplit: (repoId: string, filenames: string[]) => void;
   onSearchBaseModel: (query: string) => void;
   onClose: () => void;
 }
@@ -129,6 +130,7 @@ function DownloadOptions({
   localModelKeys,
   systemMemoryMB,
   onDownload,
+  onDownloadSplit,
 }: {
   model: ModelSearchResult;
   files: RemoteModelFile[];
@@ -137,6 +139,7 @@ function DownloadOptions({
   localModelKeys: Set<string>;
   systemMemoryMB: number;
   onDownload: (repoId: string, filename: string) => void;
+  onDownloadSplit: (repoId: string, filenames: string[]) => void;
 }) {
   const sortedBitGroups = useMemo(() => {
     const groupedFiles = new Map<string, FileGroup>();
@@ -219,15 +222,19 @@ function DownloadOptions({
                   .map((p) => downloads[`${model.id}:${p.filename}`])
                   .filter(Boolean);
 
+                const mergedDl = downloads[`${model.id}:${group.id}`];
+                const isMerging = mergedDl?.status === 'merging';
+
                 const isDownloading =
-                  activeDls.length > 0 &&
-                  activeDls.some(
-                    (d) => d.status !== 'cancelled' && d.status !== 'failed',
-                  );
+                  isMerging ||
+                  (activeDls.length > 0 &&
+                    activeDls.some(
+                      (d) => d.status !== 'cancelled' && d.status !== 'failed',
+                    ));
 
                 let percent: number | null = null;
 
-                if (isDownloading) {
+                if (isDownloading && !isMerging) {
                   const anyStarted = activeDls.some((d) => d.percent > 0);
 
                   const totalProgress = group.parts.reduce((sum, part) => {
@@ -293,9 +300,14 @@ function DownloadOptions({
                       disabled={allLocal}
                       onClick={() => {
                         if (!isDownloading && !allLocal) {
-                          group.parts.forEach((p) =>
-                            onDownload(model.id, p.filename),
-                          );
+                          if (group.parts.length > 1) {
+                            onDownloadSplit(
+                              model.id,
+                              group.parts.map((p) => p.filename),
+                            );
+                          } else {
+                            onDownload(model.id, group.parts[0].filename);
+                          }
                         }
                       }}
                     >
@@ -313,9 +325,11 @@ function DownloadOptions({
                           {group.displayQuantization}
                         </span>
                         <span className="model-card__dl-size">
-                          {isDownloading
-                            ? `${percent}%`
-                            : formatBytes(group.totalSizeBytes)}
+                          {isMerging
+                            ? 'Merging…'
+                            : isDownloading
+                              ? `${percent}%`
+                              : formatBytes(group.totalSizeBytes)}
                         </span>
                       </div>
                     </button>
@@ -384,6 +398,7 @@ export default function ModelDetailPanel({
   localModelKeys,
   systemMemoryMB,
   onDownload,
+  onDownloadSplit,
   onSearchBaseModel,
   onClose,
 }: ModelDetailPanelProps) {
@@ -514,6 +529,7 @@ export default function ModelDetailPanel({
           localModelKeys={localModelKeys}
           systemMemoryMB={systemMemoryMB}
           onDownload={onDownload}
+          onDownloadSplit={onDownloadSplit}
         />
       </div>
 

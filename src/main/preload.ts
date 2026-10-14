@@ -52,6 +52,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   downloadModel: (repoId: string, filename: string) =>
     ipcRenderer.invoke('models:download', repoId, filename),
+  downloadSplitModel: (repoId: string, filenames: string[]) =>
+    ipcRenderer.invoke('models:download-split', repoId, filenames),
+  mergeSplit: (repoId: string, filename: string) =>
+    ipcRenderer.invoke('models:merge-split', repoId, filename),
+  cancelMerge: (repoId: string, filename: string) =>
+    ipcRenderer.invoke('models:cancel-merge', repoId, filename),
   cancelDownload: (repoId: string, filename: string) =>
     ipcRenderer.invoke('models:cancel-download', repoId, filename),
   resumeDownload: (repoId: string, filename: string) =>

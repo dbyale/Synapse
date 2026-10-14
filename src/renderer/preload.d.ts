@@ -11,7 +11,8 @@ export interface DownloadProgress {
   downloadedBytes: number;
   totalBytes: number;
   percent: number;
-  status?: 'downloading' | 'completed' | 'failed' | 'cancelled';
+  status?: 'downloading' | 'merging' | 'completed' | 'failed' | 'cancelled';
+  merge?: boolean;
 }
 
 export interface LocalModel {
@@ -192,6 +193,12 @@ declare global {
       ) => Promise<ModelSearchResult[]>;
       listModelFiles: (repoId: string) => Promise<RemoteModelFile[]>;
       downloadModel: (repoId: string, filename: string) => Promise<string>;
+      downloadSplitModel: (
+        repoId: string,
+        filenames: string[],
+      ) => Promise<string>;
+      mergeSplit: (repoId: string, filename: string) => Promise<string>;
+      cancelMerge: (repoId: string, filename: string) => Promise<boolean>;
       cancelDownload: (repoId: string, filename: string) => Promise<boolean>;
       resumeDownload: (repoId: string, filename: string) => Promise<string>;
       deletePartFile: (repoId: string, filename: string) => Promise<boolean>;

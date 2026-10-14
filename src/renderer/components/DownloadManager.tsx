@@ -14,7 +14,8 @@ interface ActiveDL {
   speed: number;
   lastTimestamp: number;
   lastBytes: number;
-  status: 'downloading' | 'cancelled' | 'failed';
+  status: 'downloading' | 'merging' | 'completed' | 'cancelled' | 'failed';
+  merge?: boolean;
 }
 
 export default function DownloadManager() {
@@ -67,7 +68,11 @@ export default function DownloadManager() {
     if (!window.electronAPI) return undefined;
 
     const unsubscribe = window.electronAPI.onDownloadProgress(
-      (progress: DownloadProgress & { status?: 'cancelled' | 'failed' }) => {
+      (
+        progress: DownloadProgress & {
+          status?: 'downloading' | 'merging' | 'completed' | 'cancelled' | 'failed';
+        },
+      ) => {
         const now = Date.now();
         const key = (progress.modelId || '') + ':' + progress.filename;
 
@@ -90,6 +95,27 @@ export default function DownloadManager() {
                   lastBytes: 0,
                 }),
                 status: progress.status,
+                merge: progress.merge ?? existing?.merge,
+              },
+            };
+          }
+
+          if (progress.status === 'merging' || progress.status === 'completed') {
+            return {
+              ...prev,
+              [key]: {
+                ...(existing || {
+                  modelId: progress.modelId || '',
+                  filename: progress.filename,
+                  speed: 0,
+                  lastTimestamp: now,
+                  lastBytes: progress.downloadedBytes,
+                }),
+                percent: progress.percent,
+                downloadedBytes: progress.downloadedBytes,
+                totalBytes: progress.totalBytes,
+                status: progress.status,
+                merge: progress.merge ?? existing?.merge,
               },
             };
           }
@@ -154,7 +180,14 @@ export default function DownloadManager() {
     const dl = downloads[key];
     if (!dl) return;
 
-    const isComplete = dl.percent >= 100;
+    const isComplete = dl.percent >= 100 && dl.status !== 'merging';
+
+    if (dl.status === 'merging') {
+      if (window.electronAPI.cancelMerge) {
+        await window.electronAPI.cancelMerge(modelId, filename);
+      }
+      return;
+    }
 
     // Clear it if it's already done or stopped
     if (isComplete || dl.status === 'cancelled' || dl.status === 'failed') {
@@ -206,6 +239,8 @@ export default function DownloadManager() {
   // ── Handle Retry ──
   const handleRetry = async (modelId: string, filename: string) => {
     const key = (modelId || '') + ':' + filename;
+    const dl = downloads[key];
+    const isMergeRetry = !!dl?.merge;
     setDownloads((prev) => ({
       ...prev,
       [key]: {
@@ -220,17 +255,22 @@ export default function DownloadManager() {
       },
     }));
 
-    if (window.electronAPI.downloadModel) {
-      try {
+    try {
+      if (isMergeRetry && window.electronAPI.mergeSplit) {
+        await window.electronAPI.mergeSplit(modelId, filename);
+      } else if (window.electronAPI.downloadModel) {
         await window.electronAPI.downloadModel(modelId, filename);
-      } catch {
-        // IPC events will update the status; no extra handling needed
       }
+    } catch {
+      // IPC events will update the status; no extra handling needed
     }
   };
 
   const activeCount = Object.values(downloads).filter(
-    (d) => d.percent < 100 && d.status !== 'cancelled' && d.status !== 'failed',
+    (d) =>
+      (d.percent < 100 || d.status === 'merging') &&
+      d.status !== 'cancelled' &&
+      d.status !== 'failed',
   ).length;
   const dlList = Object.values(downloads);
 
@@ -263,7 +303,8 @@ export default function DownloadManager() {
               <div className="dl-manager__empty">No active downloads</div>
             ) : (
               dlList.map((dl) => {
-                const isComplete = dl.percent >= 100;
+                const isMerging = dl.status === 'merging';
+                const isComplete = dl.percent >= 100 && !isMerging;
                 const isCancelled = dl.status === 'cancelled';
                 const isFailed = dl.status === 'failed';
                 const bytesRemaining = dl.totalBytes - dl.downloadedBytes;
@@ -283,7 +324,9 @@ export default function DownloadManager() {
                 if (isCancelled) {
                   statusText = 'Cancelled';
                 } else if (isFailed) {
-                  statusText = 'Failed';
+                  statusText = dl.merge ? 'Merge failed' : 'Failed';
+                } else if (isMerging) {
+                  statusText = 'Merging…';
                 } else if (isComplete) {
                   statusText = 'Completed';
                 } else {

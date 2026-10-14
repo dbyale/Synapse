@@ -4,6 +4,7 @@ import https from 'https';
 import { BrowserWindow } from 'electron';
 import { ClientRequest } from 'http';
 import { getModelsDirectory } from '../../main/settings';
+import { mergeGgufSplits, cancelMerge } from '../../main/ggufSplit';
 import type {
   ModelSearchResult,
   SearchFilter,
@@ -41,6 +42,39 @@ const activeDownloads = new Map<
     repoId: string;
   }
 >();
+
+const SPLIT_PART_RE = /^(.*?)-(\d{4,5})-of-(\d{4,5})\.gguf$/i;
+
+export function isSplitPart(filename: string): boolean {
+  return SPLIT_PART_RE.test(path.basename(filename));
+}
+
+function resolveModelTargetDir(repoId: string, filename: string): string {
+  const modelsDir = getModelsDirectory();
+  const isProjector = filename.toLowerCase().includes('mmproj');
+  const repoParts = repoId.split('/');
+  let targetDir = path.join(modelsDir, ...repoParts);
+  if (isProjector) {
+    targetDir = path.join(targetDir, 'projectors');
+  }
+  return targetDir;
+}
+
+function resolveMergePaths(repoId: string, filename: string): {
+  targetDir: string;
+  base: string;
+  mergedFilename: string;
+  mergedPath: string;
+} {
+  const targetDir = resolveModelTargetDir(repoId, filename);
+  const basename = path.basename(filename);
+  const partMatch = basename.match(SPLIT_PART_RE);
+  const base = partMatch
+    ? partMatch[1]
+    : basename.replace(/\.gguf$/i, '');
+  const mergedFilename = `${base}.gguf`;
+  return { targetDir, base, mergedFilename, mergedPath: path.join(targetDir, mergedFilename) };
+}
 
 // ── Helper to recursively scan folders for .gguf files ──
 function walkDir(dir: string, callback: (filepath: string) => void) {
@@ -295,15 +329,7 @@ export function downloadModel(
   resume: boolean = false,
 ): Promise<string> {
   return new Promise((resolve, reject) => {
-    const modelsDir = getModelsDirectory();
-    const isProjector = filename.toLowerCase().includes('mmproj');
-
-    const repoParts = repoId.split('/');
-    let targetDir = path.join(modelsDir, ...repoParts);
-
-    if (isProjector) {
-      targetDir = path.join(targetDir, 'projectors');
-    }
+    const targetDir = resolveModelTargetDir(repoId, filename);
 
     const destPath = path.join(targetDir, path.basename(filename));
     const partPath = destPath + '.part';
@@ -457,14 +483,157 @@ export function downloadModel(
   });
 }
 
-export function deletePartFile(repoId: string, filename: string): boolean {
-  const modelsDir = getModelsDirectory();
-  const isProjector = filename.toLowerCase().includes('mmproj');
-  const repoParts = repoId.split('/');
-  let targetDir = path.join(modelsDir, ...repoParts);
-  if (isProjector) {
-    targetDir = path.join(targetDir, 'projectors');
+export function mergeSplitParts(
+  repoId: string,
+  filename: string,
+  win: BrowserWindow | null,
+): Promise<string> {
+  const { targetDir, base, mergedFilename, mergedPath } = resolveMergePaths(
+    repoId,
+    filename,
+  );
+  const fail = (message: string): never => {
+    win?.webContents.send('download-progress', {
+      modelId: repoId,
+      filename: mergedFilename,
+      downloadedBytes: 0,
+      totalBytes: 0,
+      percent: 0,
+      status: 'failed',
+      merge: true,
+    } as DownloadProgress);
+    throw new Error(message);
+  };
+
+  let entries: string[] = [];
+  try {
+    entries = fs.readdirSync(targetDir);
+  } catch {
+    fail(`Model directory not found: ${targetDir}`);
   }
+  const parts = entries
+    .filter((f) => {
+      const m = f.match(SPLIT_PART_RE);
+      return !!m && m[1] === base;
+    })
+    .sort((a, b) => a.localeCompare(b));
+
+  if (parts.length === 0) {
+    if (fs.existsSync(mergedPath)) return Promise.resolve(mergedPath);
+    fail(`No split parts found for ${base} in ${targetDir}`);
+  }
+  const totalMatch = parts[0].match(SPLIT_PART_RE);
+  const expectedTotal = totalMatch ? parseInt(totalMatch[3], 10) : parts.length;
+  if (parts.length !== expectedTotal || !/-00001-of-/i.test(parts[0])) {
+    fail(
+      `Incomplete split model ${base}: found ${parts.length} of ${expectedTotal} parts`,
+    );
+  }
+
+  const partPaths = parts.map((p) => path.join(targetDir, p));
+  let totalBytes = 0;
+  try {
+    totalBytes = partPaths.reduce(
+      (sum, p) => sum + fs.statSync(p).size,
+      0,
+    );
+  } catch {
+    fail(`Failed to read split part sizes for ${base}`);
+  }
+
+  try {
+    const statfs = (
+      fs as unknown as {
+        statfsSync?: (p: string) => { bfree: number; bsize: number };
+      }
+    ).statfsSync;
+    if (typeof statfs === 'function') {
+      const { bfree, bsize } = statfs(targetDir);
+      const freeBytes = bfree * bsize;
+      if (freeBytes < totalBytes * 1.05) {
+        fail(
+          `Insufficient disk space to merge ${base}: need ~${(totalBytes / 1024 / 1024 / 1024).toFixed(1)} GB free`,
+        );
+      }
+    }
+  } catch (err) {
+    if (err instanceof Error && err.message.startsWith('Insufficient')) throw err;
+  }
+
+  win?.webContents.send('download-progress', {
+    modelId: repoId,
+    filename: mergedFilename,
+    downloadedBytes: totalBytes,
+    totalBytes,
+    percent: 100,
+    status: 'merging',
+    merge: true,
+  } as DownloadProgress);
+
+  const firstPartPath = partPaths[0];
+  return mergeGgufSplits(firstPartPath, mergedPath).then(
+    () => {
+      try {
+        const mergedSize = fs.statSync(mergedPath).size;
+        const maxPart = Math.max(
+          ...partPaths.map((p) => fs.statSync(p).size),
+        );
+        if (mergedSize < maxPart || mergedSize < totalBytes * 0.9) {
+          fail(`Merged file verification failed for ${mergedFilename}`);
+        }
+      } catch (err) {
+        if (err instanceof Error && err.message.startsWith('Merged file'))
+          throw err;
+        fail(`Merged file not found: ${mergedFilename}`);
+      }
+      for (const p of partPaths) {
+        try {
+          fs.unlinkSync(p);
+        } catch (e) {
+          console.error('Failed to delete split part:', p, e);
+        }
+      }
+      win?.webContents.send('download-progress', {
+        modelId: repoId,
+        filename: mergedFilename,
+        downloadedBytes: totalBytes,
+        totalBytes,
+        percent: 100,
+        status: 'completed',
+        merge: true,
+      } as DownloadProgress);
+      return mergedPath;
+    },
+    (err: Error): string => {
+      return fail(err.message || `Failed to merge ${base}`);
+    },
+  );
+}
+
+export async function downloadSplitModel(
+  repoId: string,
+  filenames: string[],
+  win: BrowserWindow | null,
+  resume: boolean = false,
+): Promise<string> {
+  if (filenames.length === 0) throw new Error('No files to download');
+  if (filenames.length === 1 || !filenames.some((f) => isSplitPart(f))) {
+    return downloadModel(repoId, filenames[0], win, resume);
+  }
+  const results = await Promise.all(
+    filenames.map((f) => downloadModel(repoId, f, win, resume)),
+  );
+  if (results.includes('CANCELLED')) return 'CANCELLED';
+  return mergeSplitParts(repoId, filenames[0], win);
+}
+
+export function cancelSplitMerge(repoId: string, filename: string): boolean {
+  const { mergedPath } = resolveMergePaths(repoId, filename);
+  return cancelMerge(mergedPath);
+}
+
+export function deletePartFile(repoId: string, filename: string): boolean {
+  const targetDir = resolveModelTargetDir(repoId, filename);
   const partPath = path.join(targetDir, path.basename(filename) + '.part');
   if (fs.existsSync(partPath)) {
     try {

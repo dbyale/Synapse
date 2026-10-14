@@ -533,6 +533,48 @@ export default function ModelsPage() {
     }
   };
 
+  const handleDownloadSplit = async (
+    repoId: string,
+    filenames: string[],
+  ): Promise<void> => {
+    if (filenames.length === 0) return;
+    if (filenames.length === 1) {
+      await handleDownload(repoId, filenames[0]);
+      return;
+    }
+    const keys = filenames.map((f) => `${repoId}:${f}`);
+    if (keys.some((k) => downloadingRef.current.has(k))) return;
+    keys.forEach((k) => downloadingRef.current.add(k));
+
+    filenames.forEach((filename) => {
+      window.dispatchEvent(
+        new CustomEvent('open-download-manager', {
+          detail: { modelId: repoId, filename },
+        }),
+      );
+    });
+
+    setDownloads((prev) => {
+      const next = { ...prev };
+      filenames.forEach((filename) => {
+        next[`${repoId}:${filename}`] = {
+          modelId: repoId,
+          filename,
+          percent: 0,
+          status: 'downloading',
+        };
+      });
+      return next;
+    });
+    try {
+      await window.electronAPI.downloadSplitModel(repoId, filenames);
+    } catch (dlErr: unknown) {
+      console.error('Split download failed:', dlErr);
+    } finally {
+      keys.forEach((k) => downloadingRef.current.delete(k));
+    }
+  };
+
   const handleAddLocalModel = async (
     name: string,
     author: string,
@@ -686,6 +728,7 @@ export default function ModelsPage() {
                             localModelKeys={localModelKeys}
                             systemMemoryMB={systemMemoryMB}
                             onDownload={handleDownload}
+                            onDownloadSplit={handleDownloadSplit}
                             onSearchBaseModel={(bmQuery) => {
                               setTab('browse');
                               setQuery(bmQuery);
@@ -853,6 +896,7 @@ export default function ModelsPage() {
                     localModelKeys={localModelKeys}
                     systemMemoryMB={systemMemoryMB}
                     onDownload={handleDownload}
+                    onDownloadSplit={handleDownloadSplit}
                     onSearchBaseModel={(bmQuery) => {
                       setQuery(bmQuery);
                       setLimit(20);

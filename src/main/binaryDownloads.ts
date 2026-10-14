@@ -343,6 +343,7 @@ export async function startBinaryDownload(
           (name) =>
             name.includes('llama-server') ||
             name.includes('llama-fit-params') ||
+            name.includes('llama-gguf-split') ||
             name.endsWith('.dll'),
           download.id,
         );
@@ -367,6 +368,7 @@ export async function startBinaryDownload(
           filter: (p: string) =>
             p.includes('llama-server') ||
             p.includes('llama-fit-params') ||
+            p.includes('llama-gguf-split') ||
             p.endsWith('.dylib'),
         });
         fs.unlinkSync(tempPath);

@@ -16,6 +16,9 @@ import {
   searchModels,
   listModelFiles,
   downloadModel,
+  downloadSplitModel,
+  mergeSplitParts,
+  cancelSplitMerge,
   listLocalModels,
   deleteLocalModel,
   cancelDownload,
@@ -365,10 +368,45 @@ export function registerIpcHandlers(win: BrowserWindow): void {
   );
 
   ipcMain.handle(
+    'models:download-split',
+    async (event, repoId: string, filenames: string[]) => {
+      try {
+        const downloadWin = BrowserWindow.fromWebContents(event.sender);
+        if (!downloadWin) throw new Error('No window found');
+        return await downloadSplitModel(repoId, filenames, downloadWin);
+      } catch (err) {
+        console.error('[models:download-split]', err);
+        throw err;
+      }
+    },
+  );
+
+  ipcMain.handle(
+    'models:merge-split',
+    async (event, repoId: string, filename: string) => {
+      try {
+        const downloadWin = BrowserWindow.fromWebContents(event.sender);
+        return await mergeSplitParts(repoId, filename, downloadWin);
+      } catch (err) {
+        console.error('[models:merge-split]', err);
+        throw err;
+      }
+    },
+  );
+
+  ipcMain.handle(
     'models:cancel-download',
     async (_event, repoId: string, filename: string) => {
       if (binaryDownloads.cancelBinaryDownload(repoId)) return true;
+      if (cancelSplitMerge(repoId, filename)) return true;
       return cancelDownload(repoId, filename);
+    },
+  );
+
+  ipcMain.handle(
+    'models:cancel-merge',
+    async (_event, repoId: string, filename: string) => {
+      return cancelSplitMerge(repoId, filename);
     },
   );
 

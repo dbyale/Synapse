@@ -34,8 +34,9 @@ const CUDA_RUNTIMES: [string, string][] = [
   [`cudart-llama-bin-win-cuda-13.4-x64.zip`, 'win-cuda-13.4-x64'],
 ];
 
-// Binaries kept from each llama.cpp release bundle: the server plus the
-// llama-fit-params estimator (which must match the server's build/backend).
+// Binaries kept from each llama.cpp release bundle: the server, the
+// llama-fit-params estimator and llama-gguf-split (all must match the
+// server's build/backend).
 async function downloadAndExtract(url: string, targetFolder: string) {
   const targetDir = path.join(ASSETS_BIN, targetFolder);
   if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
@@ -53,6 +54,7 @@ async function downloadAndExtract(url: string, targetFolder: string) {
       if (
         entry.entryName.includes('llama-server') ||
         entry.entryName.includes('llama-fit-params') ||
+        entry.entryName.includes('llama-gguf-split') ||
         entry.entryName.endsWith('.dll')
       ) {
         zip.extractEntryTo(entry, targetDir, false, true);
@@ -68,6 +70,7 @@ async function downloadAndExtract(url: string, targetFolder: string) {
       filter: (p: string) =>
         p.includes('llama-server') ||
         p.includes('llama-fit-params') ||
+        p.includes('llama-gguf-split') ||
         p.endsWith('.dylib'),
     });
     fs.unlinkSync(tempTar);
@@ -77,7 +80,7 @@ async function downloadAndExtract(url: string, targetFolder: string) {
 
   // Set executable permissions for Unix
   if (process.platform !== 'win32') {
-    for (const bin of ['llama-server', 'llama-fit-params']) {
+    for (const bin of ['llama-server', 'llama-fit-params', 'llama-gguf-split']) {
       const binPath = path.join(targetDir, bin);
       if (fs.existsSync(binPath)) fs.chmodSync(binPath, '755');
     }
