@@ -315,10 +315,10 @@ const OTHER_TARGETS: OtherTarget[] = [
     requires: 'qualcomm',
   },
   {
-    id: 'win-openvino-2026.4-x64',
+    id: 'win-openvino-2026.4.1-x64',
     label: 'OpenVINO (Windows x64)',
     icon: 'openvino',
-    target: 'win-openvino-2026.4-x64',
+    target: 'win-openvino-2026.4.1-x64',
     ext: 'zip',
     runtime: 'x64',
     os: 'win',
@@ -391,10 +391,10 @@ const OTHER_TARGETS: OtherTarget[] = [
     os: 'linux',
   },
   {
-    id: 'ubuntu-openvino-2026.4-x64',
+    id: 'ubuntu-openvino-2026.4.1-x64',
     label: 'OpenVINO (Ubuntu x64)',
     icon: 'openvino',
-    target: 'ubuntu-openvino-2026.4-x64',
+    target: 'ubuntu-openvino-2026.4.1-x64',
     ext: 'tar.gz',
     runtime: 'x64',
     os: 'linux',
@@ -744,8 +744,8 @@ export async function getBackendInfo(): Promise<BackendInfo> {
   if (platform !== 'darwin' && intelNpu) {
     const win = platform === 'win32';
     const target = win
-      ? 'win-openvino-2026.4-x64'
-      : 'ubuntu-openvino-2026.4-x64';
+      ? 'win-openvino-2026.4.1-x64'
+      : 'ubuntu-openvino-2026.4.1-x64';
     optional.push(
       buildDownload(
         target,
@@ -791,12 +791,12 @@ export async function getBackendInfo(): Promise<BackendInfo> {
   ) {
     if (hasAmd(gpuList)) {
       const win = platform === 'win32';
-      const target = win ? 'win-rocm-7.14-x64' : 'ubuntu-rocm-7.14-x64';
+      const target = win ? 'win-rocm-10.0-x64' : 'ubuntu-rocm-10.0-x64';
       if (!optionalTaken.has(target)) {
         optional.push(
           buildDownload(
             target,
-            'ROCm 7.14 (x64)',
+            'ROCm 10.0 (x64)',
             'rocm',
             target,
             win ? 'zip' : 'tar.gz',
@@ -861,8 +861,8 @@ export async function getBackendInfo(): Promise<BackendInfo> {
       }
 
       const target = win
-        ? 'win-openvino-2026.4-x64'
-        : 'ubuntu-openvino-2026.4-x64';
+        ? 'win-openvino-2026.4.1-x64'
+        : 'ubuntu-openvino-2026.4.1-x64';
       if (!optionalTaken.has(target)) {
         optional.push(
           buildDownload(
