@@ -2602,6 +2602,44 @@
   opacity: 0.7;
 }
 
+.chat-server-restart {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-family: inherit;
+  cursor: pointer;
+  user-select: none;
+  flex-shrink: 0;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease,
+    opacity 0.15s ease;
+  line-height: 1;
+}
+
+.chat-server-restart:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
+.chat-server-restart:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.chat-server-restart svg {
+  flex-shrink: 0;
+}
+
 .chat-send-button--power {
   background: var(--accent) !important;
   color: #11111b !important;

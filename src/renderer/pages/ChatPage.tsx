@@ -19,6 +19,7 @@ import {
   SlidersHorizontal,
   AlertCircle,
   RefreshCw,
+  RefreshCcw,
   Wrench,
   Check,
   ChevronDown,
@@ -2553,6 +2554,25 @@ export default function ChatPage() {
       } else {
         await triggerServerStart();
       }
+    } finally {
+      setServerToggling(false);
+    }
+  }, [isServerOnline, serverToggling, triggerServerStart]);
+
+  const handleRestartServer = useCallback(async () => {
+    if (serverToggling || !isServerOnline) return;
+    setServerToggling(true);
+    try {
+      if (loadAbortController.current)
+        loadAbortController.current.cancelled = true;
+      persistentModelLoading = false;
+      persistentLastLoadId += 1;
+      setModelLoading(false);
+      setLoadError(null);
+      setProgressPercent(0);
+      persistentLoadedProfileId = '';
+      await window.electronAPI.chatUnload();
+      await triggerServerStart();
     } finally {
       setServerToggling(false);
     }
@@ -5898,6 +5918,17 @@ export default function ChatPage() {
             <span className="chat-server-status__dot" aria-hidden="true" />
             <span>{isServerOnline ? 'Server Online' : 'Server Offline'}</span>
           </button>
+          <InfoTooltip content="Restart server" hideIcon side="top">
+            <button
+              type="button"
+              className="chat-server-restart"
+              onClick={handleRestartServer}
+              disabled={!isServerOnline || serverToggling}
+              aria-label="Restart server"
+            >
+              <RefreshCcw size={12} />
+            </button>
+          </InfoTooltip>
         </div>
 
         {showImageModal && (
