@@ -4492,7 +4492,7 @@ export default function ChatPage() {
       return;
     }
     if (
-      !text ||
+      !hasContent ||
       loading ||
       sendingRef.current ||
       modelLoading ||
@@ -4953,8 +4953,8 @@ export default function ChatPage() {
         msg.content.find((s) => s.type === 'normal')?.text ??
         msg.content[0]?.text ??
         '';
-      if (!text.trim()) return;
       const mediaItems = msg.content[0]?.mediaItems ?? [];
+      if (!text.trim() && mediaItems.length === 0) return;
       const hasNonImage = mediaItems.some((m) => m.type !== 'image');
       const sessionId = activeSessionIdRef.current;
       if (!sessionId) return;
@@ -5670,7 +5670,7 @@ export default function ChatPage() {
                 type="button"
                 className="chat-send-button"
                 disabled={
-                  !inputText.trim() ||
+                  (!inputText.trim() && pendingMedia.length === 0) ||
                   !selectedProfileId ||
                   modelLoading ||
                   persistentModelLoading ||
