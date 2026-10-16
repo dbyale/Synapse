@@ -79,14 +79,15 @@ export default function ThinkingDropdown({
       if (menuRef.current?.contains(e.target as Node)) return;
       setOpen(false);
     };
-    const close = () => setOpen(false);
+    const reposition = () => {
+      const b = buttonRef.current?.getBoundingClientRect();
+      if (b) setRect({ left: b.left, top: b.top });
+    };
     document.addEventListener('mousedown', onDocClick);
-    window.addEventListener('resize', close);
-    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', reposition);
     return () => {
       document.removeEventListener('mousedown', onDocClick);
-      window.removeEventListener('resize', close);
-      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', reposition);
     };
   }, [open]);
 
