@@ -488,22 +488,37 @@ export async function ensurePackage(
     await execFileAsync(binary, ['-c', `import ${checkName}`]);
     return { success: true };
   } catch {
+    // Check if python3 exists first
     try {
-      const binary = await resolvePythonBinary();
+      await execFileAsync('python3', ['--version']);
+      // python3 exists, use it for installation
       await execFileAsync(
-        binary,
+        'python3',
         ['-m', 'pip', 'install', packageName, '--quiet'],
         {
           timeout: 120_000,
         },
       );
       return { success: true };
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return {
-        success: false,
-        error: `Failed to install ${packageName}: ${msg}`,
-      };
+    } catch {
+      // python3 might not exist or -m pip failed, try the resolved binary
+      try {
+        const binary = await resolvePythonBinary();
+        await execFileAsync(
+          binary,
+          ['-m', 'pip', 'install', packageName, '--quiet'],
+          {
+            timeout: 120_000,
+          },
+        );
+        return { success: true };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return {
+          success: false,
+          error: `Failed to install ${packageName}: ${msg}`,
+        };
+      }
     }
   }
 }
