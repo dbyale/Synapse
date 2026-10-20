@@ -1918,7 +1918,7 @@ function collectShiftIndexes(s: SessionStream): {
 }
 
 // Text eligible for freeing per history entry (text and tool-call payloads;
-// kept media still counts against the budget, so image_url parts excluded).
+// image_url parts are counted separately via the image estimate below).
 function shiftMessageText(m: ChatHistoryMsg): string {
   const parts: string[] = [];
   if (typeof m.content === 'string') {
@@ -1936,6 +1936,46 @@ function shiftMessageText(m: ChatHistoryMsg): string {
   return parts.join('\n');
 }
 
+// Fixed per-image estimate for pre-send counters and context budgeting:
+// the profile's --image-max-tokens, or 1024 when unset. Server prompt_tokens /
+// prompt_progress remain the authoritative truth once the request is processed.
+export function getImageTokenEstimate(): number {
+  const max = (currentProfile as any)?.imageMaxTokens;
+  return max !== undefined && max > 0 ? max : 1024;
+}
+
+export function countImagesInHistoryContent(content: any): number {
+  if (!Array.isArray(content)) return 0;
+  let n = 0;
+  for (const part of content) {
+    if (part?.type === 'image_url') n += 1;
+  }
+  return n;
+}
+
+export function countImagesInContentParts(
+  parts?: { kind: string; url?: string; filePath?: string; text?: string }[],
+): number {
+  if (!parts || parts.length === 0) return 0;
+  let n = 0;
+  for (const part of parts) {
+    if (part?.kind === 'image_url' && (part.url || part.filePath)) n += 1;
+  }
+  return n;
+}
+
+// Full per-message cost: text/tool-call tokens via the server tokenizer plus
+// a fixed estimate per image_url part (vision tokens are invisible to
+// /tokenize). Never throws; returns 0 only when both are 0/unavailable.
+export async function countMessageTokens(m: ChatHistoryMsg): Promise<number> {
+  const t = shiftMessageText(m);
+  // eslint-disable-next-line no-use-before-define
+  const textTokens = t ? ((await tokenize(t)) ?? 0) : 0;
+  const imageTokens =
+    countImagesInHistoryContent(m.content) * getImageTokenEstimate();
+  return textTokens + imageTokens;
+}
+
 // Effective per-shift removal amount, with migration from the old minimum
 // setting. Callers treat 0 as "nothing to remove".
 function shiftTokensToShift(cs: ContextShiftSettings): number {
@@ -1948,22 +1988,11 @@ function shiftTokensToShift(cs: ContextShiftSettings): number {
 
 // --- Universal context shift ---
 // Single method for every shift. Drops/splices the oldest history entries
-// until tokensToRemove are freed. System prompt is never touched, attachment
-// stubs are skipped (they already count 0 via shiftMessageText), and nothing
-// is ever substituted — only removed or spliced.
-
-// Attachment entries are kept in place and excluded from all counting.
-function isAttachmentEntry(
-  m: ChatHistoryMsg,
-  cs: ContextShiftSettings,
-): boolean {
-  return (
-    !!cs.preserveAttachments &&
-    m?.role === 'user' &&
-    Array.isArray(m.content) &&
-    m.content.some((part: any) => part?.type === 'image_url')
-  );
-}
+// until tokensToRemove are freed. System prompt is never touched, and nothing
+// is ever substituted — only removed or spliced. Image entries count fully
+// (text tokens + fixed per-image estimate) and participate like any other
+// entry; preserveAttachments is retained for profile compat but no longer
+// excludes images from budgeting.
 
 // Char offset holding at least target tokens (binary search, no snapping).
 async function findTokenPrefixLength(
@@ -2050,12 +2079,13 @@ const TOOL_INTERRUPTED_NOTICE =
   'Tool Call was interrupted as Context Overflowed';
 
 // Spill removal forward from index `from` until `need` tokens are freed.
-// Skips attachments, empty entries and assistant tool-call records (kept in
-// place: negligible cost and preserves call/result pairing). Whole-drops
-// array/media entries, splices the first string entry that covers the rest.
+// Skips empty entries and assistant tool-call records (kept in place:
+// negligible cost and preserves call/result pairing). Whole-drops
+// array/media entries (including images), splices the first string entry
+// that covers the rest.
 async function spillForward(
   s: SessionStream,
-  cs: ContextShiftSettings,
+  _cs: ContextShiftSettings,
   perMessage: number[],
   from: number,
   need: number,
@@ -2073,7 +2103,6 @@ async function spillForward(
   let dropTo = from;
   for (let j = from; j < s.history.length; j += 1) {
     const m = s.history[j];
-    if (isAttachmentEntry(m, cs)) continue;
     if (m?.role === 'assistant' && m.tool_calls?.length) continue;
     const t = perMessage[j] ?? 0;
     if (t <= 0) continue;
@@ -2174,11 +2203,8 @@ async function repairToolPairing(
   const next: ChatHistoryMsg[] = [];
   for (let i = 0; i < s.history.length; i += 1) {
     if (orphanIdx.has(i)) {
-      const t = shiftMessageText(s.history[i]);
-      if (t) {
-        // eslint-disable-next-line no-await-in-loop, no-use-before-define
-        orphanFreed += (await tokenize(t)) ?? 0;
-      }
+      // eslint-disable-next-line no-await-in-loop, no-use-before-define
+      orphanFreed += await countMessageTokens(s.history[i]);
       continue;
     }
     next.push(s.history[i]);
@@ -2220,22 +2246,18 @@ async function shiftContext(
   const systemEnd = s.history[0]?.role === 'system' ? 1 : 0;
   if (s.history.length <= systemEnd) return 0;
 
-  // Measure each entry oldest-first; attachments count 0.
+  // Measure each entry oldest-first; text via /tokenize plus a fixed
+  // per-image estimate so vision tokens count toward the budget.
   const perMessage: number[] = new Array(s.history.length).fill(0);
   for (let i = systemEnd; i < s.history.length; i += 1) {
-    const m = s.history[i];
-    if (isAttachmentEntry(m, cs)) continue;
-    const t = shiftMessageText(m);
-    if (!t) continue;
-    // eslint-disable-next-line no-await-in-loop, no-use-before-define
-    perMessage[i] = (await tokenize(t)) ?? 0;
+    // eslint-disable-next-line no-await-in-loop
+    perMessage[i] = await countMessageTokens(s.history[i]);
   }
 
   // Walk to the cut entry holding the target's tail.
   let accBefore = 0;
   let cutIdx = -1;
   for (let i = systemEnd; i < s.history.length; i += 1) {
-    if (isAttachmentEntry(s.history[i], cs)) continue;
     if (perMessage[i] <= 0) continue;
     if (accBefore + perMessage[i] >= tokensToRemove) {
       cutIdx = i;
@@ -2253,17 +2275,12 @@ async function shiftContext(
     }
   }
   if (cutIdx === -1) {
-    // Target exceeds removable content: drop everything but attachments
-    // and the most-recent user prompt.
+    // Target exceeds removable content: drop everything but the
+    // most-recent user prompt (images count fully, so they drop too).
     let freed = 0;
     const next: ChatHistoryMsg[] = [];
     for (let i = 0; i < s.history.length; i += 1) {
-      if (
-        i < systemEnd ||
-        i === recentUser ||
-        isAttachmentEntry(s.history[i], cs)
-      )
-        next.push(s.history[i]);
+      if (i < systemEnd || i === recentUser) next.push(s.history[i]);
       else freed += perMessage[i];
     }
     if (freed <= 0) return 0;
@@ -2293,8 +2310,7 @@ async function shiftContext(
     for (let i = 0; i < s.history.length; i += 1) {
       if (i < systemEnd) next.push(s.history[i]);
       else if (i < cutIdx) {
-        if (isAttachmentEntry(s.history[i], cs)) next.push(s.history[i]);
-        // else dropped (already counted in accBefore)
+        // dropped (already counted in accBefore)
       } else if (i === cutIdx) {
         // drop whole
       } else next.push(s.history[i]);
@@ -2332,13 +2348,11 @@ async function shiftContext(
     for (let i = 0; i < s.history.length; i += 1) {
       if (i < systemEnd) next.push(s.history[i]);
       else if (i < cutIdx) {
-        if (isAttachmentEntry(s.history[i], cs)) next.push(s.history[i]);
-        // else dropped (already counted in accBefore)
+        // dropped (already counted in accBefore)
       } else if (i === cutIdx) next.push(s.history[i]);
       else if (i < spill.dropTo) {
         const m = s.history[i];
         if (
-          isAttachmentEntry(m, cs) ||
           perMessage[i] <= 0 ||
           (m?.role === 'assistant' && m.tool_calls?.length)
         ) {
@@ -2377,10 +2391,7 @@ async function shiftContext(
         break;
       }
     }
-    const ownerTokens =
-      ownerUser >= 0 && !isAttachmentEntry(s.history[ownerUser], cs)
-        ? perMessage[ownerUser]
-        : 0;
+    const ownerTokens = ownerUser >= 0 ? perMessage[ownerUser] : 0;
     const need = headNeed + (ownerUser >= 0 ? ownerTokens : 0);
     if (typeof cut.content !== 'string' || !cut.content) {
       // Un-splittable (e.g. tool-call record): drop whole, keep owner.
@@ -2388,8 +2399,7 @@ async function shiftContext(
       for (let i = 0; i < s.history.length; i += 1) {
         if (i < systemEnd) next.push(s.history[i]);
         else if (i < cutIdx) {
-          if (i === ownerUser || isAttachmentEntry(s.history[i], cs))
-            next.push(s.history[i]);
+          if (i === ownerUser) next.push(s.history[i]);
         } else if (i === cutIdx) {
           // drop whole
         } else next.push(s.history[i]);
@@ -2429,8 +2439,7 @@ async function shiftContext(
     for (let i = 0; i < s.history.length; i += 1) {
       if (i < systemEnd) next.push(s.history[i]);
       else if (i < cutIdx) {
-        if (i === ownerUser || isAttachmentEntry(s.history[i], cs))
-          next.push(s.history[i]);
+        if (i === ownerUser) next.push(s.history[i]);
       } else if (i === cutIdx) next.push(kept);
       else next.push(s.history[i]);
     }
@@ -2459,7 +2468,7 @@ async function shiftContext(
     for (let i = 0; i < s.history.length; i += 1) {
       if (i < systemEnd) next.push(s.history[i]);
       else if (i < cutIdx) {
-        if (isAttachmentEntry(s.history[i], cs)) next.push(s.history[i]);
+        // dropped (already counted in accBefore)
       } else if (i === cutIdx) {
         // drop whole
       } else next.push(s.history[i]);
@@ -2491,10 +2500,7 @@ async function shiftContext(
     }
   }
   const keepOwner = turnOwner === recentUser && recentUser >= 0;
-  const ownerExtra =
-    keepOwner && !isAttachmentEntry(s.history[turnOwner], cs)
-      ? perMessage[turnOwner]
-      : 0;
+  const ownerExtra = keepOwner ? perMessage[turnOwner] : 0;
   const raw = await findTokenPrefixLength(cut.content, headNeed + ownerExtra);
   const drop = Math.min(raw, cut.content.length - 1);
   if (drop <= 0) return 0;
@@ -2527,7 +2533,6 @@ async function shiftContext(
     if (i < systemEnd) next.push(s.history[i]);
     else if (i < cutIdx) {
       if (i === turnOwner && keepOwner) next.push(s.history[i]);
-      else if (isAttachmentEntry(s.history[i], cs)) next.push(s.history[i]);
     } else if (i === cutIdx) next.push(kept);
     else next.push(s.history[i]);
   }
@@ -2573,7 +2578,8 @@ async function ensureFit(
 // whenever the basis diverges: restored chats, session switches, unloads,
 // profile/ctx changes. Without this, lastUsage reflects some other session
 // (or nothing) and every budget gate decides on fiction. Single bulk
-// tokenize; never throws (null on failure, counters untouched).
+// tokenize plus a fixed per-image estimate; never throws (null on failure,
+// counters untouched).
 export async function refreshUsageFromHistory(
   sessionId: string,
 ): Promise<{ used: number; total: number } | null> {
@@ -2581,31 +2587,36 @@ export async function refreshUsageFromHistory(
   if (!s) return lastUsage;
   const total = currentContextSize ?? lastUsage?.total ?? 2048;
   const texts: string[] = [];
+  let imageTokens = 0;
   for (let i = 0; i < s.history.length; i += 1) {
     const t = shiftMessageText(s.history[i]);
     if (t) texts.push(t);
+    imageTokens +=
+      countImagesInHistoryContent(s.history[i]?.content) *
+      getImageTokenEstimate();
   }
   if (texts.length === 0) {
-    lastUsage = { used: 0, total };
-    s.usageBasisTokens = 0;
+    lastUsage = { used: imageTokens, total };
+    s.usageBasisTokens = imageTokens;
     s.usageBasisLen = s.streamedLen;
     usageSessionId = sessionId;
     return lastUsage;
   }
-  let used: number | null = null;
+  let textUsed: number | null = null;
   try {
     // eslint-disable-next-line no-use-before-define
-    used = await tokenize(texts.join('\n'));
+    textUsed = await tokenize(texts.join('\n'));
   } catch {
-    used = null;
+    textUsed = null;
   }
-  if (used === null) {
+  if (textUsed === null) {
     // eslint-disable-next-line no-console
     console.log('[context-shift] usage refresh failed; keeping counters', {
       sessionId,
     });
     return lastUsage;
   }
+  const used = textUsed + imageTokens;
   lastUsage = { used, total };
   s.usageBasisTokens = used;
   s.usageBasisLen = s.streamedLen;
@@ -2781,7 +2792,14 @@ export async function sendMessage(
     await refreshUsageFromHistory(sessionId);
   }
 
-  const userTokens = (await tokenize(text)) ?? 0;
+  const contentPartTexts = (contentParts ?? [])
+    .filter((p) => p.kind === 'text' && p.text)
+    .map((p) => p.text as string);
+  const textForTokens = [...contentPartTexts, text].filter(Boolean).join('\n');
+  const textTokens = textForTokens ? ((await tokenize(textForTokens)) ?? 0) : 0;
+  const imageTokens =
+    countImagesInContentParts(contentParts) * getImageTokenEstimate();
+  const userTokens = textTokens + imageTokens;
   let currentNewTokens = userTokens;
   if (lastUsage) {
     anchorUsage(s, lastUsage.used + userTokens, lastUsage.total);
@@ -3009,7 +3027,10 @@ export async function sendMessage(
                 const newTokensServer = Math.max(0, total - (cache || 0));
                 const isColdStart = newTokensServer > currentNewTokens + 64;
                 const pStats: GenerationStats = {
-                  tokens: currentNewTokens,
+                  // Backfill from server truth when the estimate (e.g. fixed
+                  // per-image) undershoots — this is what fixes image-only
+                  // "0 tokens" bubbles once prompt processing completes.
+                  tokens: isColdStart ? newTokensServer : currentNewTokens,
                   timeMs: time_ms || 0,
                   tokensPerSecond: timeS > 0 ? newTokensServer / timeS : 0,
                   totalTokens: total,
@@ -3052,7 +3073,7 @@ export async function sendMessage(
                 toolTokens: toolTokenCount,
               };
               const pFromUsage: GenerationStats = {
-                tokens: currentNewTokens,
+                tokens: isColdStartFromUsage ? promptN : currentNewTokens,
                 timeMs: data.timings?.prompt_ms || 0,
                 tokensPerSecond: data.timings?.prompt_per_second || 0,
                 totalTokens: data.usage.total_tokens,
@@ -3351,10 +3372,24 @@ export async function sendMessage(
         const tc = toolCalls[idx];
         const buffered = llmBuffers[idx];
         if (!buffered) return;
+        const hasProjectorImage =
+          !!buffered.imageData &&
+          chatFunctions[tc.name]?.displayType === 'projector';
         if (lastUsage) {
           const resultTokens = (await tokenize(buffered.resultStr)) ?? 0;
-          totalResultTokens += resultTokens;
-          anchorUsage(s, lastUsage.used + resultTokens, lastUsage.total);
+          const captionTokens = hasProjectorImage
+            ? ((await tokenize(
+                `[Image from tool: ${buffered.imageData.altText || 'media'}]`,
+              )) ?? 0)
+            : 0;
+          const projectorImageTokens = hasProjectorImage
+            ? getImageTokenEstimate()
+            : 0;
+          const added = resultTokens + captionTokens + projectorImageTokens;
+          totalResultTokens += added;
+          anchorUsage(s, lastUsage.used + added, lastUsage.total);
+        } else if (hasProjectorImage) {
+          totalResultTokens += getImageTokenEstimate();
         }
         s.history.push({
           role: 'tool',
