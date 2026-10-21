@@ -45,10 +45,17 @@ interface PageLayer {
 
 const EXIT_MS = 300;
 const CLOSE_MS = 260;
+const ONBOARDING_COMPLETED_KEY = 'onboardingCompleted';
+
+function shouldAutoOpenOnboarding(): boolean {
+  if (localStorage.getItem(ONBOARDING_COMPLETED_KEY) === '1') return false;
+  return localStorage.getItem('profiles') === null;
+}
 
 export default function Onboarding() {
   const routerNavigate = useNavigate();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(() => shouldAutoOpenOnboarding());
+  const autoOpenOnMountRef = useRef(open);
   const [closing, setClosing] = useState(false);
   const [layers, setLayers] = useState<PageLayer[]>([]);
   const idRef = useRef(0);
@@ -115,6 +122,9 @@ export default function Onboarding() {
 
   useEffect(() => {
     const unsubscribe = window.electronAPI.onRestartOnboarding(openOnboarding);
+    if (autoOpenOnMountRef.current) {
+      openOnboarding();
+    }
     return unsubscribe;
   }, [openOnboarding]);
 
@@ -222,7 +232,11 @@ export default function Onboarding() {
       if (profileId) {
         localStorage.setItem('selectedProfileId', profileId);
       }
+      localStorage.setItem(ONBOARDING_COMPLETED_KEY, '1');
       window.dispatchEvent(new Event('profiles-changed'));
+      window.dispatchEvent(
+        new CustomEvent('onboarding:completed', { detail: { profileId } }),
+      );
       routerNavigate('/chat');
       closeOnboarding();
     },

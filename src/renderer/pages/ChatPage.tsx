@@ -1763,9 +1763,11 @@ export default function ChatPage() {
 
   // ── Server online/offline ──────────────────────────────────────────────
   const [isServerOnline, setIsServerOnline] = useState<boolean>(true);
+  const [onboardingLaunchNonce, setOnboardingLaunchNonce] = useState(0);
   const [serverToggling, setServerToggling] = useState(false);
   const hasCheckedStartupRef = useRef(false);
   const manualStartRequestedRef = useRef(false);
+  const onboardingLaunchProfileIdRef = useRef<string | null>(null);
   const preserveSessionOnNextLoadRef = useRef(false);
   // One pending send queued via Enter while offline — stays until drained
   const pendingQueuedRef = useRef(false);
@@ -2457,7 +2459,10 @@ export default function ChatPage() {
         if (cancelled) return;
         if (running) {
           setIsServerOnline(true);
-        } else if ((settings.launchServerAutomatically ?? true) === false) {
+        } else if (
+          (settings.launchServerAutomatically ?? true) === false &&
+          !onboardingLaunchProfileIdRef.current
+        ) {
           setIsServerOnline(false);
         } else {
           setIsServerOnline(true);
@@ -2486,7 +2491,8 @@ export default function ChatPage() {
             // When launchServerAutomatically is false we keep offline until manual start.
             if (
               (settings?.launchServerAutomatically ?? true) === false &&
-              !manualStartRequestedRef.current
+              !manualStartRequestedRef.current &&
+              !onboardingLaunchProfileIdRef.current
             ) {
               setIsServerOnline(false);
             } else {
@@ -2799,6 +2805,33 @@ export default function ChatPage() {
   }, [loadProfilesFromStorage]);
 
   useEffect(() => {
+    const handleOnboardingCompleted = (event: Event) => {
+      const { detail } = event as CustomEvent<{
+        profileId?: string | null;
+      }>;
+      const profileId = detail?.profileId;
+      if (!profileId) return;
+
+      const updated = loadProfilesFromStorage();
+      if (!updated.some((profile) => profile.id === profileId)) return;
+
+      onboardingLaunchProfileIdRef.current = profileId;
+      setIsServerOnline(true);
+      setSelectedProfileId(profileId);
+      setOnboardingLaunchNonce((value) => value + 1);
+    };
+
+    window.addEventListener('onboarding:completed', handleOnboardingCompleted);
+
+    return () => {
+      window.removeEventListener(
+        'onboarding:completed',
+        handleOnboardingCompleted,
+      );
+    };
+  }, [loadProfilesFromStorage]);
+
+  useEffect(() => {
     const isChatRoute =
       location.pathname === '/' || location.pathname === '/chat';
     if (isChatRoute) {
@@ -2909,11 +2942,16 @@ export default function ChatPage() {
         return;
       }
 
+      const forceOnboardingStart =
+        onboardingLaunchNonce > 0 &&
+        onboardingLaunchProfileIdRef.current === selectedProfileId;
+
       // ── Launch Server Automatically gating (only when server not already running)
       // If setting is off and user hasn't manually requested a start, don't auto-boot.
       if (
         (settings.launchServerAutomatically ?? true) === false &&
-        !manualStartRequestedRef.current
+        !manualStartRequestedRef.current &&
+        !forceOnboardingStart
       ) {
         const running = await window.electronAPI
           .chatIsRunning()
@@ -2935,6 +2973,9 @@ export default function ChatPage() {
         profilesRef.current.find((p) => p.id === selectedProfileId) ?? null;
 
       if (!profile) {
+        if (forceOnboardingStart) {
+          onboardingLaunchProfileIdRef.current = null;
+        }
         setLoadError(null);
         return;
       }
@@ -2966,6 +3007,9 @@ export default function ChatPage() {
               ) {
                 setMaxTokens(contextSize);
                 setLoadError(null);
+              }
+              if (forceOnboardingStart) {
+                onboardingLaunchProfileIdRef.current = null;
               }
               return;
             }
@@ -3095,6 +3139,12 @@ export default function ChatPage() {
         if (!abortController.cancelled && myLoadId === persistentLastLoadId)
           setIsServerOnline(false);
       } finally {
+        if (
+          forceOnboardingStart &&
+          onboardingLaunchProfileIdRef.current === selectedProfileId
+        ) {
+          onboardingLaunchProfileIdRef.current = null;
+        }
         if (myLoadId === persistentLastLoadId) {
           persistentModelLoading = false;
           setModelLoading(false);
@@ -3107,7 +3157,7 @@ export default function ChatPage() {
     return () => {
       abortController.cancelled = true;
     };
-  }, [selectedProfileId, clearAllSources, settings]);
+  }, [selectedProfileId, clearAllSources, settings, onboardingLaunchNonce]);
 
   useEffect(() => {
     const interval = setInterval(() => {

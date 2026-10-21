@@ -72,7 +72,7 @@ First launch guides you through setup with three paths:
 - **Advanced**: configure system resources, use cases, profiles, and Python, then finish with chat settings.
 - **Custom**: choose backends, system resources, use cases, profiles, Python, server, and security settings manually. Assistant downloads are optional on this path.
 
-The final setup page tracks dependency and model installs, surfaces failures with retry actions, and lists profiles as soon as their files are ready. Simple and Advanced require at least one ready profile before proceeding; Custom can continue and finish setup later. Downloads continue in the background while you review the final page.
+The final setup page tracks dependency and model installs, surfaces failures with retry actions, and lists profiles as soon as their files are ready. Simple and Advanced require at least one ready profile before proceeding; Custom can continue and finish setup later. Downloads continue in the background while you review the final page. Completing setup launches the selected profile once, even if automatic server launch is disabled; the saved preference remains unchanged.
 
 ### Chat
 

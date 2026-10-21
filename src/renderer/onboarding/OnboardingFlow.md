@@ -1,3 +1,11 @@
+# Startup
+
+- Setup opens automatically on launch when `onboardingCompleted` is absent and no profiles are stored
+- Completing the final setup page stores `onboardingCompleted`
+- Cancelling or quitting before completion leaves the marker unset, so setup opens again on the next launch
+- Existing stored profiles are treated as already set up
+- Restart Onboarding remains available from the menu
+
 # Pages:
 
 ## SetupExperiencePage.tsx
@@ -96,6 +104,7 @@
 ## ChatSetupPage.tsx
 
 - Show Chat Settings from Settings Page (autoOpenThinking / autoCloseThinkingDone + launchServerAutomatically)
+- Finishing setup launches the selected profile once even when auto-launch is disabled; the saved preference is unchanged
 
 ## FinalInstallPage.tsx
 
@@ -111,8 +120,10 @@
 - Final Proceed Button
   - Simple and Advanced require at least one profile ready
   - Custom may proceed without a ready profile
+  - Launches the selected profile after setup completes, regardless of the auto-launch setting
 
 # Simple Path
+
 - Install backends + python in background
 
 1. ProfessionsSetupPage
@@ -121,6 +132,7 @@
 4. FinalInstallPage
 
 # Advanced Path
+
 - Install backends in background
 
 1. SystemSetupPage
