@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router';
 import SetupExperiencePage from './SetupExperiencePage';
 import ProfessionsSetupPage from './ProfessionsSetupPage';
 import BackendSetupPage from './BackendSetupPage';
@@ -7,17 +8,19 @@ import PythonSetupPage from './PythonSetupPage';
 import ServerSetupPage from './ServerSetupPage';
 import SecuritySetupPage from './SecuritySetupPage';
 import ChatSetupPage from './ChatSetupPage';
-import LlamaSetupPage from './LlamaSetupPage';
 import ProfileSelectionPage from './ProfileSelectionPage';
 import ModelDownloadPage from './ModelDownloadPage';
+import FinalInstallPage from './FinalInstallPage';
 import DownloadManager from '../components/DownloadManager';
 import {
   buildSelection,
   clearOnboardingProfileSelection,
   getCategoriesForSelection,
+  readOnboardingProfileSelection,
   writeOnboardingProfileSelection,
   type OnboardingProfileSelection,
 } from './profileCatalog';
+import { mergeOnboardingProfiles } from './profileStorage';
 import type { BackendInfo } from '../preload.d';
 import './onboarding.css';
 
@@ -32,7 +35,7 @@ type Step =
   | 'server'
   | 'security'
   | 'chatSetup'
-  | 'llamaSetup';
+  | 'finalInstall';
 
 interface PageLayer {
   id: number;
@@ -44,6 +47,7 @@ const EXIT_MS = 300;
 const CLOSE_MS = 260;
 
 export default function Onboarding() {
+  const routerNavigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [closing, setClosing] = useState(false);
   const [layers, setLayers] = useState<PageLayer[]>([]);
@@ -176,11 +180,6 @@ export default function Onboarding() {
   );
 
   const handleProfessionsContinue = useCallback(() => {
-    if (activePath === 'advanced' || activePath === 'custom') {
-      navigate('chatSetup');
-      return;
-    }
-
     const visibleOptionIds = new Set(
       getCategoriesForSelection(professionIds).flatMap((category) =>
         category.options.map((option) => option.id),
@@ -190,7 +189,7 @@ export default function Onboarding() {
       previous.filter((id) => visibleOptionIds.has(id)),
     );
     navigate('profileSelection');
-  }, [activePath, navigate, professionIds]);
+  }, [navigate, professionIds]);
 
   const handleProfileSelectionContinue = useCallback(
     (selection: OnboardingProfileSelection) => {
@@ -214,6 +213,22 @@ export default function Onboarding() {
     [professionIds, selectedOptionIds],
   );
 
+  const handleFinish = useCallback(
+    (profileId: string | null) => {
+      const selection = readOnboardingProfileSelection();
+      if (selection) {
+        mergeOnboardingProfiles(selection.profiles);
+      }
+      if (profileId) {
+        localStorage.setItem('selectedProfileId', profileId);
+      }
+      window.dispatchEvent(new Event('profiles-changed'));
+      routerNavigate('/chat');
+      closeOnboarding();
+    },
+    [closeOnboarding, routerNavigate],
+  );
+
   const renderPage = (layer: PageLayer) => {
     const isAdvanced = activePath === 'advanced';
     const isCustom = activePath === 'custom';
@@ -224,8 +239,7 @@ export default function Onboarding() {
             selectedProfessionIds={professionIds}
             onSelectedProfessionIdsChange={setProfessionIds}
             onBack={() => {
-              if (isCustom) navigate('security');
-              else if (isAdvanced) navigate('system');
+              if (isCustom || isAdvanced) navigate('system');
               else navigate('setup');
             }}
             onContinue={handleProfessionsContinue}
@@ -237,7 +251,7 @@ export default function Onboarding() {
             professionIds={professionIds}
             selectedOptionIds={selectedOptionIds}
             onSelectedOptionIdsChange={setSelectedOptionIds}
-            requireSelection={!isAdvanced && !isCustom}
+            requireSelection={!isCustom}
             onBack={() => navigate('professions')}
             onContinue={handleProfileSelectionContinue}
           />
@@ -246,8 +260,13 @@ export default function Onboarding() {
         return (
           <ModelDownloadPage
             optionIds={selectedOptionIds}
+            autoInstallBackend={!isCustom}
+            autoInstallPython={!isAdvanced && !isCustom}
+            allowEmpty={isCustom}
             onBack={() => navigate('profileSelection')}
-            onContinue={() => navigate('llamaSetup')}
+            onContinue={() =>
+              navigate(isAdvanced || isCustom ? 'python' : 'finalInstall')
+            }
             onDiscardProfiles={handleDiscardProfiles}
           />
         );
@@ -264,20 +283,20 @@ export default function Onboarding() {
         return (
           <SystemSetupPage
             onBack={() => navigate(isCustom ? 'backend' : 'setup')}
-            onContinue={() => navigate('python')}
+            onContinue={() => navigate('professions')}
           />
         );
       case 'python':
         return (
           <PythonSetupPage
-            onBack={() => navigate('system')}
-            onContinue={() => navigate(isCustom ? 'server' : 'professions')}
+            onBack={() => navigate('modelDownload')}
+            onContinue={() => navigate(isCustom ? 'server' : 'chatSetup')}
           />
         );
       case 'server':
         return (
           <ServerSetupPage
-            onBack={() => navigate('system')}
+            onBack={() => navigate('python')}
             onContinue={() => navigate('security')}
           />
         );
@@ -285,22 +304,25 @@ export default function Onboarding() {
         return (
           <SecuritySetupPage
             onBack={() => navigate('server')}
-            onContinue={() => navigate('professions')}
+            onContinue={() => navigate('chatSetup')}
           />
         );
       case 'chatSetup':
         return (
           <ChatSetupPage
-            onBack={() => navigate('professions')}
-            onContinue={() => navigate('llamaSetup')}
+            onBack={() => navigate(isCustom ? 'security' : 'python')}
+            onContinue={() => navigate('finalInstall')}
           />
         );
-      case 'llamaSetup':
+      case 'finalInstall':
         return (
-          <LlamaSetupPage
+          <FinalInstallPage
+            optionIds={selectedOptionIds}
+            profileType={activePath ?? 'simple'}
             onBack={() =>
               navigate(isAdvanced || isCustom ? 'chatSetup' : 'modelDownload')
             }
+            onProceed={handleFinish}
           />
         );
       case 'setup':

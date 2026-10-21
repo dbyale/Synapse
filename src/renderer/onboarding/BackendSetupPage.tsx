@@ -20,8 +20,13 @@ import {
   TriangleAlert,
   X,
 } from 'lucide-react';
-import ConfirmDialog from '../components/ConfirmDialog';
 import type { LucideIcon } from 'lucide-react';
+import ConfirmDialog from '../components/ConfirmDialog';
+import {
+  markBinaryInstalled,
+  removeBinaryInstall,
+  startBinaryInstall,
+} from './backgroundInstalls';
 import { ReactComponent as NvidiaLogo } from '../../../assets/logos/nvidia.svg';
 import type {
   BackendDownload,
@@ -193,8 +198,8 @@ export default function BackendSetupPage({
 }: {
   onBack: () => void;
   onContinue: () => void;
-  preloaded?: BackendInfo | null;
-  preloadedLoading?: boolean;
+  preloaded: BackendInfo | null;
+  preloadedLoading: boolean;
 }) {
   const [info, setInfo] = useState<BackendInfo | null>(preloaded ?? null);
   const [downloadDir, setDownloadDir] = useState('');
@@ -244,6 +249,7 @@ export default function BackendSetupPage({
           const next = { ...prev };
           (settings.backendDownloads ?? []).forEach((d) => {
             next[d.id] = 'completed';
+            markBinaryInstalled('backend', d.id, d.label, d.folder);
           });
           return next;
         });
@@ -260,11 +266,15 @@ export default function BackendSetupPage({
   // When preloaded arrives late, ensure downloadDir is filled if still empty
   useEffect(() => {
     if (preloaded && !downloadDir) {
-      window.electronAPI.loadSettings().then((settings) => {
-        setDownloadDir(
-          settings.backendDirectory || preloaded.defaultDownloadDir,
-        );
-      });
+      window.electronAPI
+        .loadSettings()
+        .then((settings) => {
+          setDownloadDir(
+            settings.backendDirectory || preloaded.defaultDownloadDir,
+          );
+          return undefined;
+        })
+        .catch(() => undefined);
     }
   }, [preloaded, downloadDir]);
 
@@ -337,13 +347,8 @@ export default function BackendSetupPage({
     if (!download.url) return;
     if (dlStatus[download.id] === 'completed') return;
     setDlStatus((prev) => ({ ...prev, [download.id]: 'downloading' }));
-    window.dispatchEvent(
-      new CustomEvent('open-download-manager', {
-        detail: { modelId: download.id, filename: download.label },
-      }),
-    );
     try {
-      await window.electronAPI.downloadBinary('backend', download, downloadDir);
+      await startBinaryInstall('backend', download, downloadDir);
       setDlStatus((prev) => ({ ...prev, [download.id]: 'completed' }));
     } catch {
       // Status events from the main process drive the final state
@@ -368,6 +373,7 @@ export default function BackendSetupPage({
       downloadDir,
     );
     if (result.success) {
+      removeBinaryInstall('backend', target.id);
       setDlStatus((prev) => {
         const next = { ...prev };
         delete next[target.id];

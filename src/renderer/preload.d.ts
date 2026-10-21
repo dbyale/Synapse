@@ -13,6 +13,7 @@ export interface DownloadProgress {
   percent: number;
   status?: 'downloading' | 'merging' | 'completed' | 'failed' | 'cancelled';
   merge?: boolean;
+  error?: string;
 }
 
 export interface LocalModel {

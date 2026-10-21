@@ -60,6 +60,7 @@ function sendProgress(
       totalBytes: progress.totalBytes ?? 0,
       percent: progress.percent ?? 0,
       status: progress.status,
+      error: progress.error,
     } as DownloadProgress);
   }
 }
@@ -471,11 +472,16 @@ export async function startBinaryDownload(
       // Best-effort temp cleanup
     }
     log(download.id, 'failed:', error instanceof Error ? error.message : error);
+    let failureMessage: string | undefined;
+    if (!active.cancelled) {
+      failureMessage = error instanceof Error ? error.message : String(error);
+    }
     sendProgress(win, download, {
       downloadedBytes: aggregate.downloadedBytes,
       totalBytes: aggregate.totalBytes,
       percent: 0,
       status: active.cancelled ? 'cancelled' : 'failed',
+      error: failureMessage,
     });
     throw error;
   }
@@ -509,7 +515,7 @@ export function uninstallBinary(
     };
   }
 
-  const folder = download.folder;
+  const { folder } = download;
   if (
     !folder ||
     folder.includes('..') ||

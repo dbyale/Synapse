@@ -450,7 +450,10 @@ export function getDownloadGroups(
 
 export function findInstalledDownload(
   target: DownloadTarget,
-  localModels: Pick<LocalModel, 'filename' | 'generalName' | 'sizeBytes'>[],
+  localModels: readonly Pick<
+    LocalModel,
+    'filename' | 'generalName' | 'sizeBytes'
+  >[],
 ): Pick<LocalModel, 'filename' | 'generalName' | 'sizeBytes'> | undefined {
   return localModels.find(
     (model) =>

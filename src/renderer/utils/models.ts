@@ -390,6 +390,7 @@ export function downloadModel(
             totalBytes: 0,
             percent: 0,
             status: 'failed',
+            error: err.message,
           } as DownloadProgress);
 
           reject(err);
@@ -510,6 +511,7 @@ export function mergeSplitParts(
       percent: 0,
       status: 'failed',
       merge: true,
+      error: message,
     } as DownloadProgress);
     throw new Error(message);
   };

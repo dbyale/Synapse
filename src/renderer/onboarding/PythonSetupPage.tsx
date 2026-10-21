@@ -10,6 +10,11 @@ import {
   X,
 } from 'lucide-react';
 import ConfirmDialog from '../components/ConfirmDialog';
+import {
+  markBinaryInstalled,
+  removeBinaryInstall,
+  startBinaryInstall,
+} from './backgroundInstalls';
 import { ReactComponent as PythonLogo } from '../../../assets/logos/python.svg';
 import type {
   BackendDownload,
@@ -96,6 +101,12 @@ export default function PythonSetupPage({
             (python.managed.available || settings.pythonInstall)
           ) {
             next[python.recommended.id] = 'completed';
+            markBinaryInstalled(
+              'python',
+              python.recommended.id,
+              python.recommended.label,
+              python.recommended.folder,
+            );
           }
           return next;
         });
@@ -139,13 +150,8 @@ export default function PythonSetupPage({
     if (!download.url) return;
     if (dlStatus[download.id] === 'completed') return;
     setDlStatus((prev) => ({ ...prev, [download.id]: 'downloading' }));
-    window.dispatchEvent(
-      new CustomEvent('open-download-manager', {
-        detail: { modelId: download.id, filename: download.label },
-      }),
-    );
     try {
-      await window.electronAPI.downloadBinary('python', download, downloadDir);
+      await startBinaryInstall('python', download, downloadDir);
       setDlStatus((prev) => ({ ...prev, [download.id]: 'completed' }));
       const refreshed = await window.electronAPI.getPythonInfo();
       setInfo(refreshed);
@@ -169,6 +175,7 @@ export default function PythonSetupPage({
       downloadDir,
     );
     if (result.success) {
+      removeBinaryInstall('python', target.id);
       setDlStatus((prev) => {
         const next = { ...prev };
         delete next[target.id];

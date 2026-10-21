@@ -74,7 +74,7 @@
 - Model names and repository links stay hidden on the option cards
 - Total download size is shown to one decimal place, with an expandable breakdown of each model and projector
 - Starting a download checks local models first and skips files that are already installed
-- Simple requires at least one option selected to continue
+- Simple and Advanced require at least one option selected to continue
 
 ## ModelDownloadPage.tsx
 
@@ -87,6 +87,7 @@
 - Groups switch to Installed once the downloaded files are verified locally
 - Inform user that downloads will continue in the background
 - Users without adequate space will be shown a warning to free up space
+- Custom can continue without selected assistants or model downloads
 
 ## ServerSetupPage.tsx
 
@@ -98,42 +99,47 @@
 
 ## FinalInstallPage.tsx
 
-- Show llama binary install progress (llama-server + llama-fit-params estimator)
+- Show llama binary install progress
 - Show warnings
   - Non-Ubuntu compatibility warning
   - NVIDIA Driver update warning
-  - Any dependency (binary) failure warnings
+  - Any dependency (binary) failure warnings with Retry
     - Failed to download
     - Failed to allocate space
 - Show model download progress
 - List any profiles which are ready for use
 - Final Proceed Button
-  - Simple requires at least one profile ready
+  - Simple and Advanced require at least one profile ready
+  - Custom may proceed without a ready profile
 
 # Simple Path
+- Install backends + python in background
 
 1. ProfessionsSetupPage
 2. ProfileSelectionPage
 3. ModelDownloadPage
 4. FinalInstallPage
 
-- Install backends in background (macOs || CUDA/OpenCL + Vulkan || Vulkan)
-
-# Advanced Path (Simple sees none of these — per spec)
+# Advanced Path
+- Install backends in background
 
 1. SystemSetupPage
-2. PythonSetupPage
-3. ProfessionsSetupPage
-4. ChatSetupPage
-5. LlamaSetup (placeholder — currently LlamaSetupPage.tsx)
+2. ProfessionsSetupPage
+3. ProfileSelectionPage
+4. ModelDownloadPage
+5. PythonSetupPage
+6. ChatSetupPage
+7. FinalInstallPage
 
 # Custom Path
 
 1. BackendSetupPage
 2. SystemSetupPage
-3. PythonSetupPage
-4. ServerSetupPage
-5. SecuritySetupPage
-6. ProfessionsSetupPage
-7. ChatSetupPage
-8. LlamaSetup (placeholder — currently LlamaSetupPage.tsx)
+3. ProfessionsSetupPage
+4. ProfileSelectionPage
+5. ModelDownloadPage
+6. PythonSetupPage
+7. ServerSetupPage
+8. SecuritySetupPage
+9. ChatSetupPage
+10. FinalInstallPage
