@@ -19,7 +19,7 @@ export function formatCount(n: number): string {
 }
 
 export function formatSpeed(bytesPerSec: number): string {
-  if (bytesPerSec === 0 || isNaN(bytesPerSec)) return '0 B/s';
+  if (bytesPerSec === 0 || Number.isNaN(bytesPerSec)) return '0 B/s';
   const k = 1024;
   const sizes = ['B/s', 'KB/s', 'MB/s', 'GB/s', 'TB/s', 'PB/s'];
   const i = Math.floor(Math.log(bytesPerSec) / Math.log(k));
@@ -48,13 +48,19 @@ export function getInitials(name: string): string {
 }
 
 export function formatGB(bytes: number): string {
-  if (bytes === 0 || isNaN(bytes)) return '0.00 GB';
+  if (bytes === 0 || Number.isNaN(bytes)) return '0.00 GB';
   const gb = bytes / 1073741824; // 1024^3
   return `${gb.toFixed(2)} GB`;
 }
 
+export function formatGBTruncated(bytes: number): string {
+  if (bytes <= 0 || Number.isNaN(bytes)) return '0.0 GB';
+  const gb = bytes / 1073741824; // 1024^3
+  return `${(Math.floor(gb * 10) / 10).toFixed(1)} GB`;
+}
+
 export function formatETA(seconds: number): string {
-  if (!isFinite(seconds) || seconds <= 0) return '';
+  if (!Number.isFinite(seconds) || seconds <= 0) return '';
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
   const s = Math.floor(seconds % 60);

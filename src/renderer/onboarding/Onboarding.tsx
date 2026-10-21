@@ -8,13 +8,24 @@ import ServerSetupPage from './ServerSetupPage';
 import SecuritySetupPage from './SecuritySetupPage';
 import ChatSetupPage from './ChatSetupPage';
 import LlamaSetupPage from './LlamaSetupPage';
+import ProfileSelectionPage from './ProfileSelectionPage';
+import ModelDownloadPage from './ModelDownloadPage';
 import DownloadManager from '../components/DownloadManager';
+import {
+  buildSelection,
+  clearOnboardingProfileSelection,
+  getCategoriesForSelection,
+  writeOnboardingProfileSelection,
+  type OnboardingProfileSelection,
+} from './profileCatalog';
 import type { BackendInfo } from '../preload.d';
 import './onboarding.css';
 
 type Step =
   | 'setup'
   | 'professions'
+  | 'profileSelection'
+  | 'modelDownload'
   | 'backend'
   | 'system'
   | 'python'
@@ -50,6 +61,8 @@ export default function Onboarding() {
   const [activePath, setActivePath] = useState<
     'simple' | 'advanced' | 'custom' | null
   >(null);
+  const [professionIds, setProfessionIds] = useState<string[]>([]);
+  const [selectedOptionIds, setSelectedOptionIds] = useState<string[]>([]);
 
   const fetchHardware = useCallback(() => {
     if (hwPromiseRef.current) return hwPromiseRef.current;
@@ -69,7 +82,9 @@ export default function Onboarding() {
       });
     // Safety timeout: never leave spinner stuck if probe hangs
     const timeout = window.setTimeout(() => setHwReady(true), 8000);
-    hwPromiseRef.current.finally(() => window.clearTimeout(timeout));
+    hwPromiseRef.current
+      .finally(() => window.clearTimeout(timeout))
+      .catch(() => undefined);
     return hwPromiseRef.current;
   }, []);
 
@@ -81,12 +96,17 @@ export default function Onboarding() {
     setHwLoading(false);
     setHwReady(false);
     setActivePath(null);
+    clearOnboardingProfileSelection();
+    setProfessionIds([]);
+    setSelectedOptionIds([]);
     setLayers([]);
     hwPromiseRef.current = null;
-    fetchHardware().finally(() => {
-      idRef.current += 1;
-      setLayers([{ id: idRef.current, step: 'setup', phase: 'enter' }]);
-    });
+    fetchHardware()
+      .finally(() => {
+        idRef.current += 1;
+        setLayers([{ id: idRef.current, step: 'setup', phase: 'enter' }]);
+      })
+      .catch(() => undefined);
   }, [fetchHardware]);
 
   useEffect(() => {
@@ -104,6 +124,8 @@ export default function Onboarding() {
       setHwLoading(false);
       setHwReady(false);
       setActivePath(null);
+      setProfessionIds([]);
+      setSelectedOptionIds([]);
       hwPromiseRef.current = null;
       setLayers([]);
     }, CLOSE_MS);
@@ -153,6 +175,45 @@ export default function Onboarding() {
     [navigate],
   );
 
+  const handleProfessionsContinue = useCallback(() => {
+    if (activePath === 'advanced' || activePath === 'custom') {
+      navigate('chatSetup');
+      return;
+    }
+
+    const visibleOptionIds = new Set(
+      getCategoriesForSelection(professionIds).flatMap((category) =>
+        category.options.map((option) => option.id),
+      ),
+    );
+    setSelectedOptionIds((previous) =>
+      previous.filter((id) => visibleOptionIds.has(id)),
+    );
+    navigate('profileSelection');
+  }, [activePath, navigate, professionIds]);
+
+  const handleProfileSelectionContinue = useCallback(
+    (selection: OnboardingProfileSelection) => {
+      setProfessionIds(selection.professionIds);
+      setSelectedOptionIds(selection.optionIds);
+      writeOnboardingProfileSelection(selection);
+      navigate('modelDownload');
+    },
+    [navigate],
+  );
+
+  const handleDiscardProfiles = useCallback(
+    (optionIdsToDiscard: string[]) => {
+      const discarded = new Set(optionIdsToDiscard);
+      const next = selectedOptionIds.filter(
+        (optionId) => !discarded.has(optionId),
+      );
+      setSelectedOptionIds(next);
+      writeOnboardingProfileSelection(buildSelection(professionIds, next));
+    },
+    [professionIds, selectedOptionIds],
+  );
+
   const renderPage = (layer: PageLayer) => {
     const isAdvanced = activePath === 'advanced';
     const isCustom = activePath === 'custom';
@@ -160,12 +221,34 @@ export default function Onboarding() {
       case 'professions':
         return (
           <ProfessionsSetupPage
-            onBack={() =>
-              navigate(isCustom ? 'security' : isAdvanced ? 'system' : 'setup')
-            }
-            onContinue={() =>
-              navigate(isAdvanced || isCustom ? 'chatSetup' : 'llamaSetup')
-            }
+            selectedProfessionIds={professionIds}
+            onSelectedProfessionIdsChange={setProfessionIds}
+            onBack={() => {
+              if (isCustom) navigate('security');
+              else if (isAdvanced) navigate('system');
+              else navigate('setup');
+            }}
+            onContinue={handleProfessionsContinue}
+          />
+        );
+      case 'profileSelection':
+        return (
+          <ProfileSelectionPage
+            professionIds={professionIds}
+            selectedOptionIds={selectedOptionIds}
+            onSelectedOptionIdsChange={setSelectedOptionIds}
+            requireSelection={!isAdvanced && !isCustom}
+            onBack={() => navigate('professions')}
+            onContinue={handleProfileSelectionContinue}
+          />
+        );
+      case 'modelDownload':
+        return (
+          <ModelDownloadPage
+            optionIds={selectedOptionIds}
+            onBack={() => navigate('profileSelection')}
+            onContinue={() => navigate('llamaSetup')}
+            onDiscardProfiles={handleDiscardProfiles}
           />
         );
       case 'backend':
@@ -216,7 +299,7 @@ export default function Onboarding() {
         return (
           <LlamaSetupPage
             onBack={() =>
-              navigate(isAdvanced || isCustom ? 'chatSetup' : 'professions')
+              navigate(isAdvanced || isCustom ? 'chatSetup' : 'modelDownload')
             }
           />
         );

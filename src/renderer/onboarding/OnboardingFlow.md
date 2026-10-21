@@ -65,15 +65,27 @@
 
 ## ProfileSelectionPage.tsx
 
-- Curated Profiles available from profession selection
-  - Profiles include and are based around links to models
-- Profiles are grouped by model
-- Simple requires at least one profile selected to continue
+- Categories available from profession selection
+  - Categories are developer-defined and map to one or more models internally
+  - Category options are hardware-fit tiers such as light, balanced, and best quality
+- Multiple options can be selected within a category
+- Already installed models are detected and shown as Installed, and their files are excluded from the download total
+- Unchecked options show their incremental download size, or +0.0 GB when shared files are already selected
+- Model names and repository links stay hidden on the option cards
+- Total download size is shown to one decimal place, with an expandable breakdown of each model and projector
+- Starting a download checks local models first and skips files that are already installed
+- Simple requires at least one option selected to continue
 
 ## ModelDownloadPage.tsx
 
-- Models for selected profiles are shown with download bars
-- Inform user that they will continue downloading in background
+- Downloads are grouped by model rather than by individual category option
+- Categories sharing a model are shown together, such as Translator + Tutor + Writing Assistant
+- Model names are shown; filenames and repository links stay hidden
+- Download bars use combined downloaded and total bytes across the model and projector
+- Each model group mirrors the download manager actions: retry, resume, and cancel
+- Cancelling asks for confirmation, lists the affected profiles, and discards those profiles from the selection
+- Groups switch to Installed once the downloaded files are verified locally
+- Inform user that downloads will continue in the background
 - Users without adequate space will be shown a warning to free up space
 
 ## ServerSetupPage.tsx

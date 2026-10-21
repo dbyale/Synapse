@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import {
   ArrowLeft,
   CircleQuestionMark,
@@ -30,24 +29,26 @@ const PROFESSIONS: Profession[] = [
 ];
 
 export default function ProfessionsSetupPage({
+  selectedProfessionIds,
+  onSelectedProfessionIdsChange,
   onBack,
   onContinue,
 }: {
+  selectedProfessionIds: string[];
+  onSelectedProfessionIdsChange: (professionIds: string[]) => void;
   onBack: () => void;
   onContinue: () => void;
 }) {
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const selected = new Set(selectedProfessionIds);
 
   const toggleProfession = (id: string) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-      return next;
-    });
+    const next = new Set(selectedProfessionIds);
+    if (next.has(id)) {
+      next.delete(id);
+    } else {
+      next.add(id);
+    }
+    onSelectedProfessionIdsChange(Array.from(next));
   };
 
   return (
@@ -68,12 +69,12 @@ export default function ProfessionsSetupPage({
           </h1>
           <p className="onb-professions-text onb-rise onb-delay-2">
             Tell us a bit about the kind of work you do, and we&apos;ll suggest
-            the AI models and tools that fit you best.
+            assistants that fit you best.
           </p>
           <p className="onb-professions-note onb-rise onb-delay-3">
             Your answers aren&apos;t collected or sent anywhere. This
             information is only used locally to generate suggestions for which
-            AI models and tools might suit you.
+            assistants might suit you.
           </p>
         </div>
 

@@ -456,14 +456,23 @@ export function downloadModel(
         });
 
         response.on('end', () => {
-          file.end();
-          try {
-            fs.renameSync(partPath, destPath);
-          } catch (e) {
-            console.error('Failed to rename part file:', e);
-          }
-          activeDownloads.delete(repoId + ':' + filename);
-          resolve(destPath);
+          file.end(() => {
+            try {
+              fs.renameSync(partPath, destPath);
+            } catch (e) {
+              console.error('Failed to rename part file:', e);
+            }
+            activeDownloads.delete(repoId + ':' + filename);
+            win?.webContents.send('download-progress', {
+              modelId: repoId,
+              filename,
+              downloadedBytes,
+              totalBytes,
+              percent: 100,
+              status: 'completed',
+            } as DownloadProgress);
+            resolve(destPath);
+          });
         });
 
         response.on('error', cleanupAndReject);
