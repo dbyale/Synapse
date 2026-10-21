@@ -47,6 +47,7 @@ import {
 const activeSpeedRuns = new Map<string, number>();
 import { registerExtensionIpcHandlers } from './ipcExtensions';
 import { getBackendInfo } from './backendInfo';
+import { getPythonInfo } from './pythonInfo';
 import * as binaryDownloads from './binaryDownloads';
 import type { SearchFilter } from '../renderer/preload.d';
 import type { CacheType, Profile } from '../renderer/types/profile';
@@ -801,9 +802,18 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     return backendInfoPromise;
   });
 
+  ipcMain.handle('onboarding:get-python-info', async () => {
+    try {
+      return await getPythonInfo();
+    } catch (error) {
+      console.error('[Python] Failed to detect Python:', error);
+      throw error;
+    }
+  });
+
   ipcMain.handle(
     'binaries:download',
-    async (event, kind: 'backend', download: any, dir: string) => {
+    async (event, kind: 'backend' | 'python', download: any, dir: string) => {
       try {
         const downloadWin = BrowserWindow.fromWebContents(event.sender);
         return await binaryDownloads.startBinaryDownload(
@@ -825,7 +835,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
 
   ipcMain.handle(
     'binaries:uninstall',
-    async (_event, kind: 'backend', download: any, dir: string) => {
+    async (_event, kind: 'backend' | 'python', download: any, dir: string) => {
       return binaryDownloads.uninstallBinary(kind, download, dir);
     },
   );

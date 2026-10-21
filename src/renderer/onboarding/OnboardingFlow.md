@@ -45,6 +45,15 @@
 - Show install locations from Settings Page (Models / Backend directories) — exact parity with Settings → System → Application Setup
 - Show system resource allocator from Settings Page (RAM + VRAM MemorySlider, buffered save on Continue)
 
+## PythonSetupPage.tsx
+
+- Install a private, app-managed CPython runtime (pinned python-build-standalone
+  release, verified by SHA-256) into a Synapse-managed folder
+- Show and pick install location (parity with System → Application Setup)
+- Show detected runtimes (managed by Synapse / system Python on PATH)
+- Fall back to a system Python when one is already available
+- Inform users that installation will continue in background after continuing
+
 ## SecuritySetupPage.tsx
 
 - Show Security Settings from Settings Page (disableExternalReadmes)
@@ -101,14 +110,16 @@
 # Advanced Path (Simple sees none of these — per spec)
 
 1. SystemSetupPage
-2. ProfessionsSetupPage
-3. ChatSetupPage
-4. LlamaSetup (placeholder — currently LlamaSetupPage.tsx)
+2. PythonSetupPage
+3. ProfessionsSetupPage
+4. ChatSetupPage
+5. LlamaSetup (placeholder — currently LlamaSetupPage.tsx)
 
 # Custom Path
 
 1. BackendSetupPage
 2. SystemSetupPage
+3. PythonSetupPage
 4. ServerSetupPage
 5. SecuritySetupPage
 6. ProfessionsSetupPage

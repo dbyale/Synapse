@@ -3,6 +3,7 @@ import SetupExperiencePage from './SetupExperiencePage';
 import ProfessionsSetupPage from './ProfessionsSetupPage';
 import BackendSetupPage from './BackendSetupPage';
 import SystemSetupPage from './SystemSetupPage';
+import PythonSetupPage from './PythonSetupPage';
 import ServerSetupPage from './ServerSetupPage';
 import SecuritySetupPage from './SecuritySetupPage';
 import ChatSetupPage from './ChatSetupPage';
@@ -16,6 +17,7 @@ type Step =
   | 'professions'
   | 'backend'
   | 'system'
+  | 'python'
   | 'server'
   | 'security'
   | 'chatSetup'
@@ -179,6 +181,13 @@ export default function Onboarding() {
         return (
           <SystemSetupPage
             onBack={() => navigate(isCustom ? 'backend' : 'setup')}
+            onContinue={() => navigate('python')}
+          />
+        );
+      case 'python':
+        return (
+          <PythonSetupPage
+            onBack={() => navigate('system')}
             onContinue={() => navigate(isCustom ? 'server' : 'professions')}
           />
         );

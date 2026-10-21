@@ -5,6 +5,7 @@ import {
   ArrowRight,
   Cpu,
   Download,
+  FileCode,
   FolderOpen,
   Gpu,
   HardDrive,
@@ -40,6 +41,7 @@ const ICON_MAP: Record<BackendDownload['icon'], LucideIcon> = {
   sycl: Gpu,
   android: Smartphone,
   custom: HardDrive,
+  python: FileCode,
 };
 
 const TAG_BADGES: Record<BackendTag, { label: string; className: string }> = {

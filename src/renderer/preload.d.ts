@@ -89,6 +89,8 @@ export interface AppSettings {
   disableExternalReadmes?: boolean;
   launchServerAutomatically?: boolean;
   toolConcurrencyLimit?: number;
+  pythonDirectory?: string;
+  pythonInstall?: BackendDownloadRecord;
 }
 
 export interface BackendDownloadRecord {
@@ -96,6 +98,8 @@ export interface BackendDownloadRecord {
   label: string;
   folder: string;
 }
+
+export type BinaryKind = 'backend' | 'python';
 
 export type BackendIcon =
   | 'cuda'
@@ -107,7 +111,8 @@ export type BackendIcon =
   | 'rocm'
   | 'sycl'
   | 'android'
-  | 'custom';
+  | 'custom'
+  | 'python';
 
 export interface BackendDownload {
   id: string;
@@ -122,6 +127,10 @@ export interface BackendDownload {
   warning?: string;
   experimental?: boolean;
   tags?: BackendTag[];
+  /** Expected SHA-256 of the primary archive; verified before extraction. */
+  sha256?: string;
+  /** Extract the whole archive (every entry) rather than filtering binaries. */
+  extractAll?: boolean;
 }
 
 export type BackendTag = 'no-gpu' | 'wrong-arch' | 'wrong-system' | 'outdated';
@@ -146,6 +155,24 @@ export interface BackendInfo {
   gpus: BackendGpuInfo[];
   nvidiaDriverMajor: number | null;
   distro: string | null;
+}
+
+export interface PythonRuntime {
+  available: boolean;
+  binary: string | null;
+  version: string | null;
+  source: 'managed' | 'system' | null;
+}
+
+export interface PythonInfo {
+  platform: string;
+  arch: string;
+  supported: boolean;
+  defaultInstallDir: string;
+  system: PythonRuntime;
+  managed: PythonRuntime;
+  recommended: BackendDownload | null;
+  warnings: string[];
 }
 
 export interface HardwareGpuInfo {
@@ -222,20 +249,22 @@ declare global {
       getMemoryStats: () => Promise<SystemMemStats>;
       getVramStats: () => Promise<HardwareStats>;
       getBackendInfo: () => Promise<BackendInfo>;
+      getPythonInfo: () => Promise<PythonInfo>;
       downloadBinary: (
-        kind: 'backend',
+        kind: BinaryKind,
         download: BackendDownload,
         dir: string,
       ) => Promise<string>;
       cancelBinaryDownload: (id: string) => Promise<boolean>;
       uninstallBinary: (
-        kind: 'backend',
+        kind: BinaryKind,
         download: BackendDownload,
         dir: string,
       ) => Promise<{ success: boolean; error?: string }>;
       getBinaryDownloads: () => Promise<{
         backends: BackendDownloadRecord[];
         customBackendPaths: string[];
+        python: BackendDownloadRecord | null;
       }>;
       chatMemoryUsage: () => Promise<{
         modelVramUsage: number;

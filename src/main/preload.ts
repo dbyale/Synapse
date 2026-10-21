@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   pickDirectory: () => ipcRenderer.invoke('settings:pick-directory'),
   getVramStats: () => ipcRenderer.invoke('get-vram-stats'),
   getBackendInfo: () => ipcRenderer.invoke('onboarding:get-backend-info'),
+  getPythonInfo: () => ipcRenderer.invoke('onboarding:get-python-info'),
   downloadBinary: (kind: string, download: unknown, dir: string) =>
     ipcRenderer.invoke('binaries:download', kind, download, dir),
   cancelBinaryDownload: (id: string) =>

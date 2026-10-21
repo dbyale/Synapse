@@ -31,6 +31,10 @@ export interface AppSettings {
   disableExternalReadmes?: boolean;
   launchServerAutomatically?: boolean;
   toolConcurrencyLimit?: number;
+  // Directory the app-managed Python runtime is installed under. The runtime
+  // itself lives in a `python/` subfolder. Absent = default app-data dir.
+  pythonDirectory?: string;
+  pythonInstall?: { id: string; label: string; folder: string };
 }
 
 const SETTINGS_FILE = path.join(app.getPath('userData'), 'settings.json');

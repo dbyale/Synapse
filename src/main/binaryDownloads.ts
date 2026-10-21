@@ -2,26 +2,29 @@ import { BrowserWindow } from 'electron';
 import https from 'https';
 import path from 'path';
 import fs from 'fs';
+import crypto from 'crypto';
 import * as tar from 'tar';
 import * as yauzl from 'yauzl';
 import type { ClientRequest } from 'http';
 import { loadSettings, saveSettings } from './settings';
+import { getDefaultPythonDir } from './pythonInfo';
 import type {
   BackendDownload,
   BackendDownloadRecord,
+  BinaryKind,
   DownloadProgress,
 } from '../renderer/preload.d';
 
 interface ActiveBinaryDownload {
   id: string;
-  kind: 'backend';
+  kind: BinaryKind;
   reqs: ClientRequest[];
   tempPath: string;
   cancelled: boolean;
 }
 
 interface LastStarted {
-  kind: 'backend';
+  kind: BinaryKind;
   download: BackendDownload;
   dir: string;
 }
@@ -61,7 +64,11 @@ function sendProgress(
   }
 }
 
-function recordDownload(kind: 'backend', download: BackendDownload) {
+function recordDownload(
+  kind: BinaryKind,
+  download: BackendDownload,
+  targetDir?: string,
+) {
   const settings = loadSettings();
   if (kind === 'backend') {
     const existing = settings.backendDownloads ?? [];
@@ -73,16 +80,49 @@ function recordDownload(kind: 'backend', download: BackendDownload) {
       };
       settings.backendDownloads = [...existing, record];
     }
+  } else if (kind === 'python') {
+    settings.pythonInstall = {
+      id: download.id,
+      label: download.label,
+      folder: download.folder,
+    };
+    if (targetDir && !settings.pythonDirectory) {
+      settings.pythonDirectory = targetDir;
+    }
   }
   saveSettings(settings);
 }
 
-function resolveTargetDir(kind: 'backend', dir: string): string {
+function resolveTargetDir(kind: BinaryKind, dir: string): string {
   const settings = loadSettings();
-  if (kind === 'backend') {
-    return dir || settings.backendDirectory;
+  if (kind === 'python') {
+    return dir || settings.pythonDirectory || getDefaultPythonDir();
   }
   return dir || settings.backendDirectory;
+}
+
+// Streaming SHA-256 verification for pinned archives. Rejects with a clear
+// error so the caller can surface a `failed` progress event.
+function verifySha256(filePath: string, expected: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash('sha256');
+    const stream = fs.createReadStream(filePath);
+    stream.on('data', (chunk) => hash.update(chunk));
+    stream.on('error', reject);
+    stream.on('end', () => {
+      const actual = hash.digest('hex');
+      if (actual !== expected.toLowerCase()) {
+        reject(
+          new Error(
+            `Checksum mismatch for ${path.basename(filePath)} ` +
+              `(expected ${expected}, got ${actual})`,
+          ),
+        );
+      } else {
+        resolve();
+      }
+    });
+  });
 }
 
 // Streaming zip extraction (yauzl): entries are decompressed and written
@@ -149,7 +189,7 @@ function extractZip(
 function downloadToFile(
   url: string,
   tempPath: string,
-  kind: 'backend',
+  kind: BinaryKind,
   download: BackendDownload,
   win: BrowserWindow | null,
   aggregate: AggregateProgress,
@@ -252,7 +292,7 @@ function downloadToFile(
 }
 
 export async function startBinaryDownload(
-  kind: 'backend',
+  kind: BinaryKind,
   download: BackendDownload,
   dir: string,
   win: BrowserWindow | null = null,
@@ -333,10 +373,33 @@ export async function startBinaryDownload(
       throw new Error('Download cancelled');
     }
 
+    // Pinned downloads (e.g. Python) carry a checksum; verify before we
+    // touch the filesystem so a corrupt transfer never gets extracted.
+    if (download.sha256) {
+      log(download.id, 'verifying sha256…');
+      await verifySha256(tempPath, download.sha256);
+    }
+
     if (isZip || isTarGz) {
       const destDir = path.join(targetDir, download.folder);
       fs.mkdirSync(destDir, { recursive: true });
-      if (isZip) {
+      if (download.extractAll) {
+        // Full-archive installs (Python): every entry is needed, and the
+        // install_only archive wraps everything in a top-level `python/`
+        // folder which `strip: 1` removes.
+        if (isTarGz) {
+          log(download.id, 'extracting full tar.gz', tempPath, '->', destDir);
+          await tar.x({ file: tempPath, cwd: destDir, strip: 1 });
+          fs.unlinkSync(tempPath);
+        } else {
+          await extractZip(tempPath, destDir, () => true, download.id);
+          fs.unlinkSync(tempPath);
+        }
+        if (process.platform !== 'win32') {
+          const py = path.join(destDir, 'bin', 'python3');
+          if (fs.existsSync(py)) fs.chmodSync(py, 0o755);
+        }
+      } else if (isZip) {
         await extractZip(
           tempPath,
           destDir,
@@ -379,7 +442,7 @@ export async function startBinaryDownload(
       if (process.platform !== 'win32') fs.chmodSync(destPath, '755');
     }
 
-    recordDownload(kind, download);
+    recordDownload(kind, download, targetDir);
     activeDownloads.delete(download.id);
     log(
       download.id,
@@ -432,7 +495,7 @@ export function findBinaryById(id: string): LastStarted | null {
 }
 
 export function uninstallBinary(
-  kind: 'backend',
+  kind: BinaryKind,
   download: BackendDownload,
   dir: string,
 ): { success: boolean; error?: string } {
@@ -491,6 +554,10 @@ export function uninstallBinary(
       settings.backendDownloads = before.filter(
         (d) => d.id !== download.id && d.folder !== folder,
       );
+    } else if (kind === 'python') {
+      if (settings.pythonInstall?.folder === folder) {
+        delete settings.pythonInstall;
+      }
     }
     saveSettings(settings);
   } catch (e: any) {
@@ -511,10 +578,12 @@ export function uninstallBinary(
 export function listBinaryDownloads(): {
   backends: BackendDownloadRecord[];
   customBackendPaths: string[];
+  python: BackendDownloadRecord | null;
 } {
   const settings = loadSettings();
   return {
     backends: settings.backendDownloads ?? [],
     customBackendPaths: settings.customBinaryPaths ?? [],
+    python: settings.pythonInstall ?? null,
   };
 }

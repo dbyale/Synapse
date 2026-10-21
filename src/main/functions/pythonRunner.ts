@@ -4,6 +4,8 @@ import { writeFile, rm, mkdir, readFile, readdir } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { randomUUID } from 'crypto';
+import { loadSettings } from '../settings';
+import { resolveManagedPythonBinary } from '../pythonInfo';
 
 const execFileAsync = promisify(execFile);
 
@@ -289,6 +291,13 @@ let resolvedBinary: string | null = null;
 
 async function resolvePythonBinary(): Promise<string> {
   if (resolvedBinary !== null) return resolvedBinary;
+
+  // Prefer the interpreter Synapse installed and manages itself.
+  const managed = await resolveManagedPythonBinary(loadSettings());
+  if (managed) {
+    resolvedBinary = managed;
+    return managed;
+  }
 
   const candidates = ['python3', 'python', 'py'];
   const found = (
