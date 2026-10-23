@@ -32,6 +32,7 @@ import {
   Copy,
   Check,
   Scissors,
+  Download,
 } from 'lucide-react';
 import {
   Profile,
@@ -186,6 +187,8 @@ interface EditProfileModalProps {
   }>;
   extensionGroups: ExtensionGroup[];
   onSave: (updatedProfiles: Profile[]) => void;
+  onExportProfile: (profile: Profile) => Promise<void>;
+  onDuplicateProfile: (profile: Profile) => void;
   onClose: () => void;
   defaultHost?: string;
   defaultPort?: number;
@@ -3150,9 +3153,7 @@ function PerformancePage({
     ? (editContextSize ?? 4096)
     : (editContextSize ?? 4096);
 
-  const [memory, setMemory] = useState<MemoryEstimate | null>(
-    initialEstimate,
-  );
+  const [memory, setMemory] = useState<MemoryEstimate | null>(initialEstimate);
   const [totalVRAM, setTotalVRAM] = useState(0);
   const [totalRAM, setTotalRAM] = useState(0);
   useEffect(() => {
@@ -3179,10 +3180,7 @@ function PerformancePage({
     isAuto && maxSpeedCtx !== null
       ? Math.min(
           1,
-          Math.max(
-            0,
-            (maxSpeedCtx - 512) / Math.max(1, modelMaxContext - 512),
-          ),
+          Math.max(0, (maxSpeedCtx - 512) / Math.max(1, modelMaxContext - 512)),
         )
       : null;
   let speedZone: 'left' | 'right' | null = null;
@@ -3260,8 +3258,7 @@ function PerformancePage({
     1 - ramOverheadPct - ramModelPct - ramBufferPct - ramCtxPct,
   );
 
-  const fitTimedOut =
-    fitError !== null && /timed out/i.test(fitError);
+  const fitTimedOut = fitError !== null && /timed out/i.test(fitError);
 
   return (
     <>
@@ -3331,8 +3328,7 @@ function PerformancePage({
                   : (editLayers ?? 0);
                 const manualCtx = editContextSize ?? 4096;
                 if (editLayers === undefined) onSetLayers(0);
-                if (editContextSize === undefined)
-                  onSetContextSize(4096);
+                if (editContextSize === undefined) onSetContextSize(4096);
                 triggerEstimate(manualLayers, manualCtx);
               }}
               disabled={optimizerRunning}
@@ -4907,8 +4903,8 @@ function ServerSettingsPage({
                 <AlertTriangle size={14} />
                 <span>
                   GPU layers are not solved yet, so --n-gpu-layers and
-                  --ctx-size are omitted from this preview. Load the Model
-                  or Edit Context Length to solve GPU layers.
+                  --ctx-size are omitted from this preview. Load the Model or
+                  Edit Context Length to solve GPU layers.
                 </span>
               </div>
             )}
@@ -5252,6 +5248,8 @@ export default function EditProfileModal({
   groupedLocalModels,
   extensionGroups,
   onSave,
+  onExportProfile,
+  onDuplicateProfile,
   onClose,
   defaultHost,
   defaultPort,
@@ -5278,6 +5276,7 @@ export default function EditProfileModal({
 
   // Edit state
   const isNewProfile = profile === null;
+  const [exportingProfile, setExportingProfile] = useState(false);
   const [editName, setEditName] = useState(profile?.name ?? 'New Profile');
   const [editSystemPrompt, setEditSystemPrompt] = useState(
     profile?.systemPrompt ?? 'You are a helpful assistant.',
@@ -6285,9 +6284,7 @@ export default function EditProfileModal({
     );
   };
 
-  const handleSave = () => {
-    if (!editName.trim()) return;
-
+  const buildProfileDraft = (): Profile => {
     const modelRelativePath = `${editModelAuthor}/${editModelFolder}/${editModelFilename}`;
 
     let projectorRelativePath: string | undefined;
@@ -6540,6 +6537,48 @@ export default function EditProfileModal({
           : Math.min(...profiles.map((p) => p.order ?? p.createdAt ?? 0)) - 1),
       createdAt: profile?.createdAt ?? now,
     };
+
+    return updatedProfile;
+  };
+
+  let profileActionBlockedReason: string | null = null;
+  if (!editName.trim()) {
+    profileActionBlockedReason = 'Enter a profile name';
+  } else if (!editModelFilename) {
+    profileActionBlockedReason = 'Select a model';
+  }
+
+  const exportBlockedReason = profileActionBlockedReason
+    ? `${profileActionBlockedReason} before exporting`
+    : null;
+  const duplicateBlockedReason = profileActionBlockedReason
+    ? `${profileActionBlockedReason} before duplicating`
+    : null;
+
+  const exportTooltip = exportingProfile
+    ? 'Exporting profile…'
+    : (exportBlockedReason ?? 'Export profile as a .synprofile file');
+  const duplicateTooltip = duplicateBlockedReason ?? 'Duplicate profile';
+
+  const handleExportProfile = async () => {
+    if (exportBlockedReason || exportingProfile) return;
+    setExportingProfile(true);
+    try {
+      await onExportProfile(buildProfileDraft());
+    } finally {
+      setExportingProfile(false);
+    }
+  };
+
+  const handleDuplicateProfile = () => {
+    if (duplicateBlockedReason) return;
+    onDuplicateProfile(buildProfileDraft());
+  };
+
+  const handleSave = () => {
+    if (!editName.trim()) return;
+
+    const updatedProfile = buildProfileDraft();
 
     // Don't save if nothing actually changed
     if (profile) {
@@ -7046,6 +7085,32 @@ export default function EditProfileModal({
             )}
           </div>
           <div className="epm-header-actions">
+            <InfoTooltip content={duplicateTooltip} hideIcon side="left" portal>
+              <button
+                type="button"
+                className="epm-duplicate-btn"
+                onClick={handleDuplicateProfile}
+                disabled={duplicateBlockedReason !== null}
+                aria-label="Duplicate profile"
+              >
+                <Copy size={18} />
+              </button>
+            </InfoTooltip>
+            <InfoTooltip content={exportTooltip} hideIcon side="left" portal>
+              <button
+                type="button"
+                className="epm-export-btn"
+                onClick={handleExportProfile}
+                disabled={exportBlockedReason !== null || exportingProfile}
+                aria-label="Export profile"
+              >
+                {exportingProfile ? (
+                  <Loader2 size={16} className="epm-perf-spinner" />
+                ) : (
+                  <Download size={18} />
+                )}
+              </button>
+            </InfoTooltip>
             <button
               type="button"
               className="epm-close"

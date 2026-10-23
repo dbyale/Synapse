@@ -34,6 +34,14 @@
   line-height: 1.5;
 }
 
+.sp-page__header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 /* ── Error message ── */
 .sp-page__error {
   display: flex;
@@ -673,6 +681,10 @@
 
   .sp-page__header-text h1 {
     font-size: 20px;
+  }
+
+  .sp-page__header-actions {
+    justify-content: flex-start;
   }
 
   .sp-card__view {

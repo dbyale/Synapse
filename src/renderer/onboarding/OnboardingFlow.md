@@ -74,12 +74,17 @@
 ## ProfileSelectionPage.tsx
 
 - Categories available from profession selection
-  - Categories are developer-defined and map to one or more models internally
-  - Category options are hardware-fit tiers such as light, balanced, and best quality
+  - Categories and options come from `src/data/setup-profiles/manifest.json`
+  - Each option points at a profile ID in the bundled `.synprofile` collections
+  - MVP setup uses one General Chatbot category with Fast and Expert options
+  - Every profession maps to the General Chatbot category
 - Multiple options can be selected within a category
 - Already installed models are detected and shown as Installed, and their files are excluded from the download total
 - Unchecked options show their incremental download size, or +0.0 GB when shared files are already selected
 - Model names and repository links stay hidden on the option cards
+- File sizes are resolved on demand from HuggingFace's repository tree and cached locally for 24 hours
+  - Sizes are never hardcoded in the setup catalog
+  - Missing sizes show `Calculating…`, then `Size unavailable` if the API cannot resolve them
 - Total download size is shown to one decimal place, with an expandable breakdown of each model and projector
 - Starting a download checks local models first and skips files that are already installed
 - Simple and Advanced require at least one option selected to continue
@@ -87,7 +92,7 @@
 ## ModelDownloadPage.tsx
 
 - Downloads are grouped by model rather than by individual category option
-- Categories sharing a model are shown together, such as Translator + Tutor + Writing Assistant
+- Options sharing a model are shown together in the download list
 - Model names are shown; filenames and repository links stay hidden
 - Download bars use combined downloaded and total bytes across the model and projector
 - Each model group mirrors the download manager actions: retry, resume, and cancel
@@ -121,6 +126,15 @@
   - Simple and Advanced require at least one profile ready
   - Custom may proceed without a ready profile
   - Launches the selected profile after setup completes, regardless of the auto-launch setting
+
+# Profile Import / Export
+
+- Profiles can be exported individually from the Edit Profile modal
+- Export writes a `.synprofile` JSON file containing profile settings and HuggingFace model/projector download links
+- Runtime-only fields such as memory estimates and fitted tensor placement are omitted
+- Import validates the format, version, and model paths before adding profiles
+- Import always adds profiles; duplicate titles get a Copy suffix and colliding IDs are regenerated
+- Unknown tools are removed and imported profiles are placed at the top of the list
 
 # Simple Path
 

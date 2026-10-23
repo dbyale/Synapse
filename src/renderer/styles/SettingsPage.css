@@ -133,6 +133,24 @@
 .settings-save-btn:hover {
   opacity: 0.9;
 }
+
+.settings-action-btn {
+  align-self: flex-start;
+  padding: 10px 20px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.settings-action-btn:hover {
+  background: var(--bg-secondary);
+  border-color: var(--text-secondary);
+}
 /* ============================================================================
    TOGGLE SWITCH (reused from EditProfileModal pattern)
    ============================================================================ */

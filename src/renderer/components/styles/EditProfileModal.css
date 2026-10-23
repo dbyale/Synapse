@@ -267,7 +267,9 @@
   }
 }
 
-.epm-close {
+.epm-close,
+.epm-export-btn,
+.epm-duplicate-btn {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -282,10 +284,18 @@
   flex-shrink: 0;
 }
 
-.epm-close:hover {
+.epm-close:hover,
+.epm-export-btn:hover:not(:disabled),
+.epm-duplicate-btn:hover:not(:disabled) {
   border-color: var(--accent);
   color: var(--accent);
   background: rgba(37, 99, 235, 0.06);
+}
+
+.epm-export-btn:disabled,
+.epm-duplicate-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 /* ── Breadcrumb ── */

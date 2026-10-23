@@ -17,9 +17,23 @@ import {
   Loader2,
   PackageCheck,
   PackageMinus,
+  Upload,
 } from 'lucide-react';
 import type { LocalModel } from '../preload.d';
 import { Profile } from '../types/profile';
+import {
+  getImportedProfiles,
+  parseSynProfileCollection,
+  sanitizeProfileFilename,
+  serializeSynProfileCollection,
+  SYNPROFILE_EXTENSION,
+} from '../utils/synprofile';
+import {
+  createDuplicateProfile,
+  getImportedProfileName,
+  getUniqueProfileId,
+  normalizeProfileName,
+} from '../utils/profiles';
 import {
   getExtensions,
   getEnabledExtensions,
@@ -138,6 +152,7 @@ export default function ProfilesPage() {
   );
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingProfile, setEditingProfile] = useState<Profile | null>(null);
   const [draggedId, setDraggedId] = useState<string | null>(null);
@@ -219,8 +234,101 @@ export default function ProfilesPage() {
     }
   };
 
+  const handleExportProfile = async (profile: Profile) => {
+    setError(null);
+    setNotice(null);
+    try {
+      const content = serializeSynProfileCollection([profile]);
+      const filename = sanitizeProfileFilename(profile.name);
+      const savedPath = await window.electronAPI.saveTextFile({
+        title: 'Export Profile',
+        defaultPath: `${filename}.${SYNPROFILE_EXTENSION}`,
+        content,
+        filters: [
+          { name: 'Synapse profiles', extensions: [SYNPROFILE_EXTENSION] },
+        ],
+      });
+      if (savedPath) {
+        setNotice('Profile exported.');
+      }
+    } catch (err) {
+      setError(
+        `Could not export profile: ${
+          err instanceof Error ? err.message : 'Unknown error'
+        }`,
+      );
+    }
+  };
+
+  const handleImportProfiles = async () => {
+    setError(null);
+    setNotice(null);
+    try {
+      const paths = await window.electronAPI.browseForFiles({
+        title: 'Import Profiles',
+        filters: [
+          { name: 'Synapse profiles', extensions: [SYNPROFILE_EXTENSION] },
+        ],
+      });
+      if (paths.length === 0) return;
+
+      const bytes = await window.electronAPI.readFileAsBuffer(paths[0]);
+      const collection = parseSynProfileCollection(
+        new TextDecoder().decode(bytes),
+      );
+      const availableToolNames = getAvailableToolNames();
+      const availableTools =
+        availableToolNames.length > 0 ? new Set(availableToolNames) : undefined;
+      const existingIds = new Set(profiles.map((profile) => profile.id));
+      const existingNames = new Set(
+        profiles.map((profile) => normalizeProfileName(profile.name)),
+      );
+      const imported: Profile[] = [];
+
+      getImportedProfiles(collection).forEach((profile) => {
+        const id = getUniqueProfileId(profile.id, existingIds);
+        const name = getImportedProfileName(profile.name, existingNames);
+        existingIds.add(id);
+        existingNames.add(normalizeProfileName(name));
+        imported.push({
+          ...profile,
+          id,
+          name,
+          ...(profile.tools && availableTools
+            ? {
+                tools: profile.tools.filter((tool) => availableTools.has(tool)),
+              }
+            : {}),
+        });
+      });
+
+      if (imported.length === 0) {
+        setNotice('No profiles were found in this file.');
+        return;
+      }
+
+      const updated = [...imported, ...profiles].map((profile, index) => ({
+        ...profile,
+        order: index,
+      }));
+      saveProfiles(updated);
+      setNotice(
+        `Imported ${imported.length} profile${
+          imported.length === 1 ? '' : 's'
+        }.`,
+      );
+    } catch (err) {
+      setError(
+        `Could not import profiles: ${
+          err instanceof Error ? err.message : 'Unknown error'
+        }`,
+      );
+    }
+  };
+
   const handleNewProfile = () => {
     setError(null);
+    setNotice(null);
     setEditingProfile(null);
     setShowEditModal(true);
   };
@@ -358,6 +466,16 @@ export default function ProfilesPage() {
     setShowEditModal(false);
     setEditingProfile(null);
     setError(null);
+  };
+
+  const handleDuplicateProfile = (source: Profile) => {
+    const duplicate = createDuplicateProfile(source, profiles);
+    const sourceIndex = profiles.findIndex((p) => p.id === source.id);
+    const updated = [...profiles];
+    updated.splice(sourceIndex >= 0 ? sourceIndex + 1 : 0, 0, duplicate);
+    saveProfiles(updated.map((p, index) => ({ ...p, order: index })));
+    handleCancelEdit();
+    setNotice(`Duplicated profile as "${duplicate.name}".`);
   };
 
   // ── Drag and drop handlers ──
@@ -572,20 +690,32 @@ export default function ProfilesPage() {
             chat.
           </p>
         </div>
-        <button
-          type="button"
-          className="btn-accent"
-          onClick={handleNewProfile}
-          disabled={loadingId !== null || availableModelsForEdit.length === 0}
-          title={
-            availableModelsForEdit.length === 0
-              ? 'Download a model first'
-              : 'Create a new profile'
-          }
-        >
-          <Plus size={16} />
-          New Profile
-        </button>
+        <div className="sp-page__header-actions">
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={handleImportProfiles}
+            disabled={loadingId !== null}
+            title="Import profiles from a .synprofile file"
+          >
+            <Upload size={16} />
+            Import
+          </button>
+          <button
+            type="button"
+            className="btn-accent"
+            onClick={handleNewProfile}
+            disabled={loadingId !== null || availableModelsForEdit.length === 0}
+            title={
+              availableModelsForEdit.length === 0
+                ? 'Download a model first'
+                : 'Create a new profile'
+            }
+          >
+            <Plus size={16} />
+            New Profile
+          </button>
+        </div>
       </div>
 
       {/* Error Message */}
@@ -600,6 +730,12 @@ export default function ProfilesPage() {
           >
             <X size={16} />
           </button>
+        </div>
+      )}
+
+      {notice && (
+        <div className="sp-page__warning" role="status">
+          <p>{notice}</p>
         </div>
       )}
 
@@ -866,6 +1002,8 @@ export default function ProfilesPage() {
           groupedLocalModels={groupedLocalModels}
           extensionGroups={extensionGroups}
           onSave={handleSaveProfile}
+          onExportProfile={handleExportProfile}
+          onDuplicateProfile={handleDuplicateProfile}
           onClose={handleCancelEdit}
           defaultHost={defaultHost}
           defaultPort={defaultPort}

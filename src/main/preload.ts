@@ -90,6 +90,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.removeListener('menu:navigate', subscription);
     };
   },
+  requestRestartOnboarding: () =>
+    ipcRenderer.send('onboarding:request-restart'),
   onRestartOnboarding: (callback: () => void) => {
     const subscription = () => callback();
 
@@ -304,6 +306,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   readFileAsBuffer: (filePath: string): Promise<Uint8Array> =>
     ipcRenderer.invoke('files:readFileAsBuffer', filePath),
+  saveTextFile: (options: {
+    title: string;
+    defaultPath?: string;
+    content: string;
+    filters?: { name: string; extensions: string[] }[];
+  }): Promise<string | null> =>
+    ipcRenderer.invoke('files:saveTextFile', options),
 
   convertFileWithMarkitdown: (
     filePath: string,

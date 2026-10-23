@@ -811,6 +811,10 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     }
   });
 
+  ipcMain.on('onboarding:request-restart', (event) => {
+    event.sender.send('onboarding:restart');
+  });
+
   ipcMain.handle(
     'binaries:download',
     async (event, kind: 'backend' | 'python', download: any, dir: string) => {
@@ -1167,6 +1171,31 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     const buf = await fs.promises.readFile(filePath);
     return buf;
   });
+
+  ipcMain.handle(
+    'files:saveTextFile',
+    async (
+      _event,
+      options: {
+        title: string;
+        defaultPath?: string;
+        content: string;
+        filters?: { name: string; extensions: string[] }[];
+      },
+    ) => {
+      if (typeof options.content !== 'string') {
+        throw new Error('File content must be a string');
+      }
+      const result = await dialog.showSaveDialog({
+        title: options.title,
+        defaultPath: options.defaultPath,
+        filters: options.filters ?? [],
+      });
+      if (result.canceled || !result.filePath) return null;
+      await fs.promises.writeFile(result.filePath, options.content, 'utf8');
+      return result.filePath;
+    },
+  );
 
   // ── Convert file to markdown via markitdown ──
   ipcMain.handle(

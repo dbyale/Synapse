@@ -1,0 +1,37 @@
+{
+  "categories": [
+    {
+      "id": "general-chatbot",
+      "name": "General Chatbot",
+      "description": "A general-purpose assistant for everyday questions, writing, research, and coding.",
+      "options": [
+        {
+          "id": "general-chatbot-fast",
+          "name": "Fast",
+          "description": "Runs on most systems and responds quickly. Recommended for most users.",
+          "recommended": true,
+          "tier": "fast",
+          "modelName": "Qwen3.5 4B",
+          "profileId": "1792692981393"
+        },
+        {
+          "id": "general-chatbot-expert",
+          "name": "Expert",
+          "description": "Higher-quality answers for complex tasks. Requires more memory.",
+          "tier": "expert",
+          "modelName": "Qwen3.6 35B A3B",
+          "profileId": "1792703628199"
+        }
+      ]
+    }
+  ],
+  "professions": {
+    "qa": ["general-chatbot"],
+    "translation": ["general-chatbot"],
+    "business": ["general-chatbot"],
+    "writing": ["general-chatbot"],
+    "education": ["general-chatbot"],
+    "research": ["general-chatbot"],
+    "development": ["general-chatbot"]
+  }
+}

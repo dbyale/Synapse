@@ -237,6 +237,7 @@ declare global {
       ) => () => void;
       removeDownloadProgressListener: () => void;
       onMenuNavigate: (callback: (path: string) => void) => () => void;
+      requestRestartOnboarding: () => void;
       onRestartOnboarding: (callback: () => void) => () => void;
       onCancelOnboarding: (callback: () => void) => () => void;
       notifyMenuEditState: (state: {
@@ -416,6 +417,12 @@ declare global {
 
       readFileAsDataUrl: (filePath: string) => Promise<string>;
       readFileAsBuffer: (filePath: string) => Promise<Uint8Array>;
+      saveTextFile: (options: {
+        title: string;
+        defaultPath?: string;
+        content: string;
+        filters?: { name: string; extensions: string[] }[];
+      }) => Promise<string | null>;
 
       convertFileWithMarkitdown: (filePath: string) => Promise<{
         success: boolean;

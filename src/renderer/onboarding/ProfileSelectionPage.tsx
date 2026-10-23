@@ -17,9 +17,11 @@ import {
   getUniqueDownloads,
   isDownloadInstalled,
   type DownloadGroup,
+  type DownloadTarget,
   type OnboardingProfileSelection,
 } from './profileCatalog';
 import getCategoryIcon from './categoryIcons';
+import { useDownloadSizes } from './downloadSizes';
 import { formatGB, formatGBTruncated } from '../utils/formatters';
 
 interface ProfileSelectionPageProps {
@@ -34,15 +36,69 @@ interface ProfileSelectionPageProps {
 function getPendingGroupBytes(
   group: DownloadGroup,
   installedKeys: Set<string>,
+  sizes: Map<string, number>,
 ): number {
   let totalBytes = 0;
   if (!installedKeys.has(getDownloadKey(group.model))) {
-    totalBytes += group.modelSizeBytes;
+    totalBytes += sizes.get(getDownloadKey(group.model)) ?? 0;
   }
   if (group.projector && !installedKeys.has(getDownloadKey(group.projector))) {
-    totalBytes += group.projectorSizeBytes;
+    totalBytes += sizes.get(getDownloadKey(group.projector)) ?? 0;
   }
   return totalBytes;
+}
+
+function getTargetSizeLabel(
+  target: DownloadTarget,
+  sizes: Map<string, number>,
+  loading: boolean,
+): string {
+  const size = sizes.get(getDownloadKey(target));
+  if (size !== undefined) return formatGB(size);
+  return loading ? 'Calculating…' : 'Size unavailable';
+}
+
+function getOptionCost(
+  targets: readonly DownloadTarget[],
+  installedKeys: Set<string>,
+  selectedKeys: Set<string>,
+  sizes: Map<string, number>,
+): { knownBytes: number; unknownCount: number } {
+  let knownBytes = 0;
+  let unknownCount = 0;
+  targets.forEach((target) => {
+    const key = getDownloadKey(target);
+    if (installedKeys.has(key) || selectedKeys.has(key)) return;
+    const size = sizes.get(key);
+    if (size !== undefined) {
+      knownBytes += size;
+    } else {
+      unknownCount += 1;
+    }
+  });
+  return { knownBytes, unknownCount };
+}
+
+function getTotalLabel(
+  total: { knownBytes: number; unknownCount: number },
+  loading: boolean,
+): string {
+  if (total.unknownCount === 0) return formatGBTruncated(total.knownBytes);
+  if (loading) return 'Calculating…';
+  if (total.knownBytes > 0) return `~${formatGBTruncated(total.knownBytes)}`;
+  return 'Size unavailable';
+}
+
+function getCostLabel(
+  cost: { knownBytes: number; unknownCount: number },
+  loading: boolean,
+): string {
+  if (cost.unknownCount === 0) {
+    return `+${formatGBTruncated(cost.knownBytes)}`;
+  }
+  if (loading) return 'Calculating…';
+  if (cost.knownBytes > 0) return `~+${formatGBTruncated(cost.knownBytes)}`;
+  return 'Size unavailable';
 }
 
 export default function ProfileSelectionPage({
@@ -60,6 +116,18 @@ export default function ProfileSelectionPage({
     () => getCategoriesForSelection(professionIds),
     [professionIds],
   );
+  const allOptionIds = useMemo(
+    () =>
+      categories.flatMap((category) =>
+        category.options.map((option) => option.id),
+      ),
+    [categories],
+  );
+  const allDownloads = useMemo(
+    () => getUniqueDownloads(allOptionIds),
+    [allOptionIds],
+  );
+  const { sizes, loading: sizesLoading } = useDownloadSizes(allDownloads);
 
   useEffect(() => {
     let cancelled = false;
@@ -113,10 +181,13 @@ export default function ProfileSelectionPage({
   const pendingGroupBytes = useMemo(() => {
     const bytes = new Map<string, number>();
     downloadGroups.forEach((group) => {
-      bytes.set(group.id, getPendingGroupBytes(group, installedDownloadKeys));
+      bytes.set(
+        group.id,
+        getPendingGroupBytes(group, installedDownloadKeys, sizes),
+      );
     });
     return bytes;
-  }, [downloadGroups, installedDownloadKeys]);
+  }, [downloadGroups, installedDownloadKeys, sizes]);
   const selectedDownloadKeys = useMemo(
     () =>
       new Set(
@@ -126,14 +197,27 @@ export default function ProfileSelectionPage({
       ),
     [selected],
   );
-  const totalBytes = useMemo(
-    () =>
-      Array.from(pendingGroupBytes.values()).reduce(
-        (total, groupBytes) => total + groupBytes,
-        0,
-      ),
-    [pendingGroupBytes],
-  );
+  const total = useMemo(() => {
+    let knownBytes = 0;
+    let unknownCount = 0;
+    downloadGroups.forEach((group) => {
+      const targets = group.projector
+        ? [group.model, group.projector]
+        : [group.model];
+      targets.forEach((target) => {
+        const key = getDownloadKey(target);
+        if (installedDownloadKeys.has(key)) return;
+        const size = sizes.get(key);
+        if (size !== undefined) {
+          knownBytes += size;
+        } else {
+          unknownCount += 1;
+        }
+      });
+    });
+    return { knownBytes, unknownCount };
+  }, [downloadGroups, installedDownloadKeys, sizes]);
+  const totalLabel = getTotalLabel(total, sizesLoading);
   const sortedDownloadGroups = useMemo(
     () =>
       [...downloadGroups].sort(
@@ -242,15 +326,15 @@ export default function ProfileSelectionPage({
                       optionDownloads.every((target) =>
                         installedDownloadKeys.has(getDownloadKey(target)),
                       );
-                    const additionalBytes = isSelected
-                      ? 0
-                      : optionDownloads.reduce((total, target) => {
-                          const key = getDownloadKey(target);
-                          return installedDownloadKeys.has(key) ||
-                            selectedDownloadKeys.has(key)
-                            ? total
-                            : total + (target.sizeBytes ?? 0);
-                        }, 0);
+                    const additional = isSelected
+                      ? { knownBytes: 0, unknownCount: 0 }
+                      : getOptionCost(
+                          optionDownloads,
+                          installedDownloadKeys,
+                          selectedDownloadKeys,
+                          sizes,
+                        );
+                    const costLabel = getCostLabel(additional, sizesLoading);
                     return (
                       <button
                         key={option.id}
@@ -290,12 +374,13 @@ export default function ProfileSelectionPage({
                           !isSelected && (
                             <span
                               className={`onb-category-option-cost${
-                                additionalBytes === 0
+                                additional.unknownCount === 0 &&
+                                additional.knownBytes === 0
                                   ? ' onb-category-option-cost--free'
                                   : ''
                               }`}
                             >
-                              +{formatGBTruncated(additionalBytes)}
+                              {costLabel}
                             </span>
                           )
                         )}
@@ -318,7 +403,7 @@ export default function ProfileSelectionPage({
           >
             <HardDrive size={15} strokeWidth={2} />
             <span>Total Download:</span>
-            <strong>{formatGBTruncated(totalBytes)}</strong>
+            <strong>{totalLabel}</strong>
             <span className="onb-selection-total-chevron" aria-hidden="true">
               {showBreakdown ? (
                 <ChevronUp size={15} strokeWidth={2} />
@@ -352,7 +437,11 @@ export default function ProfileSelectionPage({
                       >
                         {modelInstalled
                           ? 'Installed'
-                          : formatGB(group.modelSizeBytes)}
+                          : getTargetSizeLabel(
+                              group.model,
+                              sizes,
+                              sizesLoading,
+                            )}
                       </span>
                     </div>
                     {group.projector && (
@@ -369,7 +458,11 @@ export default function ProfileSelectionPage({
                         >
                           {projectorInstalled
                             ? 'Installed'
-                            : formatGB(group.projectorSizeBytes)}
+                            : getTargetSizeLabel(
+                                group.projector,
+                                sizes,
+                                sizesLoading,
+                              )}
                         </span>
                       </div>
                     )}
@@ -383,7 +476,7 @@ export default function ProfileSelectionPage({
               })}
               <div className="onb-selection-breakdown-total">
                 <span>Total</span>
-                <span>{formatGBTruncated(totalBytes)}</span>
+                <span>{totalLabel}</span>
               </div>
             </div>
           )}

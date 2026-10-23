@@ -515,6 +515,33 @@ export default function SettingsPage() {
             </div>
 
           </div>
+
+          <div className="settings-card">
+            <InfoTooltip
+              content="Opens the setup wizard again. Existing files and saved settings are kept."
+              side="right"
+              hideIcon
+              title="Onboarding"
+              className="mem-title-tooltip"
+            >
+              <h2 className="settings-card-title">Onboarding</h2>
+            </InfoTooltip>
+
+            <div className="settings-field">
+              <span className="settings-label">Restart onboarding</span>
+              <p className="settings-alloc-hint">
+                Re-run the initial setup wizard to reconfigure your backend,
+                Python installation, and system preferences.
+              </p>
+              <button
+                type="button"
+                className="settings-action-btn"
+                onClick={() => window.electronAPI.requestRestartOnboarding()}
+              >
+                Restart Onboarding
+              </button>
+            </div>
+          </div>
         </>
       )}
 

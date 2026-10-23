@@ -15,6 +15,10 @@ const configuration: webpack.Configuration = {
   module: {
     rules: [
       {
+        test: /\.synprofile$/,
+        type: 'json',
+      },
+      {
         test: /\.[jt]sx?$/,
         exclude: /node_modules/,
         use: {
