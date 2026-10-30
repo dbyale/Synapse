@@ -5,36 +5,20 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { randomUUID } from 'crypto';
 import { loadSettings } from '../settings';
-import { resolveManagedPythonBinary } from '../pythonInfo';
+import { resolveSelectedPython } from '../pythonInfo';
+import { ensurePythonPackage } from '../pythonPackageInstaller';
 
 const execFileAsync = promisify(execFile);
 
-let resolvedBinary: string | null = null;
-
 async function resolvePythonBinary(): Promise<string> {
-  if (resolvedBinary !== null) return resolvedBinary;
-
-  // Prefer the interpreter Synapse installed and manages itself.
-  const managed = await resolveManagedPythonBinary(loadSettings());
-  if (managed) {
-    resolvedBinary = managed;
-    return managed;
+  const runtime = await resolveSelectedPython(loadSettings());
+  if (!runtime) {
+    throw new Error(
+      'No Python runtime is available. Install the Synapse-managed Python ' +
+        'from setup, or select a system Python in Settings.',
+    );
   }
-
-  const candidates = ['python3', 'python', 'py'];
-  for (const bin of candidates) {
-    try {
-      await execFileAsync(bin, ['--version']);
-      resolvedBinary = bin;
-      return bin;
-    } catch {
-      // Try next candidate
-    }
-  }
-  throw new Error(
-    'No Python binary found on this system. ' +
-      'Please install Python 3 and ensure it is in your PATH.',
-  );
+  return runtime.binary;
 }
 
 let markitdownReady = false;
@@ -48,32 +32,17 @@ async function ensureMarkitdown(): Promise<{
   error?: string;
 }> {
   if (markitdownReady) return { success: true };
-  if (markitdownCheckInProgress) return await markitdownCheckInProgress;
+  if (markitdownCheckInProgress) return markitdownCheckInProgress;
 
   markitdownCheckInProgress = (async () => {
-    try {
-      const binary = await resolvePythonBinary();
-      await execFileAsync(
-        binary,
-        [
-          '-m',
-          'pip',
-          'install',
-          'markitdown[pdf,docx,pptx,xlsx,xls,audio-transcription]',
-          '--quiet',
-          '--upgrade',
-        ],
-        { timeout: 120_000 },
-      );
-      markitdownReady = true;
-      return { success: true };
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return { success: false, error: `Failed to install markitdown: ${msg}` };
-    }
-  })();
+    const result = await ensurePythonPackage('markitdown', 'markitdown');
+    if (result.success) markitdownReady = true;
+    return result;
+  })().finally(() => {
+    markitdownCheckInProgress = null;
+  });
 
-  return await markitdownCheckInProgress;
+  return markitdownCheckInProgress;
 }
 
 export async function convertFileToMarkdown(
@@ -108,6 +77,7 @@ except Exception as e:
 
     const { stdout } = await execFileAsync(binary, [codePath], {
       shell: false,
+      windowsHide: true,
       encoding: 'utf8',
       env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
       timeout: 60_000,

@@ -7,7 +7,11 @@ import * as tar from 'tar';
 import * as yauzl from 'yauzl';
 import type { ClientRequest } from 'http';
 import { loadSettings, saveSettings } from './settings';
-import { getDefaultPythonDir } from './pythonInfo';
+import {
+  getDefaultPythonDir,
+  getManagedPythonBinary,
+  getPythonDownload,
+} from './pythonInfo';
 import type {
   BackendDownload,
   BackendDownloadRecord,
@@ -587,6 +591,19 @@ export function listBinaryDownloads(): {
   python: BackendDownloadRecord | null;
 } {
   const settings = loadSettings();
+  // Heal a missing install record when the managed runtime is present on disk
+  // (e.g. settings were reset or the runtime was restored from a backup).
+  if (!settings.pythonInstall) {
+    const recommended = getPythonDownload();
+    if (recommended && getManagedPythonBinary(settings)) {
+      settings.pythonInstall = {
+        id: recommended.id,
+        label: recommended.label,
+        folder: recommended.folder,
+      };
+      saveSettings(settings, true);
+    }
+  }
   return {
     backends: settings.backendDownloads ?? [],
     customBackendPaths: settings.customBinaryPaths ?? [],

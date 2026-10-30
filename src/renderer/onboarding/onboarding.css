@@ -2453,3 +2453,202 @@
     opacity: 0;
   }
 }
+
+/* -- Python runtime selection + tool libraries ------------------------- */
+
+.onb-runtime-card {
+  cursor: pointer;
+}
+
+.onb-runtime-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.onb-runtime-card--unavailable {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.onb-backend-card--selected {
+  border-color: rgba(137, 180, 250, 0.65);
+  background: rgba(137, 180, 250, 0.08);
+  box-shadow: 0 0 0 3px rgba(137, 180, 250, 0.12);
+}
+
+.onb-runtime-radio {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid var(--border);
+  border-radius: 50%;
+  background: var(--bg-input);
+}
+
+.onb-backend-card--selected .onb-runtime-radio {
+  border-color: var(--accent);
+}
+
+.onb-runtime-radio-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.onb-runtime-selected-pill {
+  font-size: 10.5px;
+  font-weight: 650;
+  color: var(--accent);
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(137, 180, 250, 0.12);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.onb-runtime-action {
+  display: flex;
+  align-items: center;
+  margin-left: auto;
+}
+
+.onb-library-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.onb-library-size {
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+
+.onb-library-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.onb-library-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+.onb-library-bar {
+  margin: 0;
+}
+
+.onb-library-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.onb-library-group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.onb-library-group-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.onb-library-packages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.onb-library-package {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--bg-input);
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.onb-library-package--installed {
+  color: #4ade80;
+  background: rgba(74, 222, 128, 0.1);
+}
+
+.onb-library-package--installing {
+  color: var(--accent);
+  background: rgba(137, 180, 250, 0.12);
+}
+
+.onb-library-package--failed {
+  color: #f38ba8;
+  background: rgba(243, 139, 168, 0.1);
+}
+
+.onb-library-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding-top: 4px;
+  color: #f38ba8;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.onb-library-error svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.onb-library-error-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.onb-library-error-detail {
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  word-break: break-word;
+}
+
+.onb-library-retry {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  flex-shrink: 0;
+  border: 1px solid rgba(243, 139, 168, 0.35);
+  border-radius: 999px;
+  background: transparent;
+  color: #f38ba8;
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.onb-library-retry:disabled {
+  opacity: 0.55;
+  cursor: default;
+}

@@ -10,6 +10,7 @@ import type {
   BackendDownload,
   PythonInfo,
   PythonRuntime,
+  PythonRuntimeSelection,
 } from '../renderer/preload.d';
 
 const execFileAsync = promisify(execFile);
@@ -146,9 +147,95 @@ async function resolveSystemPython(): Promise<string | null> {
   return firstWorkingPython(candidates);
 }
 
+export interface SelectedPythonRuntime {
+  binary: string;
+  source: 'managed' | 'system';
+  /** Runtime the user asked for. Differs from `source` on fallback. */
+  selection: PythonRuntimeSelection;
+  /** True when the preferred runtime was unavailable and we fell back. */
+  fallback: boolean;
+}
+
+let cachedSelectedRuntime: {
+  key: string;
+  value: SelectedPythonRuntime | null;
+} | null = null;
+
+function selectedRuntimeKey(settings: AppSettings): string {
+  return `${settings.pythonRuntime ?? 'managed'}|${settings.pythonDirectory ?? ''}`;
+}
+
+/** Drop the cached interpreter reference after settings or binaries change. */
+export function invalidatePythonRuntimeCache(): void {
+  cachedSelectedRuntime = null;
+}
+
+/**
+ * Resolve the interpreter Python tools should use.
+ *
+ * Managed Python is preferred unless the user explicitly selected the system
+ * runtime. When the selected runtime is missing we fall back to the other one
+ * so tools keep working, and report `fallback` so callers can warn.
+ */
+export async function resolveSelectedPython(
+  settings: AppSettings,
+): Promise<SelectedPythonRuntime | null> {
+  const key = selectedRuntimeKey(settings);
+  if (cachedSelectedRuntime && cachedSelectedRuntime.key === key) {
+    return cachedSelectedRuntime.value;
+  }
+
+  const selection: PythonRuntimeSelection =
+    settings.pythonRuntime === 'system' ? 'system' : 'managed';
+
+  const preferManaged =
+    selection === 'managed' ? await resolveManagedPythonBinary(settings) : null;
+  const preferSystem =
+    selection === 'system' ? await resolveSystemPython() : null;
+
+  let value: SelectedPythonRuntime | null = null;
+  if (selection === 'managed') {
+    if (preferManaged) {
+      value = {
+        binary: preferManaged,
+        source: 'managed',
+        selection,
+        fallback: false,
+      };
+    } else {
+      const system = await resolveSystemPython();
+      if (system) {
+        value = { binary: system, source: 'system', selection, fallback: true };
+      }
+    }
+  } else if (preferSystem) {
+    value = {
+      binary: preferSystem,
+      source: 'system',
+      selection,
+      fallback: false,
+    };
+  } else {
+    const managed = await resolveManagedPythonBinary(settings);
+    if (managed) {
+      value = {
+        binary: managed,
+        source: 'managed',
+        selection,
+        fallback: true,
+      };
+    }
+  }
+
+  cachedSelectedRuntime = { key, value };
+  return value;
+}
+
 export async function getPythonInfo(): Promise<PythonInfo> {
   const recommended = getPythonDownload();
   const settings = loadSettings();
+  const selected: PythonRuntimeSelection =
+    settings.pythonRuntime === 'system' ? 'system' : 'managed';
 
   const systemBinary = await resolveSystemPython();
   const system: PythonRuntime = systemBinary
@@ -177,12 +264,25 @@ export async function getPythonInfo(): Promise<PythonInfo> {
         `Install Python ${PYTHON_VERSION} manually and make sure it is on your PATH.`,
     );
   }
+  if (selected === 'managed' && !managed.available) {
+    warnings.push(
+      system.available
+        ? 'Synapse-managed Python is selected but not installed. Tools fall back to system Python until it is installed.'
+        : 'Synapse-managed Python is selected but not installed. Download it to use Python-powered tools.',
+    );
+  }
+  if (selected === 'system' && !system.available) {
+    warnings.push(
+      'System Python is selected but was not found on PATH. Select the Synapse-managed runtime instead.',
+    );
+  }
 
   return {
     platform: process.platform,
     arch: process.arch,
     supported: !!recommended,
     defaultInstallDir: getDefaultPythonDir(),
+    selected,
     system,
     managed,
     recommended,

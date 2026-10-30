@@ -5,7 +5,9 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { randomUUID } from 'crypto';
 import { loadSettings } from '../settings';
-import { resolveManagedPythonBinary } from '../pythonInfo';
+import { resolveSelectedPython } from '../pythonInfo';
+import { PYTHON_AUTO_INSTALL_MAP } from '../pythonPackages';
+import { ensurePythonPackage } from '../pythonPackageInstaller';
 
 const execFileAsync = promisify(execFile);
 
@@ -110,24 +112,11 @@ const SANDBOX_CONFIG = {
 // run_python advertises these as AVAILABLE, so runPythonInternal installs
 // them on demand (mirroring the networkx/ddgs pattern) instead of failing
 // with a bare ModuleNotFoundError when the user's Python lacks them.
-const AUTO_INSTALL_MAP: Record<string, { pip: string; importName: string }> = {
-  numpy: { pip: 'numpy', importName: 'numpy' },
-  pandas: { pip: 'pandas', importName: 'pandas' },
-  scipy: { pip: 'scipy', importName: 'scipy' },
-  sklearn: { pip: 'scikit-learn', importName: 'sklearn' },
-  statsmodels: { pip: 'statsmodels', importName: 'statsmodels' },
-  sympy: { pip: 'sympy', importName: 'sympy' },
-  matplotlib: { pip: 'matplotlib', importName: 'matplotlib' },
-  PIL: { pip: 'Pillow', importName: 'PIL' },
-  networkx: { pip: 'networkx', importName: 'networkx' },
-  requests: { pip: 'requests', importName: 'requests' },
-  httpx: { pip: 'httpx', importName: 'httpx' },
-  ddgs: { pip: 'ddgs', importName: 'ddgs' },
-};
+// The manifest is shared with onboarding so both paths install the same set.
+const AUTO_INSTALL_MAP = PYTHON_AUTO_INSTALL_MAP;
 
-// Session caches so a successful install is only checked once and
-// concurrent runs requesting the same package share one pip invocation.
-const autoInstallReady = new Set<string>();
+// Session caches so concurrent runs requesting the same package share one pip
+// invocation. Runtime switches are handled by the shared installer's cache.
 const autoInstallInFlight = new Map<string, Promise<boolean>>();
 
 // Raster image formats captured from the sandbox working directory.
@@ -172,6 +161,9 @@ export interface PythonEnvironmentInfo {
   available: boolean;
   binary: string | null;
   version: string | null;
+  source?: 'managed' | 'system';
+  selection?: 'managed' | 'system';
+  fallback?: boolean;
   error?: string;
 }
 
@@ -287,36 +279,15 @@ function validatePythonCode(code: string): void {
 // 4. PYTHON BINARY RESOLVER
 // ─────────────────────────────────────────────────────────────────────────────
 
-let resolvedBinary: string | null = null;
-
 async function resolvePythonBinary(): Promise<string> {
-  if (resolvedBinary !== null) return resolvedBinary;
-
-  // Prefer the interpreter Synapse installed and manages itself.
-  const managed = await resolveManagedPythonBinary(loadSettings());
-  if (managed) {
-    resolvedBinary = managed;
-    return managed;
+  const runtime = await resolveSelectedPython(loadSettings());
+  if (!runtime) {
+    throw new Error(
+      'No Python runtime is available. Install the Synapse-managed Python ' +
+        'from setup, or select a system Python in Settings.',
+    );
   }
-
-  const candidates = ['python3', 'python', 'py'];
-  const found = (
-    await Promise.all(
-      candidates.map((bin) =>
-        execFileAsync(bin, ['--version'])
-          .then(() => bin)
-          .catch(() => null),
-      ),
-    )
-  ).find((bin): bin is string => bin !== null);
-  if (found) {
-    resolvedBinary = found;
-    return found;
-  }
-  throw new Error(
-    'No Python binary found on this system. ' +
-      'Please install Python 3 and ensure it is in your PATH.',
-  );
+  return runtime.binary;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -428,6 +399,8 @@ function spawnWithTimeout(
     const proc = execFile(binary, [codePath], {
       // Prevent shell injection — execFile never invokes a shell
       shell: false,
+      // Never flash a console window on Windows.
+      windowsHide: true,
       // Cap the internal Node.js buffer as a secondary safeguard
       maxBuffer: SANDBOX_CONFIG.maxOutputBytes * 2,
       // Force UTF-8 decoding to handle Unicode/emoji in output (e.g. DDGS book results)
@@ -484,52 +457,15 @@ function spawnWithTimeout(
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Ensure a Python pip package is installed. Checks for the package first,
- * and runs `pip install --quiet` if it is not found.
+ * Ensure a Python pip package is installed in the runtime Synapse actually
+ * executes code with. Delegates to the shared installer so setup, sandbox
+ * tools, and document conversion all use one queue and one interpreter.
  */
 export async function ensurePackage(
   packageName: string,
   importName?: string,
 ): Promise<{ success: boolean; error?: string }> {
-  const checkName = importName ?? packageName.replace(/-/g, '_');
-  try {
-    const binary = await resolvePythonBinary();
-    await execFileAsync(binary, ['-c', `import ${checkName}`]);
-    return { success: true };
-  } catch {
-    // Check if python3 exists first
-    try {
-      await execFileAsync('python3', ['--version']);
-      // python3 exists, use it for installation
-      await execFileAsync(
-        'python3',
-        ['-m', 'pip', 'install', packageName, '--quiet'],
-        {
-          timeout: 120_000,
-        },
-      );
-      return { success: true };
-    } catch {
-      // python3 might not exist or -m pip failed, try the resolved binary
-      try {
-        const binary = await resolvePythonBinary();
-        await execFileAsync(
-          binary,
-          ['-m', 'pip', 'install', packageName, '--quiet'],
-          {
-            timeout: 120_000,
-          },
-        );
-        return { success: true };
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        return {
-          success: false,
-          error: `Failed to install ${packageName}: ${msg}`,
-        };
-      }
-    }
-  }
+  return ensurePythonPackage(packageName, importName);
 }
 
 /**
@@ -574,14 +510,8 @@ function ensureSingleAutoInstall(topLevel: string): Promise<boolean> {
     return existing;
   }
   const mapping = AUTO_INSTALL_MAP[topLevel];
-  const p = ensurePackage(mapping.pip, mapping.importName)
-    .then((result): boolean => {
-      if (result.success) {
-        autoInstallReady.add(topLevel);
-        return true;
-      }
-      return false;
-    })
+  const p = ensurePythonPackage(mapping.pip, mapping.importName)
+    .then((result): boolean => result.success)
     .catch((): boolean => false)
     .finally((): void => {
       autoInstallInFlight.delete(topLevel);
@@ -603,9 +533,7 @@ interface AutoInstallOutcome {
 function ensurePythonPackagesForCode(
   code: string,
 ): Promise<AutoInstallOutcome> {
-  const pending = [...parseRequiredTopLevels(code)].filter(
-    (topLevel): boolean => !autoInstallReady.has(topLevel),
-  );
+  const pending = [...parseRequiredTopLevels(code)];
   const seed: Promise<AutoInstallOutcome> = Promise.resolve({
     installed: [],
     failed: [],
@@ -926,15 +854,31 @@ export async function runPythonWithImages(
  */
 export async function getPythonEnvironmentInfo(): Promise<PythonEnvironmentInfo> {
   try {
-    const binary = await resolvePythonBinary();
-    const { stdout } = await execFileAsync(binary, [
-      '-c',
-      'import sys; print(sys.version)',
-    ]);
+    const runtime = await resolveSelectedPython(loadSettings());
+    if (!runtime) {
+      return {
+        available: false,
+        binary: null,
+        version: null,
+        error: 'No Python runtime is available.',
+      };
+    }
+    const { stdout } = await execFileAsync(
+      runtime.binary,
+      ['-c', 'import sys; print(sys.version)'],
+      {
+        timeout: 60_000,
+        windowsHide: true,
+        env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
+      },
+    );
     return {
       available: true,
-      binary,
+      binary: runtime.binary,
       version: stdout.trim(),
+      source: runtime.source,
+      selection: runtime.selection,
+      fallback: runtime.fallback,
     };
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);

@@ -11,6 +11,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getVramStats: () => ipcRenderer.invoke('get-vram-stats'),
   getBackendInfo: () => ipcRenderer.invoke('onboarding:get-backend-info'),
   getPythonInfo: () => ipcRenderer.invoke('onboarding:get-python-info'),
+  getPythonPackagesStatus: (force = false) =>
+    ipcRenderer.invoke('python:packages-status', force),
+  installPythonPackages: (ids?: string[]) =>
+    ipcRenderer.invoke('python:packages-install', ids),
+  onPythonPackagesProgress: (callback: (snapshot: any) => void) => {
+    const subscription = (_event: IpcRendererEvent, snapshot: any) =>
+      callback(snapshot);
+    ipcRenderer.on('python:packages-progress', subscription);
+    return () => {
+      ipcRenderer.removeListener('python:packages-progress', subscription);
+    };
+  },
   downloadBinary: (kind: string, download: unknown, dir: string) =>
     ipcRenderer.invoke('binaries:download', kind, download, dir),
   cancelBinaryDownload: (id: string) =>

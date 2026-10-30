@@ -57,10 +57,24 @@
 
 - Install a private, app-managed CPython runtime (pinned python-build-standalone
   release, verified by SHA-256) into a Synapse-managed folder
+- Default to the managed runtime; never silently use system Python as long as a
+  managed build is available for the platform
 - Show and pick install location (parity with System → Application Setup)
-- Show detected runtimes (managed by Synapse / system Python on PATH)
-- Fall back to a system Python when one is already available
+- Show both runtimes as selectable cards (managed by Synapse / system Python on PATH)
+  - Unavailable runtimes are visibly disabled
+  - Choosing system Python saves `pythonRuntime: 'system'` and warns that some
+    systems block pip installs (PEP 668)
+  - Choosing the managed runtime saves `pythonRuntime: 'managed'` and installs
+    it if needed
+- Install the shared tool-library manifest (NumPy, Pandas, SciPy, scikit-learn,
+  statsmodels, SymPy, Matplotlib, Pillow, NetworkX, Requests, HTTPX, ddgs,
+  MarkItDown pinned for managed-runtime compatibility) into the selected runtime
+  - Libraries install automatically once the runtime is ready
+  - Progress is grouped by category, with counts and per-package state
+  - Failures do not block Continue and can be retried in place
 - Inform users that installation will continue in background after continuing
+- If the selected runtime disappears (e.g. uninstalled), fall back to the other
+  runtime and surface a warning instead of failing tool calls
 
 ## SecuritySetupPage.tsx
 
@@ -114,6 +128,11 @@
 ## FinalInstallPage.tsx
 
 - Show llama binary install progress
+- Show Python runtime install progress
+- Show Python tool-library install progress
+  - `completed / total` libraries, with the package currently installing
+  - Failed libraries are listed as warnings with Retry
+  - Library failures never block profile readiness
 - Show warnings
   - Non-Ubuntu compatibility warning
   - NVIDIA Driver update warning
@@ -139,6 +158,9 @@
 # Simple Path
 
 - Install backends + python in background
+- Install the managed Python runtime even when a system Python exists, then
+  install the shared tool libraries in the background; libraries never gate
+  profile downloads or the final Proceed button
 
 1. ProfessionsSetupPage
 2. ProfileSelectionPage

@@ -7,6 +7,7 @@ import {
   Cpu,
   FileCode,
   Loader2,
+  Package,
   RefreshCw,
   TriangleAlert,
 } from 'lucide-react';
@@ -15,13 +16,17 @@ import type {
   BinaryKind,
   LocalModel,
   PythonInfo,
+  PythonPackagesSnapshot,
 } from '../preload.d';
 import type { Profile } from '../types/profile';
 import { formatGB } from '../utils/formatters';
 import {
   getBackgroundSetupError,
   getBinaryInstallSnapshot,
+  getPythonPackagesSnapshot,
+  refreshPythonPackagesStatus,
   retryBinaryInstall,
+  startPythonPackagesInstall,
   subscribeBinaryInstalls,
   syncBinaryRecords,
   type BinaryInstallStatus,
@@ -54,7 +59,7 @@ interface FinalInstallPageProps {
 }
 
 interface DependencyRowProps {
-  icon: 'backend' | 'python';
+  icon: 'backend' | 'python' | 'packages';
   title: string;
   label: string;
   status: DownloadStatus;
@@ -62,6 +67,12 @@ interface DependencyRowProps {
   error: string | undefined;
   retrying: boolean;
   onRetry: () => void;
+  /** Show Retry even when the row has not reported a failure yet. */
+  retryable: boolean;
+  /** Overrides the default "Failed to download" headline. */
+  failureLabel: string | undefined;
+  /** Overrides the status badge text (e.g. Installing/Preparing). */
+  statusLabel: string | undefined;
 }
 
 function getFailureLabel(error?: string): string {
@@ -99,8 +110,16 @@ function DependencyRow({
   error,
   retrying,
   onRetry,
+  retryable,
+  failureLabel = undefined,
+  statusLabel = undefined,
 }: DependencyRowProps) {
-  const Icon = icon === 'python' ? FileCode : Cpu;
+  const icons = {
+    backend: Cpu,
+    python: FileCode,
+    packages: Package,
+  };
+  const Icon = icons[icon];
   const failed = status === 'failed' || status === 'cancelled';
   return (
     <div className="onb-final-dependency">
@@ -111,9 +130,9 @@ function DependencyRow({
         <div className="onb-final-row-heading">
           <span className="onb-final-row-title">{title}</span>
           <span className={`onb-download-badge onb-download-badge--${status}`}>
-            {STATUS_LABELS[status]}
+            {statusLabel ?? STATUS_LABELS[status]}
           </span>
-          {failed && (
+          {(failed || retryable) && (
             <button
               type="button"
               className="onb-download-icon-btn"
@@ -146,7 +165,7 @@ function DependencyRow({
           <div className="onb-final-error">
             <CircleAlert size={13} strokeWidth={2.2} />
             <span>
-              {getFailureLabel(error)}
+              {failureLabel ?? getFailureLabel(error)}
               <span className="onb-final-error-detail">{error}</span>
             </span>
           </div>
@@ -193,8 +212,13 @@ export default function FinalInstallPage({
   const [pythonInfo, setPythonInfo] = useState<PythonInfo | null>(null);
   const [localModels, setLocalModels] = useState<LocalModel[]>([]);
   const [records, setRecords] = useState<BinaryRecords | null>(null);
+  const [packages, setPackages] = useState<PythonPackagesSnapshot | null>(() =>
+    getPythonPackagesSnapshot(),
+  );
   const [loading, setLoading] = useState(true);
-  const [retrying, setRetrying] = useState<BinaryKind | null>(null);
+  const [retrying, setRetrying] = useState<BinaryKind | 'packages' | null>(
+    null,
+  );
   const [actionError, setActionError] = useState<string | null>(null);
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(
     null,
@@ -238,6 +262,12 @@ export default function FinalInstallPage({
     } catch {
       setRecords(null);
     }
+    try {
+      const snapshot = await refreshPythonPackagesStatus();
+      if (snapshot) setPackages(snapshot);
+    } catch {
+      // Keep the last known library snapshot.
+    }
   }, []);
 
   useEffect(() => {
@@ -260,9 +290,10 @@ export default function FinalInstallPage({
   }, [selectionKey]);
 
   useEffect(() => {
-    const unsubscribe = subscribeBinaryInstalls(() =>
-      setInstallRevision((value) => value + 1),
-    );
+    const unsubscribe = subscribeBinaryInstalls(() => {
+      setInstallRevision((value) => value + 1);
+      setPackages(getPythonPackagesSnapshot());
+    });
     return unsubscribe;
   }, []);
 
@@ -320,11 +351,69 @@ export default function FinalInstallPage({
     pythonSnapshot?.error ??
     (pythonStatus === 'failed' ? 'Python installation failed' : undefined);
   let pythonLabel = recommendedPython?.label ?? 'Detecting Python';
-  if (pythonInfo?.managed.available) {
+  if (packages?.runtime === 'managed') {
+    pythonLabel = 'Managed by Synapse';
+  } else if (packages?.runtime === 'system') {
+    pythonLabel = packages.fallback
+      ? 'System Python (fallback)'
+      : 'System Python';
+  } else if (
+    pythonInfo?.selected !== 'system' &&
+    pythonInfo?.managed.available
+  ) {
     pythonLabel = 'Managed by Synapse';
   } else if (pythonInfo?.system.available) {
     pythonLabel = 'System Python';
   }
+
+  // Tool libraries never gate profile readiness. They install in the
+  // background and expose a retry when pip fails.
+  const packagesStatus: DownloadStatus = (() => {
+    if (!packages) return 'queued';
+    if (packages.installing) return 'downloading';
+    // While the managed runtime is still downloading, libraries are simply
+    // waiting for it rather than broken.
+    if (packages.runtime === null) return pythonReady ? 'failed' : 'queued';
+    if (packages.total === 0) return 'completed';
+    if (packages.completed === packages.total) return 'completed';
+    if (packages.packages.some((pkg) => pkg.status === 'failed')) {
+      return 'failed';
+    }
+    return 'queued';
+  })();
+  const packagesPercent =
+    packages && packages.total > 0
+      ? Math.round((packages.completed / packages.total) * 100)
+      : 0;
+  const packagesCurrent = packages?.packages.find(
+    (pkg) => pkg.id === packages.currentId,
+  );
+  const packagesFailed = (packages?.packages ?? []).filter(
+    (pkg) => pkg.status === 'failed',
+  );
+  const packagesError =
+    packagesFailed[0]?.error ??
+    packages?.error ??
+    (packagesStatus === 'failed'
+      ? 'Python tool libraries could not be installed'
+      : undefined);
+  let packagesLabel = 'Detecting libraries';
+  if (packages) {
+    if (packages.installing) {
+      packagesLabel = `${packages.completed} of ${packages.total} installed${
+        packagesCurrent ? ` — ${packagesCurrent.label}` : ''
+      }`;
+    } else if (packages.total > 0 && packages.completed === packages.total) {
+      packagesLabel = `${packages.total} tool libraries ready`;
+    } else if (packages.runtime === null) {
+      packagesLabel = 'Waiting for the Python runtime';
+    } else {
+      packagesLabel = `${packages.completed} of ${packages.total} libraries installed`;
+    }
+  }
+  let packagesBadge: string | undefined;
+  if (packages?.installing) packagesBadge = 'Installing';
+  else if (!packages) packagesBadge = 'Preparing';
 
   const failedModelSections = sections.filter((section) => {
     const status = getSectionStatus(getGroupTargets(section), rows);
@@ -334,6 +423,11 @@ export default function FinalInstallPage({
   const warnings = [
     ...(backendInfo?.warnings ?? []),
     ...(pythonInfo?.warnings ?? []),
+    ...(packagesStatus === 'failed'
+      ? [
+          'Some Python tool libraries failed to install. Python itself still works; retry the libraries below.',
+        ]
+      : []),
   ];
 
   const handleRetryDependency = async (kind: BinaryKind) => {
@@ -345,6 +439,28 @@ export default function FinalInstallPage({
     } catch (error) {
       setActionError(
         error instanceof Error ? error.message : 'Retry failed unexpectedly',
+      );
+    } finally {
+      setRetrying(null);
+    }
+  };
+
+  const handleRetryPackages = async () => {
+    setActionError(null);
+    setRetrying('packages');
+    try {
+      const missingIds = (packages?.packages ?? [])
+        .filter((pkg) => pkg.status !== 'installed')
+        .map((pkg) => pkg.id);
+      await startPythonPackagesInstall(
+        missingIds.length ? missingIds : undefined,
+      );
+      const snapshot = await refreshPythonPackagesStatus(true);
+      if (snapshot) setPackages(snapshot);
+      await refresh();
+    } catch (error) {
+      setActionError(
+        error instanceof Error ? error.message : 'Library retry failed',
       );
     } finally {
       setRetrying(null);
@@ -435,6 +551,9 @@ export default function FinalInstallPage({
                 error={backendError}
                 retrying={retrying === 'backend'}
                 onRetry={() => handleRetryDependency('backend')}
+                retryable={false}
+                failureLabel={undefined}
+                statusLabel={undefined}
               />
               <DependencyRow
                 icon="python"
@@ -445,6 +564,27 @@ export default function FinalInstallPage({
                 error={pythonError}
                 retrying={retrying === 'python'}
                 onRetry={() => handleRetryDependency('python')}
+                retryable={false}
+                failureLabel={undefined}
+                statusLabel={undefined}
+              />
+              <DependencyRow
+                icon="packages"
+                title="Python libraries"
+                label={packagesLabel}
+                status={packagesStatus}
+                percent={packagesPercent}
+                error={packagesError}
+                retrying={retrying === 'packages'}
+                onRetry={handleRetryPackages}
+                retryable={
+                  !!packages &&
+                  !packages.installing &&
+                  packages.runtime !== null &&
+                  packages.completed < packages.total
+                }
+                failureLabel="Failed to install libraries"
+                statusLabel={packagesBadge}
               />
             </div>
           </section>

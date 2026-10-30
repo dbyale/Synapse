@@ -143,7 +143,9 @@ async function ensureDdgsPackage(): Promise<string | null> {
       return true;
     }
     return false;
-  })();
+  })().finally(() => {
+    ddgsCheckInProgress = null;
+  });
   const ok = await ddgsCheckInProgress;
   return ok ? null : 'Package installation failed';
 }

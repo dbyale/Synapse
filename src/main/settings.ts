@@ -35,6 +35,9 @@ export interface AppSettings {
   // itself lives in a `python/` subfolder. Absent = default app-data dir.
   pythonDirectory?: string;
   pythonInstall?: { id: string; label: string; folder: string };
+  // Which interpreter Python-powered tools use. Absent/'managed' = Synapse's
+  // private runtime; 'system' = the user explicitly chose the PATH Python.
+  pythonRuntime?: 'managed' | 'system';
 }
 
 const SETTINGS_FILE = path.join(app.getPath('userData'), 'settings.json');

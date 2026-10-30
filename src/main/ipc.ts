@@ -40,17 +40,22 @@ import {
   endFitRun,
   logFitCancelled,
 } from './estimator';
+import { registerExtensionIpcHandlers } from './ipcExtensions';
+import { getBackendInfo } from './backendInfo';
+import { getPythonInfo, invalidatePythonRuntimeCache } from './pythonInfo';
+import {
+  getPythonPackagesStatus,
+  installPythonPackages,
+  invalidatePythonPackageState,
+} from './pythonPackageInstaller';
+import * as binaryDownloads from './binaryDownloads';
+import type { SearchFilter } from '../renderer/preload.d';
+import type { CacheType, Profile } from '../renderer/types/profile';
 
 // Newest speed-line computation wins per model: a recompute (flag/model
 // change) kills the superseded run, whose FitCancelledError resolves to a
 // hidden line instead of an Electron handler error (see handler below).
 const activeSpeedRuns = new Map<string, number>();
-import { registerExtensionIpcHandlers } from './ipcExtensions';
-import { getBackendInfo } from './backendInfo';
-import { getPythonInfo } from './pythonInfo';
-import * as binaryDownloads from './binaryDownloads';
-import type { SearchFilter } from '../renderer/preload.d';
-import type { CacheType, Profile } from '../renderer/types/profile';
 
 const execAsync = util.promisify(exec);
 
@@ -85,11 +90,10 @@ async function readServerProcessMemoryMB(pid: number): Promise<number> {
         .replace(/,/g, '');
       const kb = parseInt(memStr, 10);
       return kb ? Math.round(kb / 1024) : 0;
-    } else {
-      const { stdout } = await execAsync(`ps -o rss= -p ${pid}`);
-      const kb = parseInt(stdout.trim(), 10);
-      return kb ? Math.round(kb / 1024) : 0;
     }
+    const { stdout } = await execAsync(`ps -o rss= -p ${pid}`);
+    const kb = parseInt(stdout.trim(), 10);
+    return kb ? Math.round(kb / 1024) : 0;
   } catch {
     return 0;
   }
@@ -263,12 +267,28 @@ export function registerIpcHandlers(win: BrowserWindow): void {
   });
 
   ipcMain.handle('settings:save', (_event, settings: AppSettings) => {
+    const previous = loadSettings();
     saveSettings(settings);
+    if (
+      previous.pythonRuntime !== settings.pythonRuntime ||
+      previous.pythonDirectory !== settings.pythonDirectory
+    ) {
+      invalidatePythonRuntimeCache();
+      invalidatePythonPackageState();
+    }
     return true;
   });
 
   ipcMain.handle('settings:save-silent', (_event, settings: AppSettings) => {
+    const previous = loadSettings();
     saveSettings(settings, true);
+    if (
+      previous.pythonRuntime !== settings.pythonRuntime ||
+      previous.pythonDirectory !== settings.pythonDirectory
+    ) {
+      invalidatePythonRuntimeCache();
+      invalidatePythonPackageState();
+    }
     return true;
   });
 
@@ -811,6 +831,14 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     }
   });
 
+  ipcMain.handle('python:packages-status', async (_event, force?: boolean) => {
+    return getPythonPackagesStatus(force === true);
+  });
+
+  ipcMain.handle('python:packages-install', async (_event, ids?: string[]) => {
+    return installPythonPackages(Array.isArray(ids) ? ids : undefined);
+  });
+
   ipcMain.on('onboarding:request-restart', (event) => {
     event.sender.send('onboarding:restart');
   });
@@ -820,12 +848,17 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     async (event, kind: 'backend' | 'python', download: any, dir: string) => {
       try {
         const downloadWin = BrowserWindow.fromWebContents(event.sender);
-        return await binaryDownloads.startBinaryDownload(
+        const result = await binaryDownloads.startBinaryDownload(
           kind,
           download,
           dir,
           downloadWin,
         );
+        if (kind === 'python') {
+          invalidatePythonRuntimeCache();
+          invalidatePythonPackageState();
+        }
+        return result;
       } catch (error) {
         console.error('[binaries:download]', error);
         throw error;
@@ -840,7 +873,12 @@ export function registerIpcHandlers(win: BrowserWindow): void {
   ipcMain.handle(
     'binaries:uninstall',
     async (_event, kind: 'backend' | 'python', download: any, dir: string) => {
-      return binaryDownloads.uninstallBinary(kind, download, dir);
+      const result = await binaryDownloads.uninstallBinary(kind, download, dir);
+      if (kind === 'python' && result.success) {
+        invalidatePythonRuntimeCache();
+        invalidatePythonPackageState();
+      }
+      return result;
     },
   );
 

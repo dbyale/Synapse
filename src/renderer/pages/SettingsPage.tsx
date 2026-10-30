@@ -9,7 +9,12 @@ import {
   Server,
   ShieldCog,
 } from 'lucide-react';
-import type { AppSettings, HardwareStats } from '../preload.d';
+import type {
+  AppSettings,
+  HardwareStats,
+  PythonInfo,
+  PythonPackagesSnapshot,
+} from '../preload.d';
 import InfoTooltip from '../components/InfoTooltip';
 import {
   MODELS_DIR_TOOLTIP,
@@ -51,6 +56,9 @@ export default function SettingsPage() {
   const [tab, setTab] = useState<'system' | 'chat' | 'security' | 'server'>(
     'chat',
   );
+  const [pythonInfo, setPythonInfo] = useState<PythonInfo | null>(null);
+  const [packages, setPackages] = useState<PythonPackagesSnapshot | null>(null);
+  const [pythonBusy, setPythonBusy] = useState(false);
 
   const savedAllocationsRef = useRef<{
     allocatedRAM?: number;
@@ -70,6 +78,26 @@ export default function SettingsPage() {
     vramTitle,
     fetchHardware,
   } = useHardwareStats(savedAllocationsRef);
+
+  const refreshPython = useCallback(async (force = false) => {
+    try {
+      const [info, snapshot] = await Promise.all([
+        window.electronAPI.getPythonInfo(),
+        window.electronAPI.getPythonPackagesStatus(force),
+      ]);
+      setPythonInfo(info);
+      setPackages(snapshot);
+    } catch {
+      // Leave the last known Python state in place.
+    }
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = window.electronAPI.onPythonPackagesProgress(
+      (snapshot: PythonPackagesSnapshot) => setPackages(snapshot),
+    );
+    return unsubscribe;
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -95,10 +123,7 @@ export default function SettingsPage() {
             loaded?.estimatorTimeoutSec,
             100,
           ),
-          serverTimeoutSec: normalizeTimeoutSec(
-            loaded?.serverTimeoutSec,
-            200,
-          ),
+          serverTimeoutSec: normalizeTimeoutSec(loaded?.serverTimeoutSec, 200),
           vramHeadroomMB: normalizeHeadroomMB(loaded?.vramHeadroomMB, 512),
           autoOpenThinking: loaded?.autoOpenThinking ?? true,
           autoCloseThinkingDone: loaded?.autoCloseThinkingDone ?? true,
@@ -116,6 +141,9 @@ export default function SettingsPage() {
                 : 10,
           host: loaded?.host ?? '127.0.0.1',
           port: loaded?.port ?? 9931,
+          pythonDirectory: loaded?.pythonDirectory,
+          pythonInstall: loaded?.pythonInstall,
+          pythonRuntime: loaded?.pythonRuntime ?? 'managed',
         };
 
         savedAllocationsRef.current = {
@@ -127,6 +155,10 @@ export default function SettingsPage() {
         initialMode = normalized.resourceAllocation ?? 'automatic';
       } catch {
         // Silently fail
+      }
+
+      if (mounted) {
+        refreshPython().catch(() => {});
       }
 
       if (mounted) {
@@ -146,7 +178,7 @@ export default function SettingsPage() {
     return () => {
       mounted = false;
     };
-  }, [fetchHardware]);
+  }, [fetchHardware, refreshPython]);
 
   const triggerSave = async (overrides: Partial<AppSettings> = {}) => {
     if (!settings) return;
@@ -281,8 +313,72 @@ export default function SettingsPage() {
     }
   }
 
+  const handlePythonRuntime = async (runtime: 'managed' | 'system') => {
+    if (!settings || pythonBusy) return;
+    if (runtime === (settings.pythonRuntime ?? 'managed')) return;
+
+    setSettings((prev) => (prev ? { ...prev, pythonRuntime: runtime } : prev));
+    setPackages(null);
+    // The main process invalidates its runtime + package caches on save.
+    await triggerSave({ pythonRuntime: runtime });
+    await refreshPython(true);
+  };
+
+  const handleRepairLibraries = async () => {
+    if (pythonBusy) return;
+    setPythonBusy(true);
+    try {
+      const missing = packages?.packages
+        .filter((pkg) => pkg.status !== 'installed')
+        .map((pkg) => pkg.id);
+      await window.electronAPI.installPythonPackages(
+        missing && missing.length > 0 ? missing : undefined,
+      );
+    } catch {
+      // Failures are reported through the package snapshot.
+    } finally {
+      await refreshPython(true);
+      setPythonBusy(false);
+    }
+  };
+
   if (!settings) {
     return null;
+  }
+
+  const pythonSelection =
+    settings.pythonRuntime === 'system' ? 'system' : 'managed';
+  const activePython =
+    pythonSelection === 'managed' ? pythonInfo?.managed : pythonInfo?.system;
+  const pythonBusyNow = pythonBusy || !!packages?.installing;
+  const libraryTotal = packages?.total ?? 0;
+  const libraryCompleted = packages?.completed ?? 0;
+  const libraryPercent =
+    libraryTotal > 0 ? Math.round((libraryCompleted / libraryTotal) * 100) : 0;
+  const libraryFailed = (packages?.packages ?? []).filter(
+    (pkg) => pkg.status === 'failed',
+  );
+  const libraryAllReady = libraryTotal > 0 && libraryCompleted === libraryTotal;
+  let librarySummary = 'Checking installed libraries…';
+  if (packages) {
+    if (packages.installing) {
+      const current = packages.packages.find(
+        (pkg) => pkg.id === packages.currentId,
+      );
+      librarySummary = `Installing ${current?.label ?? 'libraries'} — ${libraryCompleted} of ${libraryTotal}`;
+    } else if (libraryAllReady) {
+      librarySummary = `All ${libraryTotal} tool libraries are installed`;
+    } else if (libraryCompleted > 0) {
+      librarySummary = `${libraryCompleted} of ${libraryTotal} libraries installed`;
+    } else {
+      librarySummary = 'Tool libraries are not installed yet';
+    }
+  }
+  let libraryActionLabel = 'Install missing libraries';
+  if (libraryFailed.length > 0) {
+    libraryActionLabel = 'Retry failed libraries';
+  } else if (libraryAllReady) {
+    libraryActionLabel = 'Check again';
   }
 
   return (
@@ -397,9 +493,7 @@ export default function SettingsPage() {
                         appAllocated: newVal,
                       }))
                     }
-                    onSave={(newVal) =>
-                      triggerSave({ allocatedVRAM: newVal })
-                    }
+                    onSave={(newVal) => triggerSave({ allocatedVRAM: newVal })}
                     onRefresh={fetchHardware}
                     loading={gpuLoading}
                     unavailableMessage="GPU memory information unavailable"
@@ -417,23 +511,23 @@ export default function SettingsPage() {
                 className="info-tooltip-stretch--col"
                 title="VRAM Headroom (MB)"
               >
-                  <input
-                    type="number"
-                    className="settings-input settings-input--no-spinner"
-                    value={settings.vramHeadroomMB?.toString() ?? ''}
-                    onChange={(e) => {
-                      const parsed = parseInt(e.target.value, 10);
-                      setSettings((prev) =>
-                        prev
-                          ? {
-                              ...prev,
-                              vramHeadroomMB: Number.isNaN(parsed)
-                                ? undefined
-                                : parsed,
-                            }
-                          : prev,
-                      );
-                    }}
+                <input
+                  type="number"
+                  className="settings-input settings-input--no-spinner"
+                  value={settings.vramHeadroomMB?.toString() ?? ''}
+                  onChange={(e) => {
+                    const parsed = parseInt(e.target.value, 10);
+                    setSettings((prev) =>
+                      prev
+                        ? {
+                            ...prev,
+                            vramHeadroomMB: Number.isNaN(parsed)
+                              ? undefined
+                              : parsed,
+                          }
+                        : prev,
+                    );
+                  }}
                   onBlur={() =>
                     triggerSave({
                       vramHeadroomMB: normalizeHeadroomMB(
@@ -513,7 +607,111 @@ export default function SettingsPage() {
                 </div>
               </InfoTooltip>
             </div>
+          </div>
 
+          <div className="settings-card">
+            <InfoTooltip
+              content="Choose which Python interpreter Synapse tools use, and keep their libraries up to date."
+              side="right"
+              hideIcon
+              title="Python"
+              className="mem-title-tooltip"
+            >
+              <h2 className="settings-card-title">Python</h2>
+            </InfoTooltip>
+
+            <div className="settings-field">
+              <span className="settings-label">Runtime</span>
+              <div
+                className="settings-alloc-toggle"
+                role="group"
+                aria-label="Python runtime"
+              >
+                <button
+                  type="button"
+                  className={`settings-alloc-btn${pythonSelection === 'managed' ? ' settings-alloc-btn--active' : ''}`}
+                  onClick={() => handlePythonRuntime('managed')}
+                  disabled={!pythonInfo?.managed.available || pythonBusyNow}
+                  title={
+                    pythonInfo?.managed.available
+                      ? 'Use the private Python runtime installed by Synapse'
+                      : 'Managed Python is not installed. Run onboarding to install it.'
+                  }
+                >
+                  Managed by Synapse
+                </button>
+                <button
+                  type="button"
+                  className={`settings-alloc-btn${pythonSelection === 'system' ? ' settings-alloc-btn--active' : ''}`}
+                  onClick={() => handlePythonRuntime('system')}
+                  disabled={!pythonInfo?.system.available || pythonBusyNow}
+                  title={
+                    pythonInfo?.system.available
+                      ? 'Use the Python interpreter found on your PATH'
+                      : 'No Python was found on PATH.'
+                  }
+                >
+                  System Python
+                </button>
+              </div>
+              <p className="settings-alloc-hint">
+                {pythonSelection === 'managed'
+                  ? "Tools use Synapse's private Python, isolated from your system install."
+                  : 'Tools use the Python on your PATH. Some systems block pip installs (PEP 668).'}
+              </p>
+              <p className="settings-alloc-hint settings-python-detail">
+                {activePython?.available
+                  ? `${activePython.version ?? 'Detected'}${
+                      activePython.binary ? ` — ${activePython.binary}` : ''
+                    }`
+                  : 'Not detected. Reinstall the runtime from onboarding or install Python on your PATH.'}
+              </p>
+              {(pythonInfo?.warnings ?? []).map((warning) => (
+                <p key={warning} className="settings-python-warning">
+                  <AlertTriangle size={14} />
+                  {warning}
+                </p>
+              ))}
+            </div>
+
+            <div className="settings-field">
+              <span className="settings-label">Tool libraries</span>
+              <p className="settings-alloc-hint">{librarySummary}</p>
+              {packages && (
+                <div className="settings-python-bar">
+                  <div
+                    className={`settings-python-fill${
+                      libraryAllReady ? ' settings-python-fill--complete' : ''
+                    }${libraryFailed.length ? ' settings-python-fill--failed' : ''}`}
+                    style={{ width: `${libraryPercent}%` }}
+                  />
+                </div>
+              )}
+              {libraryFailed.length > 0 && (
+                <p className="settings-python-error">
+                  {libraryFailed[0].label}
+                  {libraryFailed.length > 1
+                    ? ` and ${libraryFailed.length - 1} more`
+                    : ''}{' '}
+                  failed to install.
+                  <span className="settings-python-error-detail">
+                    {libraryFailed[0].error}
+                  </span>
+                </p>
+              )}
+              <button
+                type="button"
+                className="settings-action-btn settings-python-action"
+                onClick={handleRepairLibraries}
+                disabled={pythonBusyNow || !activePython?.available}
+              >
+                <RefreshCw
+                  size={15}
+                  className={pythonBusyNow ? 'settings-python-spin' : undefined}
+                />
+                {libraryActionLabel}
+              </button>
+            </div>
           </div>
 
           <div className="settings-card">
@@ -781,8 +979,8 @@ export default function SettingsPage() {
               lineHeight: 1.5,
             }}
           >
-            Wall-clock budgets in seconds. Applies to future estimator runs
-            and model loads; already-running processes are not affected.
+            Wall-clock budgets in seconds. Applies to future estimator runs and
+            model loads; already-running processes are not affected.
           </p>
 
           <div className="settings-field">

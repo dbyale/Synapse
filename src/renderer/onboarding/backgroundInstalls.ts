@@ -3,6 +3,8 @@ import type {
   BackendDownloadRecord,
   BinaryKind,
   DownloadProgress,
+  PythonPackagesSnapshot,
+  PythonPackagesInstallResult,
 } from '../preload.d';
 
 export type BinaryInstallStatus =
@@ -44,6 +46,9 @@ const autoStarted = new Set<BinaryKind>();
 const setupErrors = new Map<BinaryKind, string>();
 
 let unsubscribeProgress: (() => void) | null = null;
+let unsubscribePackages: (() => void) | null = null;
+let packagesSnapshot: PythonPackagesSnapshot | null = null;
+let packagesPromise: Promise<PythonPackagesInstallResult> | null = null;
 
 function installKey(kind: BinaryKind, id: string): string {
   return `${kind}:${id}`;
@@ -67,45 +72,57 @@ function setSnapshot(
 }
 
 function ensureProgressListener() {
-  if (unsubscribeProgress || !window.electronAPI?.onDownloadProgress) return;
-  unsubscribeProgress = window.electronAPI.onDownloadProgress(
-    (progress: DownloadProgress) => {
-      const key = progressKeys.get(`${progress.modelId}:${progress.filename}`);
-      if (!key) return;
-      const previous = installSnapshots.get(key);
-      if (!previous) return;
+  if (!unsubscribeProgress && window.electronAPI?.onDownloadProgress) {
+    unsubscribeProgress = window.electronAPI.onDownloadProgress(
+      (progress: DownloadProgress) => {
+        const key = progressKeys.get(
+          `${progress.modelId}:${progress.filename}`,
+        );
+        if (!key) return;
+        const previous = installSnapshots.get(key);
+        if (!previous) return;
 
-      if (progress.status === 'failed' || progress.status === 'cancelled') {
-        setSnapshot(key, {
-          status: progress.status,
-          error: progress.status === 'failed' ? progress.error : undefined,
-        });
-        notify();
-        return;
-      }
+        if (progress.status === 'failed' || progress.status === 'cancelled') {
+          setSnapshot(key, {
+            status: progress.status,
+            error: progress.status === 'failed' ? progress.error : undefined,
+          });
+          notify();
+          return;
+        }
 
-      if (progress.status === 'completed') {
+        if (progress.status === 'completed') {
+          setSnapshot(key, {
+            status: 'completed',
+            percent: 100,
+            downloadedBytes: progress.downloadedBytes,
+            totalBytes: progress.totalBytes,
+            error: undefined,
+          });
+          notify();
+          return;
+        }
+
         setSnapshot(key, {
-          status: 'completed',
-          percent: 100,
+          status: 'downloading',
+          percent: progress.percent,
           downloadedBytes: progress.downloadedBytes,
           totalBytes: progress.totalBytes,
           error: undefined,
         });
         notify();
-        return;
-      }
+      },
+    );
+  }
 
-      setSnapshot(key, {
-        status: 'downloading',
-        percent: progress.percent,
-        downloadedBytes: progress.downloadedBytes,
-        totalBytes: progress.totalBytes,
-        error: undefined,
-      });
-      notify();
-    },
-  );
+  if (!unsubscribePackages && window.electronAPI?.onPythonPackagesProgress) {
+    unsubscribePackages = window.electronAPI.onPythonPackagesProgress(
+      (snapshot: PythonPackagesSnapshot) => {
+        packagesSnapshot = snapshot;
+        notify();
+      },
+    );
+  }
 }
 
 export function subscribeBinaryInstalls(listener: () => void): () => void {
@@ -125,6 +142,71 @@ export function getBinaryInstallSnapshot(
 
 export function getBackgroundSetupError(kind: BinaryKind): string | undefined {
   return setupErrors.get(kind);
+}
+
+export function getPythonPackagesSnapshot(): PythonPackagesSnapshot | null {
+  return packagesSnapshot;
+}
+
+export async function refreshPythonPackagesStatus(
+  force = false,
+): Promise<PythonPackagesSnapshot | null> {
+  ensureProgressListener();
+  try {
+    const next = await window.electronAPI.getPythonPackagesStatus(force);
+    // Progress events own the cache while an install is running. A slower
+    // status reply must not roll the counter back (e.g. to a reset 0 of N).
+    const previous = packagesSnapshot;
+    const installActive = !!previous?.installing;
+    if (!installActive || next.completed >= (previous?.completed ?? 0)) {
+      packagesSnapshot = next;
+    }
+    notify();
+  } catch {
+    // Keep the last known snapshot on transient probe failures.
+  }
+  return packagesSnapshot;
+}
+
+export async function startPythonPackagesInstall(
+  ids?: string[],
+): Promise<PythonPackagesInstallResult> {
+  ensureProgressListener();
+  // Queue behind any in-flight request: it may only cover a subset of ids.
+  if (packagesPromise) {
+    await packagesPromise.catch(() => undefined);
+  }
+
+  const task = window.electronAPI
+    .installPythonPackages(ids)
+    .then(async (result) => {
+      packagesSnapshot = await window.electronAPI.getPythonPackagesStatus(true);
+      notify();
+      return result;
+    })
+    .catch((error): PythonPackagesInstallResult => {
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Python library installation failed';
+      if (packagesSnapshot) {
+        packagesSnapshot = {
+          ...packagesSnapshot,
+          installing: false,
+          error: message,
+        };
+      }
+      notify();
+      return { success: false, installed: [], failed: [], error: message };
+    });
+
+  packagesPromise = task;
+  task
+    .finally(() => {
+      if (packagesPromise === task) packagesPromise = null;
+    })
+    .catch(() => undefined);
+  return task;
 }
 
 export function markBinaryInstalled(
@@ -267,14 +349,26 @@ async function installRecommendedBackend(): Promise<void> {
   );
 }
 
+function kickOffPythonLibraries(): void {
+  startPythonPackagesInstall().catch(() => undefined);
+}
+
 async function installRecommendedPython(): Promise<void> {
-  const [info, settings, records] = await Promise.all([
+  const [info, settings] = await Promise.all([
     window.electronAPI.getPythonInfo(),
     window.electronAPI.loadSettings(),
-    window.electronAPI.getBinaryDownloads(),
   ]);
-  if (info.managed.available || info.system.available || records.python) {
-    if (info.recommended && (info.managed.available || records.python)) {
+  const selection = settings.pythonRuntime === 'system' ? 'system' : 'managed';
+
+  // The user explicitly chose system Python: never download the managed one.
+  if (selection === 'system' && info.system.available) {
+    kickOffPythonLibraries();
+    return;
+  }
+
+  // Managed runtime already installed — make sure its tool libraries follow.
+  if (info.managed.available) {
+    if (info.recommended) {
       markBinaryInstalled(
         'python',
         info.recommended.id,
@@ -282,15 +376,48 @@ async function installRecommendedPython(): Promise<void> {
         info.recommended.folder,
       );
     }
+    kickOffPythonLibraries();
     return;
   }
-  if (!info.recommended) {
-    throw new Error('Automatic Python installation is not available.');
+
+  // Default path: install the private runtime even when a system Python is
+  // present, so pip always targets a writable, app-owned environment.
+  if (info.recommended) {
+    await startBinaryInstall(
+      'python',
+      info.recommended,
+      settings.pythonDirectory || info.defaultInstallDir,
+    );
+    markBinaryInstalled(
+      'python',
+      info.recommended.id,
+      info.recommended.label,
+      info.recommended.folder,
+    );
+    if (settings.pythonRuntime === 'system') {
+      await window.electronAPI.saveSettingsSilent({
+        ...settings,
+        pythonRuntime: 'managed',
+      });
+    }
+    kickOffPythonLibraries();
+    return;
   }
-  await startBinaryInstall(
-    'python',
-    info.recommended,
-    settings.pythonDirectory || info.defaultInstallDir,
+
+  // No managed build for this platform — fall back to the system runtime.
+  if (info.system.available) {
+    if (settings.pythonRuntime !== 'system') {
+      await window.electronAPI.saveSettingsSilent({
+        ...settings,
+        pythonRuntime: 'system',
+      });
+    }
+    kickOffPythonLibraries();
+    return;
+  }
+
+  throw new Error(
+    'No Python runtime is available. Install Python manually or choose a supported platform.',
   );
 }
 

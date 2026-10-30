@@ -92,6 +92,7 @@ export interface AppSettings {
   toolConcurrencyLimit?: number;
   pythonDirectory?: string;
   pythonInstall?: BackendDownloadRecord;
+  pythonRuntime?: 'managed' | 'system';
 }
 
 export interface BackendDownloadRecord {
@@ -165,15 +166,64 @@ export interface PythonRuntime {
   source: 'managed' | 'system' | null;
 }
 
+export type PythonRuntimeSelection = 'managed' | 'system';
+
 export interface PythonInfo {
   platform: string;
   arch: string;
   supported: boolean;
   defaultInstallDir: string;
+  selected: PythonRuntimeSelection;
   system: PythonRuntime;
   managed: PythonRuntime;
   recommended: BackendDownload | null;
   warnings: string[];
+}
+
+export type PythonPackageGroup =
+  | 'scientific'
+  | 'plotting'
+  | 'http'
+  | 'search'
+  | 'documents'
+  | 'other';
+
+export type PythonPackageInstallStatus =
+  | 'installed'
+  | 'missing'
+  | 'installing'
+  | 'failed';
+
+export interface PythonPackageInfo {
+  id: string;
+  pip: string;
+  importName: string;
+  label: string;
+  group: PythonPackageGroup;
+  groupLabel: string;
+  status: PythonPackageInstallStatus;
+  error?: string;
+}
+
+export interface PythonPackagesSnapshot {
+  runtime: 'managed' | 'system' | null;
+  binary: string | null;
+  selection: PythonRuntimeSelection;
+  fallback: boolean;
+  installing: boolean;
+  completed: number;
+  total: number;
+  totalApproxBytes: number;
+  currentId?: string;
+  packages: PythonPackageInfo[];
+  error?: string;
+}
+
+export interface PythonPackagesInstallResult {
+  success: boolean;
+  installed: string[];
+  failed: Array<{ id: string; label: string; error?: string }>;
+  error?: string;
 }
 
 export interface HardwareGpuInfo {
@@ -252,6 +302,15 @@ declare global {
       getVramStats: () => Promise<HardwareStats>;
       getBackendInfo: () => Promise<BackendInfo>;
       getPythonInfo: () => Promise<PythonInfo>;
+      getPythonPackagesStatus: (
+        force?: boolean,
+      ) => Promise<PythonPackagesSnapshot>;
+      installPythonPackages: (
+        ids?: string[],
+      ) => Promise<PythonPackagesInstallResult>;
+      onPythonPackagesProgress: (
+        callback: (snapshot: PythonPackagesSnapshot) => void,
+      ) => () => void;
       downloadBinary: (
         kind: BinaryKind,
         download: BackendDownload,
