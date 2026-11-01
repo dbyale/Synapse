@@ -39,7 +39,30 @@ export const PYTHON_PACKAGE_GROUP_LABELS: Record<PythonPackageGroup, string> = {
 
 const MB = 1024 * 1024;
 
+// Array order is the install order. Packages that unlock user-visible tools
+// (document conversion, web search) come first so those tools become usable
+// while the heavier scientific stack is still compiling.
 export const PYTHON_PACKAGES: PythonPackageSpec[] = [
+  {
+    id: 'markitdown',
+    // MarkItDown 0.1.x depends on magika → onnxruntime, which has no wheels
+    // for the managed CPython 3.15. 0.0.2 declares its PDF/DOCX/PPTX/XLSX/XLS
+    // and audio converters as regular dependencies, so it installs and works
+    // on every runtime Synapse supports.
+    pip: 'markitdown==0.0.2',
+    importName: 'markitdown',
+    label: 'MarkItDown (documents)',
+    group: 'documents',
+    approxBytes: 90 * MB,
+  },
+  {
+    id: 'ddgs',
+    pip: 'ddgs',
+    importName: 'ddgs',
+    label: 'ddgs (web search)',
+    group: 'search',
+    approxBytes: 4 * MB,
+  },
   {
     id: 'numpy',
     pip: 'numpy',
@@ -127,26 +150,6 @@ export const PYTHON_PACKAGES: PythonPackageSpec[] = [
     label: 'HTTPX',
     group: 'http',
     approxBytes: 1 * MB,
-  },
-  {
-    id: 'ddgs',
-    pip: 'ddgs',
-    importName: 'ddgs',
-    label: 'ddgs (web search)',
-    group: 'search',
-    approxBytes: 4 * MB,
-  },
-  {
-    id: 'markitdown',
-    // MarkItDown 0.1.x depends on magika → onnxruntime, which has no wheels
-    // for the managed CPython 3.15. 0.0.2 declares its PDF/DOCX/PPTX/XLSX/XLS
-    // and audio converters as regular dependencies, so it installs and works
-    // on every runtime Synapse supports.
-    pip: 'markitdown==0.0.2',
-    importName: 'markitdown',
-    label: 'MarkItDown (documents)',
-    group: 'documents',
-    approxBytes: 90 * MB,
   },
 ];
 

@@ -41,6 +41,15 @@ describe('Python package manifest', () => {
     expect(PYTHON_PACKAGES_APPROX_BYTES).toBeGreaterThan(0);
   });
 
+  it('installs the user-visible tools before the scientific stack', () => {
+    // Ordering is meaningful: setup installs sequentially, so the first
+    // entries become usable first.
+    expect(PYTHON_PACKAGES.slice(0, 2).map((pkg) => pkg.id)).toEqual([
+      'markitdown',
+      'ddgs',
+    ]);
+  });
+
   it('resolves packages by id, requirement, or import name', () => {
     const numpy = PYTHON_PACKAGES.find((pkg) => pkg.id === 'numpy');
     const sklearn = PYTHON_PACKAGES.find((pkg) => pkg.id === 'scikit-learn');

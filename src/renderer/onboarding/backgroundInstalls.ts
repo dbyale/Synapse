@@ -172,11 +172,8 @@ export async function startPythonPackagesInstall(
   ids?: string[],
 ): Promise<PythonPackagesInstallResult> {
   ensureProgressListener();
-  // Queue behind any in-flight request: it may only cover a subset of ids.
-  if (packagesPromise) {
-    await packagesPromise.catch(() => undefined);
-  }
-
+  // The main process joins an in-flight run for the ids it already covers and
+  // splices the rest into its queue, so a second request can start right away.
   const task = window.electronAPI
     .installPythonPackages(ids)
     .then(async (result) => {

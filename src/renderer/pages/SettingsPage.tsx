@@ -38,6 +38,7 @@ import {
   PORT_TOOLTIP,
 } from '../utils/tooltipContent';
 import ConfirmDialog from '../components/ConfirmDialog';
+import { formatBytes } from '../utils/formatters';
 import '../styles/SettingsPage.css';
 import { MemorySlider } from '../components/settingsShared/MemorySlider';
 import { useHardwareStats } from '../components/settingsShared/useHardwareStats';
@@ -353,19 +354,43 @@ export default function SettingsPage() {
   const pythonBusyNow = pythonBusy || !!packages?.installing;
   const libraryTotal = packages?.total ?? 0;
   const libraryCompleted = packages?.completed ?? 0;
-  const libraryPercent =
-    libraryTotal > 0 ? Math.round((libraryCompleted / libraryTotal) * 100) : 0;
+  const libraryCurrent = packages?.packages.find(
+    (pkg) => pkg.id === packages?.currentId,
+  );
+  const libraryAllReady = libraryTotal > 0 && libraryCompleted === libraryTotal;
+  // Mirror the setup progress bar: keep moving while the current package
+  // compiles, since the total file count is known exactly.
+  const libraryPercent = (() => {
+    if (libraryTotal <= 0) return 0;
+    if (libraryAllReady) return 100;
+    const fraction =
+      libraryCurrent?.phase === 'compiling' && libraryCurrent.totalFiles
+        ? (libraryCurrent.compiledFiles ?? 0) / libraryCurrent.totalFiles
+        : 0;
+    return Math.min(
+      99,
+      Math.round(((libraryCompleted + fraction) / libraryTotal) * 100),
+    );
+  })();
   const libraryFailed = (packages?.packages ?? []).filter(
     (pkg) => pkg.status === 'failed',
   );
-  const libraryAllReady = libraryTotal > 0 && libraryCompleted === libraryTotal;
   let librarySummary = 'Checking installed libraries…';
   if (packages) {
     if (packages.installing) {
-      const current = packages.packages.find(
-        (pkg) => pkg.id === packages.currentId,
-      );
-      librarySummary = `Installing ${current?.label ?? 'libraries'} — ${libraryCompleted} of ${libraryTotal}`;
+      const current = libraryCurrent;
+      if (current?.phase === 'downloading') {
+        librarySummary = `Downloading ${current.label} — ${formatBytes(current.downloadedBytes ?? 0)}`;
+      } else if (current?.phase === 'compiling') {
+        const done = current.compiledFiles ?? 0;
+        const files = current.totalFiles ?? 0;
+        librarySummary =
+          files > 0
+            ? `Compiling ${current.label} — ${done.toLocaleString()} of ${files.toLocaleString()} files`
+            : `Compiling ${current.label}`;
+      } else {
+        librarySummary = `Installing ${current?.label ?? 'libraries'} — ${libraryCompleted} of ${libraryTotal}`;
+      }
     } else if (libraryAllReady) {
       librarySummary = `All ${libraryTotal} tool libraries are installed`;
     } else if (libraryCompleted > 0) {

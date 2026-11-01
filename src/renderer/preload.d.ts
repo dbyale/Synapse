@@ -191,8 +191,16 @@ export type PythonPackageGroup =
 export type PythonPackageInstallStatus =
   | 'installed'
   | 'missing'
+  | 'queued'
   | 'installing'
   | 'failed';
+
+/** Current stage of an in-flight package install. */
+export type PythonPackagePhase =
+  | 'resolving'
+  | 'downloading'
+  | 'installing'
+  | 'compiling';
 
 export interface PythonPackageInfo {
   id: string;
@@ -202,6 +210,10 @@ export interface PythonPackageInfo {
   group: PythonPackageGroup;
   groupLabel: string;
   status: PythonPackageInstallStatus;
+  phase?: PythonPackagePhase;
+  downloadedBytes?: number;
+  compiledFiles?: number;
+  totalFiles?: number;
   error?: string;
 }
 
@@ -215,6 +227,8 @@ export interface PythonPackagesSnapshot {
   total: number;
   totalApproxBytes: number;
   currentId?: string;
+  /** Ids still waiting in this run, in install order. */
+  queue: string[];
   packages: PythonPackageInfo[];
   error?: string;
 }

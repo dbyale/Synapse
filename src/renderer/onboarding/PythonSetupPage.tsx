@@ -12,6 +12,7 @@ import {
   X,
 } from 'lucide-react';
 import ConfirmDialog from '../components/ConfirmDialog';
+import { formatBytes } from '../utils/formatters';
 import {
   markBinaryInstalled,
   refreshPythonPackagesStatus,
@@ -143,12 +144,22 @@ function LibrariesPanel({
   const current =
     packages.packages.find((pkg) => pkg.id === packages.currentId) ??
     packages.packages.find((pkg) => pkg.status === 'installing');
-  const percent =
-    packages.total > 0
-      ? Math.round((packages.completed / packages.total) * 100)
-      : 0;
   const allInstalled =
     packages.total > 0 && packages.completed === packages.total;
+  // Match the final install page: advance through the current package while it
+  // compiles instead of only stepping once per finished package.
+  const percent = (() => {
+    if (packages.total <= 0) return 0;
+    if (allInstalled) return 100;
+    const fraction =
+      current?.phase === 'compiling' && current.totalFiles
+        ? (current.compiledFiles ?? 0) / current.totalFiles
+        : 0;
+    return Math.min(
+      99,
+      Math.round(((packages.completed + fraction) / packages.total) * 100),
+    );
+  })();
 
   const groups = packages.packages.reduce<
     Record<string, { label: string; items: PythonPackageInfo[] }>
@@ -165,7 +176,20 @@ function LibrariesPanel({
   let summary = `${packages.completed} of ${packages.total} installed`;
   if (allInstalled) summary = 'All tool libraries are ready';
   if (packages.installing) {
-    summary = `Installing ${current?.label ?? 'libraries'} — ${packages.completed} of ${packages.total}`;
+    if (current?.phase === 'downloading') {
+      summary = `Downloading ${current.label} — ${formatBytes(current.downloadedBytes ?? 0)}`;
+    } else if (current?.phase === 'compiling') {
+      const done = current.compiledFiles ?? 0;
+      const files = current.totalFiles ?? 0;
+      summary =
+        files > 0
+          ? `Compiling ${current.label} — ${done.toLocaleString()} of ${files.toLocaleString()} files`
+          : `Compiling ${current.label}`;
+    } else if (current?.phase === 'installing') {
+      summary = `Installing ${current.label}`;
+    } else {
+      summary = `Preparing ${current?.label ?? 'libraries'} — ${packages.completed} of ${packages.total}`;
+    }
   }
   let fillClass = '';
   if (allInstalled) {

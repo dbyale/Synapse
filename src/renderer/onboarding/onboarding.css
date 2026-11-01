@@ -2599,6 +2599,12 @@
   background: rgba(137, 180, 250, 0.12);
 }
 
+.onb-library-package--queued {
+  color: var(--text-muted);
+  background: rgba(137, 180, 250, 0.06);
+  border: 1px dashed rgba(137, 180, 250, 0.25);
+}
+
 .onb-library-package--failed {
   color: #f38ba8;
   background: rgba(243, 139, 168, 0.1);

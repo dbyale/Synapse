@@ -19,7 +19,7 @@ import type {
   PythonPackagesSnapshot,
 } from '../preload.d';
 import type { Profile } from '../types/profile';
-import { formatGB } from '../utils/formatters';
+import { formatBytes, formatGB } from '../utils/formatters';
 import {
   getBackgroundSetupError,
   getBinaryInstallSnapshot,
@@ -381,13 +381,42 @@ export default function FinalInstallPage({
     }
     return 'queued';
   })();
-  const packagesPercent =
-    packages && packages.total > 0
-      ? Math.round((packages.completed / packages.total) * 100)
-      : 0;
-  const packagesCurrent = packages?.packages.find(
-    (pkg) => pkg.id === packages.currentId,
-  );
+  const packagesCurrent =
+    packages?.packages.find((pkg) => pkg.id === packages.currentId) ??
+    packages?.packages.find((pkg) => pkg.status === 'installing');
+  const packagesPercent = (() => {
+    if (!packages || packages.total <= 0) return 0;
+    if (packages.completed === packages.total) return 100;
+    // While a package compiles we know the exact file counts, so the bar can
+    // advance smoothly instead of waiting for the next package boundary.
+    const fraction =
+      packagesCurrent?.phase === 'compiling' && packagesCurrent.totalFiles
+        ? (packagesCurrent.compiledFiles ?? 0) / packagesCurrent.totalFiles
+        : 0;
+    return Math.min(
+      99,
+      Math.round(((packages.completed + fraction) / packages.total) * 100),
+    );
+  })();
+  const packagesCurrentId = packages?.currentId;
+  const packagesQueued =
+    packages?.queue.filter((id) => id !== packagesCurrentId).length ?? 0;
+  let packagesPhaseLabel = '';
+  if (packagesCurrent?.phase === 'downloading') {
+    const downloaded = formatBytes(packagesCurrent.downloadedBytes ?? 0);
+    packagesPhaseLabel = `Downloading ${packagesCurrent.label} — ${downloaded}`;
+  } else if (packagesCurrent?.phase === 'compiling') {
+    const done = packagesCurrent.compiledFiles ?? 0;
+    const total = packagesCurrent.totalFiles ?? 0;
+    packagesPhaseLabel =
+      total > 0
+        ? `Compiling ${packagesCurrent.label} — ${done.toLocaleString()} of ${total.toLocaleString()} files`
+        : `Compiling ${packagesCurrent.label}`;
+  } else if (packagesCurrent?.phase === 'installing') {
+    packagesPhaseLabel = `Installing ${packagesCurrent.label}`;
+  } else if (packagesCurrent?.phase === 'resolving') {
+    packagesPhaseLabel = `Preparing ${packagesCurrent.label}`;
+  }
   const packagesFailed = (packages?.packages ?? []).filter(
     (pkg) => pkg.status === 'failed',
   );
@@ -400,9 +429,14 @@ export default function FinalInstallPage({
   let packagesLabel = 'Detecting libraries';
   if (packages) {
     if (packages.installing) {
-      packagesLabel = `${packages.completed} of ${packages.total} installed${
-        packagesCurrent ? ` — ${packagesCurrent.label}` : ''
-      }`;
+      packagesLabel =
+        packagesPhaseLabel ||
+        `${packages.completed} of ${packages.total} installed${
+          packagesCurrent ? ` — ${packagesCurrent.label}` : ''
+        }`;
+      if (packagesQueued > 0) {
+        packagesLabel += ` · ${packagesQueued} queued`;
+      }
     } else if (packages.total > 0 && packages.completed === packages.total) {
       packagesLabel = `${packages.total} tool libraries ready`;
     } else if (packages.runtime === null) {
@@ -412,8 +446,21 @@ export default function FinalInstallPage({
     }
   }
   let packagesBadge: string | undefined;
-  if (packages?.installing) packagesBadge = 'Installing';
-  else if (!packages) packagesBadge = 'Preparing';
+  if (packages?.installing) {
+    switch (packagesCurrent?.phase) {
+      case 'downloading':
+        packagesBadge = 'Downloading';
+        break;
+      case 'compiling':
+        packagesBadge = 'Compiling';
+        break;
+      case 'installing':
+        packagesBadge = 'Installing';
+        break;
+      default:
+        packagesBadge = 'Preparing';
+    }
+  } else if (!packages) packagesBadge = 'Preparing';
 
   const failedModelSections = sections.filter((section) => {
     const status = getSectionStatus(getGroupTargets(section), rows);
@@ -512,10 +559,17 @@ export default function FinalInstallPage({
             Finishing your setup
           </h1>
           <p className="onb-professions-text onb-rise onb-delay-2">
-            Synapse is installing the components your profiles need. Downloads
-            keep running in the background, and completed profiles become
-            available here automatically.
+            Synapse is ready to use. Profile downloads keep running in the
+            background, and completed profiles become available here
+            automatically.
           </p>
+          {packages?.installing && (
+            <p className="onb-professions-text onb-rise onb-delay-2">
+              Python tool libraries are downloading and compiling in the
+              background. You can continue and start using Synapse — each
+              library becomes available the moment it finishes.
+            </p>
+          )}
 
           {warnings.map((warning) => (
             <div
