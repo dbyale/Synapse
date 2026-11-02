@@ -65,6 +65,12 @@ export interface GpuMemStats {
   maxRecommended?: number;
 }
 
+export interface DiskSpace {
+  path: string;
+  totalBytes: number;
+  freeBytes: number;
+}
+
 export interface AppSettings {
   modelsDirectory: string;
   backendDirectory: string;
@@ -314,6 +320,7 @@ declare global {
       // Settings & Hardware
       getMemoryStats: () => Promise<SystemMemStats>;
       getVramStats: () => Promise<HardwareStats>;
+      getDiskSpace: (dir?: string) => Promise<DiskSpace | null>;
       getBackendInfo: () => Promise<BackendInfo>;
       getPythonInfo: () => Promise<PythonInfo>;
       getPythonPackagesStatus: (

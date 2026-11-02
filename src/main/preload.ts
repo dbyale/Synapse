@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('settings:save-silent', settings),
   pickDirectory: () => ipcRenderer.invoke('settings:pick-directory'),
   getVramStats: () => ipcRenderer.invoke('get-vram-stats'),
+  getDiskSpace: (dir?: string) => ipcRenderer.invoke('system:disk-space', dir),
   getBackendInfo: () => ipcRenderer.invoke('onboarding:get-backend-info'),
   getPythonInfo: () => ipcRenderer.invoke('onboarding:get-python-info'),
   getPythonPackagesStatus: (force = false) =>

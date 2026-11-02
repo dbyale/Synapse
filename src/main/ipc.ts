@@ -11,6 +11,7 @@ import {
   AppSettings,
   getModelsDirectory,
 } from './settings';
+import { getDiskSpace } from './diskSpace';
 import { convertFileToMarkdown } from './functions/markitdown';
 import {
   searchModels,
@@ -891,6 +892,10 @@ export function registerIpcHandlers(win: BrowserWindow): void {
   ipcMain.handle('open-models-folder', async () => {
     const modelsDir = getModelsDirectory();
     await shell.openPath(modelsDir);
+  });
+
+  ipcMain.handle('system:disk-space', async (_event, dir?: string) => {
+    return getDiskSpace(dir);
   });
 
   ipcMain.handle('shell:openExternal', async (_event, url: string) => {

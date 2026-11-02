@@ -22,6 +22,8 @@ import {
 } from './profileCatalog';
 import getCategoryIcon from './categoryIcons';
 import { useDownloadSizes } from './downloadSizes';
+import { useDiskSpace } from './useDiskSpace';
+import { getSpaceLevel, getSpaceNote } from '../utils/diskSpace';
 import { formatGB, formatGBTruncated } from '../utils/formatters';
 
 interface ProfileSelectionPageProps {
@@ -82,11 +84,15 @@ function getOptionCost(
 function getTotalLabel(
   total: { knownBytes: number; unknownCount: number },
   loading: boolean,
-): string {
-  if (total.unknownCount === 0) return formatGBTruncated(total.knownBytes);
-  if (loading) return 'Calculating…';
-  if (total.knownBytes > 0) return `~${formatGBTruncated(total.knownBytes)}`;
-  return 'Size unavailable';
+): { label: string; isSize: boolean } {
+  if (total.unknownCount === 0) {
+    return { label: formatGBTruncated(total.knownBytes), isSize: true };
+  }
+  if (loading) return { label: 'Calculating…', isSize: false };
+  if (total.knownBytes > 0) {
+    return { label: `~${formatGBTruncated(total.knownBytes)}`, isSize: true };
+  }
+  return { label: 'Size unavailable', isSize: false };
 }
 
 function getCostLabel(
@@ -128,6 +134,7 @@ export default function ProfileSelectionPage({
     [allOptionIds],
   );
   const { sizes, loading: sizesLoading } = useDownloadSizes(allDownloads);
+  const { freeBytes } = useDiskSpace();
 
   useEffect(() => {
     let cancelled = false;
@@ -217,7 +224,12 @@ export default function ProfileSelectionPage({
     });
     return { knownBytes, unknownCount };
   }, [downloadGroups, installedDownloadKeys, sizes]);
-  const totalLabel = getTotalLabel(total, sizesLoading);
+  const totalDisplay = getTotalLabel(total, sizesLoading);
+  const spaceLevel = getSpaceLevel(total.knownBytes, freeBytes);
+  const showSpacePair = totalDisplay.isSize && spaceLevel !== 'unknown';
+  const spaceNote = showSpacePair
+    ? getSpaceNote(total.knownBytes, freeBytes)
+    : '';
   const sortedDownloadGroups = useMemo(
     () =>
       [...downloadGroups].sort(
@@ -396,14 +408,32 @@ export default function ProfileSelectionPage({
         <div className="onb-selection-summary onb-rise onb-delay-4">
           <button
             type="button"
-            className="onb-selection-total"
+            className={`onb-selection-total${
+              showSpacePair ? ` onb-selection-total--${spaceLevel}` : ''
+            }`}
             aria-expanded={showBreakdown}
             disabled={downloadGroups.length === 0}
             onClick={() => setShowBreakdown((current) => !current)}
           >
             <HardDrive size={15} strokeWidth={2} />
             <span>Total Download:</span>
-            <strong>{totalLabel}</strong>
+            <strong className="onb-selection-total-value">
+              <span
+                className={`onb-selection-total-needed onb-selection-total-needed--${spaceLevel}`}
+              >
+                {totalDisplay.label}
+              </span>
+              {showSpacePair && (
+                <span className="onb-selection-total-available">
+                  {' / '}
+                  {formatGBTruncated(freeBytes)}
+                  <span className="onb-selection-total-available-label">
+                    {' '}
+                    free
+                  </span>
+                </span>
+              )}
+            </strong>
             <span className="onb-selection-total-chevron" aria-hidden="true">
               {showBreakdown ? (
                 <ChevronUp size={15} strokeWidth={2} />
@@ -412,6 +442,14 @@ export default function ProfileSelectionPage({
               )}
             </span>
           </button>
+
+          {spaceNote && (
+            <p
+              className={`onb-selection-space-note onb-selection-space-note--${spaceLevel}`}
+            >
+              {spaceNote}
+            </p>
+          )}
 
           {showBreakdown && downloadGroups.length > 0 && (
             <div className="onb-selection-breakdown">
@@ -476,7 +514,18 @@ export default function ProfileSelectionPage({
               })}
               <div className="onb-selection-breakdown-total">
                 <span>Total</span>
-                <span>{totalLabel}</span>
+                <span className="onb-selection-breakdown-total-value">
+                  <span
+                    className={`onb-selection-total-needed onb-selection-total-needed--${spaceLevel}`}
+                  >
+                    {totalDisplay.label}
+                  </span>
+                  {showSpacePair && (
+                    <span className="onb-selection-total-available">
+                      {` / ${formatGBTruncated(freeBytes)} free`}
+                    </span>
+                  )}
+                </span>
               </div>
             </div>
           )}

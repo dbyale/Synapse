@@ -100,6 +100,11 @@
   - Sizes are never hardcoded in the setup catalog
   - Missing sizes show `Calculating…`, then `Size unavailable` if the API cannot resolve them
 - Total download size is shown to one decimal place, with an expandable breakdown of each model and projector
+- The total is shown against the free space on the models directory volume, e.g. `12.3 GB / 214.5 GB free`
+  - Free space comes from the main process (`system:disk-space`), measured with `fs.statfsSync` and falling back to `systeminformation`
+  - The download figure is green when it fits comfortably, yellow when it uses over 75% of the volume or leaves under 10 GB, and red when it cannot fit
+  - A 5% headroom is reserved to cover merging split GGUF parts
+  - Tight and insufficient totals add a note under the pill; the download figure is never shown when free space cannot be measured
 - Starting a download checks local models first and skips files that are already installed
 - Simple and Advanced require at least one option selected to continue
 
@@ -113,7 +118,6 @@
 - Cancelling asks for confirmation, lists the affected profiles, and discards those profiles from the selection
 - Groups switch to Installed once the downloaded files are verified locally
 - Inform user that downloads will continue in the background
-- Users without adequate space will be shown a warning to free up space
 - Custom can continue without selected assistants or model downloads
 
 ## ServerSetupPage.tsx
