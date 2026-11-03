@@ -1049,6 +1049,11 @@
   color: #f38ba8;
 }
 
+.onb-download-row-badge--paused {
+  background: rgba(249, 226, 175, 0.14);
+  color: #f9e2af;
+}
+
 .onb-download-row-retry {
   display: inline-flex;
   align-items: center;
@@ -1659,6 +1664,12 @@
   color: #f38ba8;
 }
 
+.onb-download-badge--prioritized {
+  background: rgba(137, 180, 250, 0.22);
+  color: #89b4fc;
+  font-weight: 700;
+}
+
 .onb-download-icon-btn {
   display: inline-flex;
   align-items: center;
@@ -1691,6 +1702,11 @@
   color: #f38ba8;
 }
 
+.onb-download-icon-btn--priority-active {
+  background: rgba(137, 180, 250, 0.18);
+  color: var(--accent);
+}
+
 .onb-download-bar {
   height: 5px;
   overflow: hidden;
@@ -1711,6 +1727,10 @@
 
 .onb-download-fill--failed {
   background: #f38ba8;
+}
+
+.onb-download-fill--paused {
+  background: #f9e2af;
 }
 
 .onb-download-meta {

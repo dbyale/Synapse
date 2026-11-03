@@ -25,6 +25,8 @@ import {
   cancelDownload,
   deletePartFile,
   registerLocalModel,
+  prioritizeModelDownloads,
+  resumePausedModelDownloads,
 } from '../renderer/utils/models';
 import * as chatService from './chat';
 import * as sessionStore from './sessionStore';
@@ -459,6 +461,18 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     'models:delete-part-file',
     async (_event, repoId: string, filename: string) => {
       return deletePartFile(repoId, filename);
+    },
+  );
+
+  ipcMain.handle(
+    'models:prioritize-downloads',
+    async (_event, keepKeys: string[]) => {
+      return prioritizeModelDownloads(keepKeys);
+    },
+  );
+
+  ipcMain.handle('models:resume-paused-downloads', async () => {
+      return resumePausedModelDownloads();
     },
   );
 

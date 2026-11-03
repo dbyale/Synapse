@@ -3,14 +3,9 @@ import path from 'path';
 import fetch from 'node-fetch';
 import AdmZip from 'adm-zip';
 import * as tar from 'tar';
+import { LLAMA_VERSION } from '../configs/binaryVersions';
 
 const ASSETS_BIN = path.join(__dirname, '../../assets/bin');
-
-const JSON_PATH = path.join(__dirname, '../../package.json');
-const packageJson = JSON.parse(fs.readFileSync(JSON_PATH, 'utf8'));
-
-// NOTICE: Some versions like CUDA may vary depending on the targeted build
-const LLAMA_VERSION = packageJson.binaryVersions.llama;
 
 const TARGETS: [string, string][] = [
   [`llama-${LLAMA_VERSION}-bin-macos-arm64.tar.gz`, 'macos-arm64'],
@@ -88,7 +83,7 @@ async function downloadAndExtract(url: string, targetFolder: string) {
 }
 
 async function run() {
-  const llamaBase = `https://github.com/ggerganov/llama.cpp/releases/download/${LLAMA_VERSION}`;
+  const llamaBase = `https://github.com/ggml-org/llama.cpp/releases/download/${LLAMA_VERSION}`;
 
   console.log('--- Starting Binary Setup ---');
 

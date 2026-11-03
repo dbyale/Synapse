@@ -15,7 +15,7 @@ export interface DownloadProgress {
   downloadedBytes: number;
   totalBytes: number;
   percent: number;
-  status?: 'downloading' | 'merging' | 'completed' | 'failed' | 'cancelled';
+  status?: 'downloading' | 'merging' | 'completed' | 'failed' | 'cancelled' | 'paused';
   merge?: boolean;
   error?: string;
 }
@@ -304,6 +304,8 @@ declare global {
       cancelDownload: (repoId: string, filename: string) => Promise<boolean>;
       resumeDownload: (repoId: string, filename: string) => Promise<string>;
       deletePartFile: (repoId: string, filename: string) => Promise<boolean>;
+      prioritizeModelDownloads: (keepKeys: string[]) => Promise<string[]>;
+      resumePausedModelDownloads: () => Promise<string[]>;
       listLocalModels: () => Promise<LocalModel[]>;
       deleteModel: (filename: string) => Promise<boolean>;
       onDownloadProgress: (

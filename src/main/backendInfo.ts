@@ -1,5 +1,5 @@
+/* global __LLAMA_VERSION__ */
 /* eslint-disable import/prefer-default-export */
-import { app } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import util from 'util';
@@ -14,18 +14,11 @@ import type {
 
 const execAsync = util.promisify(exec);
 
-function getBinaryVersions(): { llama: string } {
-  try {
-    const packageJson = JSON.parse(
-      fs.readFileSync(path.join(app.getAppPath(), 'package.json'), 'utf8'),
-    );
-    return packageJson.binaryVersions || { llama: 'b10375' };
-  } catch {
-    return { llama: 'b10375' };
-  }
-}
-
-const LLAMA_VERSION = getBinaryVersions().llama;
+// Injected at build time from the root package.json by webpack's DefinePlugin
+// (see .erb/configs/binaryVersions.ts). Reading package.json at runtime is not
+// safe here: packaged builds read release/app/package.json, which does not
+// carry binaryVersions, and would silently fall back to a stale release.
+const LLAMA_VERSION = __LLAMA_VERSION__;
 const LLAMA_BASE = `https://github.com/ggml-org/llama.cpp/releases/download/${LLAMA_VERSION}`;
 
 function llamaUrl(target: string, ext: 'zip' | 'tar.gz'): string {
