@@ -101,6 +101,7 @@
   - Missing sizes show `Calculating…`, then `Size unavailable` if the API cannot resolve them
 - Total download size is shown to one decimal place, with an expandable breakdown of each model and projector
 - The total is shown against the free space on the models directory volume, e.g. `12.3 GB / 214.5 GB free`
+  - Either figure switches to TB once it reaches 1024 GB, e.g. `1.2 TB / 1.8 TB free`
   - Free space comes from the main process (`system:disk-space`), measured with `fs.statfsSync` and falling back to `systeminformation`
   - The download figure is green when it fits comfortably, yellow when it uses over 75% of the volume or leaves under 10 GB, and red when it cannot fit
   - A 5% headroom is reserved to cover merging split GGUF parts
