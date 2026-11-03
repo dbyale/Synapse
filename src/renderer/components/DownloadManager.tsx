@@ -14,7 +14,13 @@ interface ActiveDL {
   speed: number;
   lastTimestamp: number;
   lastBytes: number;
-  status: 'downloading' | 'merging' | 'completed' | 'cancelled' | 'failed';
+  status:
+    | 'downloading'
+    | 'merging'
+    | 'completed'
+    | 'cancelled'
+    | 'failed'
+    | 'paused';
   merge?: boolean;
 }
 
@@ -41,7 +47,7 @@ export default function DownloadManager() {
       const customEvent = e as CustomEvent;
       const { modelId, filename } = customEvent.detail;
       if (filename) {
-        const key = (modelId || '') + ':' + filename;
+        const key = `${modelId || ''}:${filename}`;
         setDownloads((prev) => ({
           ...prev,
           [key]: {
@@ -70,11 +76,17 @@ export default function DownloadManager() {
     const unsubscribe = window.electronAPI.onDownloadProgress(
       (
         progress: DownloadProgress & {
-          status?: 'downloading' | 'merging' | 'completed' | 'cancelled' | 'failed';
+          status?:
+            | 'downloading'
+            | 'merging'
+            | 'completed'
+            | 'cancelled'
+            | 'failed'
+            | 'paused';
         },
       ) => {
         const now = Date.now();
-        const key = (progress.modelId || '') + ':' + progress.filename;
+        const key = `${progress.modelId || ''}:${progress.filename}`;
 
         setDownloads((prev) => {
           const existing = prev[key];
@@ -100,7 +112,35 @@ export default function DownloadManager() {
             };
           }
 
-          if (progress.status === 'merging' || progress.status === 'completed') {
+          // Paused state: keep bytes/percent but stop tracking speed.
+          if (progress.status === 'paused') {
+            return {
+              ...prev,
+              [key]: {
+                ...(existing || {
+                  modelId: progress.modelId || '',
+                  filename: progress.filename,
+                  percent: 0,
+                  downloadedBytes: 0,
+                  totalBytes: 0,
+                  speed: 0,
+                  lastTimestamp: now,
+                  lastBytes: 0,
+                }),
+                percent: progress.percent,
+                downloadedBytes: progress.downloadedBytes,
+                totalBytes: progress.totalBytes,
+                speed: 0,
+                status: 'paused',
+                merge: progress.merge ?? existing?.merge,
+              },
+            };
+          }
+
+          if (
+            progress.status === 'merging' ||
+            progress.status === 'completed'
+          ) {
             return {
               ...prev,
               [key]: {
@@ -176,7 +216,7 @@ export default function DownloadManager() {
 
   // ── Handle Clear / Cancel ──
   const handleCancel = async (modelId: string, filename: string) => {
-    const key = (modelId || '') + ':' + filename;
+    const key = `${modelId || ''}:${filename}`;
     const dl = downloads[key];
     if (!dl) return;
 
@@ -213,7 +253,7 @@ export default function DownloadManager() {
 
   // ── Handle Resume ──
   const handleResume = async (modelId: string, filename: string) => {
-    const key = (modelId || '') + ':' + filename;
+    const key = `${modelId || ''}:${filename}`;
     setDownloads((prev) => ({
       ...prev,
       [key]: {
@@ -238,7 +278,7 @@ export default function DownloadManager() {
 
   // ── Handle Retry ──
   const handleRetry = async (modelId: string, filename: string) => {
-    const key = (modelId || '') + ':' + filename;
+    const key = `${modelId || ''}:${filename}`;
     const dl = downloads[key];
     const isMergeRetry = !!dl?.merge;
     setDownloads((prev) => ({
@@ -307,6 +347,7 @@ export default function DownloadManager() {
                 const isComplete = dl.percent >= 100 && !isMerging;
                 const isCancelled = dl.status === 'cancelled';
                 const isFailed = dl.status === 'failed';
+                const isPaused = dl.status === 'paused';
                 const bytesRemaining = dl.totalBytes - dl.downloadedBytes;
                 const etaSeconds =
                   dl.speed > 0 && !isComplete && !isCancelled && !isFailed
@@ -318,6 +359,8 @@ export default function DownloadManager() {
                   progressColor = 'var(--text-secondary, #9399b2)';
                 } else if (isComplete) {
                   progressColor = 'var(--success, #a6e3a1)';
+                } else if (isPaused) {
+                  progressColor = '#f9e2af';
                 }
 
                 let statusText = '';
@@ -327,6 +370,8 @@ export default function DownloadManager() {
                   statusText = dl.merge ? 'Merge failed' : 'Failed';
                 } else if (isMerging) {
                   statusText = 'Merging…';
+                } else if (isPaused) {
+                  statusText = 'Paused';
                 } else if (isComplete) {
                   statusText = 'Completed';
                 } else {
@@ -337,7 +382,7 @@ export default function DownloadManager() {
 
                 return (
                   <div
-                    key={dl.modelId + ':' + dl.filename}
+                    key={`${dl.modelId}:${dl.filename}`}
                     className="dl-manager__item"
                   >
                     <div className="dl-manager__item-header">

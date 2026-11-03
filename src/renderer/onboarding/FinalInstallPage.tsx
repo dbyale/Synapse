@@ -19,7 +19,7 @@ import type {
   PythonPackagesSnapshot,
 } from '../preload.d';
 import type { Profile } from '../types/profile';
-import { formatBytes, formatGB } from '../utils/formatters';
+import { formatBytes } from '../utils/formatters';
 import {
   getBackgroundSetupError,
   getBinaryInstallSnapshot,
@@ -34,20 +34,17 @@ import {
 } from './backgroundInstalls';
 import {
   getDownloadGroups,
-  getDownloadKey,
   getUniqueDownloads,
   readOnboardingProfileSelection,
 } from './profileCatalog';
 import {
   getGroupTargets,
-  getSectionMeta,
   getSectionStatus,
-  getSectionTotals,
-  retryDownloadTargets,
-  STATUS_LABELS,
   useDownloadRows,
+  STATUS_LABELS,
   type DownloadStatus,
 } from './onboardingDownloads';
+import { ModelDownloadList } from './ModelDownloadCard';
 import { getCombinedProfiles } from './profileStorage';
 import { isProfileReady } from './profileReadiness';
 
@@ -56,6 +53,7 @@ interface FinalInstallPageProps {
   profileType: 'simple' | 'advanced' | 'custom';
   onBack: () => void;
   onProceed: (profileId: string | null) => void;
+  onDiscardProfiles: (optionIds: string[]) => void;
 }
 
 interface DependencyRowProps {
@@ -93,12 +91,6 @@ function getSnapshotStatus(
   if (status === 'cancelled') return 'cancelled';
   if (status === 'downloading') return 'downloading';
   return 'queued';
-}
-
-function getModelFillClass(ready: boolean, retryable: boolean): string {
-  if (ready) return 'onb-download-fill onb-download-fill--complete';
-  if (retryable) return 'onb-download-fill onb-download-fill--failed';
-  return 'onb-download-fill';
 }
 
 function DependencyRow({
@@ -207,6 +199,7 @@ export default function FinalInstallPage({
   profileType,
   onBack,
   onProceed,
+  onDiscardProfiles,
 }: FinalInstallPageProps) {
   const [backendInfo, setBackendInfo] = useState<BackendInfo | null>(null);
   const [pythonInfo, setPythonInfo] = useState<PythonInfo | null>(null);
@@ -650,74 +643,12 @@ export default function FinalInstallPage({
                 No assistant downloads are required for this setup.
               </div>
             ) : (
-              <div className="onb-final-models">
-                {sections.map((section) => {
-                  const targets = getGroupTargets(section);
-                  const status = getSectionStatus(targets, rows);
-                  const totals = getSectionTotals(targets, rows);
-                  const ready =
-                    status === 'completed' || status === 'installed';
-                  const percent =
-                    ready || status === 'merging' ? 100 : totals.percent;
-                  const error = targets
-                    .map((target) => rows[getDownloadKey(target)]?.error)
-                    .find((message): message is string => !!message);
-                  const retryable =
-                    status === 'failed' || status === 'cancelled';
-                  return (
-                    <div key={section.id} className="onb-final-model">
-                      <div className="onb-final-row-heading">
-                        <span className="onb-final-row-title">
-                          {section.modelName}
-                        </span>
-                        <span
-                          className={`onb-download-badge onb-download-badge--${status}`}
-                        >
-                          {STATUS_LABELS[status]}
-                        </span>
-                        {retryable && (
-                          <button
-                            type="button"
-                            className="onb-download-icon-btn"
-                            onClick={() =>
-                              retryDownloadTargets(getGroupTargets(section))
-                            }
-                            aria-label={`Retry ${section.modelName}`}
-                            title={`Retry ${section.modelName}`}
-                          >
-                            <RefreshCw size={13} strokeWidth={2.25} />
-                          </button>
-                        )}
-                      </div>
-                      <div className="onb-final-row-meta">
-                        <span>{getSectionMeta(status, totals)}</span>
-                        <span>
-                          {totals.totalBytes > 0
-                            ? formatGB(totals.totalBytes)
-                            : ''}
-                        </span>
-                      </div>
-                      <div className="onb-download-bar onb-final-bar">
-                        <div
-                          className={getModelFillClass(ready, retryable)}
-                          style={{ width: `${percent}%` }}
-                        />
-                      </div>
-                      {error && (
-                        <div className="onb-final-error">
-                          <CircleAlert size={13} strokeWidth={2.2} />
-                          <span>
-                            {getFailureLabel(error)}
-                            <span className="onb-final-error-detail">
-                              {error}
-                            </span>
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+              <ModelDownloadList
+                sections={sections}
+                rows={rows}
+                onDiscardProfiles={onDiscardProfiles}
+                className="onb-final-models"
+              />
             )}
           </section>
 

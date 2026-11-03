@@ -15,7 +15,8 @@ export type DownloadStatus =
   | 'completed'
   | 'installed'
   | 'failed'
-  | 'cancelled';
+  | 'cancelled'
+  | 'paused';
 
 export interface DownloadRowState {
   status: DownloadStatus;
@@ -46,6 +47,7 @@ export const STATUS_LABELS: Record<DownloadStatus, string> = {
   installed: 'Installed',
   failed: 'Failed',
   cancelled: 'Cancelled',
+  paused: 'Paused',
 };
 
 const registeredTargets = new Map<string, DownloadTarget>();
@@ -53,6 +55,36 @@ const startedDownloads = new Set<string>();
 const downloadSnapshots = new Map<string, DownloadRowState>();
 const activeDownloadTasks = new Map<string, Promise<unknown>>();
 const listeners = new Set<() => void>();
+
+// Tracks which download keys have been prioritized so the card can show
+// "Prioritized" instead of "Downloading" and the button enters active state.
+const prioritizedKeys = new Set<string>();
+
+const terminalStatuses: ReadonlySet<DownloadStatus> = new Set([
+  'completed',
+  'installed',
+  'failed',
+  'cancelled',
+]);
+
+function isTerminal(status: DownloadStatus): boolean {
+  return terminalStatuses.has(status);
+}
+
+/**
+ * Clear the local priority flag once every prioritized target has reached
+ * a terminal status (completed, installed, failed, or cancelled).
+ */
+function clearFinishedPriority(): boolean {
+  if (prioritizedKeys.size === 0) return false;
+  const finished = Array.from(prioritizedKeys).every((key) => {
+    const status = downloadSnapshots.get(key)?.status ?? 'queued';
+    return isTerminal(status);
+  });
+  if (!finished) return false;
+  prioritizedKeys.clear();
+  return true;
+}
 
 let unsubscribeProgress: (() => void) | null = null;
 
@@ -81,6 +113,10 @@ function applyLocalModels(localModels: readonly LocalModel[]): boolean {
     });
     changed = true;
   });
+  if (changed) {
+    clearFinishedPriority();
+    notify();
+  }
   return changed;
 }
 
@@ -107,6 +143,19 @@ function ensureProgressListener() {
         status: progress.status,
         error: progress.status === 'failed' ? progress.error : undefined,
       });
+      clearFinishedPriority();
+      notify();
+      return;
+    }
+
+    if (progress.status === 'paused') {
+      updateSnapshot(key, {
+        status: 'paused',
+        percent: progress.percent,
+        downloadedBytes: progress.downloadedBytes,
+        totalBytes: progress.totalBytes,
+        error: undefined,
+      });
       notify();
       return;
     }
@@ -119,6 +168,7 @@ function ensureProgressListener() {
         totalBytes: progress.totalBytes,
         error: undefined,
       });
+      clearFinishedPriority();
       syncInstalledDownloads().catch(() => undefined);
       return;
     }
@@ -131,6 +181,7 @@ function ensureProgressListener() {
         totalBytes: progress.totalBytes,
         error: undefined,
       });
+      clearFinishedPriority();
       notify();
       return;
     }
@@ -151,6 +202,7 @@ function ensureProgressListener() {
       totalBytes: progress.totalBytes,
       error: undefined,
     });
+    clearFinishedPriority();
     notify();
   });
 }
@@ -178,6 +230,36 @@ export function getGroupTargets(group: DownloadGroup): DownloadTarget[] {
   return group.projector ? [group.model, group.projector] : [group.model];
 }
 
+/** Returns true if any target in the group has been prioritized. */
+export function isGroupPrioritized(group: DownloadGroup): boolean {
+  return getGroupTargets(group).some((t) =>
+    prioritizedKeys.has(getDownloadKey(t)),
+  );
+}
+
+/**
+ * Call the IPC to pause all non-prioritized model downloads, then notify
+ * the renderer so cards can update their state.
+ */
+export function prioritizeDownloadTargets(
+  targets: readonly DownloadTarget[],
+): void {
+  const keys = targets.map(getDownloadKey);
+  keys.forEach((k) => prioritizedKeys.add(k));
+  notify();
+  window.electronAPI.prioritizeModelDownloads(keys).catch(() => undefined);
+}
+
+/**
+ * Remove the priority flag for all previously-prioritized groups and
+ * immediately resume every model download that was paused for them.
+ */
+export function unprioritizeDownloadTargets(): void {
+  if (prioritizedKeys.size === 0) return;
+  prioritizedKeys.clear();
+  window.electronAPI.resumePausedModelDownloads().catch(() => undefined);
+}
+
 export function getSectionStatus(
   targets: readonly DownloadTarget[],
   rows: Record<string, DownloadRowState>,
@@ -196,6 +278,7 @@ export function getSectionStatus(
   if (statuses.some((status) => status === 'cancelled')) return 'cancelled';
   if (statuses.some((status) => status === 'merging')) return 'merging';
   if (statuses.some((status) => status === 'downloading')) return 'downloading';
+  if (statuses.some((status) => status === 'paused')) return 'paused';
   return 'queued';
 }
 
@@ -233,6 +316,15 @@ export function getSectionTotals(
   };
 }
 
+/** Build the subcategory label from the group's options. */
+export function getGroupSubcategory(section: DownloadGroup): string {
+  const labels = Array.from(
+    new Set(section.options.map((o) => `${o.categoryName} - ${o.optionName}`)),
+  );
+  if (labels.length > 0) return labels.join(' + ');
+  return section.categories.map((c) => c.categoryName).join(' + ');
+}
+
 export function getSectionMeta(
   status: DownloadStatus,
   totals: SectionTotals,
@@ -247,6 +339,7 @@ export function getSectionMeta(
   if (status === 'failed') return 'Download failed';
   if (status === 'cancelled') return 'Download cancelled';
   if (status === 'merging') return 'Finishing up the download';
+  if (status === 'paused') return 'Paused while another download finishes';
   const total =
     totals.totalBytes > 0 ? formatGB(totals.totalBytes) : 'Calculating size';
   return `${formatGB(totals.downloadedBytes)} / ${total}`;
@@ -281,6 +374,7 @@ export async function startDownloadTarget(
       if (result === 'CANCELLED') {
         startedDownloads.delete(key);
         updateSnapshot(key, { status: 'cancelled' });
+        clearFinishedPriority();
         notify();
         return undefined;
       }
@@ -289,6 +383,7 @@ export async function startDownloadTarget(
         percent: 100,
         downloadedBytes: getDownloadRow(key).totalBytes,
       });
+      clearFinishedPriority();
       notify();
       return syncInstalledDownloads();
     })
@@ -297,6 +392,7 @@ export async function startDownloadTarget(
       const message =
         error instanceof Error ? error.message : 'Failed to download';
       updateSnapshot(key, { status: 'failed', error: message });
+      clearFinishedPriority();
       notify();
     });
 
@@ -321,7 +417,8 @@ export async function initializeDownloads(
     if (
       snapshot.status === 'installed' ||
       snapshot.status === 'failed' ||
-      snapshot.status === 'cancelled'
+      snapshot.status === 'cancelled' ||
+      snapshot.status === 'paused'
     ) {
       return;
     }
@@ -375,7 +472,11 @@ export async function cancelDownloadTargets(
         await window.electronAPI
           .cancelMerge(target.repoId, target.filename)
           .catch(() => undefined);
-      } else if (status === 'downloading' || status === 'queued') {
+      } else if (
+        status === 'downloading' ||
+        status === 'queued' ||
+        status === 'paused'
+      ) {
         await window.electronAPI
           .cancelDownload(target.repoId, target.filename)
           .catch(() => undefined);
@@ -394,6 +495,7 @@ export async function cancelDownloadTargets(
           .deletePartFile(target.repoId, target.filename)
           .catch(() => undefined);
       }
+      clearFinishedPriority();
       notify();
     }),
   );

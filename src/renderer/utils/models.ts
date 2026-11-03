@@ -2,7 +2,7 @@ import path from 'path';
 import fs from 'fs';
 import https from 'https';
 import { BrowserWindow } from 'electron';
-import { ClientRequest } from 'http';
+import { ClientRequest, IncomingMessage } from 'http';
 import { getModelsDirectory } from '../../main/settings';
 import { mergeGgufSplits, cancelMerge } from '../../main/ggufSplit';
 import type {
@@ -28,20 +28,106 @@ interface HFApiModel {
   modelId: string;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const DEFAULT_FILTERS: SearchFilter[] = [
   { id: 'gguf', label: 'GGUF', type: 'library' },
 ];
 
-const activeDownloads = new Map<
-  string,
-  {
-    req: ClientRequest;
-    destPath: string;
-    cancelled?: boolean;
-    win: BrowserWindow | null;
-    repoId: string;
-  }
->();
+interface ActiveDownloadRecord {
+  req: ClientRequest;
+  response?: IncomingMessage;
+  destPath: string;
+  filename: string;
+  cancelled?: boolean;
+  paused?: boolean;
+  win: BrowserWindow | null;
+  repoId: string;
+  downloadedBytes: number;
+  totalBytes: number;
+  percent: number;
+}
+
+const activeDownloads = new Map<string, ActiveDownloadRecord>();
+
+// When a download is prioritized, every other active model download is
+// paused until the prioritized group finishes (or fails/cancels).
+let prioritizedDownloads: Set<string> | null = null;
+
+function emitDownloadStatus(
+  record: ActiveDownloadRecord,
+  status: DownloadProgress['status'],
+) {
+  record.win?.webContents.send('download-progress', {
+    modelId: record.repoId,
+    filename: record.filename,
+    downloadedBytes: record.downloadedBytes,
+    totalBytes: record.totalBytes,
+    percent: record.percent,
+    status,
+  } as DownloadProgress);
+}
+
+function pauseDownloadRecord(record: ActiveDownloadRecord): boolean {
+  if (record.paused || record.cancelled) return false;
+  record.paused = true;
+  record.response?.pause();
+  emitDownloadStatus(record, 'paused');
+  return true;
+}
+
+function resumeDownloadRecord(record: ActiveDownloadRecord): boolean {
+  if (!record.paused || record.cancelled) return false;
+  record.paused = false;
+  record.response?.resume();
+  emitDownloadStatus(record, 'downloading');
+  return true;
+}
+
+/**
+ * Resume every model download that was paused by the prioritize feature.
+ * Non-model downloads live in a different map and are never touched.
+ */
+export function resumePausedModelDownloads(): string[] {
+  const resumed: string[] = [];
+  activeDownloads.forEach((record, key) => {
+    if (resumeDownloadRecord(record)) resumed.push(key);
+  });
+  return resumed;
+}
+
+function maybeFinishPriority(): void {
+  if (!prioritizedDownloads) return;
+  const stillRunning = Array.from(prioritizedDownloads).some((key) => {
+    const record = activeDownloads.get(key);
+    return !!record && !record.cancelled;
+  });
+  if (stillRunning) return;
+  prioritizedDownloads = null;
+  resumePausedModelDownloads();
+}
+
+/**
+ * Pause all model downloads except `keepKeys`, and resume any prioritized
+ * downloads that were paused by a previous priority. Returns the paused keys.
+ */
+export function prioritizeModelDownloads(keepKeys: string[]): string[] {
+  const keep = new Set(keepKeys);
+  prioritizedDownloads = keep;
+  const paused: string[] = [];
+
+  activeDownloads.forEach((record, key) => {
+    if (record.cancelled) return;
+    if (keep.has(key)) {
+      resumeDownloadRecord(record);
+    } else if (pauseDownloadRecord(record)) {
+      paused.push(key);
+    }
+  });
+
+  // Covers the case where every prioritized target had already finished.
+  maybeFinishPriority();
+  return paused;
+}
 
 const SPLIT_PART_RE = /^(.*?)-(\d{4,5})-of-(\d{4,5})\.gguf$/i;
 
@@ -60,7 +146,10 @@ function resolveModelTargetDir(repoId: string, filename: string): string {
   return targetDir;
 }
 
-function resolveMergePaths(repoId: string, filename: string): {
+function resolveMergePaths(
+  repoId: string,
+  filename: string,
+): {
   targetDir: string;
   base: string;
   mergedFilename: string;
@@ -69,11 +158,14 @@ function resolveMergePaths(repoId: string, filename: string): {
   const targetDir = resolveModelTargetDir(repoId, filename);
   const basename = path.basename(filename);
   const partMatch = basename.match(SPLIT_PART_RE);
-  const base = partMatch
-    ? partMatch[1]
-    : basename.replace(/\.gguf$/i, '');
+  const base = partMatch ? partMatch[1] : basename.replace(/\.gguf$/i, '');
   const mergedFilename = `${base}.gguf`;
-  return { targetDir, base, mergedFilename, mergedPath: path.join(targetDir, mergedFilename) };
+  return {
+    targetDir,
+    base,
+    mergedFilename,
+    mergedPath: path.join(targetDir, mergedFilename),
+  };
 }
 
 // ── Helper to recursively scan folders for .gguf files ──
@@ -329,10 +421,11 @@ export function downloadModel(
   resume: boolean = false,
 ): Promise<string> {
   return new Promise((resolve, reject) => {
+    const downloadKey = `${repoId}:${filename}`;
     const targetDir = resolveModelTargetDir(repoId, filename);
 
     const destPath = path.join(targetDir, path.basename(filename));
-    const partPath = destPath + '.part';
+    const partPath = `${destPath}.part`;
     const destDir = path.dirname(destPath);
 
     if (!fs.existsSync(destDir)) {
@@ -356,13 +449,11 @@ export function downloadModel(
       if (fs.existsSync(partPath)) {
         startByte = fs.statSync(partPath).size;
       }
-    } else {
-      if (fs.existsSync(partPath)) {
-        try {
-          fs.unlinkSync(partPath);
-        } catch (e) {
-          console.error('Failed to delete old part file:', e);
-        }
+    } else if (fs.existsSync(partPath)) {
+      try {
+        fs.unlinkSync(partPath);
+      } catch (e) {
+        console.error('Failed to delete old part file:', e);
       }
     }
 
@@ -375,10 +466,10 @@ export function downloadModel(
       const cleanupAndReject = (err: Error) => {
         file.close();
 
-        const record = activeDownloads.get(repoId + ':' + filename);
+        const record = activeDownloads.get(downloadKey);
         const wasCancelled = record?.cancelled;
 
-        activeDownloads.delete(repoId + ':' + filename);
+        activeDownloads.delete(downloadKey);
 
         if (wasCancelled) {
           resolve('CANCELLED');
@@ -395,6 +486,8 @@ export function downloadModel(
 
           reject(err);
         }
+
+        maybeFinishPriority();
       };
 
       const options: https.RequestOptions = {};
@@ -403,6 +496,12 @@ export function downloadModel(
       }
 
       const req = https.get(downloadUrl, options, (response) => {
+        const record = activeDownloads.get(downloadKey);
+        if (record) {
+          record.response = response;
+          if (record.paused) response.pause();
+        }
+
         if (
           response.statusCode &&
           response.statusCode >= 300 &&
@@ -442,15 +541,23 @@ export function downloadModel(
           downloadedBytes += chunk.length;
           file.write(chunk);
 
+          const percent =
+            totalBytes > 0
+              ? Math.round((downloadedBytes / totalBytes) * 100)
+              : 0;
+          const activeRecord = activeDownloads.get(downloadKey);
+          if (activeRecord) {
+            activeRecord.downloadedBytes = downloadedBytes;
+            activeRecord.totalBytes = totalBytes;
+            activeRecord.percent = percent;
+          }
+
           const progress: DownloadProgress = {
             modelId: repoId,
             filename,
             downloadedBytes,
             totalBytes,
-            percent:
-              totalBytes > 0
-                ? Math.round((downloadedBytes / totalBytes) * 100)
-                : 0,
+            percent,
           };
 
           win?.webContents.send('download-progress', progress);
@@ -463,7 +570,7 @@ export function downloadModel(
             } catch (e) {
               console.error('Failed to rename part file:', e);
             }
-            activeDownloads.delete(repoId + ':' + filename);
+            activeDownloads.delete(downloadKey);
             win?.webContents.send('download-progress', {
               modelId: repoId,
               filename,
@@ -472,6 +579,7 @@ export function downloadModel(
               percent: 100,
               status: 'completed',
             } as DownloadProgress);
+            maybeFinishPriority();
             resolve(destPath);
           });
         });
@@ -481,12 +589,27 @@ export function downloadModel(
 
       req.on('error', cleanupAndReject);
 
-      activeDownloads.set(repoId + ':' + filename, {
+      activeDownloads.set(downloadKey, {
         req,
         destPath,
+        filename,
         win,
         repoId,
+        downloadedBytes: startByte,
+        totalBytes: 0,
+        percent: 0,
       });
+
+      // A new model download that starts while another one is prioritized
+      // should join the queue instead of competing for bandwidth.
+      const newRecord = activeDownloads.get(downloadKey);
+      if (
+        newRecord &&
+        prioritizedDownloads &&
+        !prioritizedDownloads.has(downloadKey)
+      ) {
+        pauseDownloadRecord(newRecord);
+      }
     };
 
     doRequest(url, startByte);
@@ -544,10 +667,7 @@ export function mergeSplitParts(
   const partPaths = parts.map((p) => path.join(targetDir, p));
   let totalBytes = 0;
   try {
-    totalBytes = partPaths.reduce(
-      (sum, p) => sum + fs.statSync(p).size,
-      0,
-    );
+    totalBytes = partPaths.reduce((sum, p) => sum + fs.statSync(p).size, 0);
   } catch {
     fail(`Failed to read split part sizes for ${base}`);
   }
@@ -568,7 +688,8 @@ export function mergeSplitParts(
       }
     }
   } catch (err) {
-    if (err instanceof Error && err.message.startsWith('Insufficient')) throw err;
+    if (err instanceof Error && err.message.startsWith('Insufficient'))
+      throw err;
   }
 
   win?.webContents.send('download-progress', {
@@ -586,9 +707,7 @@ export function mergeSplitParts(
     () => {
       try {
         const mergedSize = fs.statSync(mergedPath).size;
-        const maxPart = Math.max(
-          ...partPaths.map((p) => fs.statSync(p).size),
-        );
+        const maxPart = Math.max(...partPaths.map((p) => fs.statSync(p).size));
         if (mergedSize < maxPart || mergedSize < totalBytes * 0.9) {
           fail(`Merged file verification failed for ${mergedFilename}`);
         }
@@ -645,7 +764,7 @@ export function cancelSplitMerge(repoId: string, filename: string): boolean {
 
 export function deletePartFile(repoId: string, filename: string): boolean {
   const targetDir = resolveModelTargetDir(repoId, filename);
-  const partPath = path.join(targetDir, path.basename(filename) + '.part');
+  const partPath = path.join(targetDir, `${path.basename(filename)}.part`);
   if (fs.existsSync(partPath)) {
     try {
       fs.unlinkSync(partPath);
@@ -686,7 +805,7 @@ export function cleanupPartFiles(): void {
 }
 
 export function cancelDownload(repoId: string, filename: string): boolean {
-  const record = activeDownloads.get(repoId + ':' + filename);
+  const record = activeDownloads.get(`${repoId}:${filename}`);
   if (record) {
     record.cancelled = true;
 
@@ -700,6 +819,9 @@ export function cancelDownload(repoId: string, filename: string): boolean {
     } as DownloadProgress);
 
     record.req.destroy();
+    // If the cancelled download was the prioritized one, let the paused
+    // downloads continue immediately.
+    maybeFinishPriority();
     return true;
   }
   return false;
