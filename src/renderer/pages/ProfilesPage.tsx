@@ -40,6 +40,7 @@ import {
   getToolMeta,
   getAvailableToolNames,
   getCategorizedExtensions,
+  getSettingsDef,
   subscribeExtensionData,
 } from '../utils/extensionData';
 import InfoTooltip from '../components/InfoTooltip';
@@ -238,7 +239,9 @@ export default function ProfilesPage() {
     setError(null);
     setNotice(null);
     try {
-      const content = serializeSynProfileCollection([profile]);
+      const content = serializeSynProfileCollection([profile], {
+        getSettingsDef,
+      });
       const filename = sanitizeProfileFilename(profile.name);
       const savedPath = await window.electronAPI.saveTextFile({
         title: 'Export Profile',
@@ -275,6 +278,7 @@ export default function ProfilesPage() {
       const bytes = await window.electronAPI.readFileAsBuffer(paths[0]);
       const collection = parseSynProfileCollection(
         new TextDecoder().decode(bytes),
+        { getSettingsDef },
       );
       const availableToolNames = getAvailableToolNames();
       const availableTools =

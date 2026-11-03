@@ -1,4 +1,10 @@
-import type { ExtensionToolDef } from '../types';
+import * as path from 'path';
+import { app } from 'electron';
+import type {
+  ExtensionToolContext,
+  ExtensionToolDef,
+  SettingsBag,
+} from '../types';
 import {
   readTextFile,
   readMediaFileAsDataUrl,
@@ -13,8 +19,29 @@ import {
   directoryTree,
   getFileInfo,
   listAllowedDirectories,
+  type FileSystemSettings,
 } from '../../main/functions/fileSystem';
 import manifest from './manifest.json';
+
+/**
+ * This extension owns its settings: the field definitions live in this
+ * extension's manifest.json, and this hook supplies the computed default for
+ * the host directory. Everything else (defaults file, per-profile overrides,
+ * the settings UI) is handled generically by the core from those field defs.
+ */
+export function defaultSettings(): SettingsBag {
+  return {
+    hostDirectory: path.parse(app.getAppPath()).root,
+    allowedDirectories: [],
+    maxReadSize: 40000,
+  };
+}
+
+/** Settings resolved for the profile that invoked the tool. */
+function settingsFor(ctx?: ExtensionToolContext): FileSystemSettings {
+  if (!ctx) return defaultSettings() as unknown as FileSystemSettings;
+  return ctx.settings<FileSystemSettings>();
+}
 
 export const tools: Record<string, ExtensionToolDef> = {
   read_text_file: {
@@ -35,8 +62,11 @@ export const tools: Record<string, ExtensionToolDef> = {
         tail: { type: 'number', description: 'Return only the last N lines' },
       },
     },
-    async handler(params: { path: string; head?: number; tail?: number }) {
-      const result = await readTextFile(params);
+    async handler(
+      params: { path: string; head?: number; tail?: number },
+      ctx?: ExtensionToolContext,
+    ) {
+      const result = await readTextFile(params, settingsFor(ctx));
       const filename = params.path.split(/[/\\]/).pop() || params.path;
       return {
         _response: result,
@@ -63,9 +93,12 @@ export const tools: Record<string, ExtensionToolDef> = {
         path: { type: 'string', description: 'Path to the media file' },
       },
     },
-    async handler(params: { path: string }) {
+    async handler(params: { path: string }, ctx?: ExtensionToolContext) {
       try {
-        const { dataUrl, mimeType } = await readMediaFileAsDataUrl(params);
+        const { dataUrl, mimeType } = await readMediaFileAsDataUrl(
+          params,
+          settingsFor(ctx),
+        );
         const filename = params.path.split(/[/\\]/).pop() || params.path;
         return {
           _response: `Read file: ${params.path} (${mimeType})`,
@@ -99,8 +132,8 @@ export const tools: Record<string, ExtensionToolDef> = {
         },
       },
     },
-    async handler(params: { paths: string[] }) {
-      const result = await readMultipleFiles(params);
+    async handler(params: { paths: string[] }, ctx?: ExtensionToolContext) {
+      const result = await readMultipleFiles(params, settingsFor(ctx));
       const sources = params.paths.map((filePath) => {
         const filename = filePath.split(/[/\\]/).pop() || filePath;
         return { title: filename, url: filePath };
@@ -128,8 +161,11 @@ export const tools: Record<string, ExtensionToolDef> = {
         },
       },
     },
-    async handler(params: { path: string; content: string }) {
-      return await writeFile(params);
+    async handler(
+      params: { path: string; content: string },
+      ctx?: ExtensionToolContext,
+    ) {
+      return await writeFile(params, settingsFor(ctx));
     },
   },
   edit_file: {
@@ -168,12 +204,15 @@ export const tools: Record<string, ExtensionToolDef> = {
         },
       },
     },
-    async handler(params: {
-      path: string;
-      edits: Array<{ oldText?: string; newText: string }>;
-      dryRun?: boolean;
-    }) {
-      return await editFile(params);
+    async handler(
+      params: {
+        path: string;
+        edits: Array<{ oldText?: string; newText: string }>;
+        dryRun?: boolean;
+      },
+      ctx?: ExtensionToolContext,
+    ) {
+      return await editFile(params, settingsFor(ctx));
     },
   },
   create_directory: {
@@ -193,8 +232,8 @@ export const tools: Record<string, ExtensionToolDef> = {
         },
       },
     },
-    async handler(params: { path: string }) {
-      return await createDirectory(params);
+    async handler(params: { path: string }, ctx?: ExtensionToolContext) {
+      return await createDirectory(params, settingsFor(ctx));
     },
   },
   list_directory: {
@@ -210,8 +249,8 @@ export const tools: Record<string, ExtensionToolDef> = {
         path: { type: 'string', description: 'Path of the directory to list' },
       },
     },
-    async handler(params: { path: string }) {
-      return await listDirectory(params);
+    async handler(params: { path: string }, ctx?: ExtensionToolContext) {
+      return await listDirectory(params, settingsFor(ctx));
     },
   },
   list_directory_with_sizes: {
@@ -232,8 +271,11 @@ export const tools: Record<string, ExtensionToolDef> = {
         },
       },
     },
-    async handler(params: { path: string; sortBy?: string }) {
-      return await listDirectoryWithSizes(params);
+    async handler(
+      params: { path: string; sortBy?: string },
+      ctx?: ExtensionToolContext,
+    ) {
+      return await listDirectoryWithSizes(params, settingsFor(ctx));
     },
   },
   move_file: {
@@ -250,8 +292,11 @@ export const tools: Record<string, ExtensionToolDef> = {
         destination: { type: 'string', description: 'New path for the file' },
       },
     },
-    async handler(params: { source: string; destination: string }) {
-      return await moveFile(params);
+    async handler(
+      params: { source: string; destination: string },
+      ctx?: ExtensionToolContext,
+    ) {
+      return await moveFile(params, settingsFor(ctx));
     },
   },
   search_files: {
@@ -276,12 +321,11 @@ export const tools: Record<string, ExtensionToolDef> = {
         },
       },
     },
-    async handler(params: {
-      path: string;
-      pattern: string;
-      excludePatterns?: string[];
-    }) {
-      return await searchFiles(params);
+    async handler(
+      params: { path: string; pattern: string; excludePatterns?: string[] },
+      ctx?: ExtensionToolContext,
+    ) {
+      return await searchFiles(params, settingsFor(ctx));
     },
   },
   directory_tree: {
@@ -302,8 +346,11 @@ export const tools: Record<string, ExtensionToolDef> = {
         },
       },
     },
-    async handler(params: { path: string; excludePatterns?: string[] }) {
-      return await directoryTree(params);
+    async handler(
+      params: { path: string; excludePatterns?: string[] },
+      ctx?: ExtensionToolContext,
+    ) {
+      return await directoryTree(params, settingsFor(ctx));
     },
   },
   get_file_info: {
@@ -320,8 +367,8 @@ export const tools: Record<string, ExtensionToolDef> = {
         path: { type: 'string', description: 'Path to the file or directory' },
       },
     },
-    async handler(params: { path: string }) {
-      return await getFileInfo(params);
+    async handler(params: { path: string }, ctx?: ExtensionToolContext) {
+      return await getFileInfo(params, settingsFor(ctx));
     },
   },
   list_allowed_directories: {
@@ -333,8 +380,8 @@ export const tools: Record<string, ExtensionToolDef> = {
       icon: 'Shield',
     },
     params: { type: 'object', properties: {} },
-    async handler() {
-      return await listAllowedDirectories();
+    async handler(_params: any, ctx?: ExtensionToolContext) {
+      return await listAllowedDirectories(settingsFor(ctx));
     },
   },
   display_local_image: {
@@ -364,9 +411,15 @@ export const tools: Record<string, ExtensionToolDef> = {
       },
       required: ['path'],
     },
-    async handler(params: { path: string; alt_text?: string }) {
+    async handler(
+      params: { path: string; alt_text?: string },
+      ctx?: ExtensionToolContext,
+    ) {
       try {
-        const { dataUrl, mimeType } = await readMediaFileAsDataUrl(params);
+        const { dataUrl, mimeType } = await readMediaFileAsDataUrl(
+          params,
+          settingsFor(ctx),
+        );
         const filename = params.path.split(/[/\\]/).pop() || params.path;
         return {
           _response: `Displayed image: ${params.path} (${mimeType})`,

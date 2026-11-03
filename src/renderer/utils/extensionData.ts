@@ -1,3 +1,5 @@
+import type { ExtensionSettingsDef } from '../../shared/extensionSettings';
+
 export type ToolMeta = {
   name: string;
   label: string;
@@ -22,6 +24,9 @@ export type ExtensionInfo = {
     official?: boolean;
     iconSvgData?: string;
     hasSettings?: boolean;
+    // Authored by the extension itself (validated by the registry). Drives the
+    // generic settings form — every extension, built-in or user, works the same.
+    settings?: ExtensionSettingsDef;
   };
   tools: Record<string, { meta: ToolMeta; params: Record<string, any> }>;
   enabled: boolean;
@@ -126,6 +131,18 @@ export function getAvailableToolNames(): string[] {
 
 export function getToolMeta(name: string): ToolMeta | undefined {
   return cachedAllTools?.[name]?.meta;
+}
+
+/**
+ * The settings schema an extension declares for itself. Used to validate the
+ * per-profile overrides a .synprofile file carries, so an import can never
+ * inject a credential and an export can never leak one.
+ */
+export function getSettingsDef(
+  extId: string,
+): ExtensionSettingsDef | undefined {
+  return cachedExtensions?.find((e) => e.manifest.id === extId)?.manifest
+    .settings;
 }
 
 export function getCategorizedExtensions(): Array<{

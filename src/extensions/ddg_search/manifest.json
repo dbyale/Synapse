@@ -6,5 +6,190 @@
   "version": "1.0.0",
   "icon": "Search",
   "builtIn": true,
-  "hasSettings": true
+  "settings": {
+    "fields": [
+      {
+        "key": "defaultRegion",
+        "label": "Region",
+        "kind": "select",
+        "group": "Search defaults",
+        "hint": "Region code used when a search does not specify one.",
+        "default": "us-en",
+        "options": ["us-en", "uk-en", "de-de", "fr-fr", "ru-ru", "es-es", "it-it", "ja-jp", "ko-kr", "zh-cn", "pt-br", "nl-nl", "pl-pl", "tr-tr", "ar-sa", "en-au", "en-ca", "de-at", "fr-ca", "sv-se", "nb-no", "da-dk", "fi-fi", "hu-hu", "cs-cz"]
+      },
+      {
+        "key": "defaultSafesearch",
+        "label": "SafeSearch",
+        "kind": "select",
+        "group": "Search defaults",
+        "default": "moderate",
+        "options": ["on", "moderate", "off"]
+      },
+      {
+        "key": "defaultTimelimit",
+        "label": "Time limit",
+        "kind": "select",
+        "group": "Search defaults",
+        "default": "",
+        "options": [
+          { "value": "", "label": "None (any time)" },
+          { "value": "d", "label": "Past day (d)" },
+          { "value": "w", "label": "Past week (w)" },
+          { "value": "m", "label": "Past month (m)" },
+          { "value": "y", "label": "Past year (y)" }
+        ]
+      },
+      {
+        "key": "defaultMaxResults",
+        "label": "Max results",
+        "kind": "number",
+        "group": "Search defaults",
+        "min": 1,
+        "max": 50,
+        "default": 10
+      },
+      {
+        "key": "defaultBackend",
+        "label": "Search backend",
+        "kind": "select",
+        "group": "Search defaults",
+        "hint": "auto queries several backends at once.",
+        "default": "auto",
+        "options": ["auto", "bing", "brave", "duckduckgo", "google", "mojeek", "startpage", "yandex", "yahoo", "wikipedia"]
+      },
+      {
+        "key": "blockedDomains",
+        "label": "Blocked domains",
+        "kind": "stringList",
+        "group": "Filtering",
+        "hint": "Results and fetches from these domains are refused.",
+        "placeholder": "example.com"
+      },
+      {
+        "key": "allowedDomains",
+        "label": "Allowed domains",
+        "kind": "stringList",
+        "group": "Filtering",
+        "hint": "When non-empty, only these domains are permitted.",
+        "placeholder": "example.com"
+      },
+      {
+        "key": "extractFormat",
+        "label": "Page extract format",
+        "kind": "select",
+        "group": "Fetching",
+        "default": "text_markdown",
+        "options": [
+          { "value": "text_markdown", "label": "Markdown (recommended)" },
+          { "value": "text_plain", "label": "Plain text" },
+          { "value": "text_rich", "label": "Rich text" },
+          { "value": "text", "label": "Raw HTML" },
+          { "value": "content", "label": "Raw bytes" }
+        ]
+      },
+      {
+        "key": "maxFetchLength",
+        "label": "Max fetched page length (characters)",
+        "kind": "number",
+        "group": "Fetching",
+        "min": 500,
+        "max": 50000,
+        "step": 500,
+        "default": 5000
+      },
+      {
+        "key": "imageSize",
+        "label": "Image size filter",
+        "kind": "select",
+        "group": "Image search filters",
+        "default": "",
+        "options": ["", "Small", "Medium", "Large", "Wallpaper"]
+      },
+      {
+        "key": "imageColor",
+        "label": "Image colour filter",
+        "kind": "select",
+        "group": "Image search filters",
+        "default": "",
+        "options": ["", "Monochrome", "Red", "Orange", "Yellow", "Green", "Blue", "Purple", "Pink", "Brown", "Black", "Gray", "Teal", "White"]
+      },
+      {
+        "key": "imageType",
+        "label": "Image type filter",
+        "kind": "select",
+        "group": "Image search filters",
+        "default": "",
+        "options": ["", "photo", "clipart", "gif", "transparent", "line"]
+      },
+      {
+        "key": "imageLayout",
+        "label": "Image layout filter",
+        "kind": "select",
+        "group": "Image search filters",
+        "default": "",
+        "options": ["", "Square", "Tall", "Wide"]
+      },
+      {
+        "key": "imageLicense",
+        "label": "Image licence filter",
+        "kind": "select",
+        "group": "Image search filters",
+        "default": "",
+        "options": ["", "any", "Public", "Share", "ShareCommercially", "Modify", "ModifyCommercially"]
+      },
+      {
+        "key": "videoResolution",
+        "label": "Video resolution filter",
+        "kind": "select",
+        "group": "Video search filters",
+        "default": "",
+        "options": ["", "high", "standart"]
+      },
+      {
+        "key": "videoDuration",
+        "label": "Video duration filter",
+        "kind": "select",
+        "group": "Video search filters",
+        "default": "",
+        "options": ["", "short", "medium", "long"]
+      },
+      {
+        "key": "videoLicense",
+        "label": "Video licence filter",
+        "kind": "select",
+        "group": "Video search filters",
+        "default": "",
+        "options": ["", "creativeCommon", "youtube"]
+      },
+      {
+        "key": "proxy",
+        "label": "Proxy URL",
+        "kind": "text",
+        "group": "Advanced",
+        "hint": "e.g. http://127.0.0.1:8888. Machine-level: not stored on profiles.",
+        "placeholder": "http://user:pass@host:port",
+        "perProfile": false
+      },
+      {
+        "key": "timeout",
+        "label": "Request timeout (seconds)",
+        "kind": "number",
+        "group": "Advanced",
+        "hint": "Machine-level: applies to the Python runner, not per profile.",
+        "min": 1,
+        "max": 120,
+        "default": 10,
+        "perProfile": false
+      },
+      {
+        "key": "verify",
+        "label": "Verify TLS certificates",
+        "kind": "toggle",
+        "group": "Advanced",
+        "hint": "Machine-level: applies to the Python runner, not per profile.",
+        "default": true,
+        "perProfile": false
+      }
+    ]
+  }
 }

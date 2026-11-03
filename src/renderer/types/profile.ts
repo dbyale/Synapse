@@ -1,3 +1,5 @@
+import type { SettingsBag } from '../../shared/extensionSettings';
+
 export type CacheType =
   | 'f32'
   | 'f16'
@@ -91,6 +93,13 @@ export interface Profile {
     };
   };
   tools?: string[];
+  /**
+   * Per-profile overrides of extension settings, keyed by extension id. Each
+   * extension declares its own fields; only keys it marks perProfile survive,
+   * and credentials stay in the global defaults layer — so exporting a profile
+   * can never carry a secret.
+   */
+  toolSettings?: Record<string, SettingsBag>;
   layers?: number;
   gpuLayersAuto?: boolean;
   // Fitted tensor placement from the auto-optimizer (-ts/-ot). Only valid
