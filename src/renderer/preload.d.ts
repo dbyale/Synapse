@@ -4,6 +4,10 @@ import type {
   SessionView,
   ChatStreamEvent,
 } from '../shared/chatTypes';
+import type {
+  ExtensionSettingsDef,
+  SettingsBag,
+} from '../shared/extensionSettings';
 
 export interface DownloadProgress {
   modelId: string;
@@ -631,6 +635,7 @@ declare global {
             official?: boolean;
             iconSvgData?: string;
             hasSettings?: boolean;
+            settings?: ExtensionSettingsDef;
           };
           tools: Record<
             string,
@@ -665,6 +670,7 @@ declare global {
             official?: boolean;
             iconSvgData?: string;
             hasSettings?: boolean;
+            settings?: ExtensionSettingsDef;
           };
           tools: Record<
             string,
@@ -716,11 +722,11 @@ declare global {
         >
       >;
       extensionsOpenFolder: () => Promise<void>;
-      extensionsGetSettings: (id: string) => Promise<Record<string, any>>;
+      extensionsGetSettings: (id: string) => Promise<SettingsBag>;
       extensionsSetSettings: (
         id: string,
-        settings: Record<string, any>,
-      ) => Promise<{ success: boolean }>;
+        settings: SettingsBag,
+      ) => Promise<{ success: boolean; error?: string }>;
     };
   }
 }

@@ -59,6 +59,17 @@ export function formatGBTruncated(bytes: number): string {
   return `${(Math.floor(gb * 10) / 10).toFixed(1)} GB`;
 }
 
+// Same truncation as formatGBTruncated, but switches to TB once the value
+// reaches 1024 GB so large drive capacities stay readable.
+export function formatCapacityTruncated(bytes: number): string {
+  if (bytes <= 0 || Number.isNaN(bytes)) return '0.0 GB';
+  if (bytes >= 1024 * 1073741824) {
+    const tb = bytes / (1024 * 1073741824);
+    return `${(Math.floor(tb * 10) / 10).toFixed(1)} TB`;
+  }
+  return formatGBTruncated(bytes);
+}
+
 export function formatETA(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds <= 0) return '';
   const h = Math.floor(seconds / 3600);

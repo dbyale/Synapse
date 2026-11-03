@@ -1,4 +1,4 @@
-import type { ExtensionToolDef } from '../types';
+import type { ExtensionToolContext, ExtensionToolDef } from '../types';
 import {
   checkDockerAvailable,
   createSandboxEnvironment,
@@ -16,8 +16,30 @@ import {
   getSandboxStatus,
   renameSandboxEnvironment,
   sandboxCopyInto,
+  SANDBOX_DEFAULT_SETTINGS,
+  type SandboxSettings,
 } from '../../main/functions/sandboxRunner';
+import { getEffectiveSettings } from '../../main/extensionSettings';
+import type { FileSystemSettings } from '../../main/functions/fileSystem';
 import manifest from './manifest.json';
+
+/** Sandbox settings resolved for the profile that invoked the tool. */
+function settingsFor(ctx?: ExtensionToolContext): SandboxSettings {
+  if (!ctx) return SANDBOX_DEFAULT_SETTINGS;
+  return ctx.settings<SandboxSettings>();
+}
+
+/**
+ * sandbox_copy_into reads a HOST path, so it is constrained by the filesystem
+ * extension's settings for this profile. That cross-extension dependency is
+ * declared here, in the extension that has it — never in the core.
+ */
+function hostSettingsFor(ctx?: ExtensionToolContext): FileSystemSettings {
+  return getEffectiveSettings(
+    'filesystem',
+    ctx?.profileId,
+  ) as unknown as FileSystemSettings;
+}
 
 export const tools: Record<string, ExtensionToolDef> = {
   sandbox_environment_create: {
@@ -80,16 +102,18 @@ export const tools: Record<string, ExtensionToolDef> = {
       },
       required: ['name'],
     },
-    async handler(params: {
-      name: string;
-      memory_limit?: string;
-      cpu_limit?: number;
-    }) {
-      return await createSandboxEnvironment({
-        name: params.name,
-        memoryLimit: params.memory_limit,
-        cpuLimit: params.cpu_limit,
-      });
+    async handler(
+      params: { name: string; memory_limit?: string; cpu_limit?: number },
+      ctx?: ExtensionToolContext,
+    ) {
+      return await createSandboxEnvironment(
+        {
+          name: params.name,
+          memoryLimit: params.memory_limit,
+          cpuLimit: params.cpu_limit,
+        },
+        settingsFor(ctx),
+      );
     },
   },
 
@@ -161,18 +185,24 @@ export const tools: Record<string, ExtensionToolDef> = {
       },
       required: ['name'],
     },
-    async handler(params: {
-      name: string;
-      network?: string;
-      memory_limit?: string;
-      cpu_limit?: number;
-    }) {
-      return await createNetworkedSandboxEnvironment({
-        name: params.name,
-        network: params.network,
-        memoryLimit: params.memory_limit,
-        cpuLimit: params.cpu_limit,
-      });
+    async handler(
+      params: {
+        name: string;
+        network?: string;
+        memory_limit?: string;
+        cpu_limit?: number;
+      },
+      ctx?: ExtensionToolContext,
+    ) {
+      return await createNetworkedSandboxEnvironment(
+        {
+          name: params.name,
+          network: params.network,
+          memoryLimit: params.memory_limit,
+          cpuLimit: params.cpu_limit,
+        },
+        settingsFor(ctx),
+      );
     },
   },
 
@@ -398,8 +428,8 @@ export const tools: Record<string, ExtensionToolDef> = {
       },
       required: ['path'],
     },
-    async handler(params: { path: string }) {
-      return await sandboxReadFile(params.path);
+    async handler(params: { path: string }, ctx?: ExtensionToolContext) {
+      return await sandboxReadFile(params.path, undefined, settingsFor(ctx));
     },
   },
 
@@ -640,15 +670,19 @@ export const tools: Record<string, ExtensionToolDef> = {
       },
       required: ['host_path', 'sandbox_path'],
     },
-    async handler(params: {
-      host_path: string;
-      sandbox_path: string;
-      container_name?: string;
-    }) {
+    async handler(
+      params: {
+        host_path: string;
+        sandbox_path: string;
+        container_name?: string;
+      },
+      ctx?: ExtensionToolContext,
+    ) {
       return await sandboxCopyInto(
         params.host_path,
         params.sandbox_path,
         params.container_name,
+        hostSettingsFor(ctx),
       );
     },
   },
@@ -670,8 +704,8 @@ export const tools: Record<string, ExtensionToolDef> = {
       icon: 'ShieldCheck',
     },
     params: { type: 'object', properties: {} },
-    async handler() {
-      return await getSandboxStatus();
+    async handler(_params: any, ctx?: ExtensionToolContext) {
+      return await getSandboxStatus(undefined, settingsFor(ctx));
     },
   },
 };

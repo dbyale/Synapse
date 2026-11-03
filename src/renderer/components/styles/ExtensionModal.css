@@ -452,3 +452,34 @@
   font-weight: 500;
   color: var(--text-secondary);
 }
+
+.em-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.em-settings-note {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-tertiary, var(--text-secondary));
+  line-height: 1.5;
+}
+
+.em-settings-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.em-settings-save {
+  align-self: flex-start;
+  padding: 7px 14px;
+  font-size: 13px;
+}

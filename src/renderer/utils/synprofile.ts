@@ -1,4 +1,6 @@
 import type { Profile } from '../types/profile';
+import type { ExtensionSettingsDef } from '../../shared/extensionSettings';
+import { sanitizeToolSettings } from '../../shared/extensionSettings';
 import {
   getProfileDownloads,
   parseDownloadLink,
@@ -8,6 +10,19 @@ import {
 export const SYNPROFILE_FORMAT = 'synprofile';
 export const SYNPROFILE_VERSION = 1;
 export const SYNPROFILE_EXTENSION = 'synprofile';
+
+/**
+ * Resolves the settings schema an extension declares for itself. Profile
+ * toolSettings are validated against these field definitions, which is what
+ * keeps credentials and machine-level settings out of an exported file.
+ */
+export type SettingsDefProvider = (
+  extId: string,
+) => ExtensionSettingsDef | undefined;
+
+export interface SynProfileOptions {
+  getSettingsDef?: SettingsDefProvider;
+}
 
 export interface SynProfileRecord {
   profile: Profile;
@@ -66,6 +81,24 @@ function stripRuntimeFields(profile: Profile): Profile {
   delete next.allocatedVRAM;
   delete next.allocatedRAM;
   return next;
+}
+
+/**
+ * Keeps only the per-profile extension overrides that the extensions actually
+ * declare as profile-portable. Without a schema provider nothing can be
+ * verified, so every override is dropped — an export must never carry a
+ * credential or a machine-level setting on trust.
+ */
+function sanitizeProfileToolSettings(
+  profile: Profile,
+  getSettingsDef?: SettingsDefProvider,
+): void {
+  const clean = sanitizeToolSettings(
+    profile.toolSettings,
+    getSettingsDef ?? (() => undefined),
+  );
+  if (clean) profile.toolSettings = clean;
+  else delete profile.toolSettings;
 }
 
 function normalizeDownloads(value: unknown): ProfileDownloadLinks | undefined {
@@ -172,6 +205,7 @@ function applyModelFields(
 function normalizeProfile(
   value: unknown,
   downloads: ProfileDownloadLinks | undefined,
+  getSettingsDef?: SettingsDefProvider,
 ): Profile {
   if (!isRecord(value)) {
     throw new Error('profile must be an object');
@@ -189,6 +223,7 @@ function normalizeProfile(
   ) {
     delete profile.tools;
   }
+  sanitizeProfileToolSettings(profile, getSettingsDef);
 
   applyModelFields(profile, downloads);
 
@@ -206,8 +241,14 @@ function normalizeProfile(
   return stripRuntimeFields(profile);
 }
 
-function recordFromProfile(profile: Profile): SynProfileRecord {
+function recordFromProfile(
+  profile: Profile,
+  getSettingsDef?: SettingsDefProvider,
+): SynProfileRecord {
   const cleaned = stripRuntimeFields(profile);
+  // Same validation as import: an export only ever contains overrides the
+  // extensions declare as profile-portable, so a secret cannot ride along.
+  sanitizeProfileToolSettings(cleaned, getSettingsDef);
   const downloads = getProfileDownloads(cleaned);
   return {
     profile: cleaned,
@@ -217,6 +258,7 @@ function recordFromProfile(profile: Profile): SynProfileRecord {
 
 export function parseSynProfileCollection(
   input: unknown,
+  options?: SynProfileOptions,
 ): SynProfileCollection {
   let value = input;
   if (typeof value === 'string') {
@@ -246,7 +288,11 @@ export function parseSynProfileCollection(
     }
     const downloads = normalizeDownloads(entry.downloads);
     return {
-      profile: normalizeProfile(entry.profile, downloads),
+      profile: normalizeProfile(
+        entry.profile,
+        downloads,
+        options?.getSettingsDef,
+      ),
       ...(downloads ? { downloads } : {}),
     };
   });
@@ -263,6 +309,7 @@ export function parseSynProfileCollection(
 
 export function createSynProfileCollection(
   profiles: readonly Profile[],
+  options?: SynProfileOptions,
 ): SynProfileCollection {
   if (profiles.length === 0) {
     throw new Error('No profiles to export');
@@ -271,14 +318,21 @@ export function createSynProfileCollection(
     format: SYNPROFILE_FORMAT,
     version: SYNPROFILE_VERSION,
     exportedAt: new Date().toISOString(),
-    profiles: profiles.map(recordFromProfile),
+    profiles: profiles.map((profile) =>
+      recordFromProfile(profile, options?.getSettingsDef),
+    ),
   };
 }
 
 export function serializeSynProfileCollection(
   profiles: readonly Profile[],
+  options?: SynProfileOptions,
 ): string {
-  return `${JSON.stringify(createSynProfileCollection(profiles), null, 2)}\n`;
+  return `${JSON.stringify(
+    createSynProfileCollection(profiles, options),
+    null,
+    2,
+  )}\n`;
 }
 
 export function getImportedProfiles(

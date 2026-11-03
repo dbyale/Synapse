@@ -33,6 +33,7 @@ import {
   Check,
   Scissors,
   Download,
+  RotateCcw,
 } from 'lucide-react';
 import {
   Profile,
@@ -46,6 +47,13 @@ import { getToolMeta, getAvailableToolNames } from '../utils/extensionData';
 import { svgToDataUrl } from '../utils/svgToDataUrl';
 import { resolveIcon } from './workflows/IconPicker';
 import ToolListModal from './ToolListModal';
+import ExtensionSettingsForm from './ExtensionSettingsForm';
+import { sameSettingValue } from '../../shared/extensionSettings';
+import type {
+  ExtensionSettingsDef,
+  SettingValue,
+  SettingsBag,
+} from '../../shared/extensionSettings';
 import { formatBytes } from '../utils/formatters';
 import InfoTooltip from './InfoTooltip';
 import {
@@ -148,6 +156,8 @@ interface ExtensionGroup {
       icon: string;
       builtIn: boolean;
       iconSvgData?: string;
+      hasSettings?: boolean;
+      settings?: ExtensionSettingsDef;
     };
     tools: Record<
       string,
@@ -1098,6 +1108,135 @@ function SearchResultsPage({
 
 // ── Tool sub-component ──
 
+/**
+ * Per-profile overrides for one extension. Rendered from the same field
+ * definitions the extension declares — the profile editor needs no knowledge of
+ * which extension it is configuring. Fields the profile does not override show
+ * the default read-only.
+ */
+function ProfileToolSettingsModal({
+  extensionId,
+  extensionName,
+  schema,
+  overrides,
+  onChange,
+  onClose,
+}: {
+  extensionId: string;
+  extensionName: string;
+  schema: ExtensionSettingsDef;
+  overrides: SettingsBag;
+  onChange: (next: SettingsBag) => void;
+  onClose: () => void;
+}) {
+  const [defaults, setDefaults] = useState<SettingsBag | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const loaded =
+          await window.electronAPI.extensionsGetSettings(extensionId);
+        if (!cancelled) setDefaults((loaded ?? {}) as SettingsBag);
+      } catch {
+        if (!cancelled) setError('Failed to load default settings');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [extensionId]);
+
+  function handleFieldChange(key: string, value: SettingValue) {
+    const field = schema.fields.find((f) => f.key === key);
+    const fallback = defaults?.[key] ?? field?.default;
+    const next = { ...overrides };
+    // An edit that lands back on the default is not an override, so drop the
+    // key instead of storing a per-profile copy of it.
+    if (fallback !== undefined && sameSettingValue(value, fallback)) {
+      delete next[key];
+    } else {
+      next[key] = value;
+    }
+    onChange(next);
+  }
+
+  const overrideCount = Object.keys(overrides).length;
+
+  const handleOverlayClick = (e: MouseEvent<HTMLDivElement>) => {
+    if (e.target === e.currentTarget) onClose();
+  };
+  const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'Escape') onClose();
+  };
+
+  return (
+    <div
+      className="tlm-overlay"
+      onClick={handleOverlayClick}
+      onKeyDown={handleKeyDown}
+      role="dialog"
+      aria-modal="true"
+      aria-label={`${extensionName} settings for this profile`}
+    >
+      <div className="tlm-dialog">
+        <div className="tlm-header">
+          <h2 className="tlm-title">{extensionName}</h2>
+          <button
+            type="button"
+            className="tlm-close"
+            onClick={onClose}
+            aria-label="Close"
+          >
+            <X size={18} />
+          </button>
+        </div>
+        <div className="epm-tool-settings-body">
+          <p className="epm-tool-settings-note">
+            Change any setting to override it for this profile only. Anything
+            left at its default comes from the extension&apos;s default
+            settings.
+          </p>
+          {error && <div className="epm-tool-settings-error">{error}</div>}
+          {loading ? (
+            <div className="tlm-empty">Loading settings…</div>
+          ) : (
+            <ExtensionSettingsForm
+              fields={schema.fields}
+              values={overrides}
+              defaults={defaults ?? undefined}
+              profileMode
+              onFieldChange={handleFieldChange}
+            />
+          )}
+        </div>
+        <div className="epm-tool-settings-footer">
+          <span className="epm-tool-settings-footer-note">
+            {overrideCount === 0
+              ? 'This profile uses the extension defaults.'
+              : `${overrideCount} setting${
+                  overrideCount === 1 ? '' : 's'
+                } overridden for this profile.`}
+          </span>
+          <button
+            type="button"
+            className="epm-tool-settings-reset"
+            disabled={overrideCount === 0}
+            onClick={() => onChange({})}
+          >
+            <RotateCcw size={13} />
+            Reset to default
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ToolCategoryCard({
   category,
   toolKeys,
@@ -1107,6 +1246,9 @@ function ToolCategoryCard({
   iconName,
   iconSvgData,
   onOpenToolModal,
+  hasSettings,
+  overrideCount,
+  onOpenSettings,
 }: {
   category: string;
   toolKeys: string[];
@@ -1116,6 +1258,9 @@ function ToolCategoryCard({
   iconName?: string;
   iconSvgData?: string;
   onOpenToolModal: () => void;
+  hasSettings?: boolean;
+  overrideCount?: number;
+  onOpenSettings?: () => void;
 }) {
   const enabledCount = toolKeys.filter((tk) => editTools.includes(tk)).length;
   const totalCount = toolKeys.length;
@@ -1165,6 +1310,35 @@ function ToolCategoryCard({
         >
           {enabledCount}/{totalCount}
         </span>
+        {hasSettings && onOpenSettings && (
+          <span
+            className={`epm-tool-category__gear${
+              overrideCount ? ' epm-tool-category__gear--active' : ''
+            }`}
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenSettings();
+            }}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onOpenSettings();
+              }
+            }}
+            title={
+              overrideCount
+                ? `${overrideCount} setting${
+                    overrideCount === 1 ? '' : 's'
+                  } overridden for this profile`
+                : 'Settings for this profile'
+            }
+            aria-label={`Settings for ${category}`}
+          >
+            <Settings size={14} />
+          </span>
+        )}
       </button>
     </div>
   );
@@ -1512,30 +1686,27 @@ function ToolsPage({
   onToolToggle,
   openCategoryId,
   onOpenCategoryConsumed,
+  editToolSettings,
+  onToolSettingsChange,
 }: {
-  extensionGroups: Array<{
-    extension: {
-      manifest: {
-        id: string;
-        name: string;
-        description: string;
-        icon: string;
-        iconSvgData?: string;
-      };
-      tools: Record<string, any>;
-    };
-    toolKeys: string[];
-  }>;
+  extensionGroups: ExtensionGroup[];
   editTools: string[];
   onToolToggle: (key: string) => void;
   openCategoryId?: string | null;
   onOpenCategoryConsumed?: () => void;
+  editToolSettings: Record<string, SettingsBag>;
+  onToolSettingsChange: (extId: string, next: SettingsBag) => void;
 }) {
   const [modalExt, setModalExt] = useState<{
     id: string;
     name: string;
     description: string;
     toolKeys: string[];
+  } | null>(null);
+  const [settingsExt, setSettingsExt] = useState<{
+    id: string;
+    name: string;
+    schema: ExtensionSettingsDef;
   } | null>(null);
 
   useEffect(() => {
@@ -1596,6 +1767,20 @@ function ToolsPage({
                   .forEach((tk) => onToolToggle(tk));
               }
             }}
+            hasSettings={!!extension.manifest.settings}
+            overrideCount={
+              Object.keys(editToolSettings[extension.manifest.id] ?? {}).length
+            }
+            onOpenSettings={
+              extension.manifest.settings
+                ? () =>
+                    setSettingsExt({
+                      id: extension.manifest.id,
+                      name: extension.manifest.name,
+                      schema: extension.manifest.settings!,
+                    })
+                : undefined
+            }
           />
         ))}
       </div>
@@ -1623,6 +1808,17 @@ function ToolsPage({
           editTools={editTools}
           onToolToggle={onToolToggle}
           onClose={() => setModalExt(null)}
+        />
+      )}
+
+      {settingsExt && (
+        <ProfileToolSettingsModal
+          extensionId={settingsExt.id}
+          extensionName={settingsExt.name}
+          schema={settingsExt.schema}
+          overrides={editToolSettings[settingsExt.id] ?? {}}
+          onChange={(next) => onToolSettingsChange(settingsExt.id, next)}
+          onClose={() => setSettingsExt(null)}
         />
       )}
     </>
@@ -5332,6 +5528,12 @@ export default function EditProfileModal({
       : '',
   );
   const [editTools, setEditTools] = useState<string[]>(profile?.tools ?? []);
+  // Per-profile extension settings overrides, keyed by extension id. Only the
+  // keys this profile overrides are stored; everything else comes from the
+  // extension's default settings.
+  const [editToolSettings, setEditToolSettings] = useState<
+    Record<string, SettingsBag>
+  >(profile?.toolSettings ?? {});
   const [editRpEnabled, setEditRpEnabled] = useState(
     profile?.repeatPenalty?.enabled !== false,
   );
@@ -6284,6 +6486,19 @@ export default function EditProfileModal({
     );
   };
 
+  const handleToolSettingsChange = (extId: string, next: SettingsBag) => {
+    setEditToolSettings((prev) => {
+      const updated = { ...prev };
+      const cleaned: SettingsBag = {};
+      for (const [key, value] of Object.entries(next)) {
+        if (value !== undefined) cleaned[key] = value;
+      }
+      if (Object.keys(cleaned).length === 0) delete updated[extId];
+      else updated[extId] = cleaned;
+      return updated;
+    });
+  };
+
   const buildProfileDraft = (): Profile => {
     const modelRelativePath = `${editModelAuthor}/${editModelFolder}/${editModelFilename}`;
 
@@ -6463,6 +6678,8 @@ export default function EditProfileModal({
       minP: parseFloat(editMinP),
       seed: parseInt(editSeed, 10),
       tools: editTools.filter((t) => getAvailableToolNames().includes(t)),
+      toolSettings:
+        Object.keys(editToolSettings).length > 0 ? editToolSettings : undefined,
       repeatPenalty: buildRepeatPenalty(),
       contextShift: buildContextShift(),
       ...buildAdvancedSamplers(),
@@ -6735,6 +6952,8 @@ export default function EditProfileModal({
             onToolToggle={handleToolToggle}
             openCategoryId={pendingToolCategoryId}
             onOpenCategoryConsumed={() => setPendingToolCategoryId(null)}
+            editToolSettings={editToolSettings}
+            onToolSettingsChange={handleToolSettingsChange}
           />
         );
       case 'advanced':

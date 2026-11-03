@@ -6,5 +6,34 @@
   "version": "1.0.0",
   "icon": "FolderOpen",
   "builtIn": true,
-  "hasSettings": true
+  "settings": {
+    "fields": [
+      {
+        "key": "hostDirectory",
+        "label": "Host directory",
+        "kind": "directory",
+        "group": "Access",
+        "hint": "Relative paths in filesystem calls are resolved from this directory.",
+        "picker": "directory"
+      },
+      {
+        "key": "allowedDirectories",
+        "label": "Allowed directories",
+        "kind": "stringList",
+        "group": "Access",
+        "hint": "When empty, all paths are allowed.",
+        "picker": "directory"
+      },
+      {
+        "key": "maxReadSize",
+        "label": "Max read size (characters)",
+        "kind": "number",
+        "group": "Limits",
+        "hint": "Read operations returning more than this many characters return a warning instead of the content.",
+        "min": 1000,
+        "step": 1000,
+        "default": 40000
+      }
+    ]
+  }
 }

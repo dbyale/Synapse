@@ -3,40 +3,20 @@ import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
 import { existsSync } from 'fs';
-import { app } from 'electron';
 import { minimatch } from 'minimatch';
 
-let allowedDirectories: string[] = [];
-let maxReadSize = 40000;
-
-export function getDefaultHostDirectory(): string {
-  return path.parse(app.getAppPath()).root;
-}
-
-let hostDirectory = getDefaultHostDirectory();
-
-export function setHostDirectory(dir: string): void {
-  hostDirectory = path.resolve(dir);
-}
-
-export function getHostDirectory(): string {
-  return hostDirectory;
-}
-
-export function setAllowedDirectories(dirs: string[]): void {
-  allowedDirectories = dirs.map((d) => path.resolve(d));
-}
-
-export function getAllowedDirectories(): string[] {
-  return [...allowedDirectories];
-}
-
-export function setMaxReadSize(size: number): void {
-  maxReadSize = size;
-}
-
-export function getMaxReadSize(): number {
-  return maxReadSize;
+/**
+ * Filesystem tool configuration. There is deliberately no module-level state:
+ * every operation receives the settings resolved for the calling profile, so
+ * two profiles can use different directories and read limits at the same time.
+ * The shape is declared by the filesystem extension's own manifest `settings`
+ * block; this interface is just its typed view.
+ */
+export interface FileSystemSettings {
+  allowedDirectories: string[];
+  /** Empty → resolved to the app's drive root by the extension's defaults. */
+  hostDirectory: string;
+  maxReadSize: number;
 }
 
 export function sanitizePath(raw: string): string {
@@ -47,7 +27,11 @@ export function sanitizePath(raw: string): string {
   return sanitized;
 }
 
-export function normalizePath(inputPath: string): string {
+export function normalizePath(
+  inputPath: string,
+  settings: FileSystemSettings,
+): string {
+  const hostDirectory = path.resolve(settings.hostDirectory || process.cwd());
   const placeholderMap: Record<string, string> = {
     root: os.homedir(),
     '~': os.homedir(),
@@ -75,13 +59,21 @@ export function normalizePath(inputPath: string): string {
   return inputPath;
 }
 
-export function validatePath(filePath: string): void {
-  if (allowedDirectories.length === 0) return;
+export function validatePath(
+  filePath: string,
+  settings: FileSystemSettings,
+): void {
+  const allowed = settings.allowedDirectories ?? [];
+  if (allowed.length === 0) return;
   const resolvedPath = path.resolve(filePath);
-  for (const allowedDir of allowedDirectories) {
+  for (const allowedDir of allowed) {
     if (resolvedPath.startsWith(path.resolve(allowedDir))) return;
   }
   throw new Error(`Path '${filePath}' is not within allowed directories`);
+}
+
+function overReadSizeWarning(maxReadSize: number): string {
+  return `Warning: Operation over ${maxReadSize} characters and may overload context. If reading this file is necessary, use offsets and limits to read smaller sections`;
 }
 
 function getMimeType(filePath: string): string {
@@ -204,14 +196,13 @@ function formatPermissions(mode: number): string {
   return (mode & 0o777).toString(8).padStart(3, '0');
 }
 
-export async function readTextFile(params: {
-  path: string;
-  head?: number;
-  tail?: number;
-}): Promise<string> {
+export async function readTextFile(
+  params: { path: string; head?: number; tail?: number },
+  settings: FileSystemSettings,
+): Promise<string> {
   try {
-    const p = normalizePath(sanitizePath(params.path));
-    validatePath(p);
+    const p = normalizePath(sanitizePath(params.path), settings);
+    validatePath(p, settings);
     if (!existsSync(p)) throw new Error(`File not found: ${p}`);
     const content = await fs.readFile(p, 'utf-8');
     let lines = content.split('\n');
@@ -220,8 +211,8 @@ export async function readTextFile(params: {
     if (params.tail !== undefined && params.tail > 0)
       lines = lines.slice(-params.tail);
     const result = lines.join('\n');
-    if (result.length > maxReadSize) {
-      return `Warning: Operation over ${maxReadSize} characters and may overload context. If reading this file is necessary, use offsets and limits to read smaller sections`;
+    if (result.length > settings.maxReadSize) {
+      return overReadSizeWarning(settings.maxReadSize);
     }
     return result;
   } catch (error) {
@@ -229,16 +220,19 @@ export async function readTextFile(params: {
   }
 }
 
-export async function readMediaFile(params: { path: string }): Promise<string> {
+export async function readMediaFile(
+  params: { path: string },
+  settings: FileSystemSettings,
+): Promise<string> {
   try {
-    const p = normalizePath(sanitizePath(params.path));
-    validatePath(p);
+    const p = normalizePath(sanitizePath(params.path), settings);
+    validatePath(p, settings);
     if (!existsSync(p)) throw new Error(`File not found: ${p}`);
     const data = await fs.readFile(p);
     const result = { mimeType: getMimeType(p), data: data.toString('base64') };
     const json = JSON.stringify(result);
-    if (json.length > maxReadSize) {
-      return `Warning: Operation over ${maxReadSize} characters and may overload context. If reading this file is necessary, use offsets and limits to read smaller sections`;
+    if (json.length > settings.maxReadSize) {
+      return overReadSizeWarning(settings.maxReadSize);
     }
     return json;
   } catch (error) {
@@ -246,11 +240,12 @@ export async function readMediaFile(params: { path: string }): Promise<string> {
   }
 }
 
-export async function readMediaFileAsDataUrl(params: {
-  path: string;
-}): Promise<{ dataUrl: string; mimeType: string }> {
-  const p = normalizePath(sanitizePath(params.path));
-  validatePath(p);
+export async function readMediaFileAsDataUrl(
+  params: { path: string },
+  settings: FileSystemSettings,
+): Promise<{ dataUrl: string; mimeType: string }> {
+  const p = normalizePath(sanitizePath(params.path), settings);
+  validatePath(p, settings);
   if (!existsSync(p)) throw new Error(`File not found: ${p}`);
   const mimeType = getMimeType(p);
   const buf = await fs.readFile(p);
@@ -260,21 +255,22 @@ export async function readMediaFileAsDataUrl(params: {
   };
 }
 
-export async function readMultipleFiles(params: {
-  paths: string[];
-}): Promise<string> {
+export async function readMultipleFiles(
+  params: { paths: string[] },
+  settings: FileSystemSettings,
+): Promise<string> {
   try {
     const results: Array<{ path: string; content?: string; error?: string }> =
       [];
     for (const filePath of params.paths) {
       try {
-        const p = normalizePath(sanitizePath(filePath));
-        validatePath(p);
+        const p = normalizePath(sanitizePath(filePath), settings);
+        validatePath(p, settings);
         const content = await fs.readFile(p, 'utf-8');
-        if (content.length > maxReadSize) {
+        if (content.length > settings.maxReadSize) {
           results.push({
             path: p,
-            content: `Warning: Operation over ${maxReadSize} characters and may overload context. If reading this file is necessary, use offsets and limits to read smaller sections`,
+            content: overReadSizeWarning(settings.maxReadSize),
           });
         } else {
           results.push({ path: p, content });
@@ -292,13 +288,13 @@ export async function readMultipleFiles(params: {
   }
 }
 
-export async function writeFile(params: {
-  path: string;
-  content: string;
-}): Promise<string> {
+export async function writeFile(
+  params: { path: string; content: string },
+  settings: FileSystemSettings,
+): Promise<string> {
   try {
-    const p = normalizePath(sanitizePath(params.path));
-    validatePath(p);
+    const p = normalizePath(sanitizePath(params.path), settings);
+    validatePath(p, settings);
     const dirPath = path.dirname(p);
     if (!existsSync(dirPath)) await fs.mkdir(dirPath, { recursive: true });
     await fs.writeFile(p, params.content, 'utf-8');
@@ -308,14 +304,17 @@ export async function writeFile(params: {
   }
 }
 
-export async function editFile(params: {
-  path: string;
-  edits: Array<{ oldText?: string; newText: string }>;
-  dryRun?: boolean;
-}): Promise<string> {
+export async function editFile(
+  params: {
+    path: string;
+    edits: Array<{ oldText?: string; newText: string }>;
+    dryRun?: boolean;
+  },
+  settings: FileSystemSettings,
+): Promise<string> {
   try {
-    const p = normalizePath(sanitizePath(params.path));
-    validatePath(p);
+    const p = normalizePath(sanitizePath(params.path), settings);
+    validatePath(p, settings);
     const hasAppend = params.edits.some(
       (e: any) => e.oldText == null || e.oldText === '',
     );
@@ -378,12 +377,13 @@ export async function editFile(params: {
   }
 }
 
-export async function createDirectory(params: {
-  path: string;
-}): Promise<string> {
+export async function createDirectory(
+  params: { path: string },
+  settings: FileSystemSettings,
+): Promise<string> {
   try {
-    const p = normalizePath(sanitizePath(params.path));
-    validatePath(p);
+    const p = normalizePath(sanitizePath(params.path), settings);
+    validatePath(p, settings);
     await fs.mkdir(p, { recursive: true });
     return `Directory created successfully: ${p}`;
   } catch (error) {
@@ -391,10 +391,13 @@ export async function createDirectory(params: {
   }
 }
 
-export async function listDirectory(params: { path: string }): Promise<string> {
+export async function listDirectory(
+  params: { path: string },
+  settings: FileSystemSettings,
+): Promise<string> {
   try {
-    const p = normalizePath(sanitizePath(params.path));
-    validatePath(p);
+    const p = normalizePath(sanitizePath(params.path), settings);
+    validatePath(p, settings);
     if (!existsSync(p)) throw new Error(`Directory not found: ${p}`);
     const entries = await fs.readdir(p, { withFileTypes: true });
     const lines = entries.map(
@@ -406,13 +409,13 @@ export async function listDirectory(params: { path: string }): Promise<string> {
   }
 }
 
-export async function listDirectoryWithSizes(params: {
-  path: string;
-  sortBy?: string;
-}): Promise<string> {
+export async function listDirectoryWithSizes(
+  params: { path: string; sortBy?: string },
+  settings: FileSystemSettings,
+): Promise<string> {
   try {
-    const p = normalizePath(sanitizePath(params.path));
-    validatePath(p);
+    const p = normalizePath(sanitizePath(params.path), settings);
+    validatePath(p, settings);
     if (!existsSync(p)) throw new Error(`Directory not found: ${p}`);
     const entries = await fs.readdir(p, { withFileTypes: true });
     const items = await Promise.all(
@@ -441,15 +444,18 @@ export async function listDirectoryWithSizes(params: {
   }
 }
 
-export async function moveFile(params: {
-  source: string;
-  destination: string;
-}): Promise<string> {
+export async function moveFile(
+  params: { source: string; destination: string },
+  settings: FileSystemSettings,
+): Promise<string> {
   try {
-    const source = normalizePath(sanitizePath(params.source));
-    const destination = normalizePath(sanitizePath(params.destination));
-    validatePath(source);
-    validatePath(destination);
+    const source = normalizePath(sanitizePath(params.source), settings);
+    const destination = normalizePath(
+      sanitizePath(params.destination),
+      settings,
+    );
+    validatePath(source, settings);
+    validatePath(destination, settings);
     if (!existsSync(source))
       throw new Error(`Source file not found: ${source}`);
     const destDir = path.dirname(destination);
@@ -461,14 +467,13 @@ export async function moveFile(params: {
   }
 }
 
-export async function searchFiles(params: {
-  path: string;
-  pattern: string;
-  excludePatterns?: string[];
-}): Promise<string> {
+export async function searchFiles(
+  params: { path: string; pattern: string; excludePatterns?: string[] },
+  settings: FileSystemSettings,
+): Promise<string> {
   try {
-    const p = normalizePath(sanitizePath(params.path));
-    validatePath(p);
+    const p = normalizePath(sanitizePath(params.path), settings);
+    validatePath(p, settings);
     if (!existsSync(p)) throw new Error(`Directory not found: ${p}`);
     const files = await walkDirectory(
       p,
@@ -483,13 +488,13 @@ export async function searchFiles(params: {
   }
 }
 
-export async function directoryTree(params: {
-  path: string;
-  excludePatterns?: string[];
-}): Promise<string> {
+export async function directoryTree(
+  params: { path: string; excludePatterns?: string[] },
+  settings: FileSystemSettings,
+): Promise<string> {
   try {
-    const p = normalizePath(sanitizePath(params.path));
-    validatePath(p);
+    const p = normalizePath(sanitizePath(params.path), settings);
+    validatePath(p, settings);
     if (!existsSync(p)) throw new Error(`Directory not found: ${p}`);
     const tree = await buildDirectoryTree(p, params.excludePatterns ?? []);
     function formatTree(nodes: TreeNode[], prefix = ''): string {
@@ -510,10 +515,13 @@ export async function directoryTree(params: {
   }
 }
 
-export async function getFileInfo(params: { path: string }): Promise<string> {
+export async function getFileInfo(
+  params: { path: string },
+  settings: FileSystemSettings,
+): Promise<string> {
   try {
-    const p = normalizePath(sanitizePath(params.path));
-    validatePath(p);
+    const p = normalizePath(sanitizePath(params.path), settings);
+    validatePath(p, settings);
     if (!existsSync(p)) throw new Error(`Path not found: ${p}`);
     const stat = await fs.stat(p);
     const result = {
@@ -532,10 +540,13 @@ export async function getFileInfo(params: { path: string }): Promise<string> {
   }
 }
 
-export async function listAllowedDirectories(): Promise<string> {
+export async function listAllowedDirectories(
+  settings: FileSystemSettings,
+): Promise<string> {
   try {
-    return allowedDirectories.length > 0
-      ? allowedDirectories.join('\n')
+    const dirs = settings.allowedDirectories ?? [];
+    return dirs.length > 0
+      ? dirs.map((d) => path.resolve(d)).join('\n')
       : 'All directories allowed (no restrictions configured)';
   } catch (error) {
     return `Error: ${error instanceof Error ? error.message : String(error)}`;

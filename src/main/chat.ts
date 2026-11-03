@@ -12,6 +12,12 @@ import type { ContextShiftSettings, Profile } from '../renderer/types/profile';
 import { DEFAULT_CONTEXT_SHIFT } from '../renderer/types/profile';
 // eslint-disable-next-line import/no-cycle
 import { createChatFunctions } from './chatFunctions';
+import type { ExtensionToolContext, SettingsBag } from '../extensions/types';
+import {
+  getEffectiveSettings,
+  setProfileToolSettings,
+  updateRuntimeSettings,
+} from './extensionSettings';
 import {
   getOrRunOptimizer,
   FitCancelledError,
@@ -106,6 +112,37 @@ let currentProjector: string | null = null;
 let chatFunctions: any = null;
 let activeTools: any[] = [];
 let emitStreamEvent: ((payload: StreamEventPayload) => void) | null = null;
+
+/**
+ * Tool context handed to an extension handler. `settings()` resolves that
+ * extension's own settings for the calling profile (defaults ⊕ profile
+ * overrides ⊕ runtime overlay); `updateSettings()` persists a per-profile
+ * change back to the extension. Both are driven entirely by the field defs the
+ * extension declares — the core never names an extension here.
+ */
+function buildToolContext(
+  extensionId: string | undefined,
+  sessionId: string,
+  profileId: string,
+): ExtensionToolContext {
+  return {
+    sessionId,
+    profileId,
+    settings<T = SettingsBag>(): T {
+      if (!extensionId) return {} as T;
+      return getEffectiveSettings(extensionId, profileId) as T;
+    },
+    updateSettings(patch: SettingsBag): void {
+      if (!extensionId) return;
+      const result = updateRuntimeSettings(extensionId, profileId, patch);
+      if (!result.success && result.error) {
+        console.error(
+          `[tools] updateSettings for "${extensionId}" failed: ${result.error}`,
+        );
+      }
+    },
+  };
+}
 
 // Manual-launch server defaults. A manual command fully replaces the server
 // invocation (profile host/port are ignored), so a blank host/port must fall
@@ -810,8 +847,7 @@ export function buildLlamaServerArgs(
   // it needs to adjust — so omit both and let the server solve.
   if (!layersAuto && config.ngl != null) {
     if (config.tensorSplit) spawnArgs.push('-ts', config.tensorSplit);
-    if (config.tensorOverrides)
-      spawnArgs.push('-ot', config.tensorOverrides);
+    if (config.tensorOverrides) spawnArgs.push('-ot', config.tensorOverrides);
   }
 
   // Projector Arguments
@@ -1362,6 +1398,10 @@ export async function loadProfile(
 
   try {
     console.log('[chat] Loading Profile:', profile.name);
+    // Register this profile's per-extension settings overrides so tool calls
+    // resolve defaults ⊕ overrides. Unknown and non-perProfile keys are
+    // stripped in the main process, never trusted from the renderer.
+    setProfileToolSettings(profile.id, profile.toolSettings);
     onStatus?.({ phase: 'fetching', message: `Fetching Profile…` });
 
     try {
@@ -3443,7 +3483,11 @@ export async function sendMessage(
           try {
             const h = chatFunctions[tc.name]?.handler;
             if (!h) throw new Error(`Tool handler not found: ${tc.name}`);
-            const toolContext = { sessionId, profileId: s.profileId };
+            const toolContext = buildToolContext(
+              chatFunctions[tc.name]?.extensionId,
+              sessionId,
+              s.profileId,
+            );
             const v = await h(JSON.parse(tc.args), toolContext);
             firstResults[idx] = {
               status: 'fulfilled',
@@ -3528,7 +3572,11 @@ export async function sendMessage(
         s.status = 'tool-running';
         emitSessionChanged(sessionId);
         const handler = chatFunctions[tc.name]?.handler;
-        const toolContext = { sessionId, profileId: s.profileId };
+        const toolContext = buildToolContext(
+          chatFunctions[tc.name]?.extensionId,
+          sessionId,
+          s.profileId,
+        );
         let finalResult: any;
         if (inputReq.type === 'confirm') {
           if (userResponse.action === 'confirmed') {

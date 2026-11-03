@@ -1,15 +1,10 @@
-import fs from 'fs';
-import path from 'path';
-import { app } from 'electron';
-import type { ExtensionToolDef } from '../types';
+import type {
+  ExtensionToolContext,
+  ExtensionToolDef,
+  SettingsBag,
+} from '../types';
 import { runPython, ensurePackage } from '../../main/functions/pythonRunner';
 import manifest from './manifest.json';
-
-const SETTINGS_FILE = path.join(
-  app.getPath('userData'),
-  'extension-settings',
-  'ddg_search.json',
-);
 
 export interface DDGSSettings {
   defaultRegion: string;
@@ -57,46 +52,47 @@ export const DDGS_DEFAULTS: DDGSSettings = {
   videoLicense: '',
 };
 
-function loadSettings(): DDGSSettings {
-  try {
-    if (fs.existsSync(SETTINGS_FILE)) {
-      const raw = fs.readFileSync(SETTINGS_FILE, 'utf-8');
-      const parsed = JSON.parse(raw);
-      return {
-        ...DDGS_DEFAULTS,
-        ...parsed,
-        blockedDomains: Array.isArray(parsed.blockedDomains)
-          ? parsed.blockedDomains
-          : [...DDGS_DEFAULTS.blockedDomains],
-        allowedDomains: Array.isArray(parsed.allowedDomains)
-          ? parsed.allowedDomains
-          : [...DDGS_DEFAULTS.allowedDomains],
-        defaultMaxResults:
-          typeof parsed.defaultMaxResults === 'number'
-            ? Math.min(Math.max(Math.round(parsed.defaultMaxResults), 1), 50)
-            : DDGS_DEFAULTS.defaultMaxResults,
-        maxFetchLength:
-          typeof parsed.maxFetchLength === 'number'
-            ? Math.min(Math.max(Math.round(parsed.maxFetchLength), 500), 50000)
-            : DDGS_DEFAULTS.maxFetchLength,
-        timeout:
-          typeof parsed.timeout === 'number'
-            ? Math.min(Math.max(Math.round(parsed.timeout), 1), 120)
-            : DDGS_DEFAULTS.timeout,
-        verify:
-          typeof parsed.verify === 'boolean'
-            ? parsed.verify
-            : DDGS_DEFAULTS.verify,
-      };
+/**
+ * This extension owns its settings: the field definitions (including every
+ * option list) live in this extension's manifest.json, and the two hooks here
+ * supply the computed defaults and the domain normalisation the core cannot
+ * know about. Defaults file, per-profile overrides and the settings UI are all
+ * driven generically from those field defs.
+ */
+export function defaultSettings(): SettingsBag {
+  return { ...DDGS_DEFAULTS };
+}
+
+/** Domain lists are stored the way the matcher expects them. */
+export function normalizeSettings(raw: SettingsBag): SettingsBag {
+  const normalizeDomain = (value: unknown): string[] => {
+    const list = Array.isArray(value) ? value : [];
+    const out: string[] = [];
+    for (const entry of list) {
+      if (typeof entry !== 'string') continue;
+      const d = entry
+        .toLowerCase()
+        .trim()
+        .replace(/^https?:\/\//, '')
+        .replace(/^www\./, '')
+        .split('/')[0]
+        .split('?')[0]
+        .split('#')[0];
+      if (d && !out.includes(d)) out.push(d);
     }
-  } catch {
-    // invalid file
-  }
-  return {
-    ...DDGS_DEFAULTS,
-    blockedDomains: [...DDGS_DEFAULTS.blockedDomains],
-    allowedDomains: [...DDGS_DEFAULTS.allowedDomains],
+    return out;
   };
+  return {
+    ...raw,
+    blockedDomains: normalizeDomain(raw.blockedDomains),
+    allowedDomains: normalizeDomain(raw.allowedDomains),
+  };
+}
+
+/** Settings resolved for the profile that invoked the tool. */
+function settingsFor(ctx?: ExtensionToolContext): DDGSSettings {
+  if (!ctx) return { ...DDGS_DEFAULTS };
+  return ctx.settings<DDGSSettings>();
 }
 
 const IMAGE_EXTENSIONS: Record<string, string> = {
@@ -283,8 +279,8 @@ except Exception as e:
 async function runSearch(
   ddgsMethod: string,
   keywordArgs: Record<string, string>,
+  settings: DDGSSettings,
 ): Promise<SearchResult> {
-  const settings = loadSettings();
   const pkgErr = await ensureDdgsPackage();
   if (pkgErr) {
     return { success: false, results: [], error: pkgErr };
@@ -331,8 +327,11 @@ interface ExtractResult {
   error?: string;
 }
 
-async function runExtract(url: string, fmt?: string): Promise<ExtractResult> {
-  const settings = loadSettings();
+async function runExtract(
+  url: string,
+  fmt: string | undefined,
+  settings: DDGSSettings,
+): Promise<ExtractResult> {
   const pkgErr = await ensureDdgsPackage();
   if (pkgErr) {
     return { error: pkgErr };
@@ -439,14 +438,17 @@ export const tools: Record<string, ExtensionToolDef> = {
       },
       required: ['query'],
     },
-    async handler(params: {
-      query: string;
-      max_results?: number;
-      region?: string;
-      safesearch?: string;
-      timelimit?: string;
-    }) {
-      const s = loadSettings();
+    async handler(
+      params: {
+        query: string;
+        max_results?: number;
+        region?: string;
+        safesearch?: string;
+        timelimit?: string;
+      },
+      ctx?: ExtensionToolContext,
+    ) {
+      const s = settingsFor(ctx);
       const keywordArgs: Record<string, string> = {
         query: `'${escapePyString(params.query)}'`,
         max_results: String(
@@ -459,7 +461,7 @@ export const tools: Record<string, ExtensionToolDef> = {
       const effectiveTimelimit = params.timelimit ?? s.defaultTimelimit;
       if (effectiveTimelimit)
         keywordArgs.timelimit = `'${escapePyString(effectiveTimelimit)}'`;
-      return searchResultWithSources(await runSearch('text', keywordArgs));
+      return searchResultWithSources(await runSearch('text', keywordArgs, s));
     },
   },
 
@@ -506,14 +508,17 @@ export const tools: Record<string, ExtensionToolDef> = {
       },
       required: ['query'],
     },
-    async handler(params: {
-      query: string;
-      max_results?: number;
-      region?: string;
-      safesearch?: string;
-      timelimit?: string;
-    }) {
-      const s = loadSettings();
+    async handler(
+      params: {
+        query: string;
+        max_results?: number;
+        region?: string;
+        safesearch?: string;
+        timelimit?: string;
+      },
+      ctx?: ExtensionToolContext,
+    ) {
+      const s = settingsFor(ctx);
       const keywordArgs: Record<string, string> = {
         query: `'${escapePyString(params.query)}'`,
         max_results: String(
@@ -526,7 +531,7 @@ export const tools: Record<string, ExtensionToolDef> = {
       const effectiveTimelimit = params.timelimit ?? s.defaultTimelimit;
       if (effectiveTimelimit)
         keywordArgs.timelimit = `'${escapePyString(effectiveTimelimit)}'`;
-      return searchResultWithSources(await runSearch('news', keywordArgs));
+      return searchResultWithSources(await runSearch('news', keywordArgs, s));
     },
   },
 
@@ -595,18 +600,21 @@ export const tools: Record<string, ExtensionToolDef> = {
       },
       required: ['query'],
     },
-    async handler(params: {
-      query: string;
-      max_results?: number;
-      region?: string;
-      safesearch?: string;
-      size?: string;
-      color?: string;
-      type_image?: string;
-      layout?: string;
-      license_image?: string;
-    }) {
-      const s = loadSettings();
+    async handler(
+      params: {
+        query: string;
+        max_results?: number;
+        region?: string;
+        safesearch?: string;
+        size?: string;
+        color?: string;
+        type_image?: string;
+        layout?: string;
+        license_image?: string;
+      },
+      ctx?: ExtensionToolContext,
+    ) {
+      const s = settingsFor(ctx);
       const keywordArgs: Record<string, string> = {
         query: `'${escapePyString(params.query)}'`,
         max_results: String(
@@ -630,7 +638,7 @@ export const tools: Record<string, ExtensionToolDef> = {
       const effectiveTimelimit = s.defaultTimelimit;
       if (effectiveTimelimit)
         keywordArgs.timelimit = `'${escapePyString(effectiveTimelimit)}'`;
-      const raw = await runSearch('images', keywordArgs);
+      const raw = await runSearch('images', keywordArgs, s);
       if (raw.success && Array.isArray(raw.results)) {
         for (const item of raw.results as Array<Record<string, unknown>>) {
           if (item.image) {
@@ -702,17 +710,20 @@ export const tools: Record<string, ExtensionToolDef> = {
       },
       required: ['query'],
     },
-    async handler(params: {
-      query: string;
-      max_results?: number;
-      region?: string;
-      safesearch?: string;
-      duration?: string;
-      resolution?: string;
-      license_videos?: string;
-      timelimit?: string;
-    }) {
-      const s = loadSettings();
+    async handler(
+      params: {
+        query: string;
+        max_results?: number;
+        region?: string;
+        safesearch?: string;
+        duration?: string;
+        resolution?: string;
+        license_videos?: string;
+        timelimit?: string;
+      },
+      ctx?: ExtensionToolContext,
+    ) {
+      const s = settingsFor(ctx);
       const keywordArgs: Record<string, string> = {
         query: `'${escapePyString(params.query)}'`,
         max_results: String(
@@ -734,7 +745,7 @@ export const tools: Record<string, ExtensionToolDef> = {
       const effectiveTimelimit = params.timelimit ?? s.defaultTimelimit;
       if (effectiveTimelimit)
         keywordArgs.timelimit = `'${escapePyString(effectiveTimelimit)}'`;
-      return searchResultWithSources(await runSearch('videos', keywordArgs));
+      return searchResultWithSources(await runSearch('videos', keywordArgs, s));
     },
   },
 
@@ -768,8 +779,11 @@ export const tools: Record<string, ExtensionToolDef> = {
       },
       required: ['query'],
     },
-    async handler(params: { query: string; max_results?: number }) {
-      const s = loadSettings();
+    async handler(
+      params: { query: string; max_results?: number },
+      ctx?: ExtensionToolContext,
+    ) {
+      const s = settingsFor(ctx);
       const keywordArgs: Record<string, string> = {
         query: `'${escapePyString(params.query)}'`,
         max_results: String(
@@ -777,7 +791,7 @@ export const tools: Record<string, ExtensionToolDef> = {
         ),
         backend: `'${escapePyString(s.defaultBackend || 'auto')}'`,
       };
-      return searchResultWithSources(await runSearch('books', keywordArgs));
+      return searchResultWithSources(await runSearch('books', keywordArgs, s));
     },
   },
 
@@ -816,19 +830,18 @@ export const tools: Record<string, ExtensionToolDef> = {
       },
       required: ['url'],
     },
-    async handler(params: {
-      url: string;
-      max_length?: number;
-      start_index?: number;
-    }) {
-      const s = loadSettings();
+    async handler(
+      params: { url: string; max_length?: number; start_index?: number },
+      ctx?: ExtensionToolContext,
+    ) {
+      const s = settingsFor(ctx);
       const effectiveMaxLength = params.max_length ?? s.maxFetchLength;
       const { url, start_index = 0 } = params;
       const max_length = effectiveMaxLength;
       if (!isUrlAllowed(url, s)) {
         return `Error: URL "${url}" is blocked by domain filter settings.`;
       }
-      const result = await runExtract(url);
+      const result = await runExtract(url, undefined, s);
       if (result.error) {
         return `Error: ${result.error}`;
       }
@@ -867,9 +880,12 @@ export const tools: Record<string, ExtensionToolDef> = {
       },
       required: ['url'],
     },
-    async handler(params: { url: string; alt_text?: string }) {
+    async handler(
+      params: { url: string; alt_text?: string },
+      ctx?: ExtensionToolContext,
+    ) {
       const { url } = params;
-      const s = loadSettings();
+      const s = settingsFor(ctx);
       if (!isUrlAllowed(url, s)) {
         return {
           _response: `Error: URL "${url}" is blocked by domain filter settings.`,
@@ -946,14 +962,14 @@ export const tools: Record<string, ExtensionToolDef> = {
       },
       required: ['display_id'],
     },
-    async handler(params: { display_id: string }) {
+    async handler(params: { display_id: string }, ctx?: ExtensionToolContext) {
       const imageUrl = displayImageStore.get(params.display_id);
       if (!imageUrl) {
         return {
           _response: `Error Display ID not found: ${params.display_id}`,
         };
       }
-      const s = loadSettings();
+      const s = settingsFor(ctx);
       if (!isUrlAllowed(imageUrl, s)) {
         return {
           _response: `Error: Image URL is blocked by domain filter settings.`,

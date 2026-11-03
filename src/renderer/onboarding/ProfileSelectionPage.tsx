@@ -24,7 +24,11 @@ import getCategoryIcon from './categoryIcons';
 import { useDownloadSizes } from './downloadSizes';
 import { useDiskSpace } from './useDiskSpace';
 import { getSpaceLevel, getSpaceNote } from '../utils/diskSpace';
-import { formatGB, formatGBTruncated } from '../utils/formatters';
+import {
+  formatCapacityTruncated,
+  formatGB,
+  formatGBTruncated,
+} from '../utils/formatters';
 
 interface ProfileSelectionPageProps {
   professionIds: string[];
@@ -86,11 +90,14 @@ function getTotalLabel(
   loading: boolean,
 ): { label: string; isSize: boolean } {
   if (total.unknownCount === 0) {
-    return { label: formatGBTruncated(total.knownBytes), isSize: true };
+    return { label: formatCapacityTruncated(total.knownBytes), isSize: true };
   }
   if (loading) return { label: 'Calculating…', isSize: false };
   if (total.knownBytes > 0) {
-    return { label: `~${formatGBTruncated(total.knownBytes)}`, isSize: true };
+    return {
+      label: `~${formatCapacityTruncated(total.knownBytes)}`,
+      isSize: true,
+    };
   }
   return { label: 'Size unavailable', isSize: false };
 }
@@ -426,7 +433,7 @@ export default function ProfileSelectionPage({
               {showSpacePair && (
                 <span className="onb-selection-total-available">
                   {' / '}
-                  {formatGBTruncated(freeBytes)}
+                  {formatCapacityTruncated(freeBytes)}
                   <span className="onb-selection-total-available-label">
                     {' '}
                     free
@@ -522,7 +529,7 @@ export default function ProfileSelectionPage({
                   </span>
                   {showSpacePair && (
                     <span className="onb-selection-total-available">
-                      {` / ${formatGBTruncated(freeBytes)} free`}
+                      {` / ${formatCapacityTruncated(freeBytes)} free`}
                     </span>
                   )}
                 </span>

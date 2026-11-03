@@ -1,4 +1,10 @@
-import { useState, MouseEvent, KeyboardEvent, useCallback } from 'react';
+import {
+  useState,
+  MouseEvent,
+  KeyboardEvent,
+  useCallback,
+  useEffect,
+} from 'react';
 import {
   X,
   Settings,
@@ -7,15 +13,18 @@ import {
   ChevronRight,
   Code2,
   ListTree,
+  AlertCircle,
 } from 'lucide-react';
-import FileSystemSettings from './FileSystemSettings';
-import SandboxSettings from './SandboxSettings';
-import GitHubExtensionSettings from './GitHubExtensionSettings';
-import DDGSearchSettings from './DDGSearchSettings';
+import ExtensionSettingsForm from './ExtensionSettingsForm';
 import ConfirmDialog from './ConfirmDialog';
 import { resolveIcon } from './workflows/IconPicker';
 import { svgToDataUrl } from '../utils/svgToDataUrl';
 import { CodeBlock } from './MarkdownRenderer';
+import type {
+  ExtensionSettingsDef,
+  SettingsBag,
+  SettingValue,
+} from '../../shared/extensionSettings';
 import './styles/ExtensionModal.css';
 
 interface ToolInfo {
@@ -46,10 +55,105 @@ interface ExtensionInfo {
     official?: boolean;
     iconSvgData?: string;
     hasSettings?: boolean;
+    settings?: ExtensionSettingsDef;
   };
   tools: Record<string, ToolEntry>;
   enabled: boolean;
   extensionDir?: string;
+}
+
+/**
+ * The extension's own defaults layer, rendered from the fields the extension
+ * declares. Same component for every extension, built-in or user-authored.
+ */
+function SettingsTab({
+  extensionId,
+  schema,
+  onSaved,
+}: {
+  extensionId: string;
+  schema: ExtensionSettingsDef;
+  onSaved?: () => void | Promise<void>;
+}) {
+  const [values, setValues] = useState<SettingsBag>({});
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const loaded =
+          await window.electronAPI.extensionsGetSettings(extensionId);
+        if (!cancelled) setValues((loaded ?? {}) as SettingsBag);
+      } catch {
+        if (!cancelled) setError('Failed to load settings');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [extensionId]);
+
+  async function save() {
+    setSaving(true);
+    setError(null);
+    try {
+      const result = await window.electronAPI.extensionsSetSettings(
+        extensionId,
+        values,
+      );
+      if (result && result.success === false) {
+        setError(result.error ?? 'Failed to save settings');
+        return;
+      }
+      setDirty(false);
+      if (onSaved) await onSaved();
+    } catch {
+      setError('Failed to save settings');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (loading) return <div className="em-empty">Loading settings…</div>;
+
+  return (
+    <div className="em-settings">
+      <p className="em-settings-note">
+        Default settings for this extension. Profiles may override individual
+        fields from the Tools page of a profile.
+      </p>
+      {error && (
+        <div className="em-settings-error" role="alert">
+          <AlertCircle size={14} />
+          <span>{error}</span>
+        </div>
+      )}
+      <ExtensionSettingsForm
+        fields={schema.fields}
+        values={values}
+        onFieldChange={(key: string, value: SettingValue) => {
+          setValues((prev) => ({ ...prev, [key]: value }));
+          setDirty(true);
+        }}
+      />
+      {dirty && (
+        <button
+          type="button"
+          className="btn-accent em-settings-save"
+          onClick={save}
+          disabled={saving}
+        >
+          {saving ? 'Saving…' : 'Save Default Settings'}
+        </button>
+      )}
+    </div>
+  );
 }
 
 interface ExtensionModalProps {
@@ -397,7 +501,7 @@ export default function ExtensionModal({
                 onClick={() => setTab('settings')}
               >
                 <Settings size={14} />
-                Settings
+                Default settings
               </button>
             )}
           </div>
@@ -466,28 +570,18 @@ export default function ExtensionModal({
                   )}
                 </div>
               ))}
-            {tab === 'settings' && extension.manifest.id === 'filesystem' && (
-              <FileSystemSettings onSaved={handleSettingsSaved} />
+            {tab === 'settings' && extension.manifest.settings && (
+              <SettingsTab
+                extensionId={extension.manifest.id}
+                schema={extension.manifest.settings}
+                onSaved={handleSettingsSaved}
+              />
             )}
-            {tab === 'settings' && extension.manifest.id === 'sandbox' && (
-              <SandboxSettings onSaved={handleSettingsSaved} />
+            {tab === 'settings' && !extension.manifest.settings && (
+              <div className="em-empty">
+                This extension does not declare any settings.
+              </div>
             )}
-            {tab === 'settings' && extension.manifest.id === 'github' && (
-              <GitHubExtensionSettings onSaved={handleSettingsSaved} />
-            )}
-            {tab === 'settings' && extension.manifest.id === 'ddg_search' && (
-              <DDGSearchSettings onSaved={handleSettingsSaved} />
-            )}
-            {tab === 'settings' &&
-              extension.manifest.id !== 'filesystem' &&
-              extension.manifest.id !== 'sandbox' &&
-              extension.manifest.id !== 'github' &&
-              extension.manifest.id !== 'ddg_search' && (
-                <div className="em-empty">
-                  Settings configuration is not available for this extension in
-                  the UI.
-                </div>
-              )}
           </div>
         </div>
       </div>

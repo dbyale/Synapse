@@ -6,5 +6,57 @@
   "version": "1.0.0",
   "icon": "github.svg",
   "builtIn": false,
-  "hasSettings": true
+  "settings": {
+    "fields": [
+      {
+        "key": "appId",
+        "label": "GitHub App ID",
+        "kind": "text",
+        "group": "GitHub App credentials",
+        "hint": "Machine-level credential. Never stored on a profile or exported.",
+        "placeholder": "1234567",
+        "perProfile": false
+      },
+      {
+        "key": "installationId",
+        "label": "Installation ID",
+        "kind": "text",
+        "group": "GitHub App credentials",
+        "hint": "Machine-level credential. Never stored on a profile or exported.",
+        "placeholder": "98765432",
+        "perProfile": false
+      },
+      {
+        "key": "privateKey",
+        "label": "Private key (PEM)",
+        "kind": "textarea",
+        "group": "GitHub App credentials",
+        "hint": "Machine-level secret. Never stored on a profile or exported.",
+        "placeholder": "-----BEGIN RSA PRIVATE KEY-----",
+        "sensitive": true
+      },
+      {
+        "key": "allowedRepos",
+        "label": "Allowed repositories",
+        "kind": "stringList",
+        "group": "Access",
+        "hint": "owner/repo entries. When empty, every repository the App can reach is allowed.",
+        "placeholder": "owner/repo"
+      },
+      {
+        "key": "coAuthorName",
+        "label": "Co-author name",
+        "kind": "text",
+        "group": "Commits",
+        "hint": "Added to commit messages as a Co-authored-by trailer."
+      },
+      {
+        "key": "coAuthorEmail",
+        "label": "Co-author email",
+        "kind": "text",
+        "group": "Commits",
+        "hint": "Required together with the co-author name."
+      }
+    ]
+  }
 }
