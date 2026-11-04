@@ -33,6 +33,7 @@ import LocalModelCard, {
   LocalModelGroup,
 } from '../components/models/LocalModelCard';
 import ConfirmDialog from '../components/ConfirmDialog';
+import SearchBar from '../components/SearchBar';
 
 import '../styles/ModelsPage.css';
 
@@ -653,12 +654,11 @@ export default function ModelsPage() {
         <>
           {groupedLocalModels.length > 0 && (
             <div className="local-search-container">
-              <Search size={16} className="local-search-icon" />
-              <input
-                className="input-base search-input local-search-input"
-                placeholder="Search installed models..."
+              <SearchBar
+                className="local-search-bar"
                 value={localQuery}
-                onChange={(e) => setLocalQuery(e.target.value)}
+                onChange={setLocalQuery}
+                placeholder="Search installed models..."
               />
               <button
                 type="button"

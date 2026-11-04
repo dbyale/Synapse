@@ -44,6 +44,7 @@ import {
   subscribeExtensionData,
 } from '../utils/extensionData';
 import InfoTooltip from '../components/InfoTooltip';
+import SearchBar from '../components/SearchBar';
 import EditProfileModal from '../components/EditProfileModal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import '../styles/ProfilesPage.css';
@@ -158,6 +159,7 @@ export default function ProfilesPage() {
   const [editingProfile, setEditingProfile] = useState<Profile | null>(null);
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [previewOrder, setPreviewOrder] = useState<Profile[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
   const [showRestartDialog, setShowRestartDialog] = useState(false);
   const [pendingSwitchId, setPendingSwitchId] = useState<string | null>(null);
   const [showEditRestartDialog, setShowEditRestartDialog] = useState(false);
@@ -679,8 +681,20 @@ export default function ProfilesPage() {
     [],
   );
 
+  const isFiltering = searchQuery.trim().length > 0;
+
+  const filteredProfiles = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return profiles;
+    return profiles.filter(
+      (p) =>
+        p.name.toLowerCase().includes(query) ||
+        p.model.toLowerCase().includes(query),
+    );
+  }, [profiles, searchQuery]);
+
   const displayProfiles =
-    draggedId && previewOrder.length > 0 ? previewOrder : profiles;
+    draggedId && previewOrder.length > 0 ? previewOrder : filteredProfiles;
 
   return (
     <div className="sp-page">
@@ -753,16 +767,32 @@ export default function ProfilesPage() {
         </div>
       )}
 
+      {/* Search */}
+      {profiles.length > 0 && (
+        <SearchBar
+          value={searchQuery}
+          onChange={setSearchQuery}
+          placeholder="Search profiles by name or model..."
+          ariaLabel="Search profiles"
+        />
+      )}
+
       {/* Content */}
       <div className="sp-page__content">
-        {profiles.length === 0 ? (
+        {profiles.length === 0 && (
           <div className="sp-page__empty">
             <p>No profiles yet.</p>
             <p>
               Click <strong>New Profile</strong> to create one.
             </p>
           </div>
-        ) : (
+        )}
+        {profiles.length > 0 && displayProfiles.length === 0 && (
+          <div className="sp-page__empty">
+            <p>No profiles match your search.</p>
+          </div>
+        )}
+        {displayProfiles.length > 0 && (
           <div className="sp-page__list">
             {displayProfiles.map((profile) => {
               const isDragged = draggedId === profile.id;
@@ -773,8 +803,10 @@ export default function ProfilesPage() {
                   key={profile.id}
                   className={`sp-card ${
                     selectedProfileId === profile.id ? 'sp-card--active' : ''
-                  } ${isDragged ? 'sp-card--dragging' : ''}`}
-                  draggable
+                  } ${isDragged ? 'sp-card--dragging' : ''} ${
+                    isFiltering ? 'sp-card--no-drag' : ''
+                  }`}
+                  draggable={!isFiltering}
                   onDragStart={(e) => handleDragStart(e, profile.id)}
                   onDragOver={(e) => handleDragOver(e, profile.id)}
                   onDragLeave={handleDragLeave}
