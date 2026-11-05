@@ -1654,6 +1654,10 @@
   display: inline;
 }
 
+.epm-launch-args--condensed {
+  word-break: break-all;
+}
+
 .epm-launch-args__binary {
   color: var(--accent);
   font-weight: 700;
