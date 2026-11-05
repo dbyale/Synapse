@@ -847,6 +847,9 @@ export function buildLlamaServerArgs(
   // it needs to adjust — so omit both and let the server solve.
   if (!layersAuto && config.ngl != null) {
     if (config.tensorSplit)
+      spawnArgs.push('--tensor-split', config.tensorSplit);
+    if (config.tensorOverrides)
+      spawnArgs.push('--override-tensor', config.tensorOverrides);
   }
 
   // Projector Arguments
