@@ -1661,6 +1661,7 @@
 
 .epm-launch-args__flag {
   color: #fab387;
+  white-space: nowrap;
 }
 
 .epm-launch-args__path {
