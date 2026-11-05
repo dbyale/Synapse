@@ -846,8 +846,7 @@ export function buildLlamaServerArgs(
   // fits live at startup, and pinned overrides would make its fit throw when
   // it needs to adjust — so omit both and let the server solve.
   if (!layersAuto && config.ngl != null) {
-    if (config.tensorSplit) spawnArgs.push('-ts', config.tensorSplit);
-    if (config.tensorOverrides) spawnArgs.push('-ot', config.tensorOverrides);
+    if (config.tensorSplit)
   }
 
   // Projector Arguments
