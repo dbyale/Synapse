@@ -193,7 +193,36 @@ contextBridge.exposeInMainWorld('electronAPI', {
   chatUnload: () => ipcRenderer.invoke('chat:unload'),
   chatHasConversation: () => ipcRenderer.invoke('chat:hasConversation'),
   chatIsRunning: () => ipcRenderer.invoke('chat:isRunning'),
+  chatGetServerStatus: (): Promise<{
+    running: boolean;
+    mode: 'local' | 'external' | null;
+    url: string | null;
+  }> => ipcRenderer.invoke('chat:getServerStatus'),
   chatReloadProfile: () => ipcRenderer.invoke('chat:reloadProfile'),
+
+  // ── Secrets API ──
+  // Write/delete/probe only: no invoke here ever returns a plaintext
+  // secret. Values are encrypted at rest via safeStorage in main.
+  secretSet: (
+    scope: string,
+    key: string,
+    value: string,
+  ): Promise<{ success: boolean; error?: string; unencrypted?: boolean }> =>
+    ipcRenderer.invoke('secrets:set', scope, key, value),
+  secretDelete: (
+    scope: string,
+    key: string,
+  ): Promise<{ success: boolean }> =>
+    ipcRenderer.invoke('secrets:delete', scope, key),
+  secretHas: (
+    scope: string,
+    key: string,
+  ): Promise<{ exists: boolean; unencrypted: boolean }> =>
+    ipcRenderer.invoke('secrets:has', scope, key),
+  secretDeleteScope: (scope: string): Promise<{ success: boolean }> =>
+    ipcRenderer.invoke('secrets:delete-scope', scope),
+  secretEncryptionAvailable: (): Promise<{ available: boolean }> =>
+    ipcRenderer.invoke('secrets:encryption-available'),
 
   onChatSystemProgress: (
     callback: (data: {

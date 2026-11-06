@@ -43,6 +43,7 @@ import {
 } from './estimator';
 import { registerExtensionIpcHandlers } from './ipcExtensions';
 import { getBackendInfo } from './backendInfo';
+import { getSecretStore } from './secretStore';
 import { getPythonInfo, invalidatePythonRuntimeCache } from './pythonInfo';
 import {
   getPythonPackagesStatus,
@@ -685,6 +686,10 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     return chatService.isServerRunning();
   });
 
+  ipcMain.handle('chat:getServerStatus', () => {
+    return chatService.getServerStatus();
+  });
+
   ipcMain.handle('chat:getServerLog', () => {
     return chatService.getServerLog();
   });
@@ -762,6 +767,35 @@ export function registerIpcHandlers(win: BrowserWindow): void {
 
   ipcMain.handle('get-server-pid', () => {
     return chatService.getServerPid();
+  });
+
+  // ── Secrets (encrypted at rest via safeStorage) ──
+  // The renderer may write, delete, and probe secrets — no handler ever
+  // returns a plaintext value. chat.ts reads keys directly in-process.
+  ipcMain.handle('secrets:set', (_event, scope: string, key: string, value: string) => {
+    return getSecretStore().set(scope, key, value);
+  });
+
+  ipcMain.handle('secrets:delete', (_event, scope: string, key: string) => {
+    getSecretStore().delete(scope, key);
+    return { success: true };
+  });
+
+  ipcMain.handle('secrets:has', (_event, scope: string, key: string) => {
+    const store = getSecretStore();
+    return {
+      exists: store.has(scope, key),
+      unencrypted: store.isUnencrypted(scope, key),
+    };
+  });
+
+  ipcMain.handle('secrets:delete-scope', (_event, scope: string) => {
+    getSecretStore().deleteScope(scope);
+    return { success: true };
+  });
+
+  ipcMain.handle('secrets:encryption-available', () => {
+    return { available: getSecretStore().encryptionAvailable };
   });
 
   // ── Unified Hardware Stats ──

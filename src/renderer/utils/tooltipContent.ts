@@ -392,6 +392,38 @@ export const CUSTOM_FLAGS_PAGE_TOOLTIP = [
   'Values with spaces must be quoted. Each row is appended verbatim before --metrics --no-ui.',
 ];
 
+// ── External Server (Server Settings) ──
+
+export const EXTERNAL_SERVER_TOOLTIP = [
+  'Connect to an already-running v1-compatible server (e.g. llama-server on another machine) instead of launching a local one.',
+  'Synapse never starts, stops, or restarts an external server — it only connects to it.',
+  'Host, port, CORS, launch flags and the optimizer do not apply; the remote server owns all of that.',
+];
+
+export const EXTERNAL_URL_TOOLTIP = [
+  'Base URL of the external server, e.g. "http://192.168.1.50:8080" or "https://llm.example.com".',
+  'Shorthand like "192.168.1.50:8080" is accepted and treated as http://.',
+  'Synapse appends /health, /v1/chat/completions and friends itself — do not include API paths.',
+];
+
+export const EXTERNAL_API_KEY_TOOLTIP = [
+  'Optional Bearer token sent with every request, for servers started with --api-key or similar auth.',
+  'Stored encrypted via the operating system keyring (never in the profile, localStorage, or .synprofile exports).',
+  'Leave blank to keep a saved key; use Clear to remove it.',
+];
+
+export const EXTERNAL_MODEL_TOOLTIP = [
+  'The model id sent as the "model" field in every /v1/chat/completions request.',
+  'Required by OpenAI-style endpoints (e.g. "gpt-4o-mini"); llama.cpp servers ignore it and serve whatever model they loaded.',
+  'Leave blank for llama-server; set it when the endpoint rejects requests without a model.',
+];
+
+export const EXTERNAL_CTX_TOOLTIP = [
+  'The context window Synapse assumes for this server — drives the usage bar and context shifting.',
+  'llama.cpp servers report their real n_ctx automatically via /props; this setting overrides that when changed.',
+  'Set it to the server\'s actual limit for endpoints that do not report one (OpenAI: e.g. 128000).',
+];
+
 // ── CORS (Server Settings) ──
 
 export const CORS_ORIGINS_TOOLTIP = [

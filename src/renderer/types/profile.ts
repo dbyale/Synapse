@@ -166,6 +166,19 @@ export interface Profile {
   customFlags?: string[];
   useCustomLaunch?: boolean;
   customLaunchCommand?: string;
+  /**
+   * Connect to an external v1-compatible server instead of launching a
+   * local llama-server. The API key, if any, is NOT stored here — it
+   * lives in the main-process encrypted secret store (see secretStore.ts),
+   * addressed by profile id, so profiles/localStorage/exports never carry it.
+   */
+  useExternalServer?: boolean;
+  externalServerUrl?: string;
+  /**
+   * Model id sent as `model` in /v1/chat/completions for external servers.
+   * Required by OpenAI-style endpoints; llama.cpp servers ignore it.
+   */
+  externalModelName?: string;
   order: number;
   createdAt: number;
 }

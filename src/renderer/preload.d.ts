@@ -424,11 +424,35 @@ declare global {
       chatUnload: () => Promise<void>;
       chatHasConversation: () => Promise<boolean>;
       chatIsRunning: () => Promise<boolean>;
+      chatGetServerStatus: () => Promise<{
+        running: boolean;
+        mode: 'local' | 'external' | null;
+        url: string | null;
+      }>;
       chatReloadProfile: () => Promise<{
         success: boolean;
         error?: string;
         profile?: Profile;
       }>;
+      secretSet: (
+        scope: string,
+        key: string,
+        value: string,
+      ) => Promise<{
+        success: boolean;
+        error?: string;
+        unencrypted?: boolean;
+      }>;
+      secretDelete: (
+        scope: string,
+        key: string,
+      ) => Promise<{ success: boolean }>;
+      secretHas: (
+        scope: string,
+        key: string,
+      ) => Promise<{ exists: boolean; unencrypted: boolean }>;
+      secretDeleteScope: (scope: string) => Promise<{ success: boolean }>;
+      secretEncryptionAvailable: () => Promise<{ available: boolean }>;
       onChatSystemProgress: (
         callback: (data: {
           progress: number;

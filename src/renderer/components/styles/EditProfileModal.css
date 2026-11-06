@@ -1686,6 +1686,15 @@
   font-weight: 600;
 }
 
+/* Model trigger when an external v1-compatible server owns the model. */
+.epm-model-external-configured {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--accent);
+  font-weight: 600;
+}
+
 /* ── Custom Flags (submenu) ── */
 
 .epm-custom-flags-list {

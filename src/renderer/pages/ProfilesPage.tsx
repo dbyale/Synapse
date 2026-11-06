@@ -34,6 +34,7 @@ import {
   getUniqueProfileId,
   normalizeProfileName,
 } from '../utils/profiles';
+import { externalServerSecretScope } from '../../shared/externalServer';
 import {
   getExtensions,
   getEnabledExtensions,
@@ -352,6 +353,10 @@ export default function ProfilesPage() {
       setSelectedProfileId(null);
       localStorage.removeItem('selectedProfileId');
     }
+    // Drop any encrypted secrets (external server API key) with the profile.
+    window.electronAPI
+      .secretDeleteScope(externalServerSecretScope(id))
+      .catch(() => {});
   };
 
   const handleSelect = async (id: string) => {
@@ -832,8 +837,21 @@ export default function ProfilesPage() {
                           )}
                         </div>
                         <div className="sp-card__model">
-                          <strong>Model:</strong>{' '}
-                          {profile.modelFilename ? (
+                          <strong>
+                            {profile.useExternalServer ? 'Server:' : 'Model:'}
+                          </strong>{' '}
+                          {profile.useExternalServer ? (
+                            <InfoTooltip
+                              content="This profile connects to an external v1-compatible server instead of launching a local one."
+                              side="right"
+                              hideIcon
+                              title="External Server"
+                            >
+                              <span>
+                                {profile.externalServerUrl || 'No URL set'}
+                              </span>
+                            </InfoTooltip>
+                          ) : profile.modelFilename ? (
                             <InfoTooltip
                               content="The GGUF model file assigned to this profile."
                               side="right"
@@ -919,10 +937,12 @@ export default function ProfilesPage() {
                             }
                           }}
                           disabled={
-                            loadingId !== null || !profile.modelFilename
+                            loadingId !== null ||
+                            (!profile.modelFilename &&
+                              !profile.useExternalServer)
                           }
                           title={
-                            profile.modelFilename
+                            profile.modelFilename || profile.useExternalServer
                               ? undefined
                               : 'Add a model to this profile before activating it'
                           }
