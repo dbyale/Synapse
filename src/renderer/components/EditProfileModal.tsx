@@ -33,6 +33,7 @@ import {
   Check,
   Scissors,
   Download,
+  RotateCcw,
 } from 'lucide-react';
 import {
   Profile,
@@ -46,6 +47,20 @@ import { getToolMeta, getAvailableToolNames } from '../utils/extensionData';
 import { svgToDataUrl } from '../utils/svgToDataUrl';
 import { resolveIcon } from './workflows/IconPicker';
 import ToolListModal from './ToolListModal';
+import ExtensionSettingsForm from './ExtensionSettingsForm';
+import ConfirmDialog from './ConfirmDialog';
+import { sameSettingValue } from '../../shared/extensionSettings';
+import {
+  normalizeExternalServerUrl,
+  isValidExternalServerUrl,
+  externalServerSecretScope,
+  EXTERNAL_API_KEY_SECRET_KEY,
+} from '../../shared/externalServer';
+import type {
+  ExtensionSettingsDef,
+  SettingValue,
+  SettingsBag,
+} from '../../shared/extensionSettings';
 import { formatBytes } from '../utils/formatters';
 import InfoTooltip from './InfoTooltip';
 import {
@@ -111,6 +126,11 @@ import {
   PORT_TOOLTIP,
   DRY_PENALTY_ENABLED,
   MANUAL_LAUNCH_TOOLTIP,
+  EXTERNAL_SERVER_TOOLTIP,
+  EXTERNAL_URL_TOOLTIP,
+  EXTERNAL_API_KEY_TOOLTIP,
+  EXTERNAL_MODEL_TOOLTIP,
+  EXTERNAL_CTX_TOOLTIP,
   CUSTOM_FLAGS_PAGE_TOOLTIP,
   CONTEXT_SHIFT_ENABLED_TOOLTIP,
   CONTEXT_SHIFT_TOKENS_REMAINING_TOOLTIP,
@@ -148,6 +168,8 @@ interface ExtensionGroup {
       icon: string;
       builtIn: boolean;
       iconSvgData?: string;
+      hasSettings?: boolean;
+      settings?: ExtensionSettingsDef;
     };
     tools: Record<
       string,
@@ -1098,6 +1120,135 @@ function SearchResultsPage({
 
 // ── Tool sub-component ──
 
+/**
+ * Per-profile overrides for one extension. Rendered from the same field
+ * definitions the extension declares — the profile editor needs no knowledge of
+ * which extension it is configuring. Fields the profile does not override show
+ * the default read-only.
+ */
+function ProfileToolSettingsModal({
+  extensionId,
+  extensionName,
+  schema,
+  overrides,
+  onChange,
+  onClose,
+}: {
+  extensionId: string;
+  extensionName: string;
+  schema: ExtensionSettingsDef;
+  overrides: SettingsBag;
+  onChange: (next: SettingsBag) => void;
+  onClose: () => void;
+}) {
+  const [defaults, setDefaults] = useState<SettingsBag | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const loaded =
+          await window.electronAPI.extensionsGetSettings(extensionId);
+        if (!cancelled) setDefaults((loaded ?? {}) as SettingsBag);
+      } catch {
+        if (!cancelled) setError('Failed to load default settings');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [extensionId]);
+
+  function handleFieldChange(key: string, value: SettingValue) {
+    const field = schema.fields.find((f) => f.key === key);
+    const fallback = defaults?.[key] ?? field?.default;
+    const next = { ...overrides };
+    // An edit that lands back on the default is not an override, so drop the
+    // key instead of storing a per-profile copy of it.
+    if (fallback !== undefined && sameSettingValue(value, fallback)) {
+      delete next[key];
+    } else {
+      next[key] = value;
+    }
+    onChange(next);
+  }
+
+  const overrideCount = Object.keys(overrides).length;
+
+  const handleOverlayClick = (e: MouseEvent<HTMLDivElement>) => {
+    if (e.target === e.currentTarget) onClose();
+  };
+  const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'Escape') onClose();
+  };
+
+  return (
+    <div
+      className="tlm-overlay"
+      onClick={handleOverlayClick}
+      onKeyDown={handleKeyDown}
+      role="dialog"
+      aria-modal="true"
+      aria-label={`${extensionName} settings for this profile`}
+    >
+      <div className="tlm-dialog">
+        <div className="tlm-header">
+          <h2 className="tlm-title">{extensionName}</h2>
+          <button
+            type="button"
+            className="tlm-close"
+            onClick={onClose}
+            aria-label="Close"
+          >
+            <X size={18} />
+          </button>
+        </div>
+        <div className="epm-tool-settings-body">
+          <p className="epm-tool-settings-note">
+            Change any setting to override it for this profile only. Anything
+            left at its default comes from the extension&apos;s default
+            settings.
+          </p>
+          {error && <div className="epm-tool-settings-error">{error}</div>}
+          {loading ? (
+            <div className="tlm-empty">Loading settings…</div>
+          ) : (
+            <ExtensionSettingsForm
+              fields={schema.fields}
+              values={overrides}
+              defaults={defaults ?? undefined}
+              profileMode
+              onFieldChange={handleFieldChange}
+            />
+          )}
+        </div>
+        <div className="epm-tool-settings-footer">
+          <span className="epm-tool-settings-footer-note">
+            {overrideCount === 0
+              ? 'This profile uses the extension defaults.'
+              : `${overrideCount} setting${
+                  overrideCount === 1 ? '' : 's'
+                } overridden for this profile.`}
+          </span>
+          <button
+            type="button"
+            className="epm-tool-settings-reset"
+            disabled={overrideCount === 0}
+            onClick={() => onChange({})}
+          >
+            <RotateCcw size={13} />
+            Reset to default
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ToolCategoryCard({
   category,
   toolKeys,
@@ -1107,6 +1258,9 @@ function ToolCategoryCard({
   iconName,
   iconSvgData,
   onOpenToolModal,
+  hasSettings,
+  overrideCount,
+  onOpenSettings,
 }: {
   category: string;
   toolKeys: string[];
@@ -1116,6 +1270,9 @@ function ToolCategoryCard({
   iconName?: string;
   iconSvgData?: string;
   onOpenToolModal: () => void;
+  hasSettings?: boolean;
+  overrideCount?: number;
+  onOpenSettings?: () => void;
 }) {
   const enabledCount = toolKeys.filter((tk) => editTools.includes(tk)).length;
   const totalCount = toolKeys.length;
@@ -1165,6 +1322,35 @@ function ToolCategoryCard({
         >
           {enabledCount}/{totalCount}
         </span>
+        {hasSettings && onOpenSettings && (
+          <span
+            className={`epm-tool-category__gear${
+              overrideCount ? ' epm-tool-category__gear--active' : ''
+            }`}
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenSettings();
+            }}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onOpenSettings();
+              }
+            }}
+            title={
+              overrideCount
+                ? `${overrideCount} setting${
+                    overrideCount === 1 ? '' : 's'
+                  } overridden for this profile`
+                : 'Settings for this profile'
+            }
+            aria-label={`Settings for ${category}`}
+          >
+            <Settings size={14} />
+          </span>
+        )}
       </button>
     </div>
   );
@@ -1183,6 +1369,8 @@ function MainPage({
   selectedProjectorDisplay,
   availableModelsForEdit,
   onOpenModelModal,
+  editUseExternalServer,
+  onRequestDisableExternal,
   onNavigate,
   editAutoOptimizer,
   editLayers,
@@ -1213,6 +1401,8 @@ function MainPage({
     name: string;
   }>;
   onOpenModelModal: () => void;
+  editUseExternalServer: boolean;
+  onRequestDisableExternal: () => void;
   onNavigate: (page: string) => void;
   editAutoOptimizer: 'synapse' | 'custom' | null;
   editLayers: number | undefined;
@@ -1253,7 +1443,32 @@ function MainPage({
           >
             <div className="epm-section__label">Model</div>
           </InfoTooltip>
-          {availableModelsForEdit.length === 0 ? (
+          {editUseExternalServer ? (
+            // External server profile: the remote server owns the model,
+            // so the trigger reports that instead of opening the picker.
+            // Clicking it offers to disable external mode and pick a
+            // local model instead.
+            <button
+              type="button"
+              className="sp-card__edit-select-trigger sp-card__edit-select-trigger--card"
+              style={{ background: 'var(--bg-primary)' }}
+              onClick={onRequestDisableExternal}
+              title="Using an external model — click to switch back to a local model"
+            >
+              <div className="sp-card__edit-select-trigger__card">
+                <div className="sp-card__edit-select-trigger__card-top">
+                  <span className="sp-card__edit-select-trigger__card-name epm-model-external-configured">
+                    <Server size={16} />
+                    External Model Configured
+                  </span>
+                  <ChevronDown
+                    size={18}
+                    className="sp-card__edit-select-trigger__chevron"
+                  />
+                </div>
+              </div>
+            </button>
+          ) : availableModelsForEdit.length === 0 ? (
             <div
               style={{
                 padding: '12px 16px',
@@ -1308,6 +1523,17 @@ function MainPage({
             </button>
           )}
         </div>
+
+        {editUseExternalServer && (
+          // External mode: the server card is the model's counterpart, so
+          // it lives in the left column and is renamed to match.
+          <SectionCard
+            icon={<Server size={20} />}
+            title="External Server Settings"
+            preview="Connect to an external v1-compatible server."
+            onClick={() => onNavigate('server-settings')}
+          />
+        )}
 
         {editModel && selectedProjectorDisplay !== undefined && (
           <SectionCard
@@ -1380,12 +1606,14 @@ function MainPage({
           preview="Fine-tune how the AI generates responses."
           onClick={() => onNavigate('advanced')}
         />
-        <SectionCard
-          icon={<Server size={20} />}
-          title="Server Settings"
-          preview="Advanced settings for llama-server"
-          onClick={() => onNavigate('server-settings')}
-        />
+        {!editUseExternalServer && (
+          <SectionCard
+            icon={<Server size={20} />}
+            title="Server Settings"
+            preview="Advanced settings for llama-server"
+            onClick={() => onNavigate('server-settings')}
+          />
+        )}
       </div>
     </div>
   );
@@ -1512,30 +1740,27 @@ function ToolsPage({
   onToolToggle,
   openCategoryId,
   onOpenCategoryConsumed,
+  editToolSettings,
+  onToolSettingsChange,
 }: {
-  extensionGroups: Array<{
-    extension: {
-      manifest: {
-        id: string;
-        name: string;
-        description: string;
-        icon: string;
-        iconSvgData?: string;
-      };
-      tools: Record<string, any>;
-    };
-    toolKeys: string[];
-  }>;
+  extensionGroups: ExtensionGroup[];
   editTools: string[];
   onToolToggle: (key: string) => void;
   openCategoryId?: string | null;
   onOpenCategoryConsumed?: () => void;
+  editToolSettings: Record<string, SettingsBag>;
+  onToolSettingsChange: (extId: string, next: SettingsBag) => void;
 }) {
   const [modalExt, setModalExt] = useState<{
     id: string;
     name: string;
     description: string;
     toolKeys: string[];
+  } | null>(null);
+  const [settingsExt, setSettingsExt] = useState<{
+    id: string;
+    name: string;
+    schema: ExtensionSettingsDef;
   } | null>(null);
 
   useEffect(() => {
@@ -1596,6 +1821,20 @@ function ToolsPage({
                   .forEach((tk) => onToolToggle(tk));
               }
             }}
+            hasSettings={!!extension.manifest.settings}
+            overrideCount={
+              Object.keys(editToolSettings[extension.manifest.id] ?? {}).length
+            }
+            onOpenSettings={
+              extension.manifest.settings
+                ? () =>
+                    setSettingsExt({
+                      id: extension.manifest.id,
+                      name: extension.manifest.name,
+                      schema: extension.manifest.settings!,
+                    })
+                : undefined
+            }
           />
         ))}
       </div>
@@ -1623,6 +1862,17 @@ function ToolsPage({
           editTools={editTools}
           onToolToggle={onToolToggle}
           onClose={() => setModalExt(null)}
+        />
+      )}
+
+      {settingsExt && (
+        <ProfileToolSettingsModal
+          extensionId={settingsExt.id}
+          extensionName={settingsExt.name}
+          schema={settingsExt.schema}
+          overrides={editToolSettings[settingsExt.id] ?? {}}
+          onChange={(next) => onToolSettingsChange(settingsExt.id, next)}
+          onClose={() => setSettingsExt(null)}
         />
       )}
     </>
@@ -4624,6 +4874,22 @@ function ServerSettingsPage({
   setEditCustomLaunchCommand,
   customFlagsCount,
   modelFilename,
+  editUseExternalServer,
+  setEditUseExternalServer,
+  editExternalServerUrl,
+  setEditExternalServerUrl,
+  externalKeyExists,
+  externalKeyUnencrypted,
+  editExternalApiKey,
+  setEditExternalApiKey,
+  clearExternalKey,
+  setClearExternalKey,
+  encryptionAvailable,
+  isExternal,
+  editExternalModelName,
+  setEditExternalModelName,
+  editContextSize,
+  setEditContextSize,
 }: {
   editHost: string;
   setEditHost: (v: string) => void;
@@ -4644,6 +4910,22 @@ function ServerSettingsPage({
   setEditCustomLaunchCommand: (v: string) => void;
   customFlagsCount: number;
   modelFilename: string;
+  editUseExternalServer: boolean;
+  setEditUseExternalServer: (v: boolean) => void;
+  editExternalServerUrl: string;
+  setEditExternalServerUrl: (v: string) => void;
+  externalKeyExists: boolean;
+  externalKeyUnencrypted: boolean;
+  editExternalApiKey: string;
+  setEditExternalApiKey: (v: string) => void;
+  clearExternalKey: boolean;
+  setClearExternalKey: (v: boolean) => void;
+  encryptionAvailable: boolean;
+  isExternal: boolean;
+  editExternalModelName: string;
+  setEditExternalModelName: (v: string) => void;
+  editContextSize: number | undefined;
+  setEditContextSize: (v: number | undefined) => void;
 }) {
   let emptyMessage = 'Launch arguments unavailable.';
   if (launchArgsLoading) {
@@ -4677,7 +4959,9 @@ function ServerSettingsPage({
 
   return (
     <>
-      <h2 className="epm-page-title">Server Settings</h2>
+      <h2 className="epm-page-title">
+        {isExternal ? 'External Server Settings' : 'Server Settings'}
+      </h2>
       <p
         style={{
           fontSize: '14px',
@@ -4686,10 +4970,250 @@ function ServerSettingsPage({
           lineHeight: 1.5,
         }}
       >
-        Advanced settings for llama-server.
+        {isExternal
+          ? 'Connect this profile to an external v1-compatible server.'
+          : 'Advanced settings for llama-server.'}
       </p>
 
-      {/* Manual Launch Toggle */}
+      {/* External Server Toggle */}
+      <div className="epm-section" style={{ marginTop: '20px' }}>
+        <label className="epm-perf-toggle-row" style={{ paddingTop: 0 }}>
+          <InfoTooltip
+            content={EXTERNAL_SERVER_TOOLTIP}
+            side="right"
+            stretch
+            className="info-tooltip-stretch--row"
+            title="External Server"
+          >
+            <span className="epm-perf-toggle-label">External Server</span>
+            <div
+              className={`epm-toggle-switch${editUseExternalServer ? ' epm-toggle-switch--on' : ''}`}
+              onClick={() => {
+                const next = !editUseExternalServer;
+                if (next) setEditUseCustomLaunch(false);
+                setEditUseExternalServer(next);
+              }}
+              role="switch"
+              aria-checked={editUseExternalServer}
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === ' ' || e.key === 'Enter') {
+                  e.preventDefault();
+                  const next = !editUseExternalServer;
+                  if (next) setEditUseCustomLaunch(false);
+                  setEditUseExternalServer(next);
+                }
+              }}
+            >
+              <div className="epm-toggle-switch__knob" />
+            </div>
+          </InfoTooltip>
+        </label>
+        <div
+          style={{
+            fontSize: '12px',
+            color: 'var(--text-secondary)',
+            marginTop: '4px',
+            lineHeight: 1.4,
+          }}
+        >
+          {editUseExternalServer
+            ? 'Connect to an already-running v1-compatible server. Synapse will not launch, stop, or restart it.'
+            : 'Automatic mode: Synapse launches and manages a local llama-server for this profile.'}
+        </div>
+      </div>
+
+      {editUseExternalServer ? (
+        <>
+          <div className="epm-section" style={{ marginTop: '20px' }}>
+            <div className="epm-section__label">Server URL</div>
+            <InfoTooltip
+              content={EXTERNAL_URL_TOOLTIP}
+              side="bottom"
+              stretch
+              className="info-tooltip-stretch--col"
+              title="Server URL"
+            >
+              <input
+                type="text"
+                className="epm-input"
+                value={editExternalServerUrl}
+                onChange={(e) => setEditExternalServerUrl(e.target.value)}
+                placeholder="http://192.168.1.50:8080"
+                style={{ marginTop: '8px' }}
+              />
+            </InfoTooltip>
+            {editExternalServerUrl.trim() !== '' &&
+              !isValidExternalServerUrl(editExternalServerUrl) && (
+                <div
+                  style={{
+                    fontSize: '12px',
+                    color: '#f38ba8',
+                    marginTop: '6px',
+                  }}
+                >
+                  Invalid URL — use a full address like
+                  &quot;http://192.168.1.50:8080&quot;.
+                </div>
+              )}
+          </div>
+
+          <div className="epm-section" style={{ marginTop: '20px' }}>
+            <InfoTooltip
+              content={EXTERNAL_MODEL_TOOLTIP}
+              side="bottom"
+              stretch
+              className="info-tooltip-stretch--col"
+              title="Model Name"
+            >
+              <div className="epm-section__label">Model Name</div>
+              <input
+                type="text"
+                className="epm-input"
+                value={editExternalModelName}
+                onChange={(e) => setEditExternalModelName(e.target.value)}
+                placeholder="e.g. gpt-4o-mini or qwen3-32b"
+                style={{ marginTop: '8px' }}
+              />
+            </InfoTooltip>
+            <div
+              style={{
+                fontSize: '12px',
+                color: 'var(--text-secondary)',
+                marginTop: '6px',
+                lineHeight: 1.4,
+              }}
+            >
+              Sent as the &quot;model&quot; field with every request. Required
+              for OpenAI-style endpoints; llama-server ignores it.
+            </div>
+          </div>
+
+          <div className="epm-section" style={{ marginTop: '20px' }}>
+            <div className="epm-perf-slider-group">
+              <InfoTooltip
+                content={EXTERNAL_CTX_TOOLTIP}
+                side="bottom"
+                stretch
+                className="info-tooltip-stretch--col"
+                title="Context Length"
+              >
+                <label className="epm-perf-slider-label">
+                  Context Length:{' '}
+                  <strong>{(editContextSize ?? 4096).toLocaleString()}</strong>
+                </label>
+                <div className="epm-perf-range-wrap">
+                  <input
+                    type="range"
+                    min={512}
+                    max={131072}
+                    step={512}
+                    value={editContextSize ?? 4096}
+                    className="epm-perf-range"
+                    onChange={(e) =>
+                      setEditContextSize(parseInt(e.target.value, 10))
+                    }
+                  />
+                </div>
+                <div className="epm-perf-range-labels">
+                  <span>512</span>
+                  <span>131,072</span>
+                </div>
+              </InfoTooltip>
+            </div>
+            <div
+              style={{
+                fontSize: '12px',
+                color: 'var(--text-secondary)',
+                marginTop: '6px',
+                lineHeight: 1.4,
+              }}
+            >
+              Drives the usage bar and context shifting. llama.cpp servers
+              report their real window automatically — set this for endpoints
+              that do not.
+            </div>
+          </div>
+
+          <div className="epm-section" style={{ marginTop: '20px' }}>
+            <InfoTooltip
+              content={EXTERNAL_API_KEY_TOOLTIP}
+              side="bottom"
+              stretch
+              className="info-tooltip-stretch--col"
+              title="API Key"
+            >
+              <div className="epm-section__label">API Key (optional)</div>
+            </InfoTooltip>
+            <div
+              style={{
+                display: 'flex',
+                gap: '8px',
+                alignItems: 'center',
+                marginTop: '8px',
+              }}
+            >
+              <input
+                type="password"
+                className="epm-input"
+                value={editExternalApiKey}
+                onChange={(e) => setEditExternalApiKey(e.target.value)}
+                placeholder={
+                  externalKeyExists && !clearExternalKey
+                    ? 'Saved — leave blank to keep'
+                    : 'Bearer token (optional)'
+                }
+                autoComplete="new-password"
+                style={{ flex: 1 }}
+              />
+              {externalKeyExists && !clearExternalKey && (
+                <button
+                  type="button"
+                  className="epm-custom-flag-remove"
+                  onClick={() => {
+                    setClearExternalKey(true);
+                    setEditExternalApiKey('');
+                  }}
+                  aria-label="Remove saved key"
+                  title="Remove saved key"
+                >
+                  <Trash2 size={16} />
+                </button>
+              )}
+            </div>
+            <div
+              style={{
+                fontSize: '12px',
+                color: 'var(--text-secondary)',
+                marginTop: '6px',
+                lineHeight: 1.4,
+              }}
+            >
+              {clearExternalKey
+                ? 'Saved key will be removed when you save this profile.'
+                : editExternalApiKey.trim()
+                  ? 'New key will be stored encrypted in the OS keyring.'
+                  : externalKeyExists
+                    ? 'A key is saved for this profile. It is stored encrypted and never exported with the profile.'
+                    : 'Sent as a Bearer token with every request. Stored encrypted, never exported with the profile.'}
+            </div>
+            {(!encryptionAvailable || externalKeyUnencrypted) && (
+              <div
+                className="epm-estimate-notice"
+                style={{ marginTop: '10px' }}
+              >
+                <AlertTriangle size={14} />
+                <span>
+                  OS keyring unavailable — API keys are stored unencrypted on
+                  this machine.
+                </span>
+              </div>
+            )}
+          </div>
+        </>
+      ) : (
+        <>
+          {/* Manual Launch Toggle */}
       <div className="epm-section" style={{ marginTop: '20px' }}>
         <label className="epm-perf-toggle-row" style={{ paddingTop: 0 }}>
           <InfoTooltip
@@ -5007,6 +5531,8 @@ function ServerSettingsPage({
               </button>
             </div>
           </div>
+        </>
+      )}
         </>
       )}
     </>
@@ -5332,6 +5858,12 @@ export default function EditProfileModal({
       : '',
   );
   const [editTools, setEditTools] = useState<string[]>(profile?.tools ?? []);
+  // Per-profile extension settings overrides, keyed by extension id. Only the
+  // keys this profile overrides are stored; everything else comes from the
+  // extension's default settings.
+  const [editToolSettings, setEditToolSettings] = useState<
+    Record<string, SettingsBag>
+  >(profile?.toolSettings ?? {});
   const [editRpEnabled, setEditRpEnabled] = useState(
     profile?.repeatPenalty?.enabled !== false,
   );
@@ -5638,13 +6170,55 @@ export default function EditProfileModal({
   const [editCustomLaunchCommand, setEditCustomLaunchCommand] =
     useState<string>(profile?.customLaunchCommand ?? '');
 
+  // External v1-compatible server. The API key itself is NOT React state
+  // that round-trips from storage — we only track whether one exists;
+  // plaintext never comes back from the main process.
+  const [editUseExternalServer, setEditUseExternalServer] = useState<boolean>(
+    !!profile?.useExternalServer,
+  );
+  const [editExternalServerUrl, setEditExternalServerUrl] = useState<string>(
+    profile?.externalServerUrl ?? '',
+  );
+  const [externalKeyExists, setExternalKeyExists] = useState(false);
+  const [externalKeyUnencrypted, setExternalKeyUnencrypted] = useState(false);
+  const [editExternalApiKey, setEditExternalApiKey] = useState('');
+  const [clearExternalKey, setClearExternalKey] = useState(false);
+  const [encryptionAvailable, setEncryptionAvailable] = useState(true);
+  // Model id sent to external v1 endpoints (required by OpenAI-style
+  // servers, ignored by llama.cpp). Context window reuses editContextSize.
+  const [editExternalModelName, setEditExternalModelName] = useState<string>(
+    profile?.externalModelName ?? '',
+  );
+  useEffect(() => {
+    if (!profile?.id) return undefined;
+    let alive = true;
+    window.electronAPI
+      .secretHas(
+        externalServerSecretScope(profile.id),
+        EXTERNAL_API_KEY_SECRET_KEY,
+      )
+      .then((r) => {
+        if (!alive) return;
+        setExternalKeyExists(r.exists);
+        setExternalKeyUnencrypted(r.unencrypted);
+      })
+      .catch(() => {});
+    window.electronAPI
+      .secretEncryptionAvailable()
+      .then((r) => alive && setEncryptionAvailable(r.available))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [profile?.id]);
+
   // Launch arguments preview (built by the main process via chat.ts)
   const [launchArgs, setLaunchArgs] = useState<string[] | null>(null);
   const [launchArgsLoading, setLaunchArgsLoading] = useState(false);
   const [launchArgsCondensed, setLaunchArgsCondensed] = useState(false);
   const launchArgsReqId = useRef(0);
   useEffect(() => {
-    if (editUseCustomLaunch) {
+    if (editUseCustomLaunch || editUseExternalServer) {
       launchArgsReqId.current += 1;
       setLaunchArgs(null);
       setLaunchArgsLoading(false);
@@ -5825,6 +6399,7 @@ export default function EditProfileModal({
     editCustomFlags,
     editUseCustomLaunch,
     editCustomLaunchCommand,
+    editUseExternalServer,
     editLayers,
     editContextSize,
     editAutoOptimizer,
@@ -5910,6 +6485,10 @@ export default function EditProfileModal({
   const [showModelModal, setShowModelModal] = useState(false);
   const [showProjectorModal, setShowProjectorModal] = useState(false);
   const [showDraftModelModal, setShowDraftModelModal] = useState(false);
+  // "Disable external server?" prompt, shown when the user clicks the
+  // External Model Configured trigger. Confirming drops external mode and
+  // immediately opens the local model picker.
+  const [confirmDisableExternal, setConfirmDisableExternal] = useState(false);
 
   const navigateTo = (page: string) => {
     if (animating || page === currentPage) return;
@@ -5921,6 +6500,23 @@ export default function EditProfileModal({
       setCurrentPage(page);
       setAnimating(false);
     }, 100);
+  };
+
+  // "Add External Model" in the model picker: switch this profile to an
+  // external v1-compatible server and land on the server settings page so
+  // the URL can be filled in right away.
+  const handleAddExternalModel = () => {
+    setShowModelModal(false);
+    setEditUseExternalServer(true);
+    navigateTo('server-settings');
+  };
+
+  // Confirming the "External Model Configured" prompt: drop external mode
+  // and immediately open the local model picker.
+  const handleDisableExternalAndPickModel = () => {
+    setConfirmDisableExternal(false);
+    setEditUseExternalServer(false);
+    setShowModelModal(true);
   };
 
   // Synapse Optimizer: fit max layers (+triple) for exactly this ctx.
@@ -6199,7 +6795,13 @@ export default function EditProfileModal({
       }
     }
     if (e.key === 'Escape') {
-      if (showModelModal || showProjectorModal || showDraftModelModal) return;
+      if (
+        showModelModal ||
+        showProjectorModal ||
+        showDraftModelModal ||
+        confirmDisableExternal
+      )
+        return;
       const target = e.target as HTMLElement | null;
       const tag = target?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA') {
@@ -6282,6 +6884,19 @@ export default function EditProfileModal({
         ? prev.filter((t) => t !== toolKey)
         : [...prev, toolKey],
     );
+  };
+
+  const handleToolSettingsChange = (extId: string, next: SettingsBag) => {
+    setEditToolSettings((prev) => {
+      const updated = { ...prev };
+      const cleaned: SettingsBag = {};
+      for (const [key, value] of Object.entries(next)) {
+        if (value !== undefined) cleaned[key] = value;
+      }
+      if (Object.keys(cleaned).length === 0) delete updated[extId];
+      else updated[extId] = cleaned;
+      return updated;
+    });
   };
 
   const buildProfileDraft = (): Profile => {
@@ -6463,6 +7078,8 @@ export default function EditProfileModal({
       minP: parseFloat(editMinP),
       seed: parseInt(editSeed, 10),
       tools: editTools.filter((t) => getAvailableToolNames().includes(t)),
+      toolSettings:
+        Object.keys(editToolSettings).length > 0 ? editToolSettings : undefined,
       repeatPenalty: buildRepeatPenalty(),
       contextShift: buildContextShift(),
       ...buildAdvancedSamplers(),
@@ -6492,6 +7109,11 @@ export default function EditProfileModal({
             allocatedVRAM: editAllocatedVRAM,
             allocatedRAM: editAllocatedRAM,
           }
+        : {}),
+      // External profiles have no optimizer/layers, but the context
+      // slider in External Server Settings still writes contextSize.
+      ...(editUseExternalServer && editContextSize !== undefined
+        ? { contextSize: editContextSize }
         : {}),
       // Always written (null when cleared) so the key survives JSON
       // persistence and the launch cache-freshness check keeps working.
@@ -6530,6 +7152,18 @@ export default function EditProfileModal({
         editUseCustomLaunch && editCustomLaunchCommand.trim()
           ? editCustomLaunchCommand
           : undefined,
+      useExternalServer: editUseExternalServer ? true : undefined,
+      externalServerUrl: (() => {
+        if (!editUseExternalServer) return undefined;
+        const t = editExternalServerUrl.trim();
+        // Store the normalized origin so main and renderer agree on the
+        // exact endpoint; invalid input is blocked from saving anyway.
+        return normalizeExternalServerUrl(t) ?? (t || undefined);
+      })(),
+      externalModelName:
+        editUseExternalServer && editExternalModelName.trim()
+          ? editExternalModelName.trim()
+          : undefined,
       order:
         profile?.order ??
         (profiles.length === 0
@@ -6544,6 +7178,12 @@ export default function EditProfileModal({
   let profileActionBlockedReason: string | null = null;
   if (!editName.trim()) {
     profileActionBlockedReason = 'Enter a profile name';
+  } else if (editUseExternalServer) {
+    // External profiles talk to a remote server — no local model needed,
+    // but the URL must be valid.
+    if (!isValidExternalServerUrl(editExternalServerUrl)) {
+      profileActionBlockedReason = 'Enter a valid external server URL';
+    }
   } else if (!editModelFilename) {
     profileActionBlockedReason = 'Select a model';
   }
@@ -6575,10 +7215,33 @@ export default function EditProfileModal({
     onDuplicateProfile(buildProfileDraft());
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!editName.trim()) return;
+    if (
+      editUseExternalServer &&
+      !isValidExternalServerUrl(editExternalServerUrl)
+    ) {
+      return;
+    }
 
     const updatedProfile = buildProfileDraft();
+
+    // Persist the external API key in the encrypted main-process store.
+    // Done before the no-change snapshot check because a key-only edit
+    // does not change the profile JSON.
+    if (editUseExternalServer) {
+      const scope = externalServerSecretScope(updatedProfile.id);
+      const key = editExternalApiKey.trim();
+      if (key) {
+        await window.electronAPI
+          .secretSet(scope, EXTERNAL_API_KEY_SECRET_KEY, key)
+          .catch(() => {});
+      } else if (clearExternalKey) {
+        await window.electronAPI
+          .secretDelete(scope, EXTERNAL_API_KEY_SECRET_KEY)
+          .catch(() => {});
+      }
+    }
 
     // Don't save if nothing actually changed
     if (profile) {
@@ -6685,7 +7348,12 @@ export default function EditProfileModal({
     };
   })();
 
-  const breadcrumb = buildBreadcrumb(currentPage);
+  const breadcrumb = buildBreadcrumb(currentPage).map((crumb) =>
+    // External mode renames the server page throughout the modal.
+    editUseExternalServer && crumb.key === 'server-settings'
+      ? { ...crumb, label: 'External Server Settings' }
+      : crumb,
+  );
 
   const renderPage = () => {
     if (isSearching) {
@@ -6709,6 +7377,8 @@ export default function EditProfileModal({
             selectedProjectorDisplay={selectedProjectorDisplay}
             availableModelsForEdit={availableModelsForEdit}
             onOpenModelModal={() => setShowModelModal(true)}
+            editUseExternalServer={editUseExternalServer}
+            onRequestDisableExternal={() => setConfirmDisableExternal(true)}
             onNavigate={navigateTo}
             editAutoOptimizer={editAutoOptimizer}
             editLayers={editLayers}
@@ -6735,6 +7405,8 @@ export default function EditProfileModal({
             onToolToggle={handleToolToggle}
             openCategoryId={pendingToolCategoryId}
             onOpenCategoryConsumed={() => setPendingToolCategoryId(null)}
+            editToolSettings={editToolSettings}
+            onToolSettingsChange={handleToolSettingsChange}
           />
         );
       case 'advanced':
@@ -6857,6 +7529,22 @@ export default function EditProfileModal({
             setEditCustomLaunchCommand={setEditCustomLaunchCommand}
             customFlagsCount={editCustomFlags.filter((s) => s.trim()).length}
             modelFilename={editModelFilename}
+            editUseExternalServer={editUseExternalServer}
+            setEditUseExternalServer={setEditUseExternalServer}
+            editExternalServerUrl={editExternalServerUrl}
+            setEditExternalServerUrl={setEditExternalServerUrl}
+            externalKeyExists={externalKeyExists}
+            externalKeyUnencrypted={externalKeyUnencrypted}
+            editExternalApiKey={editExternalApiKey}
+            setEditExternalApiKey={setEditExternalApiKey}
+            clearExternalKey={clearExternalKey}
+            setClearExternalKey={setClearExternalKey}
+            encryptionAvailable={encryptionAvailable}
+            isExternal={editUseExternalServer}
+            editExternalModelName={editExternalModelName}
+            setEditExternalModelName={setEditExternalModelName}
+            editContextSize={editContextSize}
+            setEditContextSize={setEditContextSize}
           />
         );
       case 'cors-settings':
@@ -7218,6 +7906,7 @@ export default function EditProfileModal({
             setShowModelModal(false);
           }}
           onClose={() => setShowModelModal(false)}
+          onAddExternalModel={handleAddExternalModel}
         />
       )}
       {showProjectorModal && (
@@ -7243,6 +7932,16 @@ export default function EditProfileModal({
             setShowDraftModelModal(false);
           }}
           onClose={() => setShowDraftModelModal(false)}
+        />
+      )}
+      {confirmDisableExternal && (
+        <ConfirmDialog
+          title="Disable External Server?"
+          message="This profile uses an external model. Disable the external server to choose a local model instead. The saved URL and API key are kept in case you switch back."
+          confirmText="Disable & Pick Model"
+          cancelText="Keep External Server"
+          onConfirm={handleDisableExternalAndPickModel}
+          onCancel={() => setConfirmDisableExternal(false)}
         />
       )}
     </div>

@@ -1,26 +1,31 @@
-import fs from 'fs';
 import fsPromises from 'fs/promises';
 import path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { app } from 'electron';
-import type { ExtensionToolDef } from '../types';
+import type {
+  ExtensionToolContext,
+  ExtensionToolDef,
+  SettingsBag,
+} from '../types';
 import {
   sanitizePath,
   normalizePath,
   validatePath,
+  type FileSystemSettings,
 } from '../../main/functions/fileSystem';
+import { getEffectiveSettings } from '../../main/extensionSettings';
 import manifest from './manifest.json';
 
 const execFileAsync = promisify(execFile);
 
-const SETTINGS_FILE = path.join(
-  app.getPath('userData'),
-  'extension-settings',
-  'github.json',
-);
-
-interface GitHubSettings {
+/**
+ * This extension's settings, declared in its own manifest.json. Credentials
+ * (App ID, Installation ID, private key) are marked `perProfile: false` /
+ * `sensitive`, so they live only in the global defaults layer and can never be
+ * carried by a profile or a .synprofile export. Repository access and commit
+ * co-authorship are per-profile overridable.
+ */
+export interface GitHubSettings {
   appId?: string;
   installationId?: string;
   privateKey?: string;
@@ -29,23 +34,26 @@ interface GitHubSettings {
   coAuthorEmail?: string;
 }
 
-function loadSettings(): GitHubSettings {
-  try {
-    if (fs.existsSync(SETTINGS_FILE)) {
-      return JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf-8'));
-    }
-  } catch {
-    // settings file doesn't exist or is invalid
-  }
+export function defaultSettings(): SettingsBag {
   return { allowedRepos: [] };
 }
 
-function saveSettings(settings: GitHubSettings): void {
-  const dir = path.dirname(SETTINGS_FILE);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-  fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2), 'utf-8');
+/** Settings resolved for the profile that invoked the tool. */
+function settingsFor(ctx?: ExtensionToolContext): GitHubSettings {
+  if (!ctx) return defaultSettings() as unknown as GitHubSettings;
+  return ctx.settings<GitHubSettings>();
+}
+
+/**
+ * github_commit_files reads HOST files, so it is constrained by the
+ * filesystem extension's settings for this profile. Declared here, in the
+ * extension that has the dependency — never in the core.
+ */
+function hostSettingsFor(ctx?: ExtensionToolContext): FileSystemSettings {
+  return getEffectiveSettings(
+    'filesystem',
+    ctx?.profileId,
+  ) as unknown as FileSystemSettings;
 }
 
 async function createOctokit(settings: GitHubSettings): Promise<any> {
@@ -113,8 +121,8 @@ function isRepoAllowed(repo: string, settings: GitHubSettings): boolean {
   });
 }
 
-async function ensureRepoAllowed(repo: string): Promise<void> {
-  const settings = loadSettings();
+function ensureRepoAllowed(repo: string, ctx?: ExtensionToolContext): void {
+  const settings = settingsFor(ctx);
   if (settings.allowedRepos && settings.allowedRepos.length > 0) {
     if (isRepoAllowed(repo, settings)) return;
     throw new Error(
@@ -123,18 +131,18 @@ async function ensureRepoAllowed(repo: string): Promise<void> {
   }
 }
 
-async function addRepoToAllowed(repo: string): Promise<void> {
-  const settings = loadSettings();
-  if (!settings.allowedRepos) settings.allowedRepos = [];
+/**
+ * Remembers a repository in this extension's settings for the current profile
+ * (e.g. the repo a fork just created). Written through the generic
+ * ctx.updateSettings() path, so it lands in the profile's runtime overlay
+ * rather than rewriting the global defaults file.
+ */
+function addRepoToAllowed(repo: string, ctx?: ExtensionToolContext): void {
+  if (!ctx) return;
   const canonical = repo.replace('https://github.com/', '').replace('.git', '');
-  if (
-    !settings.allowedRepos.some(
-      (r) => r.toLowerCase() === canonical.toLowerCase(),
-    )
-  ) {
-    settings.allowedRepos.push(canonical);
-    saveSettings(settings);
-  }
+  const current = settingsFor(ctx).allowedRepos ?? [];
+  if (current.some((r) => r.toLowerCase() === canonical.toLowerCase())) return;
+  ctx.updateSettings({ allowedRepos: [...current, canonical] });
 }
 
 function appendCoAuthor(message: string, settings: GitHubSettings): string {
@@ -345,9 +353,12 @@ const tools: Record<string, ExtensionToolDef> = {
         },
       },
     },
-    async handler(_params: { affiliation?: string }) {
+    async handler(
+      _params: { affiliation?: string },
+      ctx?: ExtensionToolContext,
+    ) {
       try {
-        const settings = loadSettings();
+        const settings = settingsFor(ctx);
         const octokit = await createOctokit(settings);
         const result =
           await octokit.rest.apps.listReposAccessibleToInstallation();
@@ -382,10 +393,10 @@ const tools: Record<string, ExtensionToolDef> = {
         },
       },
     },
-    async handler(params: { repo: string }) {
+    async handler(params: { repo: string }, ctx?: ExtensionToolContext) {
       try {
-        await ensureRepoAllowed(params.repo);
-        const settings = loadSettings();
+        ensureRepoAllowed(params.repo, ctx);
+        const settings = settingsFor(ctx);
         const octokit = await createOctokit(settings);
         const { owner, repo } = parseRepo(params.repo);
         const result = await octokit.rest.repos.get({ owner, repo });
@@ -412,10 +423,10 @@ const tools: Record<string, ExtensionToolDef> = {
         },
       },
     },
-    async handler(params: { repo: string }) {
+    async handler(params: { repo: string }, ctx?: ExtensionToolContext) {
       try {
-        await ensureRepoAllowed(params.repo);
-        const settings = loadSettings();
+        ensureRepoAllowed(params.repo, ctx);
+        const settings = settingsFor(ctx);
         const octokit = await createOctokit(settings);
         const { owner, repo } = parseRepo(params.repo);
         const result = await octokit.rest.repos.listBranches({ owner, repo });
@@ -450,14 +461,17 @@ const tools: Record<string, ExtensionToolDef> = {
         },
       },
     },
-    async handler(params: {
-      repo: string;
-      newBranch: string;
-      baseBranch?: string;
-    }) {
+    async handler(
+      params: {
+        repo: string;
+        newBranch: string;
+        baseBranch?: string;
+      },
+      ctx?: ExtensionToolContext,
+    ) {
       try {
-        await ensureRepoAllowed(params.repo);
-        const settings = loadSettings();
+        ensureRepoAllowed(params.repo, ctx);
+        const settings = settingsFor(ctx);
         const octokit = await createOctokit(settings);
         const { owner, repo } = parseRepo(params.repo);
         const baseRef = await octokit.rest.git.getRef({
@@ -512,17 +526,20 @@ const tools: Record<string, ExtensionToolDef> = {
         },
       },
     },
-    async handler(params: {
-      repo: string;
-      title: string;
-      head: string;
-      base: string;
-      body?: string;
-      draft?: boolean;
-    }) {
+    async handler(
+      params: {
+        repo: string;
+        title: string;
+        head: string;
+        base: string;
+        body?: string;
+        draft?: boolean;
+      },
+      ctx?: ExtensionToolContext,
+    ) {
       try {
-        await ensureRepoAllowed(params.repo);
-        const settings = loadSettings();
+        ensureRepoAllowed(params.repo, ctx);
+        const settings = settingsFor(ctx);
         const octokit = await createOctokit(settings);
         const { owner, repo } = parseRepo(params.repo);
         const result = await octokit.rest.pulls.create({
@@ -572,16 +589,19 @@ const tools: Record<string, ExtensionToolDef> = {
         },
       },
     },
-    async handler(params: {
-      repo: string;
-      title: string;
-      body?: string;
-      labels?: string[];
-      assignees?: string[];
-    }) {
+    async handler(
+      params: {
+        repo: string;
+        title: string;
+        body?: string;
+        labels?: string[];
+        assignees?: string[];
+      },
+      ctx?: ExtensionToolContext,
+    ) {
       try {
-        await ensureRepoAllowed(params.repo);
-        const settings = loadSettings();
+        ensureRepoAllowed(params.repo, ctx);
+        const settings = settingsFor(ctx);
         const octokit = await createOctokit(settings);
         const { owner, repo } = parseRepo(params.repo);
         const result = await octokit.rest.issues.create({
@@ -630,15 +650,18 @@ const tools: Record<string, ExtensionToolDef> = {
         },
       },
     },
-    async handler(params: {
-      repo: string;
-      state?: string;
-      labels?: string;
-      sort?: string;
-    }) {
+    async handler(
+      params: {
+        repo: string;
+        state?: string;
+        labels?: string;
+        sort?: string;
+      },
+      ctx?: ExtensionToolContext,
+    ) {
       try {
-        await ensureRepoAllowed(params.repo);
-        const settings = loadSettings();
+        ensureRepoAllowed(params.repo, ctx);
+        const settings = settingsFor(ctx);
         const octokit = await createOctokit(settings);
         const { owner, repo } = parseRepo(params.repo);
         const result = await octokit.rest.issues.listForRepo({
@@ -683,9 +706,12 @@ const tools: Record<string, ExtensionToolDef> = {
         },
       },
     },
-    async handler(params: { repo: string; organization?: string }) {
+    async handler(
+      params: { repo: string; organization?: string },
+      ctx?: ExtensionToolContext,
+    ) {
       try {
-        const settings = loadSettings();
+        const settings = settingsFor(ctx);
         const octokit = await createOctokit(settings);
         const { owner, repo } = parseRepo(params.repo);
         const result = await octokit.rest.repos.createFork({
@@ -694,7 +720,7 @@ const tools: Record<string, ExtensionToolDef> = {
           organization: params.organization,
         });
         const forkedRepo = result.data.full_name;
-        await addRepoToAllowed(forkedRepo);
+        addRepoToAllowed(forkedRepo, ctx);
         return `Fork created: ${forkedRepo} (${result.data.html_url})\nThis repository has been added to the allowed list.`;
       } catch (error) {
         return `Error: ${error instanceof Error ? error.message : String(error)}`;
@@ -742,18 +768,21 @@ const tools: Record<string, ExtensionToolDef> = {
       },
       required: ['repo', 'branch', 'message', 'files'],
     },
-    async handler(params: {
-      repo: string;
-      branch: string;
-      message: string;
-      files: Array<{ repoPath: string; content: string }>;
-    }) {
+    async handler(
+      params: {
+        repo: string;
+        branch: string;
+        message: string;
+        files: Array<{ repoPath: string; content: string }>;
+      },
+      ctx?: ExtensionToolContext,
+    ) {
       try {
         const repoFull = requireNonBlank(params?.repo, 'repo');
         const branch = requireNonBlank(params?.branch, 'branch');
         const message = requireNonBlank(params?.message, 'message');
-        await ensureRepoAllowed(repoFull);
-        const settings = loadSettings();
+        ensureRepoAllowed(repoFull, ctx);
+        const settings = settingsFor(ctx);
         const octokit = await createOctokit(settings);
         const { owner, repo } = parseRepo(repoFull);
         return await commitEntries(
@@ -812,12 +841,15 @@ const tools: Record<string, ExtensionToolDef> = {
       },
       required: ['repo', 'branch', 'message', 'files'],
     },
-    async handler(params: {
-      repo: string;
-      branch: string;
-      message: string;
-      files: Array<{ repoPath: string; hostPath: string }>;
-    }) {
+    async handler(
+      params: {
+        repo: string;
+        branch: string;
+        message: string;
+        files: Array<{ repoPath: string; hostPath: string }>;
+      },
+      ctx?: ExtensionToolContext,
+    ) {
       try {
         const repoFull = requireNonBlank(params?.repo, 'repo');
         const branch = requireNonBlank(params?.branch, 'branch');
@@ -825,8 +857,11 @@ const tools: Record<string, ExtensionToolDef> = {
         if (!Array.isArray(params?.files) || params.files.length === 0) {
           throw new Error('Parameter "files" must be a non-empty array.');
         }
-        await ensureRepoAllowed(repoFull);
-        const settings = loadSettings();
+        ensureRepoAllowed(repoFull, ctx);
+        const settings = settingsFor(ctx);
+        // Host files are read under the filesystem extension's settings for
+        // this profile, so a profile cannot commit files it cannot read.
+        const hostSettings = hostSettingsFor(ctx);
         const octokit = await createOctokit(settings);
         const { owner, repo } = parseRepo(repoFull);
 
@@ -840,8 +875,8 @@ const tools: Record<string, ExtensionToolDef> = {
               `File "${f?.repoPath ?? ''}" must have a non-empty "hostPath".`,
             );
           }
-          const p = normalizePath(sanitizePath(f.hostPath));
-          validatePath(p);
+          const p = normalizePath(sanitizePath(f.hostPath), hostSettings);
+          validatePath(p, hostSettings);
           let content: string;
           try {
             content = await fsPromises.readFile(p, 'utf-8');
@@ -914,13 +949,16 @@ const tools: Record<string, ExtensionToolDef> = {
       },
       required: ['repo', 'branch', 'message', 'container_name', 'files'],
     },
-    async handler(params: {
-      repo: string;
-      branch: string;
-      message: string;
-      container_name: string;
-      files: Array<{ repoPath: string; sandboxPath: string }>;
-    }) {
+    async handler(
+      params: {
+        repo: string;
+        branch: string;
+        message: string;
+        container_name: string;
+        files: Array<{ repoPath: string; sandboxPath: string }>;
+      },
+      ctx?: ExtensionToolContext,
+    ) {
       try {
         const repoFull = requireNonBlank(params?.repo, 'repo');
         const branch = requireNonBlank(params?.branch, 'branch');
@@ -932,8 +970,8 @@ const tools: Record<string, ExtensionToolDef> = {
         if (!Array.isArray(params?.files) || params.files.length === 0) {
           throw new Error('Parameter "files" must be a non-empty array.');
         }
-        await ensureRepoAllowed(repoFull);
-        const settings = loadSettings();
+        ensureRepoAllowed(repoFull, ctx);
+        const settings = settingsFor(ctx);
         const octokit = await createOctokit(settings);
         const { owner, repo } = parseRepo(repoFull);
 
@@ -986,9 +1024,9 @@ const tools: Record<string, ExtensionToolDef> = {
       icon: 'Shield',
     },
     params: { type: 'object', properties: {} },
-    async handler() {
+    async handler(_params: any, ctx?: ExtensionToolContext) {
       try {
-        const settings = loadSettings();
+        const settings = settingsFor(ctx);
         return settings.allowedRepos && settings.allowedRepos.length > 0
           ? settings.allowedRepos.join('\n')
           : 'All repositories allowed (no restrictions configured)';

@@ -5,8 +5,11 @@ import { createRequire } from 'module';
 import type {
   Extension,
   ExtensionManifest,
+  ExtensionSettingsDef,
   ExtensionToolDef,
+  SettingsBag,
 } from '../extensions/types';
+import { validateSettingsDef } from '../shared/extensionSettings';
 import {
   BUILT_IN_EXTENSION_IDS,
   OFFICIAL_EXTENSION_IDS,
@@ -21,6 +24,7 @@ import {
 import {
   tools as filesystemTools,
   manifest as filesystemManifest,
+  defaultSettings as filesystemDefaultSettings,
 } from '../extensions/filesystem';
 import { tools as gitTools, manifest as gitManifest } from '../extensions/git';
 import {
@@ -42,6 +46,8 @@ import {
 import {
   tools as ddgSearchTools,
   manifest as ddgSearchManifest,
+  defaultSettings as ddgSearchDefaultSettings,
+  normalizeSettings as ddgSearchNormalizeSettings,
 } from '../extensions/ddg_search';
 import {
   tools as sandboxTools,
@@ -50,6 +56,7 @@ import {
 import {
   tools as githubTools,
   manifest as githubManifest,
+  defaultSettings as githubDefaultSettings,
 } from '../extensions/github';
 // eslint-disable-next-line import/no-cycle
 import {
@@ -57,12 +64,20 @@ import {
   manifest as sessionsManifest,
 } from '../extensions/sessions';
 
-const BUILT_IN_EXTENSIONS: Array<{
+interface RegisteredExtensionModule {
   tools: Record<string, ExtensionToolDef>;
   manifest: ExtensionManifest;
-}> = [
+  defaultSettings?: () => SettingsBag;
+  normalizeSettings?: (raw: SettingsBag) => SettingsBag;
+}
+
+const BUILT_IN_EXTENSIONS: RegisteredExtensionModule[] = [
   { tools: timeTools, manifest: timeManifest as ExtensionManifest },
-  { tools: filesystemTools, manifest: filesystemManifest as ExtensionManifest },
+  {
+    tools: filesystemTools,
+    manifest: filesystemManifest as ExtensionManifest,
+    defaultSettings: filesystemDefaultSettings,
+  },
   { tools: gitTools, manifest: gitManifest as ExtensionManifest },
   { tools: memoryTools, manifest: memoryManifest as ExtensionManifest },
   { tools: pythonTools, manifest: pythonManifest as ExtensionManifest },
@@ -71,15 +86,23 @@ const BUILT_IN_EXTENSIONS: Array<{
     tools: userpromptsTools,
     manifest: userpromptsManifest as ExtensionManifest,
   },
-  { tools: ddgSearchTools, manifest: ddgSearchManifest as ExtensionManifest },
+  {
+    tools: ddgSearchTools,
+    manifest: ddgSearchManifest as ExtensionManifest,
+    defaultSettings: ddgSearchDefaultSettings,
+    normalizeSettings: ddgSearchNormalizeSettings,
+  },
   { tools: sandboxTools, manifest: sandboxManifest as ExtensionManifest },
   { tools: sessionsTools, manifest: sessionsManifest as ExtensionManifest },
 ];
 
-const OFFICIAL_EXTENSIONS: Array<{
-  tools: Record<string, ExtensionToolDef>;
-  manifest: ExtensionManifest;
-}> = [{ tools: githubTools, manifest: githubManifest as ExtensionManifest }];
+const OFFICIAL_EXTENSIONS: RegisteredExtensionModule[] = [
+  {
+    tools: githubTools,
+    manifest: githubManifest as ExtensionManifest,
+    defaultSettings: githubDefaultSettings,
+  },
+];
 
 function getOfficialSettingsPath(): string {
   return path.join(
@@ -133,6 +156,16 @@ function normalizeManifest(
   delete rest.official;
   const id = String((rest as { id?: unknown }).id ?? '');
   const builtIn = isBuiltInExtensionId(id);
+
+  // `settings` is manifest-authored by every extension, built-in or user, so it
+  // is validated rather than trusted. Malformed definitions yield no settings.
+  const settings = validateSettingsDef(rest.settings);
+  if (settings) rest.settings = settings;
+  else delete rest.settings;
+  // hasSettings is derived from the schema; a bare flag is back-compat only.
+  if (settings) rest.hasSettings = true;
+  else if (rest.hasSettings !== true) delete rest.hasSettings;
+
   return {
     ...(rest as unknown as ExtensionManifest),
     builtIn,
@@ -176,6 +209,12 @@ class ExtensionRegistry {
         manifest,
         tools: ext.tools,
         enabled: true,
+        ...(ext.defaultSettings
+          ? { defaultSettings: ext.defaultSettings }
+          : {}),
+        ...(ext.normalizeSettings
+          ? { normalizeSettings: ext.normalizeSettings }
+          : {}),
       });
     }
   }
@@ -200,6 +239,12 @@ class ExtensionRegistry {
       manifest,
       tools: found.tools,
       enabled: true,
+      ...(found.defaultSettings
+        ? { defaultSettings: found.defaultSettings }
+        : {}),
+      ...(found.normalizeSettings
+        ? { normalizeSettings: found.normalizeSettings }
+        : {}),
     });
     return true;
   }
@@ -343,6 +388,8 @@ class ExtensionRegistry {
         return;
       }
       const tools: Record<string, ExtensionToolDef> = {};
+      let defaultSettings: (() => SettingsBag) | undefined;
+      let normalizeSettings: ((raw: SettingsBag) => SettingsBag) | undefined;
       const indexJsPath = path.join(extDir, 'index.js');
       if (fs.existsSync(indexJsPath)) {
         const require = createRequire(indexJsPath);
@@ -354,6 +401,14 @@ class ExtensionRegistry {
             tools[name] = tool;
           }
         }
+        // Same optional hooks built-ins use — a user extension declares its
+        // own settings behaviour, no core involvement.
+        if (typeof extModule.defaultSettings === 'function') {
+          defaultSettings = extModule.defaultSettings;
+        }
+        if (typeof extModule.normalizeSettings === 'function') {
+          normalizeSettings = extModule.normalizeSettings;
+        }
       }
       const iconSvgData = this.loadSvgIcon(extDir, String(parsed.icon ?? ''));
       const manifest = normalizeManifest(parsed, iconSvgData);
@@ -362,6 +417,8 @@ class ExtensionRegistry {
         tools,
         enabled: true,
         extensionDir: extDir,
+        ...(defaultSettings ? { defaultSettings } : {}),
+        ...(normalizeSettings ? { normalizeSettings } : {}),
       });
     } catch (err) {
       console.error(
@@ -380,6 +437,43 @@ class ExtensionRegistry {
       }
     }
     return allTools;
+  }
+
+  /**
+   * Tool name → owning extension id. Settings are per-extension, so the caller
+   * that invokes a handler needs the owner to bind that extension's settings
+   * into the tool context.
+   */
+  getToolOwners(): Record<string, string> {
+    const owners: Record<string, string> = {};
+    for (const ext of this.extensions.values()) {
+      if (!ext.enabled) continue;
+      for (const name of Object.keys(ext.tools)) {
+        owners[name] = ext.manifest.id;
+      }
+    }
+    return owners;
+  }
+
+  /**
+   * The settings schema an extension declares for itself. Undefined for
+   * extensions that declare none — including every extension that exists only
+   * on disk in userData/extensions/.
+   */
+  getExtensionSettingsSchema(id: string): ExtensionSettingsDef | undefined {
+    return this.extensions.get(id)?.manifest.settings;
+  }
+
+  /** Extension-authored computed defaults, if it exports them. */
+  getExtensionDefaultSettings(id: string): (() => SettingsBag) | undefined {
+    return this.extensions.get(id)?.defaultSettings;
+  }
+
+  /** Extension-authored coercion hook, if it exports one. */
+  getExtensionNormalizeSettings(
+    id: string,
+  ): ((raw: SettingsBag) => SettingsBag) | undefined {
+    return this.extensions.get(id)?.normalizeSettings;
   }
 
   getExtensions(): Extension[] {

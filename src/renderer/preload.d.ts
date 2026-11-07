@@ -4,6 +4,10 @@ import type {
   SessionView,
   ChatStreamEvent,
 } from '../shared/chatTypes';
+import type {
+  ExtensionSettingsDef,
+  SettingsBag,
+} from '../shared/extensionSettings';
 
 export interface DownloadProgress {
   modelId: string;
@@ -422,11 +426,35 @@ declare global {
       chatUnload: () => Promise<void>;
       chatHasConversation: () => Promise<boolean>;
       chatIsRunning: () => Promise<boolean>;
+      chatGetServerStatus: () => Promise<{
+        running: boolean;
+        mode: 'local' | 'external' | null;
+        url: string | null;
+      }>;
       chatReloadProfile: () => Promise<{
         success: boolean;
         error?: string;
         profile?: Profile;
       }>;
+      secretSet: (
+        scope: string,
+        key: string,
+        value: string,
+      ) => Promise<{
+        success: boolean;
+        error?: string;
+        unencrypted?: boolean;
+      }>;
+      secretDelete: (
+        scope: string,
+        key: string,
+      ) => Promise<{ success: boolean }>;
+      secretHas: (
+        scope: string,
+        key: string,
+      ) => Promise<{ exists: boolean; unencrypted: boolean }>;
+      secretDeleteScope: (scope: string) => Promise<{ success: boolean }>;
+      secretEncryptionAvailable: () => Promise<{ available: boolean }>;
       onChatSystemProgress: (
         callback: (data: {
           progress: number;
@@ -631,6 +659,7 @@ declare global {
             official?: boolean;
             iconSvgData?: string;
             hasSettings?: boolean;
+            settings?: ExtensionSettingsDef;
           };
           tools: Record<
             string,
@@ -665,6 +694,7 @@ declare global {
             official?: boolean;
             iconSvgData?: string;
             hasSettings?: boolean;
+            settings?: ExtensionSettingsDef;
           };
           tools: Record<
             string,
@@ -716,11 +746,11 @@ declare global {
         >
       >;
       extensionsOpenFolder: () => Promise<void>;
-      extensionsGetSettings: (id: string) => Promise<Record<string, any>>;
+      extensionsGetSettings: (id: string) => Promise<SettingsBag>;
       extensionsSetSettings: (
         id: string,
-        settings: Record<string, any>,
-      ) => Promise<{ success: boolean }>;
+        settings: SettingsBag,
+      ) => Promise<{ success: boolean; error?: string }>;
     };
   }
 }

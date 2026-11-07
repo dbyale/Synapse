@@ -2623,6 +2623,10 @@ export default function ChatPage() {
 
   const selectedProfile =
     profiles.find((p) => p.id === selectedProfileId) ?? null;
+  // External v1-compatible server profile: the pill is a static blue
+  // "External Server" badge (never toggleable, no offline state) and the
+  // restart button is hidden — Synapse does not own the remote server.
+  const isExternalProfile = !!selectedProfile?.useExternalServer;
 
   const loading = !!activeSessionId && !!loadingSessions[activeSessionId];
   const sending = sendingState && !loading;
@@ -2948,10 +2952,16 @@ export default function ChatPage() {
 
       // ── Launch Server Automatically gating (only when server not already running)
       // If setting is off and user hasn't manually requested a start, don't auto-boot.
+      // External profiles skip the gate: there is nothing to launch — the
+      // remote server is already running, we only connect to it.
+      const selectedProfileIsExternal = !!profilesRef.current.find(
+        (p) => p.id === selectedProfileId,
+      )?.useExternalServer;
       if (
         (settings.launchServerAutomatically ?? true) === false &&
         !manualStartRequestedRef.current &&
-        !forceOnboardingStart
+        !forceOnboardingStart &&
+        !selectedProfileIsExternal
       ) {
         const running = await window.electronAPI
           .chatIsRunning()
@@ -5712,7 +5722,11 @@ export default function ChatPage() {
                 onClick={handleToggleServer}
                 disabled={serverToggling || !selectedProfileId}
                 title={
-                  selectedProfileId ? 'Start server' : 'Select a profile first'
+                  selectedProfileId
+                    ? isExternalProfile
+                      ? 'Connect to external server'
+                      : 'Start server'
+                    : 'Select a profile first'
                 }
               >
                 <Power size={16} strokeWidth={2.2} />
@@ -5955,30 +5969,55 @@ export default function ChatPage() {
           )}
           <button
             type="button"
-            className={`chat-server-status ${isServerOnline ? 'chat-server-status--online' : 'chat-server-status--offline'}${serverToggling ? ' chat-server-status--toggling' : ''}`}
+            className={`chat-server-status ${
+              isExternalProfile
+                ? 'chat-server-status--external'
+                : isServerOnline
+                  ? 'chat-server-status--online'
+                  : 'chat-server-status--offline'
+            }${serverToggling ? ' chat-server-status--toggling' : ''}`}
             onClick={handleToggleServer}
-            disabled={serverToggling}
+            // External profiles are not toggleable: Synapse never starts
+            // or stops the remote server, and there is no offline state
+            // to poll for. The pill is a status badge only.
+            disabled={serverToggling || isExternalProfile}
             title={
-              isServerOnline
-                ? 'Server is online — click to stop'
-                : 'Server is offline — click to start'
+              isExternalProfile
+                ? 'Connected through an external server — managed in Profile settings'
+                : isServerOnline
+                  ? 'Server is online — click to stop'
+                  : 'Server is offline — click to start'
             }
-            aria-label={isServerOnline ? 'Server Online' : 'Server Offline'}
+            aria-label={
+              isExternalProfile
+                ? 'External Server'
+                : isServerOnline
+                  ? 'Server Online'
+                  : 'Server Offline'
+            }
           >
             <span className="chat-server-status__dot" aria-hidden="true" />
-            <span>{isServerOnline ? 'Server Online' : 'Server Offline'}</span>
+            <span>
+              {isExternalProfile
+                ? 'External Server'
+                : isServerOnline
+                  ? 'Server Online'
+                  : 'Server Offline'}
+            </span>
           </button>
-          <InfoTooltip content="Restart server" hideIcon side="top">
-            <button
-              type="button"
-              className="chat-server-restart"
-              onClick={handleRestartServer}
-              disabled={!isServerOnline || serverToggling}
-              aria-label="Restart server"
-            >
-              <RefreshCcw size={12} />
-            </button>
-          </InfoTooltip>
+          {!isExternalProfile && (
+            <InfoTooltip content="Restart server" hideIcon side="top">
+              <button
+                type="button"
+                className="chat-server-restart"
+                onClick={handleRestartServer}
+                disabled={!isServerOnline || serverToggling}
+                aria-label="Restart server"
+              >
+                <RefreshCcw size={12} />
+              </button>
+            </InfoTooltip>
+          )}
         </div>
 
         {showImageModal && (

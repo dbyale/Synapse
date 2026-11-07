@@ -1286,17 +1286,8 @@
   margin-bottom: 8px;
 }
 
-.local-search-icon {
-  position: absolute;
-  left: 14px;
-  top: 50%;
-  transform: translateY(-50%);
-  color: var(--text-secondary);
-}
-
-.local-search-input {
-  padding-left: 40px;
-  width: 100%;
+.local-search-bar {
+  flex: 1;
 }
 
 .find-more-container {
@@ -1696,16 +1687,8 @@
   margin-bottom: 16px;
 }
 
-.local-search-input {
+.local-search-bar {
   flex: 1;
-  padding-left: 40px;
-}
-
-.local-search-icon {
-  position: absolute;
-  left: 14px;
-  color: var(--text-secondary);
-  pointer-events: none;
 }
 
 .local-folder-btn {

@@ -9,6 +9,7 @@ import {
   sanitizePath as sanitizeHostPath,
   normalizePath as normalizeHostPath,
   validatePath as validateHostPath,
+  type FileSystemSettings,
 } from './fileSystem';
 
 const execFileAsync = promisify(execFile);
@@ -88,26 +89,26 @@ function validateCommand(command: string): void {
 }
 
 // ── Sandbox runtime settings ────────────────────────────────────
+// No module-level state: callers pass the settings resolved for the calling
+// profile. The shape is declared by the sandbox extension's own manifest
+// `settings` block; this interface is just its typed view.
 
-let autoLaunchEnabled = true;
-let autoLaunchTimeoutSec = 90;
-
-export function setSandboxAutoLaunch(enabled: boolean): void {
-  autoLaunchEnabled = !!enabled;
+export interface SandboxSettings {
+  maxReadSize: number;
+  autoLaunchDockerDesktop: boolean;
+  autoLaunchTimeoutSec: number;
 }
 
-export function setSandboxAutoLaunchTimeout(sec: number): void {
+export const SANDBOX_DEFAULT_SETTINGS: SandboxSettings = {
+  maxReadSize: 40000,
+  autoLaunchDockerDesktop: true,
+  autoLaunchTimeoutSec: 90,
+};
+
+function clampTimeout(sec: number | undefined): number {
   const n = Math.round(Number(sec));
-  if (!Number.isFinite(n)) return;
-  autoLaunchTimeoutSec = Math.max(30, Math.min(180, n));
-}
-
-export function isSandboxAutoLaunchEnabled(): boolean {
-  return autoLaunchEnabled;
-}
-
-export function getSandboxAutoLaunchTimeoutSec(): number {
-  return autoLaunchTimeoutSec;
+  if (!Number.isFinite(n)) return SANDBOX_DEFAULT_SETTINGS.autoLaunchTimeoutSec;
+  return Math.max(30, Math.min(180, n));
 }
 
 let dockerPath: string | null | undefined;
@@ -353,7 +354,9 @@ async function waitForDockerDaemon(
   return false;
 }
 
-async function attemptAutoLaunchAndWait(): Promise<DockerInfo> {
+async function attemptAutoLaunchAndWait(
+  settings: SandboxSettings,
+): Promise<DockerInfo> {
   if (process.platform === 'linux') {
     // Linux is instructions-only — never auto-launch
     return {
@@ -366,7 +369,7 @@ async function attemptAutoLaunchAndWait(): Promise<DockerInfo> {
     };
   }
 
-  if (!autoLaunchEnabled) {
+  if (!settings.autoLaunchDockerDesktop) {
     return {
       available: false,
       path: dockerPath as string | null,
@@ -410,7 +413,8 @@ async function attemptAutoLaunchAndWait(): Promise<DockerInfo> {
     };
   }
 
-  const timeoutMs = Math.max(30, Math.min(180, autoLaunchTimeoutSec)) * 1000;
+  const timeoutSec = clampTimeout(settings.autoLaunchTimeoutSec);
+  const timeoutMs = timeoutSec * 1000;
   console.log(
     `[sandbox] Docker daemon unreachable — auto-launching Docker Desktop (timeout ${timeoutMs}ms)`,
   );
@@ -441,7 +445,7 @@ async function attemptAutoLaunchAndWait(): Promise<DockerInfo> {
       return {
         available: false,
         path: dockerPath as string | null,
-        error: `Docker Desktop was launched but daemon did not become ready within ${autoLaunchTimeoutSec}s: ${err.message || String(err)}`,
+        error: `Docker Desktop was launched but daemon did not become ready within ${timeoutSec}s: ${err.message || String(err)}`,
       };
     }
   }
@@ -449,13 +453,15 @@ async function attemptAutoLaunchAndWait(): Promise<DockerInfo> {
   return {
     available: false,
     path: dockerPath as string | null,
-    error: `Docker Desktop was launched but daemon did not become ready within ${autoLaunchTimeoutSec}s. Please open Docker Desktop manually and retry.`,
+    error: `Docker Desktop was launched but daemon did not become ready within ${timeoutSec}s. Please open Docker Desktop manually and retry.`,
   };
 }
 
 // ── Docker detection ────────────────────────────────────────────
 
-export async function detectDocker(): Promise<DockerInfo> {
+export async function detectDocker(
+  settings: SandboxSettings = SANDBOX_DEFAULT_SETTINGS,
+): Promise<DockerInfo> {
   if (dockerPath === undefined) {
     const candidates = ['docker', 'docker.exe'];
     for (const bin of candidates) {
@@ -529,11 +535,11 @@ export async function detectDocker(): Promise<DockerInfo> {
 
     // Non-Linux: attempt auto-launch if enabled and Desktop is installed
     const originalMsg = err.message || String(err);
-    if (autoLaunchEnabled && isDockerDesktopInstalled()) {
+    if (settings.autoLaunchDockerDesktop && isDockerDesktopInstalled()) {
       console.log(
-        `[sandbox] Daemon unreachable at "${dockerPath}" — attempting auto-launch (timeout ${autoLaunchTimeoutSec}s)`,
+        `[sandbox] Daemon unreachable at "${dockerPath}" — attempting auto-launch (timeout ${clampTimeout(settings.autoLaunchTimeoutSec)}s)`,
       );
-      const launched = await attemptAutoLaunchAndWait();
+      const launched = await attemptAutoLaunchAndWait(settings);
       if (launched.available) return launched;
       // fall through to return launched error (includes timeout details)
       console.error(`[sandbox] ${launched.error}`);
@@ -543,15 +549,17 @@ export async function detectDocker(): Promise<DockerInfo> {
     const msg = `Docker binary found at "${dockerPath}" but daemon is unreachable: ${originalMsg}`;
     console.error(`[sandbox] ${msg}`);
     // Append hint about setting when not launching
-    const hint = autoLaunchEnabled
+    const hint = settings.autoLaunchDockerDesktop
       ? ' Docker Desktop not found at known locations; please start it manually.'
       : ' Auto-launch is disabled in Sandbox Settings — enable it to start Docker Desktop automatically.';
     return { available: false, path: dockerPath, error: msg + hint };
   }
 }
 
-export async function checkDockerAvailable(): Promise<boolean> {
-  const info = await detectDocker();
+export async function checkDockerAvailable(
+  settings: SandboxSettings = SANDBOX_DEFAULT_SETTINGS,
+): Promise<boolean> {
+  const info = await detectDocker(settings);
   return info.available;
 }
 
@@ -844,11 +852,14 @@ async function ensureSandboxImage(): Promise<void> {
   }
 }
 
-export async function createSandboxEnvironment(options?: {
-  memoryLimit?: string;
-  cpuLimit?: number;
-  name?: string;
-}): Promise<{
+export async function createSandboxEnvironment(
+  options?: {
+    memoryLimit?: string;
+    cpuLimit?: number;
+    name?: string;
+  },
+  settings: SandboxSettings = SANDBOX_DEFAULT_SETTINGS,
+): Promise<{
   success: boolean;
   containerId?: string;
   containerName?: string;
@@ -856,7 +867,7 @@ export async function createSandboxEnvironment(options?: {
   error?: string;
 }> {
   try {
-    const dockerInfo = await detectDocker();
+    const dockerInfo = await detectDocker(settings);
     if (!dockerInfo.available) {
       return {
         success: false,
@@ -925,12 +936,15 @@ export async function createSandboxEnvironment(options?: {
   }
 }
 
-export async function createNetworkedSandboxEnvironment(options?: {
-  memoryLimit?: string;
-  cpuLimit?: number;
-  network?: string;
-  name?: string;
-}): Promise<{
+export async function createNetworkedSandboxEnvironment(
+  options?: {
+    memoryLimit?: string;
+    cpuLimit?: number;
+    network?: string;
+    name?: string;
+  },
+  settings: SandboxSettings = SANDBOX_DEFAULT_SETTINGS,
+): Promise<{
   success: boolean;
   containerId?: string;
   containerName?: string;
@@ -938,7 +952,7 @@ export async function createNetworkedSandboxEnvironment(options?: {
   error?: string;
 }> {
   try {
-    const dockerInfo = await detectDocker();
+    const dockerInfo = await detectDocker(settings);
     if (!dockerInfo.available) {
       return {
         success: false,
@@ -1216,15 +1230,10 @@ function execWithStdin(
   });
 }
 
-let maxReadSize = 40000;
-
-export function setSandboxMaxReadSize(size: number): void {
-  maxReadSize = size;
-}
-
 export async function sandboxReadFile(
   filePath: string,
   containerName?: string,
+  settings: SandboxSettings = SANDBOX_DEFAULT_SETTINGS,
 ): Promise<FileReadResult> {
   const env = getActiveEnvironment(containerName);
   if (!env) return { success: false, error: 'No active sandbox environment.' };
@@ -1252,10 +1261,10 @@ export async function sandboxReadFile(
 
     if (result.stderr && !result.stdout)
       return { success: false, error: result.stderr };
-    if (result.stdout.length > maxReadSize) {
+    if (result.stdout.length > settings.maxReadSize) {
       return {
         success: true,
-        content: `Warning: Operation over ${maxReadSize} characters and may overload context. If reading this file is necessary, use offsets and limits to read smaller sections`,
+        content: `Warning: Operation over ${settings.maxReadSize} characters and may overload context. If reading this file is necessary, use offsets and limits to read smaller sections`,
       };
     }
     return { success: true, content: result.stdout };
@@ -1702,7 +1711,8 @@ function validateSandboxPosixPath(raw: string): string {
 export async function sandboxCopyInto(
   hostPathRaw: string,
   sandboxPathRaw: string,
-  containerName?: string,
+  containerName: string | undefined,
+  hostSettings: FileSystemSettings,
 ): Promise<CopyIntoResult> {
   const env = getActiveEnvironment(containerName);
   if (!env) {
@@ -1714,14 +1724,16 @@ export async function sandboxCopyInto(
   }
 
   // ── Host path validation ─────────────────────────────────────
+  // Host access is governed by the filesystem settings resolved for the
+  // calling profile, so a sandbox cannot read outside what the profile allows.
   let resolvedHost: string;
   try {
     if (typeof hostPathRaw !== 'string' || hostPathRaw.trim() === '') {
       throw new Error('host_path must be a non-empty string');
     }
     const sanitized = sanitizeHostPath(hostPathRaw);
-    resolvedHost = normalizeHostPath(sanitized);
-    validateHostPath(resolvedHost);
+    resolvedHost = normalizeHostPath(sanitized, hostSettings);
+    validateHostPath(resolvedHost, hostSettings);
   } catch (err: any) {
     return { success: false, error: err.message || String(err) };
   }
@@ -1846,8 +1858,9 @@ export interface SandboxStatus {
 
 export async function getSandboxStatus(
   containerName?: string,
+  settings: SandboxSettings = SANDBOX_DEFAULT_SETTINGS,
 ): Promise<SandboxStatus> {
-  const dockerInfo = await detectDocker();
+  const dockerInfo = await detectDocker(settings);
   const base: SandboxStatus = {
     dockerAvailable: dockerInfo.available,
     dockerPath: dockerInfo.path,

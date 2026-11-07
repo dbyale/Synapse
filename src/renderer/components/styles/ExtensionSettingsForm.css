@@ -1,0 +1,408 @@
+.esf {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.esf-description {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.esf-empty {
+  padding: 24px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.esf-group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.esf-group-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-tertiary, var(--text-secondary));
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 4px;
+}
+
+.esf-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.esf-field-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.esf-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.esf-hint {
+  font-size: 12px;
+  color: var(--text-tertiary, var(--text-secondary));
+  line-height: 1.45;
+}
+
+.esf-readonly {
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px dashed var(--border);
+  background: var(--bg-tertiary, rgba(255, 255, 255, 0.04));
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.esf-badge {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--text-tertiary, var(--text-secondary));
+  white-space: nowrap;
+}
+
+.esf-badge--overridden {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* What the extension default is, under a field this profile has overridden. */
+.esf-default {
+  font-size: 11px;
+  color: var(--text-tertiary, var(--text-secondary));
+  font-style: italic;
+}
+
+/* ── Controls ─────────────────────────────────────────────────── */
+
+.esf-input,
+.esf-select,
+.esf-textarea {
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.esf-input:focus,
+.esf-select:focus,
+.esf-textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.esf-input:disabled,
+.esf-select:disabled,
+.esf-textarea:disabled {
+  opacity: 0.6;
+}
+
+.esf-input--number {
+  max-width: 160px;
+}
+
+.esf-textarea {
+  resize: vertical;
+  min-height: 70px;
+}
+
+/* ── Select ───────────────────────────────────────────────────── */
+
+/* Trigger: looks like the other controls, but is a button, so the option
+   list below can be styled instead of left to the OS. */
+.esf-select {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.esf-select:hover:not(:disabled) {
+  border-color: var(--text-secondary);
+}
+
+.esf-select:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(137, 180, 250, 0.18);
+}
+
+.esf-select--open {
+  border-color: var(--accent);
+}
+
+.esf-select-value {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A stored value that is no longer one of the options. */
+.esf-select-value--unlisted {
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.esf-select-chevron {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  transition:
+    transform 0.15s ease,
+    color 0.15s ease;
+}
+
+.esf-select--open .esf-select-chevron {
+  color: var(--accent);
+  transform: rotate(180deg);
+}
+
+/* Portaled to <body> and fixed-positioned: never clipped by the modal that
+   opened it, and it scrolls on its own when the list is long. The component
+   raises z-index above whichever modal (or nested modal) opened the list. */
+.esf-select-panel {
+  position: fixed;
+  z-index: 1200;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  box-shadow:
+    0 16px 40px rgba(0, 0, 0, 0.55),
+    0 2px 8px rgba(0, 0, 0, 0.4);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  animation: esf-select-in 0.12s ease-out;
+}
+
+.esf-select-panel--up {
+  animation-name: esf-select-in-up;
+}
+
+@keyframes esf-select-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes esf-select-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.esf-select-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  border-radius: calc(var(--radius-sm) - 4px);
+  background: transparent;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.4;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.1s ease;
+}
+
+/* --active is the keyboard-highlighted row, --selected the stored value. */
+.esf-select-option:hover,
+.esf-select-option--active {
+  background: var(--bg-hover);
+}
+
+.esf-select-option--selected {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.esf-select-option__label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.esf-select-option__check {
+  flex-shrink: 0;
+  color: var(--accent);
+  opacity: 0;
+}
+
+.esf-select-option--selected .esf-select-option__check {
+  opacity: 1;
+}
+
+.esf-select-empty {
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .esf-select-panel {
+    animation: none;
+  }
+
+  .esf-select-chevron {
+    transition: none;
+  }
+}
+
+.esf-dir,
+.esf-secret,
+.esf-list-add {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.esf-add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+.esf-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.esf-icon-btn:hover:not(:disabled) {
+  background: var(--bg-tertiary, rgba(255, 255, 255, 0.06));
+  color: var(--text-primary);
+}
+
+/* ── Switch ───────────────────────────────────────────────────── */
+
+.esf-switch {
+  position: relative;
+  width: 34px;
+  height: 18px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 999px;
+  background: var(--bg-tertiary, rgba(255, 255, 255, 0.12));
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.esf-switch--on {
+  background: var(--accent);
+}
+
+.esf-switch:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.esf-switch-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.15s ease;
+}
+
+.esf-switch--on .esf-switch-thumb {
+  transform: translateX(16px);
+}
+
+/* ── String lists ─────────────────────────────────────────────── */
+
+.esf-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.esf-list-empty {
+  padding: 10px;
+  font-size: 12px;
+  font-style: italic;
+  color: var(--text-tertiary, var(--text-secondary));
+}
+
+.esf-list-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+}
+
+.esf-list-icon {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+
+.esf-list-value {
+  flex: 1;
+  font-size: 12px;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

@@ -1,52 +1,10 @@
 /* eslint-disable import/prefer-default-export */
-import { ipcMain, dialog, BrowserWindow, shell, app } from 'electron';
-import path from 'path';
-import fs from 'fs';
+import { ipcMain, dialog, BrowserWindow, shell } from 'electron';
 import { getExtensionRegistry } from './extensionRegistry';
 import {
-  setAllowedDirectories,
-  setHostDirectory,
-  setMaxReadSize,
-  getDefaultHostDirectory,
-} from './functions/fileSystem';
-import {
-  setSandboxMaxReadSize,
-  setSandboxAutoLaunch,
-  setSandboxAutoLaunchTimeout,
-} from './functions/sandboxRunner';
-
-const EXTENSION_SETTINGS_DIR = path.join(
-  app.getPath('userData'),
-  'extension-settings',
-);
-
-function ensureSettingsDir(): void {
-  if (!fs.existsSync(EXTENSION_SETTINGS_DIR)) {
-    fs.mkdirSync(EXTENSION_SETTINGS_DIR, { recursive: true });
-  }
-}
-
-function loadExtensionSettings(id: string): Record<string, any> {
-  ensureSettingsDir();
-  const filePath = path.join(EXTENSION_SETTINGS_DIR, `${id}.json`);
-  try {
-    if (fs.existsSync(filePath)) {
-      return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-    }
-  } catch {
-    // settings file doesn't exist or is invalid
-  }
-  return {};
-}
-
-function saveExtensionSettings(
-  id: string,
-  settings: Record<string, any>,
-): void {
-  ensureSettingsDir();
-  const filePath = path.join(EXTENSION_SETTINGS_DIR, `${id}.json`);
-  fs.writeFileSync(filePath, JSON.stringify(settings, null, 2), 'utf-8');
-}
+  getExtensionDefaults,
+  setExtensionDefaults,
+} from './extensionSettings';
 
 export function registerExtensionIpcHandlers(): void {
   const registry = getExtensionRegistry();
@@ -126,60 +84,17 @@ export function registerExtensionIpcHandlers(): void {
     shell.openPath(userExtDir);
   });
 
+  // Generic: every extension's defaults layer, driven by its own schema.
   ipcMain.handle('extensions:getSettings', (_event, id: string) => {
-    const settings = loadExtensionSettings(id);
-    if (id === 'filesystem') {
-      settings.defaultHostDirectory = getDefaultHostDirectory();
-    }
-    return settings;
+    return getExtensionDefaults(id);
   });
 
   ipcMain.handle(
     'extensions:setSettings',
     (_event, id: string, settings: any) => {
-      saveExtensionSettings(id, settings);
-      if (id === 'filesystem') {
-        setAllowedDirectories(settings.allowedDirectories || []);
-        if (settings.maxReadSize !== undefined)
-          setMaxReadSize(settings.maxReadSize);
-        if (settings.hostDirectory) setHostDirectory(settings.hostDirectory);
-      }
-      if (id === 'sandbox') {
-        if (settings.maxReadSize !== undefined)
-          setSandboxMaxReadSize(settings.maxReadSize);
-        if (settings.autoLaunchDockerDesktop !== undefined)
-          setSandboxAutoLaunch(!!settings.autoLaunchDockerDesktop);
-        if (settings.autoLaunchTimeoutSec !== undefined)
-          setSandboxAutoLaunchTimeout(settings.autoLaunchTimeoutSec);
-      }
-      return { success: true };
+      return setExtensionDefaults(id, settings);
     },
   );
 
   ipcMain.handle('get-platform', () => process.platform);
-
-  // Initialize extensions settings on startup
-  const fsSettings = loadExtensionSettings('filesystem');
-  if (fsSettings.allowedDirectories?.length) {
-    setAllowedDirectories(fsSettings.allowedDirectories);
-  }
-  if (fsSettings.maxReadSize !== undefined) {
-    setMaxReadSize(fsSettings.maxReadSize);
-  }
-  if (fsSettings.hostDirectory) {
-    setHostDirectory(fsSettings.hostDirectory);
-  }
-  const sbSettings = loadExtensionSettings('sandbox');
-  if (sbSettings.maxReadSize !== undefined) {
-    setSandboxMaxReadSize(sbSettings.maxReadSize);
-  }
-  // Defaults: true / 90 for convenience; persisted value overrides
-  if (sbSettings.autoLaunchDockerDesktop !== undefined) {
-    setSandboxAutoLaunch(!!sbSettings.autoLaunchDockerDesktop);
-  } else {
-    setSandboxAutoLaunch(true);
-  }
-  if (sbSettings.autoLaunchTimeoutSec !== undefined) {
-    setSandboxAutoLaunchTimeout(sbSettings.autoLaunchTimeoutSec);
-  }
 }

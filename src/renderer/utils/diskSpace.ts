@@ -1,4 +1,4 @@
-import { formatGBTruncated } from './formatters';
+import { formatCapacityTruncated } from './formatters';
 
 /**
  * Split GGUF downloads need room to merge parts back together, so the real
@@ -48,13 +48,15 @@ export function getBytesToFree(neededBytes: number, freeBytes: number): number {
 export function getSpaceNote(neededBytes: number, freeBytes: number): string {
   const level = getSpaceLevel(neededBytes, freeBytes);
   if (level === 'critical') {
-    return `Not enough space on this drive — free up ${formatGBTruncated(
+    return `Not enough space on this drive — free up ${formatCapacityTruncated(
       getBytesToFree(neededBytes, freeBytes),
     )} to fit this download.`;
   }
   if (level === 'warning') {
     const remaining = freeBytes - neededBytes * MERGE_HEADROOM;
-    return `Only ${formatGBTruncated(remaining)} will be free after this download.`;
+    return `Only ${formatCapacityTruncated(
+      remaining,
+    )} will be free after this download.`;
   }
   return '';
 }

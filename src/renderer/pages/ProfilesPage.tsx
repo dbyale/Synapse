@@ -34,15 +34,18 @@ import {
   getUniqueProfileId,
   normalizeProfileName,
 } from '../utils/profiles';
+import { externalServerSecretScope } from '../../shared/externalServer';
 import {
   getExtensions,
   getEnabledExtensions,
   getToolMeta,
   getAvailableToolNames,
   getCategorizedExtensions,
+  getSettingsDef,
   subscribeExtensionData,
 } from '../utils/extensionData';
 import InfoTooltip from '../components/InfoTooltip';
+import SearchBar from '../components/SearchBar';
 import EditProfileModal from '../components/EditProfileModal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import '../styles/ProfilesPage.css';
@@ -157,6 +160,7 @@ export default function ProfilesPage() {
   const [editingProfile, setEditingProfile] = useState<Profile | null>(null);
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [previewOrder, setPreviewOrder] = useState<Profile[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
   const [showRestartDialog, setShowRestartDialog] = useState(false);
   const [pendingSwitchId, setPendingSwitchId] = useState<string | null>(null);
   const [showEditRestartDialog, setShowEditRestartDialog] = useState(false);
@@ -238,7 +242,9 @@ export default function ProfilesPage() {
     setError(null);
     setNotice(null);
     try {
-      const content = serializeSynProfileCollection([profile]);
+      const content = serializeSynProfileCollection([profile], {
+        getSettingsDef,
+      });
       const filename = sanitizeProfileFilename(profile.name);
       const savedPath = await window.electronAPI.saveTextFile({
         title: 'Export Profile',
@@ -275,6 +281,7 @@ export default function ProfilesPage() {
       const bytes = await window.electronAPI.readFileAsBuffer(paths[0]);
       const collection = parseSynProfileCollection(
         new TextDecoder().decode(bytes),
+        { getSettingsDef },
       );
       const availableToolNames = getAvailableToolNames();
       const availableTools =
@@ -346,6 +353,10 @@ export default function ProfilesPage() {
       setSelectedProfileId(null);
       localStorage.removeItem('selectedProfileId');
     }
+    // Drop any encrypted secrets (external server API key) with the profile.
+    window.electronAPI
+      .secretDeleteScope(externalServerSecretScope(id))
+      .catch(() => {});
   };
 
   const handleSelect = async (id: string) => {
@@ -675,8 +686,20 @@ export default function ProfilesPage() {
     [],
   );
 
+  const isFiltering = searchQuery.trim().length > 0;
+
+  const filteredProfiles = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return profiles;
+    return profiles.filter(
+      (p) =>
+        p.name.toLowerCase().includes(query) ||
+        p.model.toLowerCase().includes(query),
+    );
+  }, [profiles, searchQuery]);
+
   const displayProfiles =
-    draggedId && previewOrder.length > 0 ? previewOrder : profiles;
+    draggedId && previewOrder.length > 0 ? previewOrder : filteredProfiles;
 
   return (
     <div className="sp-page">
@@ -749,16 +772,32 @@ export default function ProfilesPage() {
         </div>
       )}
 
+      {/* Search */}
+      {profiles.length > 0 && (
+        <SearchBar
+          value={searchQuery}
+          onChange={setSearchQuery}
+          placeholder="Search profiles by name or model..."
+          ariaLabel="Search profiles"
+        />
+      )}
+
       {/* Content */}
       <div className="sp-page__content">
-        {profiles.length === 0 ? (
+        {profiles.length === 0 && (
           <div className="sp-page__empty">
             <p>No profiles yet.</p>
             <p>
               Click <strong>New Profile</strong> to create one.
             </p>
           </div>
-        ) : (
+        )}
+        {profiles.length > 0 && displayProfiles.length === 0 && (
+          <div className="sp-page__empty">
+            <p>No profiles match your search.</p>
+          </div>
+        )}
+        {displayProfiles.length > 0 && (
           <div className="sp-page__list">
             {displayProfiles.map((profile) => {
               const isDragged = draggedId === profile.id;
@@ -769,8 +808,10 @@ export default function ProfilesPage() {
                   key={profile.id}
                   className={`sp-card ${
                     selectedProfileId === profile.id ? 'sp-card--active' : ''
-                  } ${isDragged ? 'sp-card--dragging' : ''}`}
-                  draggable
+                  } ${isDragged ? 'sp-card--dragging' : ''} ${
+                    isFiltering ? 'sp-card--no-drag' : ''
+                  }`}
+                  draggable={!isFiltering}
                   onDragStart={(e) => handleDragStart(e, profile.id)}
                   onDragOver={(e) => handleDragOver(e, profile.id)}
                   onDragLeave={handleDragLeave}
@@ -796,8 +837,21 @@ export default function ProfilesPage() {
                           )}
                         </div>
                         <div className="sp-card__model">
-                          <strong>Model:</strong>{' '}
-                          {profile.modelFilename ? (
+                          <strong>
+                            {profile.useExternalServer ? 'Server:' : 'Model:'}
+                          </strong>{' '}
+                          {profile.useExternalServer ? (
+                            <InfoTooltip
+                              content="This profile connects to an external v1-compatible server instead of launching a local one."
+                              side="right"
+                              hideIcon
+                              title="External Server"
+                            >
+                              <span>
+                                {profile.externalServerUrl || 'No URL set'}
+                              </span>
+                            </InfoTooltip>
+                          ) : profile.modelFilename ? (
                             <InfoTooltip
                               content="The GGUF model file assigned to this profile."
                               side="right"
@@ -883,10 +937,12 @@ export default function ProfilesPage() {
                             }
                           }}
                           disabled={
-                            loadingId !== null || !profile.modelFilename
+                            loadingId !== null ||
+                            (!profile.modelFilename &&
+                              !profile.useExternalServer)
                           }
                           title={
-                            profile.modelFilename
+                            profile.modelFilename || profile.useExternalServer
                               ? undefined
                               : 'Add a model to this profile before activating it'
                           }

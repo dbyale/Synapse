@@ -180,6 +180,102 @@ describe('synprofile collections', () => {
   });
 });
 
+describe('per-profile extension settings in profile files', () => {
+  const getSettingsDef = (extId: string) =>
+    extId === 'acme'
+      ? {
+          fields: [
+            { key: 'greeting', label: 'Greeting', kind: 'text' as const },
+            {
+              key: 'retries',
+              label: 'Retries',
+              kind: 'number' as const,
+              min: 0,
+              max: 5,
+            },
+            {
+              key: 'cacheDir',
+              label: 'Cache directory',
+              kind: 'directory' as const,
+              perProfile: false,
+            },
+            {
+              key: 'token',
+              label: 'Token',
+              kind: 'secret' as const,
+              sensitive: true,
+            },
+          ],
+        }
+      : undefined;
+
+  const profileWithOverrides: Profile = {
+    ...baseProfile,
+    toolSettings: {
+      acme: {
+        greeting: 'yo',
+        retries: 99,
+        cacheDir: 'C:/machine-only',
+        token: 'do-not-export-me',
+      },
+      uninstalled_ext: { greeting: 'orphan' },
+    },
+  };
+
+  it('exports only profile-portable overrides, coerced', () => {
+    const collection = createSynProfileCollection([profileWithOverrides], {
+      getSettingsDef,
+    });
+    expect(collection.profiles[0].profile.toolSettings).toEqual({
+      acme: { greeting: 'yo', retries: 5 },
+    });
+    const serialized = serializeSynProfileCollection([profileWithOverrides], {
+      getSettingsDef,
+    });
+    expect(serialized).not.toContain('do-not-export-me');
+    expect(serialized).not.toContain('machine-only');
+  });
+
+  it('re-validates overrides on import', () => {
+    const serialized = serializeSynProfileCollection([profileWithOverrides], {
+      getSettingsDef,
+    });
+    const imported = parseSynProfileCollection(serialized, { getSettingsDef });
+    expect(getImportedProfiles(imported)[0].toolSettings).toEqual({
+      acme: { greeting: 'yo', retries: 5 },
+    });
+  });
+
+  it('drops overrides a hand-edited file tries to smuggle in', () => {
+    const imported = parseSynProfileCollection(
+      {
+        format: 'synprofile',
+        version: 1,
+        profiles: [
+          {
+            profile: {
+              ...baseProfile,
+              toolSettings: {
+                acme: { greeting: 'hi', token: 'stolen', cacheDir: 'C:/x' },
+                made_up: { anything: 'value' },
+              },
+            },
+          },
+        ],
+      },
+      { getSettingsDef },
+    );
+    expect(getImportedProfiles(imported)[0].toolSettings).toEqual({
+      acme: { greeting: 'hi' },
+    });
+  });
+
+  it('drops toolSettings entirely when no schema provider is available', () => {
+    const collection = createSynProfileCollection([profileWithOverrides]);
+    expect(collection.profiles[0].profile).not.toHaveProperty('toolSettings');
+  });
+});
+
 describe('bundled setup profiles', () => {
   it('loads one general category from the two bundled profiles', () => {
     const optionProfileIds = SETUP_PROFILE_MANIFEST.categories.flatMap(

@@ -68,7 +68,8 @@ export default function ProfileSelectModal({
     ? profiles.filter(
         (p) =>
           p.name.toLowerCase().includes(query) ||
-          p.model.toLowerCase().includes(query),
+          p.model.toLowerCase().includes(query) ||
+          (p.externalServerUrl ?? '').toLowerCase().includes(query),
       )
     : profiles;
 
@@ -124,40 +125,48 @@ export default function ProfileSelectModal({
                 : 'No profiles available.'}
             </div>
           ) : (
-            filteredProfiles.map((profile) => (
-              <button
-                key={profile.id}
-                type="button"
-                className={`psm-card${selectedProfileId === profile.id ? ' psm-card--active' : ''}${!profile.modelFilename ? ' psm-card--disabled' : ''}`}
-                onClick={() => {
-                  if (!profile.modelFilename) return;
-                  onSelect(profile.id);
-                  onClose();
-                }}
-                disabled={!profile.modelFilename}
-              >
-                <div className="psm-card__title-row">
-                  <h3>{profile.name}</h3>
-                  {selectedProfileId === profile.id && (
-                    <span className="psm-card__active-badge">Active</span>
-                  )}
-                </div>
-                <p className="psm-card__model">
-                  {profile.modelFilename
-                    ? profile.model.split(/[/\\]/).pop()
-                    : 'No model'}
-                </p>
-                {renderToolBadges(profile.tools ?? [])}
-                <span className="psm-card__date">
-                  Created{' '}
-                  {new Date(profile.createdAt).toLocaleDateString(undefined, {
-                    year: 'numeric',
-                    month: 'short',
-                    day: 'numeric',
-                  })}
-                </span>
-              </button>
-            ))
+            filteredProfiles.map((profile) => {
+              // External profiles need no local model — they are always
+              // selectable and show their server URL instead of a model.
+              const isExternal = !!profile.useExternalServer;
+              const selectable = isExternal || !!profile.modelFilename;
+              return (
+                <button
+                  key={profile.id}
+                  type="button"
+                  className={`psm-card${selectedProfileId === profile.id ? ' psm-card--active' : ''}${!selectable ? ' psm-card--disabled' : ''}`}
+                  onClick={() => {
+                    if (!selectable) return;
+                    onSelect(profile.id);
+                    onClose();
+                  }}
+                  disabled={!selectable}
+                >
+                  <div className="psm-card__title-row">
+                    <h3>{profile.name}</h3>
+                    {selectedProfileId === profile.id && (
+                      <span className="psm-card__active-badge">Active</span>
+                    )}
+                  </div>
+                  <p className="psm-card__model">
+                    {isExternal
+                      ? `External: ${profile.externalServerUrl || 'No URL set'}`
+                      : profile.modelFilename
+                        ? profile.model.split(/[/\\]/).pop()
+                        : 'No model'}
+                  </p>
+                  {renderToolBadges(profile.tools ?? [])}
+                  <span className="psm-card__date">
+                    Created{' '}
+                    {new Date(profile.createdAt).toLocaleDateString(undefined, {
+                      year: 'numeric',
+                      month: 'short',
+                      day: 'numeric',
+                    })}
+                  </span>
+                </button>
+              );
+            })
           )}
         </div>
       </div>
