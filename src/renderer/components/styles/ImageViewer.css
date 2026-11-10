@@ -10,6 +10,7 @@
   outline: none;
   padding: 0;
   cursor: default;
+  overflow: hidden;
   animation: image-viewer-overlay-in 0.15s ease;
 }
 
@@ -59,6 +60,22 @@
   object-fit: contain;
   border-radius: 8px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  transform-origin: center;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.image-viewer-image--smooth {
+  transition: transform 0.2s ease;
+}
+
+.image-viewer-image--zoomed {
+  cursor: grab;
+}
+
+.image-viewer-image--dragging {
+  cursor: grabbing;
+  transition: none;
 }
 
 .image-viewer-close {
@@ -83,6 +100,49 @@
 .image-viewer-close:hover {
   background: var(--bg-hover);
   border-color: var(--text-secondary);
+}
+
+.image-viewer-toolbar {
+  position: fixed;
+  top: 16px;
+  right: 60px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  z-index: 1;
+}
+
+.image-viewer-btn {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: inherit;
+}
+
+.image-viewer-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--text-secondary);
+}
+
+.image-viewer-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.image-viewer-zoom-level {
+  min-width: 46px;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
 }
 
 .image-viewer-error {

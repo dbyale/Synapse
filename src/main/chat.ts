@@ -41,6 +41,12 @@ import type {
   UserInputResponse,
 } from '../shared/chatTypes';
 import { mergeSources } from '../shared/chatTypes';
+import {
+  normalizeExternalServerUrl,
+  externalServerSecretScope,
+  EXTERNAL_API_KEY_SECRET_KEY,
+} from '../shared/externalServer';
+import { getSecret } from './secretStore';
 
 export interface GenerationStats {
   tokens: number;
@@ -107,6 +113,12 @@ interface SessionStream {
 
 // --- State ---
 let serverProcess: ChildProcess | null = null;
+// 'external' while an external v1-compatible server is the active backend
+// (no local process). There is no health tracking for external servers —
+// many v1 endpoints (OpenAI, proxies) expose no /health — so while an
+// external profile is loaded the server is simply considered running, and
+// request failures surface through normal chat errors instead.
+let serverMode: 'local' | 'external' | null = null;
 let currentProfile: Profile | null = null;
 let currentProjector: string | null = null;
 let chatFunctions: any = null;
@@ -802,9 +814,55 @@ export function resolveServerEndpoint(profile: Partial<Profile> | null): {
   };
 }
 
+// Effective base URL for the active backend. External mode uses the
+// profile's user-entered URL (normalized); local mode keeps the
+// host/port endpoint. Returns null only for a malformed external URL
+// (loadProfile validates before connecting, so this means "misconfigured").
+export function getServerBaseUrl(profile: Partial<Profile> | null): string | null {
+  if ((profile as any)?.useExternalServer) {
+    return normalizeExternalServerUrl(
+      (profile as any)?.externalServerUrl ?? '',
+    );
+  }
+  const { host, port } = resolveServerEndpoint(profile);
+  return `http://${host}:${port}`;
+}
+
 function getServerUrl(path: string = ''): string {
-  const { host, port } = resolveServerEndpoint(currentProfile);
-  return `http://${host}:${port}${path}`;
+  const base = getServerBaseUrl(currentProfile);
+  if (base === null) {
+    // Should not happen post-validation; fall back to the local endpoint
+    // so callers get a fast connection error instead of a crash.
+    const { host, port } = resolveServerEndpoint(currentProfile);
+    return `http://${host}:${port}${path}`;
+  }
+  return `${base}${path}`;
+}
+
+// Per-profile external API key, read from the encrypted store at request
+// time. Never travels through IPC or lands on the Profile object.
+function getExternalApiKey(profileId?: string): string | null {
+  const id = profileId ?? currentProfile?.id;
+  if (!id) return null;
+  return getSecret(externalServerSecretScope(id), EXTERNAL_API_KEY_SECRET_KEY);
+}
+
+// fetch() against the active backend, attaching the Authorization header
+// when the external server has a stored API key. All server-bound HTTP
+// in this module goes through here so auth is never forgotten.
+function serverFetch(
+  path: string,
+  init?: RequestInit,
+  profileId?: string,
+): Promise<Response> {
+  const headers: Record<string, string> = {
+    ...((init?.headers as Record<string, string>) ?? {}),
+  };
+  if (currentProfile?.useExternalServer) {
+    const key = getExternalApiKey(profileId);
+    if (key) headers.Authorization = `Bearer ${key}`;
+  }
+  return fetch(getServerUrl(path), { ...init, headers });
 }
 
 export function buildLlamaServerArgs(
@@ -846,8 +904,10 @@ export function buildLlamaServerArgs(
   // fits live at startup, and pinned overrides would make its fit throw when
   // it needs to adjust — so omit both and let the server solve.
   if (!layersAuto && config.ngl != null) {
-    if (config.tensorSplit) spawnArgs.push('-ts', config.tensorSplit);
-    if (config.tensorOverrides) spawnArgs.push('-ot', config.tensorOverrides);
+    if (config.tensorSplit)
+      spawnArgs.push('--tensor-split', config.tensorSplit);
+    if (config.tensorOverrides)
+      spawnArgs.push('--override-tensor', config.tensorOverrides);
   }
 
   // Projector Arguments
@@ -1085,6 +1145,12 @@ function buildChatBody(
     ...(tools.length > 0 && { tools }),
   };
 
+  // External v1 endpoints (OpenAI and friends) require a model id;
+  // llama.cpp ignores the field, so it is only sent when configured.
+  if (p?.useExternalServer && p.externalModelName) {
+    body.model = p.externalModelName;
+  }
+
   // Standard sampling
   if (p?.temperature !== undefined) body.temperature = p.temperature;
   if (p?.topK !== undefined) body.top_k = p.topK;
@@ -1161,6 +1227,7 @@ function substituteSystemPromptVariables(
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const profilename = profile?.name ?? '';
   const modelname =
+    profile?.externalModelName ??
     profile?.modelFilename ??
     (profile?.model ? path.basename(profile.model) : '');
   const contextlength =
@@ -1264,6 +1331,9 @@ export async function preloadSystemPrompt(
       stream_options: { include_usage: true },
       return_progress: true,
     };
+    if (currentProfile?.useExternalServer && currentProfile.externalModelName) {
+      body.model = currentProfile.externalModelName;
+    }
     if (tools.length > 0) body.tools = tools;
 
     const timeout = AbortSignal.timeout(120_000);
@@ -1272,7 +1342,7 @@ export async function preloadSystemPrompt(
     signal.addEventListener('abort', abortCombined);
     timeout.addEventListener('abort', abortCombined);
 
-    const res = await fetch(getServerUrl('/v1/chat/completions'), {
+    const res = await serverFetch('/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -1379,6 +1449,136 @@ export async function preloadSystemPrompt(
   }
 }
 
+// Shared tool-list construction for local and external loads. Projector
+// tools are dropped when no projector is in play (local: no mmproj file;
+// external: /props reports no vision modality).
+function buildActiveToolList(profile: Profile, projectorAvailable: boolean): any[] {
+  if (!chatFunctions) chatFunctions = createChatFunctions();
+  let tools = (profile.tools || [])
+    .map((t) => chatFunctions[t])
+    .filter(Boolean)
+    .map((f) => ({
+      type: 'function',
+      function: {
+        name:
+          f.name ||
+          Object.keys(chatFunctions).find((k) => chatFunctions[k] === f),
+        description: f.description,
+        parameters: f.params,
+      },
+    }));
+  if (!projectorAvailable) {
+    tools = tools.filter((t) => {
+      const f = chatFunctions[t.function.name];
+      return !f || f.displayType !== 'projector';
+    });
+  }
+  return tools;
+}
+
+// --- External v1-compatible server support ---
+// No backend resolution, no optimizer, no spawn, and no health probing:
+// the URL may point at any v1-compatible endpoint (llama.cpp, OpenAI, a
+// proxy), many of which expose no /health. We assume the server is ready
+// and let the first request surface real problems. ctx/vision are
+// discovered best-effort via llama.cpp's /props.
+
+// Used when neither /props nor the profile give a context window (e.g. a
+// plain OpenAI endpoint). Conservative so context-shift stays safe.
+const EXTERNAL_DEFAULT_CONTEXT_SIZE = 4096;
+
+async function loadExternalProfile(
+  profile: Profile,
+  onStatus?: (data: { phase: string; message: string }) => void,
+): Promise<{
+  success: boolean;
+  error?: string;
+  cancelled?: boolean;
+  profile?: any;
+  external?: boolean;
+}> {
+  const baseUrl = normalizeExternalServerUrl(profile.externalServerUrl ?? '');
+  if (!baseUrl) {
+    return {
+      success: false,
+      error:
+        'Invalid external server URL. Use a full address like "http://192.168.1.50:8080".',
+    };
+  }
+
+  // Tear down whatever was loaded before (local server or previous external).
+  const unloadPromise = unloadModel();
+
+  if (preloadAbortController) {
+    preloadAbortController.abort();
+    preloadAbortController = null;
+  }
+
+  onStatus?.({ phase: 'loadprofile', message: `Loading Profile…` });
+  await unloadPromise;
+  // Fresh slate: the teardown above may have set the intentional-stop flag.
+  serverStopRequested = false;
+  serverMode = 'external';
+  // Commit the profile now (no spawn/health gate to wait on) so the
+  // /tokenize calls below route through serverFetch with the right
+  // endpoint and Authorization header.
+  currentProfile = profile;
+
+  const apiKey = getExternalApiKey(profile.id);
+
+  // Context window: an explicit value from the profile (the External
+  // Server Settings slider) wins; otherwise discover llama.cpp's n_ctx
+  // via /props; otherwise a conservative default. Generic v1 servers
+  // (OpenAI, proxies) 404 on /props — that is expected.
+  let n_ctx: number | null = null;
+  let vision = false;
+  try {
+    const res = await fetch(`${baseUrl}/props`, {
+      headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
+      signal: AbortSignal.timeout(5000),
+    });
+    if (res.ok) {
+      const props = await res.json();
+      const propsCtx = props?.default_generation_settings?.n_ctx;
+      if (typeof propsCtx === 'number' && propsCtx > 0) n_ctx = propsCtx;
+      vision = props?.modalities?.vision === true;
+    }
+  } catch {
+    // /props unsupported — fine.
+  }
+
+  currentContextSize =
+    (profile.contextSize ?? null) ?? n_ctx ?? EXTERNAL_DEFAULT_CONTEXT_SIZE;
+  currentProjector = vision ? 'external' : null;
+
+  activeTools = buildActiveToolList(profile, vision);
+
+  const resolvedSystemPrompt = substituteSystemPromptVariables(
+    profile.systemPrompt,
+    profile,
+  );
+  const systemTokens = (await tokenize(resolvedSystemPrompt)) ?? 0;
+  const toolTokens =
+    activeTools.length > 0
+      ? ((await tokenize(JSON.stringify(activeTools))) ?? 0)
+      : 0;
+  lastUsage = {
+    used: systemTokens + toolTokens,
+    total: currentContextSize ?? 0,
+  };
+  usageSessionId = null;
+
+  onStatus?.({ phase: 'ready', message: '' });
+  currentContextShift = profile.contextShift ?? null;
+  currentSystemPrompt = resolvedSystemPrompt;
+  lastPreloadStats = null;
+
+  console.log(
+    `[chat] External server profile loaded: ${baseUrl} (ctx=${currentContextSize}, vision=${vision})`,
+  );
+  return { success: true, external: true };
+}
+
 export async function loadProfile(
   profile: Profile,
   onStatus?: (data: { phase: string; message: string }) => void,
@@ -1403,6 +1603,20 @@ export async function loadProfile(
     // stripped in the main process, never trusted from the renderer.
     setProfileToolSettings(profile.id, profile.toolSettings);
     onStatus?.({ phase: 'fetching', message: `Fetching Profile…` });
+
+    // External v1-compatible server: connect instead of launching a local
+    // llama-server. Skips backend resolution, the optimizer, and spawn.
+    if ((profile as any).useExternalServer) {
+      try {
+        return await loadExternalProfile(profile, onStatus);
+      } catch (error: any) {
+        // Defensive: never leave a stale external mode behind if the
+        // load threw midway (e.g. a concurrent teardown).
+        if (serverMode === 'external') serverMode = null;
+        onStatus?.({ phase: 'ready', message: '' });
+        return { success: false, error: error.message };
+      }
+    }
 
     try {
       // Start unload in background
@@ -1546,28 +1760,7 @@ export async function loadProfile(
       currentContextSize = result.ctx;
 
       onStatus?.({ phase: 'loadprofile', message: `Loading New Profile…` });
-      if (!chatFunctions) chatFunctions = createChatFunctions();
-      activeTools = (profile.tools || [])
-        .map((t) => chatFunctions[t])
-        .filter(Boolean)
-        .map((f) => ({
-          type: 'function',
-          function: {
-            name:
-              f.name ||
-              Object.keys(chatFunctions).find((k) => chatFunctions[k] === f),
-            description: f.description,
-            parameters: f.params,
-          },
-        }));
-
-      // Filter projector tools when the model has no projector loaded
-      if (!fullProjectorPath) {
-        activeTools = activeTools.filter((t) => {
-          const f = chatFunctions[t.function.name];
-          return !f || f.displayType !== 'projector';
-        });
-      }
+      activeTools = buildActiveToolList(profile, !!fullProjectorPath);
 
       const spawnArgs = buildLlamaServerArgs(profile, {
         modelPath: fullModelPath,
@@ -1725,6 +1918,7 @@ export async function loadProfile(
       usageSessionId = null;
 
       onStatus?.({ phase: 'ready', message: '' });
+      serverMode = 'local';
       currentProfile = profile;
       currentContextShift = profile.contextShift ?? null;
       currentSystemPrompt = resolvedSystemPrompt;
@@ -2955,7 +3149,7 @@ export async function sendMessage(
     s.skipThinkingPending = false;
     let response: Response;
     try {
-      response = await fetch(getServerUrl('/v1/chat/completions'), {
+      response = await serverFetch('/v1/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(
@@ -2966,8 +3160,14 @@ export async function sendMessage(
     } catch (e: any) {
       // User abort is not an error — let the outer catch finish gracefully.
       if (e?.name === 'AbortError' || s.aborted) throw e;
-      const msg = e?.message ?? 'Connection failed';
-      throw new PreAcceptError(msg, 'connection', userMsg.id);
+      // Raw failure (e.g. "fetch failed") goes to the log; the user gets a
+      // friendly, actionable message like the known server-error mappings.
+      console.error('[chat] server request failed:', e?.message ?? e);
+      const base = getServerBaseUrl(currentProfile);
+      const friendly = currentProfile?.useExternalServer
+        ? `Cannot reach the external server${base ? ` at ${base}` : ''}.\nCheck that it is running and that the URL and port are correct.`
+        : `Cannot reach the inference server${base ? ` at ${base}` : ''}.\nThe server may have stopped — try restarting it.`;
+      throw new PreAcceptError(friendly, 'connection', userMsg.id);
     }
 
     if (!response.ok) {
@@ -3788,7 +3988,7 @@ export async function skipThinking(
   if (!completionId) return { skipped: false, error: 'No completion id yet' };
   s.skipThinkingPending = true;
   try {
-    const res = await fetch(getServerUrl('/v1/chat/completions/control'), {
+    const res = await serverFetch('/v1/chat/completions/control', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'reasoning_end', id: completionId }),
@@ -3825,6 +4025,18 @@ function abortAllStreams(): void {
 
 export async function unloadModel() {
   const proc = serverProcess;
+  // External mode has no process: abort streams and clear state —
+  // nothing to kill.
+  if (serverMode === 'external') {
+    serverMode = null;
+    serverStopRequested = true;
+    currentProjector = null;
+    abortAllStreams();
+    sessions.forEach((s) => {
+      persistSessionState(s.sessionId);
+      emitSessionChanged(s.sessionId);
+    });
+  }
   if (proc) {
     // Intentional stop: suppress the 'server-crashed' push for this exit.
     // loadProfile() clears the flag after awaiting the old server's
@@ -3872,7 +4084,33 @@ export function hasConversationContext(): boolean {
 }
 
 export function isServerRunning(): boolean {
+  // External mode has no process to watch: while an external profile is
+  // loaded the server is assumed reachable (v1 endpoints like OpenAI's
+  // expose no health surface); real problems show up as request errors.
+  if (serverMode === 'external') return true;
   return serverProcess !== null;
+}
+
+/** Server backend status for the active session (pill/status consumers). */
+export function getServerStatus(): {
+  running: boolean;
+  mode: 'local' | 'external' | null;
+  url: string | null;
+} {
+  if (serverMode === 'external') {
+    return {
+      running: true,
+      mode: 'external',
+      url: normalizeExternalServerUrl(
+        (currentProfile as any)?.externalServerUrl ?? '',
+      ),
+    };
+  }
+  return {
+    running: serverProcess !== null,
+    mode: serverProcess !== null ? 'local' : null,
+    url: null,
+  };
 }
 
 export function getServerPid(): number | null {
@@ -3901,7 +4139,7 @@ export function hasProjector() {
 
 export async function tokenize(text: string): Promise<number | null> {
   try {
-    const res = await fetch(getServerUrl('/tokenize'), {
+    const res = await serverFetch('/tokenize', {
       method: 'POST',
       body: JSON.stringify({ content: text }),
     });

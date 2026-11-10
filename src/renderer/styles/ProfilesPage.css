@@ -143,6 +143,15 @@
   border-style: dashed;
 }
 
+/* Drag reorder is disabled while a search filter is active */
+.sp-card--no-drag .sp-card__grip-handle {
+  cursor: default;
+}
+
+.sp-card--no-drag .sp-card__grip-icon {
+  visibility: hidden;
+}
+
 /* ── View mode ── */
 .sp-card__view {
   display: flex;

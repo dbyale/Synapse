@@ -1,5 +1,5 @@
 import { useState, MouseEvent, KeyboardEvent, ChangeEvent } from 'react';
-import { X, Check, Search, Cpu } from 'lucide-react';
+import { X, Check, Search, Cpu, Server } from 'lucide-react';
 import { formatBytes } from '../utils/formatters';
 import './styles/ModelSelectModal.css';
 
@@ -20,6 +20,12 @@ interface ModelSelectModalProps {
   selectedFilename: string;
   onSelect: (filename: string, groupName: string) => void;
   onClose: () => void;
+  /**
+   * When set, renders an "Add External Model" button pinned below the
+   * scrollbox. Used by the main model picker only — draft models always
+   * come from local files.
+   */
+  onAddExternalModel?: () => void;
 }
 
 function extractParametersFromName(modelName: string): string | null {
@@ -45,6 +51,7 @@ export default function ModelSelectModal({
   selectedFilename,
   onSelect,
   onClose,
+  onAddExternalModel,
 }: ModelSelectModalProps) {
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -180,6 +187,19 @@ export default function ModelSelectModal({
             })
           )}
         </div>
+
+        {onAddExternalModel && (
+          <div className="msm-footer">
+            <button
+              type="button"
+              className="msm-external-btn"
+              onClick={onAddExternalModel}
+            >
+              <Server size={16} />
+              <span>Add External Model</span>
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
