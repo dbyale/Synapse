@@ -1,3 +1,4 @@
+/* global __LLAMA_VERSION__ */
 /* eslint-disable import/prefer-default-export */
 import fs from 'fs';
 import path from 'path';
@@ -53,7 +54,17 @@ function readPinnedLlamaVersion(): string {
   }
 }
 
-const PINNED_LLAMA_VERSION = readPinnedLlamaVersion();
+// Prefer the build-time value injected by webpack's DefinePlugin (see
+// .erb/configs/binaryVersions.ts): a packaged app's app.getAppPath() resolves
+// the release package.json, which carries no binaryVersions — a runtime-only
+// read would silently fall back to a stale tag after any pin bump. The
+// typeof guard keeps this compiling under jest and ts-node, where the
+// DefinePlugin global does not exist and the package.json read is the right
+// source (it resolves the root package.json there).
+const PINNED_LLAMA_VERSION =
+  typeof __LLAMA_VERSION__ !== 'undefined'
+    ? __LLAMA_VERSION__
+    : readPinnedLlamaVersion();
 
 export function getLlamaVersion(): string {
   return PINNED_LLAMA_VERSION;

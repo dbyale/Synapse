@@ -21,7 +21,8 @@ interface ActiveDL {
     | 'extracting'
     | 'completed'
     | 'cancelled'
-    | 'failed';
+    | 'failed'
+    | 'paused';
   merge?: boolean;
   /**
    * Set when the row is a backend/python install rather than a model, straight
@@ -103,7 +104,9 @@ export default function DownloadManager() {
         // settles: unpacking keeps broadcasting events every 250 ms, so without
         // this the ✕ on an unpacking row would only hide it for a moment. Only
         // the run that was dismissed is suppressed — a new run of the same
-        // install (retried from the backend card) shows up again.
+        // install (retried from the backend card) shows up again. `paused` is
+        // deliberately not terminal: a dismissed row stays hidden while its
+        // download is deferred by prioritization elsewhere.
         if (isTerminal) hiddenRuns.current.delete(key);
         else if (
           progress.runId !== undefined &&
@@ -130,6 +133,35 @@ export default function DownloadManager() {
                   lastBytes: 0,
                 }),
                 status: progress.status,
+                merge: progress.merge ?? existing?.merge,
+                binary: progress.binary ?? existing?.binary,
+                runId: progress.runId ?? existing?.runId,
+              },
+            };
+          }
+
+          // Paused state: keep bytes/percent but stop tracking speed. The
+          // transfer is still alive in the main process — prioritization is
+          // holding its stream — so the row stays in the list.
+          if (progress.status === 'paused') {
+            return {
+              ...prev,
+              [key]: {
+                ...(existing || {
+                  modelId: progress.modelId || '',
+                  filename: progress.filename,
+                  percent: 0,
+                  downloadedBytes: 0,
+                  totalBytes: 0,
+                  speed: 0,
+                  lastTimestamp: now,
+                  lastBytes: 0,
+                }),
+                percent: progress.percent,
+                downloadedBytes: progress.downloadedBytes,
+                totalBytes: progress.totalBytes,
+                speed: 0,
+                status: 'paused',
                 merge: progress.merge ?? existing?.merge,
                 binary: progress.binary ?? existing?.binary,
                 runId: progress.runId ?? existing?.runId,
@@ -452,6 +484,7 @@ export default function DownloadManager() {
                   dl.percent >= 100 && !isMerging && !isExtracting;
                 const isCancelled = dl.status === 'cancelled';
                 const isFailed = dl.status === 'failed';
+                const isPaused = dl.status === 'paused';
                 const bytesRemaining = dl.totalBytes - dl.downloadedBytes;
                 const etaSeconds =
                   dl.speed > 0 && !isComplete && !isCancelled && !isFailed
@@ -463,6 +496,8 @@ export default function DownloadManager() {
                   progressColor = 'var(--text-secondary, #9399b2)';
                 } else if (isComplete) {
                   progressColor = 'var(--success, #a6e3a1)';
+                } else if (isPaused) {
+                  progressColor = '#f9e2af';
                 }
 
                 let statusText = '';
@@ -474,6 +509,8 @@ export default function DownloadManager() {
                   statusText = 'Merging…';
                 } else if (isExtracting) {
                   statusText = 'Unzipping…';
+                } else if (isPaused) {
+                  statusText = 'Paused';
                 } else if (isComplete) {
                   statusText = 'Completed';
                 } else {

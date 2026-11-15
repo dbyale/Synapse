@@ -3,11 +3,9 @@ import path from 'path';
 import fetch from 'node-fetch';
 import AdmZip from 'adm-zip';
 import * as tar from 'tar';
+import { LLAMA_VERSION } from '../configs/binaryVersions';
 
 const ASSETS_BIN = path.join(__dirname, '../../assets/bin');
-
-const JSON_PATH = path.join(__dirname, '../../package.json');
-const packageJson = JSON.parse(fs.readFileSync(JSON_PATH, 'utf8'));
 
 // NOTICE: Some versions like CUDA may vary depending on the targeted build
 // The pin is a llama.cpp NIGHTLY tag (bXXXXX), not a semver tag: the v0.x.y
@@ -16,8 +14,6 @@ const packageJson = JSON.parse(fs.readFileSync(JSON_PATH, 'utf8'));
 // v0.7.0 -> b11669, v0.8.0 -> b11960, v0.9.0 -> b12110, v1.0.0 -> b12359.
 // v1.0.0 also renamed the CUDA targets: 13.4 -> 13.5, so the folder names below
 // changed with it.
-const LLAMA_VERSION = packageJson.binaryVersions.llama;
-
 const TARGETS: [string, string][] = [
   [`llama-${LLAMA_VERSION}-bin-macos-arm64.tar.gz`, 'macos-arm64'],
   [`llama-${LLAMA_VERSION}-bin-macos-x64.tar.gz`, 'macos-x64'],

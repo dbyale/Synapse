@@ -14,9 +14,12 @@ import type {
 
 const execAsync = util.promisify(exec);
 
-// The llama.cpp nightly this Synapse build is pinned to (package.json
-// binaryVersions.llama). Nightly tags, not v0.x.y semver tags: the semver tags
-// carry only nightly-tag.txt, never binaries.
+// The llama.cpp nightly this Synapse build is pinned to. Nightly tags, not
+// v0.x.y semver tags: the semver tags carry only nightly-tag.txt, never
+// binaries. getLlamaVersion() prefers the build-time __LLAMA_VERSION__ baked
+// in by webpack's DefinePlugin (see .erb/configs/binaryVersions.ts) and falls
+// back to reading package.json — packaged builds read release/app/package.json,
+// which does not carry binaryVersions.
 const LLAMA_VERSION = getLlamaVersion();
 const LLAMA_BASE = `https://github.com/ggml-org/llama.cpp/releases/download/${LLAMA_VERSION}`;
 

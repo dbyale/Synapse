@@ -337,6 +337,7 @@ export default function Onboarding() {
               navigate(isAdvanced || isCustom ? 'chatSetup' : 'modelDownload')
             }
             onProceed={handleFinish}
+            onDiscardProfiles={handleDiscardProfiles}
           />
         );
       case 'setup':

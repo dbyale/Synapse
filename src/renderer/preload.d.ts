@@ -25,7 +25,10 @@ export interface DownloadProgress {
   /**
    * `merging` is a model part-file merge, `extracting` is unpacking a backend
    * or python archive. Both run after the transfer itself and are usually the
-   * slow part of installing a CUDA backend.
+   * slow part of installing a CUDA backend. `paused` is a model download
+   * deferred by the prioritize feature (an active transfer whose stream is
+   * held back until the prioritized downloads settle); it never appears on
+   * binary install rows.
    */
   status?:
     | 'downloading'
@@ -33,7 +36,8 @@ export interface DownloadProgress {
     | 'extracting'
     | 'completed'
     | 'failed'
-    | 'cancelled';
+    | 'cancelled'
+    | 'paused';
   merge?: boolean;
   /**
    * Set on events from a binary install (backend or python), carrying its kind.
@@ -379,6 +383,8 @@ declare global {
       cancelDownload: (repoId: string, filename: string) => Promise<boolean>;
       resumeDownload: (repoId: string, filename: string) => Promise<string>;
       deletePartFile: (repoId: string, filename: string) => Promise<boolean>;
+      prioritizeModelDownloads: (keepKeys: string[]) => Promise<string[]>;
+      resumePausedModelDownloads: () => Promise<string[]>;
       listLocalModels: () => Promise<LocalModel[]>;
       deleteModel: (filename: string) => Promise<boolean>;
       onDownloadProgress: (

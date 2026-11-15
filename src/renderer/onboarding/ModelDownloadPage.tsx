@@ -1,43 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { createPortal } from 'react-dom';
-import {
-  ArrowLeft,
-  ArrowRight,
-  CircleAlert,
-  Cpu,
-  Play,
-  RefreshCw,
-  X,
-} from 'lucide-react';
-import ConfirmDialog from '../components/ConfirmDialog';
-import {
-  getDownloadGroups,
-  getDownloadKey,
-  getUniqueDownloads,
-  type DownloadGroup,
-} from './profileCatalog';
-import {
-  cancelDownloadTargets,
-  getGroupTargets,
-  getSectionMeta,
-  getSectionStatus,
-  getSectionTotals,
-  retryDownloadTargets,
-  STATUS_LABELS,
-  useDownloadRows,
-  type DownloadStatus,
-} from './onboardingDownloads';
+import { useEffect, useMemo } from 'react';
+import { ArrowLeft, ArrowRight, CircleAlert } from 'lucide-react';
+import { getDownloadGroups, getUniqueDownloads } from './profileCatalog';
+import { useDownloadRows } from './onboardingDownloads';
+import { ModelDownloadList } from './ModelDownloadCard';
 import { startBackgroundInstalls } from './backgroundInstalls';
-
-function getFillClass(status: DownloadStatus): string {
-  if (status === 'completed' || status === 'installed') {
-    return 'onb-download-fill onb-download-fill--complete';
-  }
-  if (status === 'failed' || status === 'cancelled') {
-    return 'onb-download-fill onb-download-fill--failed';
-  }
-  return 'onb-download-fill';
-}
 
 interface ModelDownloadPageProps {
   optionIds: string[];
@@ -62,10 +28,6 @@ export default function ModelDownloadPage({
   const sections = useMemo(() => getDownloadGroups(optionIds), [optionIds]);
   const rows = useDownloadRows(downloads);
 
-  const [pendingDiscard, setPendingDiscard] = useState<DownloadGroup | null>(
-    null,
-  );
-
   useEffect(() => {
     if (!autoInstallBackend && !autoInstallPython) return;
     startBackgroundInstalls({
@@ -74,32 +36,6 @@ export default function ModelDownloadPage({
     }).catch(() => undefined);
   }, [autoInstallBackend, autoInstallPython]);
 
-  const handleRetry = useCallback((section: DownloadGroup) => {
-    retryDownloadTargets(getGroupTargets(section));
-  }, []);
-
-  const handleResume = useCallback((section: DownloadGroup) => {
-    retryDownloadTargets(getGroupTargets(section), true);
-  }, []);
-
-  const handleConfirmDiscard = useCallback(() => {
-    if (!pendingDiscard) return;
-    const section = pendingDiscard;
-    setPendingDiscard(null);
-    onDiscardProfiles(section.options.map((option) => option.optionId));
-    cancelDownloadTargets(getGroupTargets(section)).catch(() => undefined);
-  }, [onDiscardProfiles, pendingDiscard]);
-
-  const sectionStatuses = sections.map((section) =>
-    getSectionStatus(getGroupTargets(section), rows),
-  );
-  const readyCount = sectionStatuses.filter(
-    (status) => status === 'completed' || status === 'installed',
-  ).length;
-  const allReady = sections.length > 0 && readyCount === sections.length;
-  const hasFailed = sectionStatuses.some(
-    (status) => status === 'failed' || status === 'cancelled',
-  );
   const canContinue = downloads.length > 0 || allowEmpty;
 
   let footerNote = 'Downloads continue in the background.';
@@ -107,14 +43,38 @@ export default function ModelDownloadPage({
     footerNote = allowEmpty
       ? 'No assistants selected. You can continue without downloading models.'
       : 'Go back and select at least one option.';
-  } else if (allReady) {
-    footerNote = 'All selected assistants are ready.';
-  } else if (hasFailed) {
-    footerNote =
-      'Some downloads need attention. Retry them here or from the download manager.';
   } else {
-    footerNote =
-      'Downloads continue in the background while you keep setting up Synapse.';
+    const allReady =
+      sections.length > 0 &&
+      sections.every((section) => {
+        const targets = section.projector
+          ? [section.model, section.projector]
+          : [section.model];
+        return targets.every((target) => {
+          const key = `${target.repoId}:${target.filename}`;
+          const row = rows[key];
+          return row?.status === 'completed' || row?.status === 'installed';
+        });
+      });
+    const hasFailed = sections.some((section) => {
+      const targets = section.projector
+        ? [section.model, section.projector]
+        : [section.model];
+      return targets.some((target) => {
+        const key = `${target.repoId}:${target.filename}`;
+        const row = rows[key];
+        return row?.status === 'failed' || row?.status === 'cancelled';
+      });
+    });
+    if (allReady) {
+      footerNote = 'All selected assistants are ready.';
+    } else if (hasFailed) {
+      footerNote =
+        'Some downloads need attention. Retry them here or from the download manager.';
+    } else {
+      footerNote =
+        'Downloads continue in the background while you keep setting up Synapse.';
+    }
   }
 
   return (
@@ -159,100 +119,12 @@ export default function ModelDownloadPage({
             </span>
           </div>
         ) : (
-          <div className="onb-download-list onb-rise onb-delay-3">
-            {sections.map((section) => {
-              const targets = getGroupTargets(section);
-              const status = getSectionStatus(targets, rows);
-              const totals = getSectionTotals(targets, rows);
-              const isReady = status === 'completed' || status === 'installed';
-              const isRetryable = status === 'failed' || status === 'cancelled';
-              const percent =
-                isReady || status === 'merging' ? 100 : totals.percent;
-              const categoryNames = section.categories
-                .map((category) => category.categoryName)
-                .join(' + ');
-              const error = targets
-                .map((target) => rows[getDownloadKey(target)]?.error)
-                .find((message): message is string => !!message);
-
-              return (
-                <section key={section.id} className="onb-download-group">
-                  <div className="onb-download-group-header">
-                    <span className="onb-download-group-icon">
-                      <Cpu size={20} strokeWidth={2} />
-                    </span>
-                    <div className="onb-download-group-heading">
-                      <h2 className="onb-download-group-title">
-                        {section.modelName}
-                      </h2>
-                      <span className="onb-download-group-option">
-                        {categoryNames}
-                      </span>
-                    </div>
-                    <div className="onb-download-group-actions">
-                      <span
-                        className={`onb-download-badge onb-download-badge--${status}`}
-                      >
-                        {STATUS_LABELS[status]}
-                      </span>
-                      {isRetryable && (
-                        <button
-                          type="button"
-                          className="onb-download-icon-btn"
-                          onClick={() => handleRetry(section)}
-                          title="Retry Download"
-                          aria-label="Retry Download"
-                        >
-                          <RefreshCw size={13} strokeWidth={2.25} />
-                        </button>
-                      )}
-                      {status === 'failed' && (
-                        <button
-                          type="button"
-                          className="onb-download-icon-btn onb-download-icon-btn--resume"
-                          onClick={() => handleResume(section)}
-                          title="Resume Download"
-                          aria-label="Resume Download"
-                        >
-                          <Play size={13} strokeWidth={2.25} />
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        className="onb-download-icon-btn onb-download-icon-btn--cancel"
-                        onClick={() => setPendingDiscard(section)}
-                        title={
-                          isReady || isRetryable
-                            ? 'Discard Profiles'
-                            : 'Cancel Download'
-                        }
-                        aria-label={
-                          isReady || isRetryable
-                            ? 'Discard Profiles'
-                            : 'Cancel Download'
-                        }
-                      >
-                        <X size={14} strokeWidth={2.25} />
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="onb-download-bar">
-                    <div
-                      className={getFillClass(status)}
-                      style={{ width: `${percent}%` }}
-                    />
-                  </div>
-
-                  <div className="onb-download-meta">
-                    <span>{getSectionMeta(status, totals)}</span>
-                    <span>{percent}%</span>
-                  </div>
-                  {error && <div className="onb-download-error">{error}</div>}
-                </section>
-              );
-            })}
-          </div>
+          <ModelDownloadList
+            sections={sections}
+            rows={rows}
+            onDiscardProfiles={onDiscardProfiles}
+            className="onb-download-list onb-rise onb-delay-3"
+          />
         )}
 
         <div className="onb-download-footer onb-rise onb-delay-4">
@@ -268,22 +140,6 @@ export default function ModelDownloadPage({
           <p className="onb-download-footer-note">{footerNote}</p>
         </div>
       </div>
-
-      {pendingDiscard &&
-        createPortal(
-          <ConfirmDialog
-            title="Delete Profiles?"
-            message={`The following Profiles will be discarded: ${pendingDiscard.options
-              .map((option) => `${option.categoryName} - ${option.optionName}`)
-              .join(', ')}. Are you sure you want to delete these Profiles?`}
-            confirmText="Delete Profiles"
-            cancelText="Cancel"
-            danger
-            onConfirm={handleConfirmDiscard}
-            onCancel={() => setPendingDiscard(null)}
-          />,
-          document.body,
-        )}
     </div>
   );
 }

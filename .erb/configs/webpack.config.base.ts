@@ -6,6 +6,7 @@ import webpack from 'webpack';
 import TsconfigPathsPlugins from 'tsconfig-paths-webpack-plugin';
 import webpackPaths from './webpack.paths';
 import { dependencies as externals } from '../../release/app/package.json';
+import { LLAMA_VERSION } from './binaryVersions';
 
 const configuration: webpack.Configuration = {
   externals: [...Object.keys(externals || {})],
@@ -52,7 +53,12 @@ const configuration: webpack.Configuration = {
     plugins: [new TsconfigPathsPlugins()],
   },
 
-  plugins: [new webpack.EnvironmentPlugin({ NODE_ENV: 'production' })],
+  plugins: [
+    new webpack.EnvironmentPlugin({ NODE_ENV: 'production' }),
+    new webpack.DefinePlugin({
+      __LLAMA_VERSION__: JSON.stringify(LLAMA_VERSION),
+    }),
+  ],
 };
 
 export default configuration;
