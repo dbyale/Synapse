@@ -176,34 +176,6 @@ function progressBytes(
   return '';
 }
 
-function versionChip(installed: InstalledBackend): {
-  text: string;
-  className: string;
-} {
-  if (!installed.llamaVersion) {
-    return {
-      text: 'version unknown',
-      className: 'onb-backend-version onb-backend-version--unknown',
-    };
-  }
-  if (installed.updateState === 'update-available') {
-    return {
-      text: `llama.cpp ${installed.llamaVersion}`,
-      className: 'onb-backend-version onb-backend-version--update',
-    };
-  }
-  if (installed.updateState === 'newer') {
-    return {
-      text: `llama.cpp ${installed.llamaVersion}`,
-      className: 'onb-backend-version onb-backend-version--newer',
-    };
-  }
-  return {
-    text: `llama.cpp ${installed.llamaVersion}`,
-    className: 'onb-backend-version onb-backend-version--current',
-  };
-}
-
 // Everything the card renders from, in one object: the picker builds a view per
 // backend (from the hook) and the card stays a pure function of it. Grouped as
 // one prop so call sites never spread.
@@ -311,7 +283,6 @@ export default function BackendCard({
   // with an older llama.cpp, so it has to say so rather than read as a repair.
   const isDowngrade =
     present && installed?.updateState === 'newer' && !!download.url;
-  const chip = present ? versionChip(installed as InstalledBackend) : null;
 
   const cardClass = [
     'onb-backend-card',
@@ -356,7 +327,6 @@ export default function BackendCard({
               </span>
             );
           })}
-          {chip && <span className={chip.className}>{chip.text}</span>}
           {installed?.selected && (
             <span className="onb-backend-inuse">In use</span>
           )}

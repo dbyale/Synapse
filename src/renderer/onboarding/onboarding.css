@@ -2342,7 +2342,7 @@
 
 /* ── Install state (shared with Settings ▸ Backend) ──
    The card is the same in both surfaces, so everything that describes an
-   installed build — version chip, update hint, progress, actions — lives here. */
+   installed build — update hint, progress, actions — lives here. */
 
 .onb-backend-actions {
   display: flex;
@@ -2356,7 +2356,6 @@
   margin-left: 0;
 }
 
-.onb-backend-version,
 .onb-backend-inuse {
   font-size: 10.5px;
   font-weight: 650;
@@ -2364,29 +2363,6 @@
   border-radius: 999px;
   letter-spacing: 0.03em;
   white-space: nowrap;
-}
-
-.onb-backend-version--current {
-  color: #4ade80;
-  background: rgba(74, 222, 128, 0.12);
-}
-
-.onb-backend-version--update {
-  color: #f9e2af;
-  background: rgba(249, 226, 175, 0.12);
-}
-
-.onb-backend-version--newer {
-  color: #89b4fa;
-  background: rgba(137, 180, 250, 0.12);
-}
-
-.onb-backend-version--unknown {
-  color: var(--text-secondary);
-  background: rgba(255, 255, 255, 0.06);
-}
-
-.onb-backend-inuse {
   color: var(--accent);
   background: rgba(137, 180, 250, 0.16);
 }
