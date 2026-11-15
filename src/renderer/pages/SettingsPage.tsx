@@ -8,6 +8,7 @@ import {
   MessageSquare,
   Server,
   ShieldCog,
+  Boxes,
 } from 'lucide-react';
 import type {
   AppSettings,
@@ -16,9 +17,9 @@ import type {
   PythonPackagesSnapshot,
 } from '../preload.d';
 import InfoTooltip from '../components/InfoTooltip';
+import BackendSettingsSection from '../components/backend/BackendSettingsSection';
 import {
   MODELS_DIR_TOOLTIP,
-  BACKEND_DIR_TOOLTIP,
   RESOURCE_ALLOCATION_TOOLTIP,
   ESTIMATOR_TIMEOUT_TOOLTIP,
   SERVER_TIMEOUT_TOOLTIP,
@@ -39,6 +40,7 @@ import {
 } from '../utils/tooltipContent';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { formatBytes } from '../utils/formatters';
+import { normalizeCorsOrigins } from '../../shared/externalServer';
 import '../styles/SettingsPage.css';
 import { MemorySlider } from '../components/settingsShared/MemorySlider';
 import { useHardwareStats } from '../components/settingsShared/useHardwareStats';
@@ -54,9 +56,9 @@ export default function SettingsPage() {
   );
 
   const [showRestartDialog, setShowRestartDialog] = useState(false);
-  const [tab, setTab] = useState<'system' | 'chat' | 'security' | 'server'>(
-    'chat',
-  );
+  const [tab, setTab] = useState<
+    'system' | 'chat' | 'security' | 'server' | 'backend'
+  >('chat');
   const [pythonInfo, setPythonInfo] = useState<PythonInfo | null>(null);
   const [packages, setPackages] = useState<PythonPackagesSnapshot | null>(null);
   const [pythonBusy, setPythonBusy] = useState(false);
@@ -97,6 +99,31 @@ export default function SettingsPage() {
     const unsubscribe = window.electronAPI.onPythonPackagesProgress(
       (snapshot: PythonPackagesSnapshot) => setPackages(snapshot),
     );
+    return unsubscribe;
+  }, []);
+
+  // Installs and uninstalls are recorded by the main process as they happen.
+  // Re-read only the backend-owned keys so a later save from this page can never
+  // write back a download list that predates them.
+  useEffect(() => {
+    const unsubscribe = window.electronAPI.onBackendsChanged(() => {
+      window.electronAPI
+        .loadSettings()
+        .then((loaded) =>
+          setSettings((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  backendDownloads:
+                    loaded?.backendDownloads ?? prev.backendDownloads,
+                  selectedBackend:
+                    loaded?.selectedBackend ?? prev.selectedBackend,
+                }
+              : prev,
+          ),
+        )
+        .catch(() => undefined);
+    });
     return unsubscribe;
   }, []);
 
@@ -446,6 +473,13 @@ export default function SettingsPage() {
         >
           <Server size={16} /> Server
         </button>
+        <button
+          type="button"
+          className={`settings-tab ${tab === 'backend' ? 'settings-tab--active' : ''}`}
+          onClick={() => setTab('backend')}
+        >
+          <Boxes size={16} /> Backend
+        </button>
       </div>
 
       {tab === 'system' && (
@@ -598,33 +632,6 @@ export default function SettingsPage() {
                     type="button"
                     className="settings-icon-btn"
                     onClick={handlePickDirectory}
-                    title="Browse"
-                  >
-                    <FolderOpen size={16} />
-                  </button>
-                </div>
-              </InfoTooltip>
-            </div>
-
-            <div className="settings-field">
-              <InfoTooltip
-                content={BACKEND_DIR_TOOLTIP}
-                side="bottom"
-                hideIcon
-                title="Backend Directory"
-                className="backend-dir-tooltip"
-              >
-                <span className="settings-label">Backend Directory</span>
-                <div className="settings-row">
-                  <input
-                    className="settings-input"
-                    value={settings.backendDirectory}
-                    readOnly
-                  />
-                  <button
-                    type="button"
-                    className="settings-icon-btn"
-                    onClick={handlePickBackendDirectory}
                     title="Browse"
                   >
                     <FolderOpen size={16} />
@@ -1193,10 +1200,24 @@ export default function SettingsPage() {
                 onBlur={() =>
                   triggerSave({ corsOrigins: settings.corsOrigins })
                 }
-                placeholder="*"
+                placeholder="localhost"
                 style={{ marginTop: '8px' }}
               />
             </InfoTooltip>
+            {(settings.corsOrigins ?? '').trim() !== '' &&
+              normalizeCorsOrigins(settings.corsOrigins) === null && (
+                <div
+                  style={{
+                    fontSize: '12px',
+                    color: '#f38ba8',
+                    marginTop: '6px',
+                  }}
+                >
+                  That does not look like a web address. Use
+                  &quot;localhost&quot;, &quot;*&quot;, or a full address such
+                  as &quot;https://app.example.com&quot;.
+                </div>
+              )}
           </div>
 
           <div className="settings-field">
@@ -1292,6 +1313,20 @@ export default function SettingsPage() {
             </label>
           </div>
         </div>
+      )}
+
+      {tab === 'backend' && (
+        <BackendSettingsSection
+          backendDirectory={settings.backendDirectory}
+          customBinaryPaths={settings.customBinaryPaths ?? []}
+          onPickDirectory={() => handlePickBackendDirectory()}
+          onChangeCustomBinaries={(paths) => {
+            setSettings((prev) =>
+              prev ? { ...prev, customBinaryPaths: paths } : prev,
+            );
+            triggerSave({ customBinaryPaths: paths });
+          }}
+        />
       )}
 
       {showRestartDialog && (

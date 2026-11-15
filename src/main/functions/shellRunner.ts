@@ -31,7 +31,7 @@ export async function runShellCommand(
     return {
       success: true,
       stdout: stdout || '(no output)',
-      stderr: stderr || null,
+      stderr: stderr || '',
       exitCode: 0,
       timedOut: false,
       executionTimeMs: Date.now() - startTime,

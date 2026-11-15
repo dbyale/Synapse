@@ -15,6 +15,9 @@ import log from 'electron-log';
 import MenuBuilder, { MenuEditState } from './menu';
 import { resolveHtmlPath } from './util';
 import { registerIpcHandlers } from './ipc';
+import { sweepBackendScratch } from './binaryDownloads';
+import { getBackendDir } from './backendPaths';
+import { loadSettings } from './settings';
 import { shutdownAllSandboxes } from './functions/sandboxRunner';
 import { cleanupPartFiles } from '../renderer/utils/models';
 
@@ -179,6 +182,17 @@ app
   .whenReady()
   .then(() => {
     registerIpcHandlers();
+
+    // An interrupted install leaves dot-prefixed scratch next to the backends
+    // (staging folder, held-aside previous build, partial archives). Nothing
+    // else ever reclaims those hundreds of megabytes, and a crashed swap can
+    // also leave the only copy of a working backend in `.install-old` — the
+    // sweep restores that instead of deleting it.
+    try {
+      sweepBackendScratch(getBackendDir(loadSettings()));
+    } catch (error) {
+      console.warn('[app] backend scratch sweep failed:', error);
+    }
 
     createWindow();
     app.on('activate', () => {

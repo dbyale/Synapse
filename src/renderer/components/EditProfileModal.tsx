@@ -55,6 +55,9 @@ import {
   isValidExternalServerUrl,
   externalServerSecretScope,
   EXTERNAL_API_KEY_SECRET_KEY,
+  LOCAL_API_KEY_SECRET_KEY,
+  isLoopbackHost,
+  normalizeCorsOrigins,
 } from '../../shared/externalServer';
 import type {
   ExtensionSettingsDef,
@@ -122,6 +125,11 @@ import {
   CORS_METHODS_TOOLTIP,
   CORS_HEADERS_TOOLTIP,
   CORS_CREDENTIALS_TOOLTIP,
+  MEDIA_PRIVATE_URLS_TOOLTIP,
+  LOCAL_API_KEY_TOOLTIP,
+  LOCAL_API_KEY_TOGGLE_TOOLTIP,
+  LOCAL_API_KEY_MANUAL_TOOLTIP,
+  UNAUTHENTICATED_TOOLS_TOOLTIP,
   HOST_TOOLTIP,
   PORT_TOOLTIP,
   DRY_PENALTY_ENABLED,
@@ -5548,6 +5556,21 @@ function CorsSettingsPage({
   setEditCorsHeaders,
   editCorsCredentials,
   setEditCorsCredentials,
+  editMediaAllowPrivateUrls,
+  setEditMediaAllowPrivateUrls,
+  editAllowUnauthenticatedTools,
+  setEditAllowUnauthenticatedTools,
+  editHost,
+  localKeyEnabled,
+  setLocalKeyEnabled,
+  localKeyExists,
+  editLocalApiKey,
+  setEditLocalApiKey,
+  clearLocalKey,
+  setClearLocalKey,
+  manualLocalKey,
+  setManualLocalKey,
+  encryptionAvailable,
 }: {
   editCorsOrigins: string;
   setEditCorsOrigins: (v: string) => void;
@@ -5557,7 +5580,146 @@ function CorsSettingsPage({
   setEditCorsHeaders: (v: string) => void;
   editCorsCredentials: boolean;
   setEditCorsCredentials: (v: boolean) => void;
+  editMediaAllowPrivateUrls: boolean;
+  setEditMediaAllowPrivateUrls: (v: boolean) => void;
+  editAllowUnauthenticatedTools: boolean;
+  setEditAllowUnauthenticatedTools: (v: boolean) => void;
+  editHost: string;
+  localKeyEnabled: boolean;
+  setLocalKeyEnabled: (v: boolean) => void;
+  localKeyExists: boolean;
+  editLocalApiKey: string;
+  setEditLocalApiKey: (v: string) => void;
+  clearLocalKey: boolean;
+  setClearLocalKey: (v: boolean) => void;
+  manualLocalKey: boolean;
+  setManualLocalKey: (v: boolean) => void;
+  encryptionAvailable: boolean;
 }) {
+  const [keyCopied, setKeyCopied] = useState(false);
+  const keyCopyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (keyCopyTimerRef.current) clearTimeout(keyCopyTimerRef.current);
+    };
+  }, []);
+
+  const toggle = (
+    on: boolean,
+    onClick: () => void,
+    title: string,
+    content: string[],
+  ) => (
+    <label className="epm-perf-toggle-row">
+      <InfoTooltip
+        content={content}
+        side="bottom"
+        stretch
+        className="info-tooltip-stretch--row"
+        title={title}
+      >
+        <span className="epm-perf-toggle-label">{title}</span>
+        <div
+          className={`epm-toggle-switch${on ? ' epm-toggle-switch--on' : ''}`}
+          onClick={onClick}
+          role="switch"
+          aria-checked={on}
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === ' ' || e.key === 'Enter') {
+              e.preventDefault();
+              onClick();
+            }
+          }}
+        >
+          <div className="epm-toggle-switch__knob" />
+        </div>
+      </InfoTooltip>
+    </label>
+  );
+
+  // Synapse-managed key: a random token, shown once so it can be copied to
+  // another machine, and kept only in the encrypted store after Save.
+  const generateLocalKey = () => {
+    const bytes = new Uint8Array(32);
+    window.crypto.getRandomValues(bytes);
+    setEditLocalApiKey(
+      Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join(''),
+    );
+    setClearLocalKey(false);
+    setKeyCopied(false);
+  };
+
+  // That token is never shown again, so the field carries its own copy control
+  // rather than expecting the user to select it and press Ctrl+C.
+  const keyValueRef = useRef<HTMLInputElement | null>(null);
+  const copyLocalKey = async () => {
+    if (editLocalApiKey === '') return;
+    try {
+      await navigator.clipboard.writeText(editLocalApiKey);
+      setKeyCopied(true);
+      if (keyCopyTimerRef.current) clearTimeout(keyCopyTimerRef.current);
+      keyCopyTimerRef.current = setTimeout(() => setKeyCopied(false), 2000);
+    } catch {
+      // Clipboard access can be refused. Selecting the value leaves the user a
+      // Ctrl+C rather than a button that quietly did nothing.
+      keyValueRef.current?.select();
+    }
+  };
+
+  // Master switch for the key. Turning it off stages the same removal as
+  // "Clear current key": a key the server was never told about should not stay
+  // in the store, so turning it back on means making a new one.
+  const setKeyEnabled = (on: boolean) => {
+    setLocalKeyEnabled(on);
+    if (on) {
+      setClearLocalKey(false);
+    } else {
+      setEditLocalApiKey('');
+      if (localKeyExists) setClearLocalKey(true);
+    }
+  };
+
+  // What the server will actually require after Save, which is not the same as
+  // the switch being on: a switch that is on but has no key behind it changes
+  // nothing yet.
+  const keyRequired =
+    localKeyEnabled &&
+    !clearLocalKey &&
+    (localKeyExists || editLocalApiKey !== '');
+
+  // One plain sentence for the tools row. Both the host and the key decide it,
+  // which is too much for a readable expression inside the JSX.
+  let reachNote = 'This server only accepts connections from this computer.';
+  if (!isLoopbackHost(editHost)) {
+    const at = editHost || '0.0.0.0';
+    reachNote = keyRequired
+      ? `Other computers can reach this server at ${at}, and they have to provide the Server API key.`
+      : `Other computers can reach this server at ${at} without a key. Turn on "Use An API Key" above to require one.`;
+  }
+
+  const localKeyStatus = (() => {
+    if (!localKeyEnabled) {
+      return clearLocalKey
+        ? 'The saved key will be removed when you click Save.'
+        : 'No key is set. The server answers requests without one.';
+    }
+    if (editLocalApiKey !== '') {
+      return manualLocalKey
+        ? 'This key will be saved when you click Save.'
+        : 'New key ready — click Save to start using it. Copy it now if another program needs it.';
+    }
+    if (clearLocalKey) {
+      return 'The saved key will be removed when you click Save.';
+    }
+    if (localKeyExists) {
+      return manualLocalKey
+        ? 'A key is saved for this profile.'
+        : 'A key is saved for this profile. Generating a new one replaces it.';
+    }
+    return 'No key yet. Generate one or type your own, then click Save.';
+  })();
+
   return (
     <>
       <h2 className="epm-page-title">CORS</h2>
@@ -5569,8 +5731,8 @@ function CorsSettingsPage({
           lineHeight: 1.5,
         }}
       >
-        Configure Cross-Origin Resource Sharing (CORS) for the llama-server HTTP
-        API.
+        Control which web pages are allowed to use this server from a browser.
+        Leave these alone unless you run your own web front-end.
       </p>
 
       <div className="epm-section" style={{ marginTop: '20px' }}>
@@ -5587,10 +5749,24 @@ function CorsSettingsPage({
             className="epm-input"
             value={editCorsOrigins}
             onChange={(e) => setEditCorsOrigins(e.target.value)}
-            placeholder="*"
+            placeholder="localhost"
             style={{ marginTop: '8px' }}
           />
         </InfoTooltip>
+        {editCorsOrigins.trim() !== '' &&
+          normalizeCorsOrigins(editCorsOrigins) === null && (
+            <div
+              style={{
+                fontSize: '12px',
+                color: '#f38ba8',
+                marginTop: '6px',
+              }}
+            >
+              That does not look like a web address. Use &quot;localhost&quot;,
+              &quot;*&quot;, or a full address such as
+              &quot;https://app.example.com&quot;.
+            </div>
+          )}
       </div>
 
       <div className="epm-section" style={{ marginTop: '20px' }}>
@@ -5660,6 +5836,153 @@ function CorsSettingsPage({
             </div>
           </InfoTooltip>
         </label>
+      </div>
+
+      <h2 className="epm-page-title" style={{ marginTop: '28px' }}>
+        Server Access
+      </h2>
+      <p
+        style={{
+          fontSize: '14px',
+          color: 'var(--text-secondary)',
+          margin: '0 0 20px',
+          lineHeight: 1.5,
+        }}
+      >
+        Decide who can use this server and what it is allowed to load.
+      </p>
+
+      <div className="epm-section">
+        {toggle(
+          editMediaAllowPrivateUrls,
+          () => setEditMediaAllowPrivateUrls(!editMediaAllowPrivateUrls),
+          'Media From This Network',
+          MEDIA_PRIVATE_URLS_TOOLTIP,
+        )}
+      </div>
+
+      <div className="epm-section" style={{ marginTop: '20px' }}>
+        <div className="epm-section__label">Server API Key</div>
+
+        {toggle(
+          localKeyEnabled,
+          () => setKeyEnabled(!localKeyEnabled),
+          'Use An API Key',
+          LOCAL_API_KEY_TOGGLE_TOOLTIP,
+        )}
+
+        {localKeyEnabled && (
+          <div className="epm-key-sub">
+            {toggle(
+              manualLocalKey,
+              () => setManualLocalKey(!manualLocalKey),
+              'Enter My Own Key',
+              LOCAL_API_KEY_MANUAL_TOOLTIP,
+            )}
+
+            {manualLocalKey ? (
+              <InfoTooltip
+                content={LOCAL_API_KEY_TOOLTIP}
+                side="bottom"
+                stretch
+                className="info-tooltip-stretch--col"
+                title="Server API Key"
+              >
+                <input
+                  type="password"
+                  className="epm-input"
+                  value={editLocalApiKey}
+                  onChange={(e) => {
+                    setEditLocalApiKey(e.target.value);
+                    if (e.target.value) setClearLocalKey(false);
+                  }}
+                  placeholder={
+                    localKeyExists
+                      ? 'Saved — type a new one to replace it'
+                      : 'Type a key'
+                  }
+                  style={{ marginTop: '8px' }}
+                />
+              </InfoTooltip>
+            ) : (
+              <>
+                {editLocalApiKey !== '' && (
+                  <div className="epm-key-value-wrap">
+                    <input
+                      type="text"
+                      ref={keyValueRef}
+                      className="epm-key-value"
+                      value={editLocalApiKey}
+                      readOnly
+                      onFocus={(e) => e.target.select()}
+                    />
+                    <button
+                      type="button"
+                      className={`epm-key-value-copy${
+                        keyCopied ? ' epm-key-value-copy--copied' : ''
+                      }`}
+                      onClick={copyLocalKey}
+                      title={keyCopied ? 'Copied' : 'Copy key'}
+                      aria-label="Copy key"
+                    >
+                      {keyCopied ? <Check size={12} /> : <Copy size={12} />}
+                      <span>{keyCopied ? 'Copied' : 'Copy'}</span>
+                    </button>
+                  </div>
+                )}
+                <div className="epm-key-actions">
+                  <button
+                    type="button"
+                    className="epm-key-btn"
+                    onClick={generateLocalKey}
+                  >
+                    Generate new key
+                  </button>
+                  <button
+                    type="button"
+                    className="epm-key-btn epm-key-btn--danger"
+                    onClick={() => {
+                      setEditLocalApiKey('');
+                      setClearLocalKey(true);
+                    }}
+                    disabled={!localKeyExists || clearLocalKey}
+                  >
+                    Clear current key
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        <div className="epm-key-note">{localKeyStatus}</div>
+
+        {localKeyEnabled && !encryptionAvailable && (
+          <div className="epm-key-note epm-key-note--warn">
+            This computer cannot store passwords securely, so a key typed here
+            would be saved as plain text.
+          </div>
+        )}
+      </div>
+
+      <div className="epm-section" style={{ marginTop: '20px' }}>
+        {toggle(
+          editAllowUnauthenticatedTools,
+          () =>
+            setEditAllowUnauthenticatedTools(!editAllowUnauthenticatedTools),
+          'Allow Tools Without A Key',
+          UNAUTHENTICATED_TOOLS_TOOLTIP,
+        )}
+        <p
+          style={{
+            fontSize: '12px',
+            color: 'var(--text-secondary)',
+            marginTop: '6px',
+            lineHeight: 1.45,
+          }}
+        >
+          {reachNote}
+        </p>
       </div>
     </>
   );
@@ -6138,6 +6461,12 @@ export default function EditProfileModal({
       ? (profile.corsOrigins ?? 'localhost')
       : (defaultCorsOrigins ?? 'localhost'),
   );
+  // llama.cpp v1.0.0 hardening. Media URLs: on unless the profile opts out
+  // (undefined keeps the pre-existing behaviour of accepting LAN attachments).
+  const [editMediaAllowPrivateUrls, setEditMediaAllowPrivateUrls] =
+    useState<boolean>(profile?.mediaAllowPrivateUrls ?? true);
+  const [editAllowUnauthenticatedTools, setEditAllowUnauthenticatedTools] =
+    useState<boolean>(profile?.allowUnauthenticatedTools ?? false);
   const [editCorsMethods, setEditCorsMethods] = useState<string>(
     profile !== null ? (profile.corsMethods ?? '') : (defaultCorsMethods ?? ''),
   );
@@ -6184,6 +6513,29 @@ export default function EditProfileModal({
   const [editExternalApiKey, setEditExternalApiKey] = useState('');
   const [clearExternalKey, setClearExternalKey] = useState(false);
   const [encryptionAvailable, setEncryptionAvailable] = useState(true);
+  // API key for the llama-server Synapse launches for THIS profile (llama.cpp
+  // v1.0.0 needs one to keep tools/MCP alive on a LAN bind). Same treatment as
+  // the external key: existence only, plaintext never comes back.
+  const [localKeyExists, setLocalKeyExists] = useState(false);
+  const [editLocalApiKey, setEditLocalApiKey] = useState('');
+  const [clearLocalKey, setClearLocalKey] = useState(false);
+  // Whether this profile uses a key at all. It follows what is stored — a saved
+  // key means on, nothing stored means off — so the switch and the encrypted
+  // store can never disagree, and turning it off really does delete the key.
+  const [localKeyEnabled, setLocalKeyEnabled] = useState(false);
+  // Existence is an async lookup; once the user has moved the switch, ignore
+  // whatever the lookup answers with.
+  const localKeyEnabledTouched = useRef(false);
+  const setLocalKeyEnabledByUser = (on: boolean) => {
+    localKeyEnabledTouched.current = true;
+    setLocalKeyEnabled(on);
+  };
+  // Off (the default) means Synapse makes the key for you; on means the user
+  // types one, e.g. to match a key another program already has. Stored on the
+  // profile so the page shows the same way next time it is opened.
+  const [manualLocalKey, setManualLocalKey] = useState<boolean>(
+    !!profile?.localApiKeyManual,
+  );
   // Model id sent to external v1 endpoints (required by OpenAI-style
   // servers, ignored by llama.cpp). Context window reuses editContextSize.
   const [editExternalModelName, setEditExternalModelName] = useState<string>(
@@ -6192,6 +6544,9 @@ export default function EditProfileModal({
   useEffect(() => {
     if (!profile?.id) return undefined;
     let alive = true;
+    // A different profile means a different answer for the key switch.
+    localKeyEnabledTouched.current = false;
+    setLocalKeyEnabled(false);
     window.electronAPI
       .secretHas(
         externalServerSecretScope(profile.id),
@@ -6201,6 +6556,18 @@ export default function EditProfileModal({
         if (!alive) return;
         setExternalKeyExists(r.exists);
         setExternalKeyUnencrypted(r.unencrypted);
+      })
+      .catch(() => {});
+    window.electronAPI
+      .secretHas(
+        externalServerSecretScope(profile.id),
+        LOCAL_API_KEY_SECRET_KEY,
+      )
+      .then((r) => {
+        if (!alive) return false;
+        setLocalKeyExists(r.exists);
+        if (!localKeyEnabledTouched.current) setLocalKeyEnabled(r.exists);
+        return true;
       })
       .catch(() => {});
     window.electronAPI
@@ -6311,6 +6678,8 @@ export default function EditProfileModal({
         corsMethods: editCorsMethods || undefined,
         corsHeaders: editCorsHeaders || undefined,
         corsCredentials: editCorsCredentials,
+        mediaAllowPrivateUrls: editMediaAllowPrivateUrls,
+        allowUnauthenticatedTools: editAllowUnauthenticatedTools,
         customFlags: editCustomFlags.filter((s) => s.trim().length > 0),
         useCustomLaunch: editUseCustomLaunch || undefined,
         customLaunchCommand: editUseCustomLaunch
@@ -6396,6 +6765,8 @@ export default function EditProfileModal({
     editCorsMethods,
     editCorsHeaders,
     editCorsCredentials,
+    editMediaAllowPrivateUrls,
+    editAllowUnauthenticatedTools,
     editCustomFlags,
     editUseCustomLaunch,
     editCustomLaunchCommand,
@@ -7143,6 +7514,9 @@ export default function EditProfileModal({
       corsMethods: editCorsMethods || undefined,
       corsHeaders: editCorsHeaders || undefined,
       corsCredentials: editCorsCredentials,
+      mediaAllowPrivateUrls: editMediaAllowPrivateUrls,
+      allowUnauthenticatedTools: editAllowUnauthenticatedTools,
+      localApiKeyManual: manualLocalKey ? true : undefined,
       customFlags: (() => {
         const f = editCustomFlags.map((s) => s.trim()).filter(Boolean);
         return f.length > 0 ? f : undefined;
@@ -7240,6 +7614,29 @@ export default function EditProfileModal({
         await window.electronAPI
           .secretDelete(scope, EXTERNAL_API_KEY_SECRET_KEY)
           .catch(() => {});
+      }
+    }
+
+    // The local server's own key follows the same rule. It is written even when
+    // the profile JSON is unchanged, so a key-only edit still sticks. Turning
+    // the switch off is an explicit removal, so it deletes even when no other
+    // key edit is pending.
+    {
+      const scope = externalServerSecretScope(updatedProfile.id);
+      const key = editLocalApiKey.trim();
+      if (localKeyEnabled && key) {
+        await window.electronAPI
+          .secretSet(scope, LOCAL_API_KEY_SECRET_KEY, key)
+          .catch(() => {});
+        setEditLocalApiKey('');
+        setLocalKeyExists(true);
+        setClearLocalKey(false);
+      } else if (!localKeyEnabled || clearLocalKey) {
+        await window.electronAPI
+          .secretDelete(scope, LOCAL_API_KEY_SECRET_KEY)
+          .catch(() => {});
+        setLocalKeyExists(false);
+        setClearLocalKey(false);
       }
     }
 
@@ -7558,6 +7955,21 @@ export default function EditProfileModal({
             setEditCorsHeaders={setEditCorsHeaders}
             editCorsCredentials={editCorsCredentials}
             setEditCorsCredentials={setEditCorsCredentials}
+            editMediaAllowPrivateUrls={editMediaAllowPrivateUrls}
+            setEditMediaAllowPrivateUrls={setEditMediaAllowPrivateUrls}
+            editAllowUnauthenticatedTools={editAllowUnauthenticatedTools}
+            setEditAllowUnauthenticatedTools={setEditAllowUnauthenticatedTools}
+            editHost={editHost}
+            localKeyEnabled={localKeyEnabled}
+            setLocalKeyEnabled={setLocalKeyEnabledByUser}
+            localKeyExists={localKeyExists}
+            editLocalApiKey={editLocalApiKey}
+            setEditLocalApiKey={setEditLocalApiKey}
+            clearLocalKey={clearLocalKey}
+            setClearLocalKey={setClearLocalKey}
+            manualLocalKey={manualLocalKey}
+            setManualLocalKey={setManualLocalKey}
+            encryptionAvailable={encryptionAvailable}
           />
         );
       case 'custom-flags':

@@ -46,3 +46,51 @@ export function externalServerSecretScope(profileId: string): string {
 }
 
 export const EXTERNAL_API_KEY_SECRET_KEY = 'externalApiKey';
+
+/**
+ * Bearer token for the llama-server Synapse launches itself. Same per-profile
+ * scope as the external key (deleting a profile drops both), different key.
+ * llama.cpp v1.0.0 (#32113) disables server tools/MCP on a non-loopback bind
+ * unless a key is set, so a LAN-shared profile needs one to keep tools.
+ */
+export const LOCAL_API_KEY_SECRET_KEY = 'localServerApiKey';
+
+/**
+ * True when a server bound to this host can only be reached from this machine.
+ * llama.cpp v1.0.0 gates the parts of its API that a stranger could abuse
+ * (tools, MCP, private-URL media) on exactly this distinction, so both the
+ * launch arguments and the profile UI need the same answer. `0.0.0.0` and `::`
+ * are wildcard binds, not loopback — they are the case that needs a key.
+ */
+export function isLoopbackHost(host: string): boolean {
+  const h = (host ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/^\[|\]$/g, '');
+  if (!h) return true;
+  if (h === 'localhost' || h.endsWith('.localhost')) return true;
+  if (h === '::1' || h === '0:0:0:0:0:0:0:1') return true;
+  return /^127(\.\d{1,3}){3}$/.test(h);
+}
+
+/**
+ * Validate + normalize a user-entered --cors-origins list. llama.cpp matches
+ * this against browser Origin headers, so only '*', the documented special
+ * value 'localhost' (same-origin only), and scheme-qualified origins can ever
+ * match; a bare host like "192.168.1.5" parses but matches nothing.
+ * Returns the string to pass to llama-server, or null when the list must be
+ * dropped.
+ */
+export function normalizeCorsOrigins(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const parts = value
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (parts.length === 0) return null;
+  if (parts.length === 1 && parts[0] === '*') return '*';
+  if (parts.length === 1 && parts[0].toLowerCase() === 'localhost')
+    return 'localhost';
+  const valid = parts.every((part) => /^https?:\/\/[^/\s,]+$/i.test(part));
+  return valid ? parts.join(',') : null;
+}

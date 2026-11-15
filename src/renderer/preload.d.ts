@@ -9,14 +9,47 @@ import type {
   SettingsBag,
 } from '../shared/extensionSettings';
 
+export type BinaryKind = 'backend' | 'python';
+
 export interface DownloadProgress {
   modelId: string;
   filename: string;
+  /**
+   * Transfer stage: bytes received. Extraction stage (`status: 'extracting'`):
+   * bytes written out of the archive, with totalBytes as the archive's
+   * uncompressed payload size.
+   */
   downloadedBytes: number;
   totalBytes: number;
   percent: number;
-  status?: 'downloading' | 'merging' | 'completed' | 'failed' | 'cancelled';
+  /**
+   * `merging` is a model part-file merge, `extracting` is unpacking a backend
+   * or python archive. Both run after the transfer itself and are usually the
+   * slow part of installing a CUDA backend.
+   */
+  status?:
+    | 'downloading'
+    | 'merging'
+    | 'extracting'
+    | 'completed'
+    | 'failed'
+    | 'cancelled';
   merge?: boolean;
+  /**
+   * Set on events from a binary install (backend or python), carrying its kind.
+   * The download manager keys rows by `modelId:filename` like everything else,
+   * and this is what tells it the row is a backend rather than a model — the
+   * retry/resume/cancel calls a model row makes would otherwise be answered by
+   * the model downloader with a binary id and a human-readable label.
+   */
+  binary?: BinaryKind;
+  /**
+   * Identifies one run of one binary install. Retrying an install reuses the
+   * same id and label, so this is the only way a dismissed download row can
+   * tell "still the run I hid" apart from "a new run the user started from the
+   * backend card".
+   */
+  runId?: number;
   error?: string;
 }
 
@@ -109,9 +142,10 @@ export interface BackendDownloadRecord {
   id: string;
   label: string;
   folder: string;
+  /** llama.cpp nightly this backend was downloaded as, e.g. 'b11669'. */
+  version?: string;
+  installedAt?: string;
 }
-
-export type BinaryKind = 'backend' | 'python';
 
 export type BackendIcon =
   | 'cuda'
@@ -159,6 +193,8 @@ export interface BackendInfo {
   platform: string;
   arch: string;
   isAppleSilicon: boolean;
+  /** llama.cpp nightly this Synapse build downloads and expects. */
+  pinnedLlamaVersion: string;
   defaultDownloadDir: string;
   recommended: BackendDownload[];
   optional: BackendDownload[];
@@ -167,6 +203,45 @@ export interface BackendInfo {
   gpus: BackendGpuInfo[];
   nvidiaDriverMajor: number | null;
   distro: string | null;
+}
+
+export type BackendUpdateState =
+  | 'current'
+  | 'update-available'
+  | 'newer'
+  /** Installed before versions were recorded, or copied in by hand. */
+  | 'unknown';
+
+/**
+ * A backend as found on disk. Derived from the backend directory and the
+ * per-install marker, then reconciled with the download records in settings —
+ * so an install this build never recorded, or a record whose folder is gone,
+ * still shows up and stays removable.
+ */
+export interface InstalledBackend {
+  folder: string;
+  id: string;
+  label: string;
+  /** llama.cpp nightly in this folder, null when it cannot be determined. */
+  llamaVersion: string | null;
+  installedAt?: string;
+  updateState: BackendUpdateState;
+  hasServer: boolean;
+  hasFitParams: boolean;
+  hasSplit: boolean;
+  /** Carries Synapse's own install marker. */
+  synapseInstalled: boolean;
+  /** Folder still exists (false = record only, nothing left on disk). */
+  exists: boolean;
+  /** Recorded in settings.backendDownloads. */
+  tracked: boolean;
+  selected: boolean;
+}
+
+export interface InstalledBackends {
+  directory: string;
+  pinnedLlamaVersion: string;
+  backends: InstalledBackend[];
 }
 
 export interface PythonRuntime {
@@ -352,6 +427,11 @@ declare global {
         customBackendPaths: string[];
         python: BackendDownloadRecord | null;
       }>;
+      getInstalledBackends: () => Promise<InstalledBackends>;
+      uninstallBackendFolder: (
+        folder: string,
+      ) => Promise<{ success: boolean; error?: string }>;
+      onBackendsChanged: (callback: () => void) => () => void;
       chatMemoryUsage: () => Promise<{
         modelVramUsage: number;
         contextVramUsage: number;

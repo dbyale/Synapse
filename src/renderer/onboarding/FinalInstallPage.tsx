@@ -92,6 +92,10 @@ function getSnapshotStatus(
   if (status === 'failed') return 'failed';
   if (status === 'cancelled') return 'cancelled';
   if (status === 'downloading') return 'downloading';
+  // Unpacking is a stage of the same install, and for a CUDA backend it is
+  // usually the longer one — falling through to 'queued' here would leave the
+  // row reading "Queued" with no bar for minutes.
+  if (status === 'extracting') return 'extracting';
   return 'queued';
 }
 
@@ -121,6 +125,9 @@ function DependencyRow({
   };
   const Icon = icons[icon];
   const failed = status === 'failed' || status === 'cancelled';
+  // Both stages of a binary install report real byte counts, so both get the
+  // bar; 'queued' and the terminal states do not.
+  const showProgress = status === 'downloading' || status === 'extracting';
   return (
     <div className="onb-final-dependency">
       <span className="onb-final-dependency-icon">
@@ -151,9 +158,9 @@ function DependencyRow({
         </div>
         <div className="onb-final-row-meta">
           <span>{label}</span>
-          {status === 'downloading' && <span>{percent}%</span>}
+          {showProgress && <span>{percent}%</span>}
         </div>
-        {status === 'downloading' && (
+        {showProgress && (
           <div className="onb-download-bar onb-final-bar">
             <div
               className="onb-download-fill"

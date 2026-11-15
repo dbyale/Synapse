@@ -1,11 +1,11 @@
 /* eslint-disable import/prefer-default-export */
-import { app } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import util from 'util';
 import { exec } from 'child_process';
 import si from 'systeminformation';
 import { getModelsDirectory, loadSettings } from './settings';
+import { getLlamaVersion } from './backendVersions';
 import type {
   BackendDownload,
   BackendInfo,
@@ -14,18 +14,10 @@ import type {
 
 const execAsync = util.promisify(exec);
 
-function getBinaryVersions(): { llama: string } {
-  try {
-    const packageJson = JSON.parse(
-      fs.readFileSync(path.join(app.getAppPath(), 'package.json'), 'utf8'),
-    );
-    return packageJson.binaryVersions || { llama: 'b10375' };
-  } catch {
-    return { llama: 'b10375' };
-  }
-}
-
-const LLAMA_VERSION = getBinaryVersions().llama;
+// The llama.cpp nightly this Synapse build is pinned to (package.json
+// binaryVersions.llama). Nightly tags, not v0.x.y semver tags: the semver tags
+// carry only nightly-tag.txt, never binaries.
+const LLAMA_VERSION = getLlamaVersion();
 const LLAMA_BASE = `https://github.com/ggml-org/llama.cpp/releases/download/${LLAMA_VERSION}`;
 
 function llamaUrl(target: string, ext: 'zip' | 'tar.gz'): string {
@@ -283,10 +275,10 @@ const OTHER_TARGETS: OtherTarget[] = [
     cudart: true,
   },
   {
-    id: 'win-cuda-13.4-x64',
-    label: 'CUDA 13.4 (Windows x64)',
+    id: 'win-cuda-13.5-x64',
+    label: 'CUDA 13.5 (Windows x64)',
     icon: 'cuda',
-    target: 'win-cuda-13.4-x64',
+    target: 'win-cuda-13.5-x64',
     ext: 'zip',
     runtime: 'x64',
     os: 'win',
@@ -294,10 +286,10 @@ const OTHER_TARGETS: OtherTarget[] = [
     cudart: true,
   },
   {
-    id: 'win-cuda-13.4-arm64',
-    label: 'CUDA 13.4 (Windows arm64)',
+    id: 'win-cuda-13.5-arm64',
+    label: 'CUDA 13.5 (Windows arm64)',
     icon: 'cuda',
-    target: 'win-cuda-13.4-arm64',
+    target: 'win-cuda-13.5-arm64',
     ext: 'zip',
     runtime: 'arm64',
     os: 'win',
@@ -461,6 +453,37 @@ const OTHER_TARGETS: OtherTarget[] = [
   },
 ];
 
+// Human name for a release target folder, used when a folder is found on disk
+// that this build does not offer in the picker (an older CUDA/OpenVINO target
+// name, or a build installed by a previous Synapse version).
+export function getTargetLabel(target: string): string | null {
+  return OTHER_TARGETS.find((t) => t.target === target)?.label ?? null;
+}
+
+// Every release target this Synapse build can download. This is the exact set
+// of asset names that exist for the pinned nightly, so "on disk but not here"
+// means the archive is gone: re-downloading that folder would 404.
+export function getOfferedTargets(): string[] {
+  return OTHER_TARGETS.map((t) => t.target);
+}
+
+// Every archive this build fetches, by name: each target's bundle plus the CUDA
+// runtime companion the CUDA cards need. Same naming as buildDownload and
+// .erb/scripts/setup-binaries.ts, so the asset-snapshot test can check the
+// whole list against the release as upstream actually published it — that is
+// what catches a renamed toolkit target (CUDA 13.4 -> 13.5) before a user's
+// download can 404 on it.
+export function getOfferedAssets(): string[] {
+  return OTHER_TARGETS.flatMap((t) => [
+    `llama-${LLAMA_VERSION}-bin-${t.target}.${t.ext}`,
+    ...(t.cudart ? [`cudart-llama-bin-${t.target}.zip`] : []),
+  ]);
+}
+
+export function isOfferedTarget(target: string): boolean {
+  return OTHER_TARGETS.some((t) => t.target === target);
+}
+
 function tagOtherTarget(
   target: OtherTarget,
   context: {
@@ -502,9 +525,12 @@ function tagOtherTarget(
   )
     tags.push('no-gpu');
 
-  // CUDA 12.x needs driver >= 525 but < 580; 13.x needs >= 580
+  // CUDA 12.x needs driver >= 525 but < 580; 13.x needs >= 580. The 13.5
+  // toolkit itself ships on the R620 driver branch, but llama.cpp redistributes
+  // the CUDA runtime in the cudart archive, so a 13.0-era driver (580) still
+  // runs a 13.5 build through CUDA's minor-version compatibility.
   if (
-    target.id === 'win-cuda-13.4-x64' &&
+    target.id === 'win-cuda-13.5-x64' &&
     context.nvidiaDriverMajor !== null &&
     context.nvidiaDriverMajor < 580
   ) {
@@ -648,9 +674,9 @@ export async function getBackendInfo(): Promise<BackendInfo> {
       }
     } else if (hasNvidia(gpuList)) {
       const useCuda13 = nvidiaDriverMajor !== null && nvidiaDriverMajor >= 580;
-      const cudaTarget = useCuda13 ? 'win-cuda-13.4-x64' : 'win-cuda-12.4-x64';
+      const cudaTarget = useCuda13 ? 'win-cuda-13.5-x64' : 'win-cuda-12.4-x64';
       const cudaLabel = useCuda13
-        ? 'NVIDIA CUDA 13.4 (x64)'
+        ? 'NVIDIA CUDA 13.5 (x64)'
         : 'NVIDIA CUDA 12.4 (x64)';
 
       if (nvidiaDriverMajor !== null && nvidiaDriverMajor < 525) {
@@ -663,7 +689,7 @@ export async function getBackendInfo(): Promise<BackendInfo> {
         nvidiaDriverMajor < 580
       ) {
         warnings.push(
-          `NVIDIA driver ${nvidiaDriverMajor} is below 580 — CUDA 13.4 requires driver 580+.`,
+          `NVIDIA driver ${nvidiaDriverMajor} is below 580 — CUDA 13.5 requires driver 580+.`,
         );
       }
 
@@ -903,12 +929,18 @@ export async function getBackendInfo(): Promise<BackendInfo> {
   ).map((t) =>
     buildDownload(t.id, t.label, t.icon, t.target, t.ext, {
       tags: tagOtherTarget(t, tagContext),
-      files: t.cudart
-        ? [
-            `llama-${LLAMA_VERSION}-bin-${t.target}.${t.ext}`,
-            `cudart-llama-bin-${t.target}.zip`,
-          ]
-        : undefined,
+      // Only the CUDA targets carry a second archive. Leaving `files` undefined
+      // here would drop buildDownload's own single-asset default, and that list
+      // is what the install marker records and what the asset-snapshot test
+      // checks against the release.
+      ...(t.cudart
+        ? {
+            files: [
+              `llama-${LLAMA_VERSION}-bin-${t.target}.${t.ext}`,
+              `cudart-llama-bin-${t.target}.zip`,
+            ],
+          }
+        : {}),
     }),
   );
 
@@ -923,6 +955,7 @@ export async function getBackendInfo(): Promise<BackendInfo> {
     platform,
     arch,
     isAppleSilicon,
+    pinnedLlamaVersion: LLAMA_VERSION,
     defaultDownloadDir:
       loadSettings().backendDirectory ||
       path.join(path.dirname(getModelsDirectory()), 'llama'),

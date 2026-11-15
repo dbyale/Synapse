@@ -10,6 +10,7 @@ import type {
 export type BinaryInstallStatus =
   | 'queued'
   | 'downloading'
+  | 'extracting'
   | 'completed'
   | 'failed'
   | 'cancelled';
@@ -25,6 +26,8 @@ export interface BinaryInstallSnapshot {
   error?: string;
   download?: BackendDownload;
   folder?: string;
+  /** Target directory the install was started into, kept for retries. */
+  dir?: string;
 }
 
 export interface BinaryRecords {
@@ -95,6 +98,21 @@ function ensureProgressListener() {
           setSnapshot(key, {
             status: 'completed',
             percent: 100,
+            downloadedBytes: progress.downloadedBytes,
+            totalBytes: progress.totalBytes,
+            error: undefined,
+          });
+          notify();
+          return;
+        }
+
+        // Unpacking is a stage of the same install, not a new download: the
+        // byte counters now describe the archive payload instead of the
+        // transfer, and the bar keeps its identity.
+        if (progress.status === 'extracting') {
+          setSnapshot(key, {
+            status: 'extracting',
+            percent: progress.percent,
             downloadedBytes: progress.downloadedBytes,
             totalBytes: progress.totalBytes,
             error: undefined,
@@ -257,18 +275,17 @@ export async function startBinaryInstall(
     downloadedBytes: 0,
     totalBytes: 0,
     folder: download.folder,
+    dir,
     download,
   });
   progressKeys.set(progressKey(download), key);
   setupErrors.delete(kind);
   notify();
 
-  window.dispatchEvent(
-    new CustomEvent('open-download-manager', {
-      detail: { modelId: download.id, filename: download.label },
-    }),
-  );
-
+  // Deliberately no 'open-download-manager' event here: picking backends from
+  // Settings or onboarding is a list of cards that each show their own progress,
+  // so popping the downloads panel over it is noise. The transfer still
+  // registers in the panel through the progress events below.
   const task = window.electronAPI
     .downloadBinary(kind, download, dir)
     .then(() => {
@@ -297,6 +314,53 @@ export async function startBinaryInstall(
 
   activeInstalls.set(key, task);
   return task;
+}
+
+/**
+ * The install a download-progress row belongs to. Rows only carry the download
+ * id, so this matches on id or folder — an install started by an older Synapse
+ * can be keyed by either.
+ */
+export function findBinaryInstall(
+  id: string,
+): BinaryInstallSnapshot | undefined {
+  if (!id) return undefined;
+  return Array.from(installSnapshots.values()).find(
+    (snapshot) => snapshot.id === id || snapshot.folder === id,
+  );
+}
+
+/**
+ * Re-runs a failed or cancelled binary install without waiting for it.
+ *
+ * The download manager's Retry/Resume buttons are model-shaped: they call the
+ * model downloader with `(repoId, filename)`, which for a backend row is a
+ * binary id plus a human-readable label. Going through the install snapshot
+ * keeps the retry on the binary path and re-registers the progress mapping, so
+ * the backend card follows the transfer again.
+ *
+ * Returns true when the row belonged to a binary install — the outcome of the
+ * re-download is reported by the snapshot and the progress events, which is
+ * what the row and the card render. Returns false when no snapshot describes
+ * the install, leaving the caller free to fall back to the model path.
+ */
+export function retryBinaryDownload(id: string): boolean {
+  const previous = findBinaryInstall(id);
+  if (!previous?.download) return false;
+  // A snapshot marked completed would make startBinaryInstall a no-op, and a
+  // row that offers Retry is by definition not done.
+  removeBinaryInstall(previous.kind, previous.id);
+  const task = startBinaryInstall(
+    previous.kind,
+    previous.download,
+    // Same folder the install started in; an empty value lets the main process
+    // fall back to the configured backend directory.
+    previous.dir ?? '',
+  );
+  // Nothing to await here: a failure is recorded on the snapshot and broadcast
+  // as a progress event, and startBinaryInstall rethrows its download error.
+  task.catch(() => undefined);
+  return true;
 }
 
 export async function syncBinaryRecords(): Promise<BinaryRecords> {

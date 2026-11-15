@@ -63,7 +63,9 @@ export async function detectBackend(): Promise<string> {
   }
 
   if (platform === 'win32') {
-    if (arch === 'arm64') return 'win-adreno-arm64';
+    // The bundled asset folder names are llama.cpp release targets, so they move
+    // when upstream renames one (Adreno's OpenCL build, CUDA 13.4 -> 13.5).
+    if (arch === 'arm64') return 'win-opencl-adreno-arm64';
 
     try {
       const gpu = await graphics();
@@ -73,8 +75,10 @@ export async function detectBackend(): Promise<string> {
 
       if (isNvidia) {
         const driverMajor = await getNvidiaDriverVersion();
-        if (driverMajor !== null && driverMajor >= 610) {
-          return 'win-cuda-13.4-x64';
+        // Same driver floor as the downloaded-backend recommendation in
+        // backendInfo: CUDA 13.x needs 580+, anything older stays on 12.4.
+        if (driverMajor !== null && driverMajor >= 580) {
+          return 'win-cuda-13.5-x64';
         }
         return 'win-cuda-12.4-x64';
       }
@@ -104,7 +108,7 @@ export function getSplitBinName(): string {
     : 'llama-gguf-split';
 }
 
-function getBackendDir(settings: AppSettings): string {
+export function getBackendDir(settings: AppSettings): string {
   return (
     settings.backendDirectory ||
     path.join(path.dirname(getModelsDirectory()), 'llama')
@@ -135,9 +139,10 @@ export async function resolveBackend(
   }
 
   const patterns = [/cuda/i, /opencl|adreno/i, /vulkan/i];
+  const pickFrom = downloads;
   const hit = patterns
     .map((pattern) =>
-      downloads.find(
+      pickFrom.find(
         (d) => pattern.test(d.folder) && fs.existsSync(pathFor(d.folder)),
       ),
     )
@@ -146,7 +151,7 @@ export async function resolveBackend(
     return { backendFolder: hit.folder, serverPath: pathFor(hit.folder) };
   }
 
-  const first = downloads.find((d) => fs.existsSync(pathFor(d.folder)));
+  const first = pickFrom.find((d) => fs.existsSync(pathFor(d.folder)));
   if (first)
     return { backendFolder: first.folder, serverPath: pathFor(first.folder) };
 
@@ -197,9 +202,10 @@ export async function resolveFitBinary(
   }
 
   const patterns = [/cuda/i, /opencl|adreno/i, /vulkan/i];
+  const pickFrom = downloads;
   const hit = patterns
     .map((pattern) =>
-      downloads.find(
+      pickFrom.find(
         (d) => pattern.test(d.folder) && fs.existsSync(fitPathFor(d.folder)),
       ),
     )
@@ -208,7 +214,7 @@ export async function resolveFitBinary(
     return { backendFolder: hit.folder, fitParamsPath: fitPathFor(hit.folder) };
   }
 
-  const firstFit = downloads.find((d) => fs.existsSync(fitPathFor(d.folder)));
+  const firstFit = pickFrom.find((d) => fs.existsSync(fitPathFor(d.folder)));
   if (firstFit) {
     return {
       backendFolder: firstFit.folder,
@@ -267,9 +273,10 @@ export async function resolveSplitBinary(
   }
 
   const patterns = [/cuda/i, /opencl|adreno/i, /vulkan/i];
+  const pickFrom = downloads;
   const hit = patterns
     .map((pattern) =>
-      downloads.find(
+      pickFrom.find(
         (d) => pattern.test(d.folder) && fs.existsSync(splitPathFor(d.folder)),
       ),
     )
@@ -278,7 +285,7 @@ export async function resolveSplitBinary(
     return { backendFolder: hit.folder, splitPath: splitPathFor(hit.folder) };
   }
 
-  const firstSplit = downloads.find((d) =>
+  const firstSplit = pickFrom.find((d) =>
     fs.existsSync(splitPathFor(d.folder)),
   );
   if (firstSplit) {

@@ -138,6 +138,23 @@ export function pushIfSupported(
 // the estimate measures exactly what the server will launch, including the
 // multimodal projector block (--mmproj + supporting vision flags).
 
+// llama.cpp has no --no-mmap/--mlock pair: how a model is loaded is one enum,
+// -lm/--load-mode (auto|none|mmap|mlock|mmap+mlock|dio). The optimizer probe and
+// the server launch both resolve it here, so a profile can never be measured
+// under one load mode and launched under another. null = leave llama.cpp's own
+// default in place.
+export function loadModeFor(
+  mmap: boolean | undefined,
+  mlock: boolean | undefined,
+): 'none' | 'mlock' | 'mmap+mlock' | null {
+  if (mmap === false) {
+    // No mmap, but the user still wants the weights pinned in RAM.
+    return mlock === true ? 'mlock' : 'none';
+  }
+  if (mlock === true) return 'mmap+mlock';
+  return null;
+}
+
 export function appendCommonFitArgs(
   args: string[],
   supported: Set<string>,
@@ -170,13 +187,8 @@ export function appendCommonFitArgs(
   }
 
   // Memory mode: fit has no --no-mmap/--mlock pair, only --load-mode.
-  const mmap = p.mmap ?? true;
-  const mlock = p.mlock ?? false;
-  if (mmap === false) {
-    pushIfSupported(args, supported, '--load-mode', 'none');
-  } else if (mlock === true) {
-    pushIfSupported(args, supported, '--load-mode', 'mmap+mlock');
-  }
+  const loadMode = loadModeFor(p.mmap, p.mlock);
+  if (loadMode) pushIfSupported(args, supported, '--load-mode', loadMode);
   if (p.repack === false) pushIfSupported(args, supported, '--no-repack');
 
   // Context scaling (only meaningful with an active method, like server)
@@ -1324,6 +1336,17 @@ export async function getOrRunOptimizer(
 // miss. Returns null when even CTX_MIN spills (line hidden in that case).
 
 const speedLineCache = new Map<string, number | null>();
+
+// A backend install, reinstall or uninstall replaces (or removes) the binaries
+// these probes were measured with — including at the SAME path, which is what a
+// reinstall does. Every cache keyed by a backend path or by a measurement taken
+// through one has to go with it.
+export function invalidateBackendProbeCaches(): void {
+  helpCache.clear();
+  deviceTotalsCache.clear();
+  memoryEstimateCache.clear();
+  speedLineCache.clear();
+}
 
 export async function maxFullOffloadCtx(
   modelPath: string,

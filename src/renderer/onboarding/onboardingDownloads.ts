@@ -12,6 +12,7 @@ export type DownloadStatus =
   | 'queued'
   | 'downloading'
   | 'merging'
+  | 'extracting'
   | 'completed'
   | 'installed'
   | 'failed'
@@ -42,6 +43,7 @@ export const STATUS_LABELS: Record<DownloadStatus, string> = {
   queued: 'Queued',
   downloading: 'Downloading',
   merging: 'Finishing up',
+  extracting: 'Unzipping',
   completed: 'Ready',
   installed: 'Installed',
   failed: 'Failed',

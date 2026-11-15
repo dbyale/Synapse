@@ -1,194 +1,29 @@
 import { useEffect, useState } from 'react';
 import {
-  Apple,
   ArrowLeft,
   ArrowRight,
-  Cpu,
-  Download,
-  FileCode,
   FolderOpen,
-  Gpu,
   HardDrive,
   List,
-  Loader2,
-  Microchip,
   PackageOpen,
   Plus,
-  Smartphone,
-  Sparkles,
   Trash2,
   TriangleAlert,
   X,
 } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
 import ConfirmDialog from '../components/ConfirmDialog';
-import {
-  markBinaryInstalled,
-  removeBinaryInstall,
-  startBinaryInstall,
-} from './backgroundInstalls';
-import { ReactComponent as NvidiaLogo } from '../../../assets/logos/nvidia.svg';
+import BackendCard, { groupBackends } from '../components/backend/backendCard';
+import type { BackendCardActions } from '../components/backend/backendCard';
+import { useBackendInstalls } from '../components/backend/useBackendInstalls';
 import type {
   BackendDownload,
   BackendInfo,
-  BackendTag,
-  DownloadProgress,
+  InstalledBackend,
 } from '../preload.d';
 
-const ICON_MAP: Record<BackendDownload['icon'], LucideIcon> = {
-  cuda: Gpu,
-  opencl: Gpu,
-  vulkan: Sparkles,
-  apple: Apple,
-  cpu: Cpu,
-  openvino: Microchip,
-  rocm: Gpu,
-  sycl: Gpu,
-  android: Smartphone,
-  custom: HardDrive,
-  python: FileCode,
-};
-
-const TAG_BADGES: Record<BackendTag, { label: string; className: string }> = {
-  'no-gpu': { label: 'No Valid GPU', className: 'onb-backend-badge-red' },
-  'wrong-arch': {
-    label: 'Wrong Architecture',
-    className: 'onb-backend-badge-red',
-  },
-  'wrong-system': {
-    label: 'Wrong System',
-    className: 'onb-backend-badge-red',
-  },
-  outdated: { label: 'Outdated', className: 'onb-backend-badge-yellow' },
-};
-
-// Groups for the "All Backends" overlay, in display order:
-// 3. Compatible (correct OS+arch+GPU; outdated OK)
-// 4. GPU Not Found (correct OS+arch)
-// 5. Correct Arch, Incorrect OS
-// 6. Other (anything with wrong-arch)
-type OtherBackendGroup =
-  | 'compatible'
-  | 'gpu-missing'
-  | 'wrong-system'
-  | 'other';
-
-function getOtherBackendGroup(download: BackendDownload): OtherBackendGroup {
-  const tags = download.tags ?? [];
-  const hasArch = tags.includes('wrong-arch');
-  const hasSystem = tags.includes('wrong-system');
-  const hasNoGpu = tags.includes('no-gpu');
-  if (!hasArch && !hasSystem && !hasNoGpu) return 'compatible';
-  if (hasNoGpu && !hasArch && !hasSystem) return 'gpu-missing';
-  if (hasSystem && !hasArch) return 'wrong-system';
-  return 'other';
-}
-
-function BackendCardIcon({ download }: { download: BackendDownload }) {
-  const Icon = ICON_MAP[download.icon];
-  if (download.icon === 'cuda') {
-    return <NvidiaLogo className="onb-backend-logo" />;
-  }
-  if (download.dualIcon) {
-    return (
-      <>
-        <Gpu size={22} strokeWidth={2} />
-        <Cpu size={22} strokeWidth={2} />
-      </>
-    );
-  }
-  return <Icon size={24} strokeWidth={2} />;
-}
-
-type DownloadStatus = 'downloading' | 'completed' | 'failed' | 'cancelled';
-
-function DownloadIcon({ status }: { status: DownloadStatus | undefined }) {
-  if (status === 'completed') return <X size={18} strokeWidth={2} />;
-  if (status === 'downloading') {
-    return (
-      <Loader2 size={18} strokeWidth={2} className="onb-backend-spinner" />
-    );
-  }
-  return <Download size={18} strokeWidth={2} />;
-}
-
-function BackendCard({
-  download,
-  onDownload,
-  onUninstall,
-  status,
-  disabled,
-}: {
-  download: BackendDownload;
-  onDownload: (download: BackendDownload) => void;
-  onUninstall: (download: BackendDownload) => void;
-  status: DownloadStatus | undefined;
-  disabled: boolean;
-}) {
-  const isDownloading = status === 'downloading';
-  const isCompleted = status === 'completed';
-  const cardClass = [
-    'onb-backend-card',
-    isDownloading ? 'onb-backend-card--downloading' : '',
-    isCompleted ? 'onb-backend-card--completed' : '',
-    disabled ? 'onb-backend-card--disabled' : '',
-  ]
-    .filter(Boolean)
-    .join(' ');
-
-  return (
-    <div className={cardClass}>
-      <span className="onb-backend-card-icon">
-        <BackendCardIcon download={download} />
-      </span>
-      <span className="onb-backend-card-body">
-        <span className="onb-backend-card-title-row">
-          <span className="onb-backend-card-title">{download.label}</span>
-          {download.recommended && (
-            <span className="onb-backend-recommended">Recommended</span>
-          )}
-          {download.experimental && (
-            <span className="onb-backend-experimental">Experimental</span>
-          )}
-          {download.tags?.map((tag) => {
-            const badge = TAG_BADGES[tag];
-            return (
-              <span key={tag} className={badge.className}>
-                {badge.label}
-              </span>
-            );
-          })}
-        </span>
-        {download.sublabel && (
-          <span className="onb-backend-card-sublabel">{download.sublabel}</span>
-        )}
-        {download.warning && (
-          <span className="onb-backend-warning">
-            <TriangleAlert size={13} strokeWidth={2.2} />
-            {download.warning}
-          </span>
-        )}
-      </span>
-      {download.url && (
-        <button
-          type="button"
-          className={`onb-backend-download ${isCompleted ? 'onb-backend-download--uninstall' : ''}`}
-          title={
-            isCompleted
-              ? `Uninstall ${download.label}`
-              : `Download ${download.label}`
-          }
-          onClick={() =>
-            isCompleted ? onUninstall(download) : onDownload(download)
-          }
-          disabled={isDownloading || disabled}
-        >
-          <DownloadIcon status={status} />
-        </button>
-      )}
-    </div>
-  );
-}
+// The card UI, the install/update/uninstall actions and the "what is installed"
+// answer all live in components/backend, shared with Settings ▸ Backend. This
+// page is the onboarding shell around them.
 
 export default function BackendSetupPage({
   onBack,
@@ -201,82 +36,59 @@ export default function BackendSetupPage({
   preloaded: BackendInfo | null;
   preloadedLoading: boolean;
 }) {
-  const [info, setInfo] = useState<BackendInfo | null>(preloaded ?? null);
   const [downloadDir, setDownloadDir] = useState('');
   const [customBinaries, setCustomBinaries] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [othersOpen, setOthersOpen] = useState(false);
-  const [dlStatus, setDlStatus] = useState<Record<string, DownloadStatus>>({});
+  const [pendingUninstall, setPendingUninstall] = useState<{
+    download: BackendDownload;
+    installed?: InstalledBackend;
+  } | null>(null);
 
-  // If preloaded arrives after mount (background fetch finishes),
-  // adopt it immediately without issuing a second IPC.
+  const {
+    info,
+    installed,
+    installedViews,
+    downloadFor,
+    cardView,
+    cardActions,
+    uninstall,
+    updatesAvailable,
+    actionError,
+    clearActionError,
+    stateFor,
+  } = useBackendInstalls(downloadDir, { preloaded, preloadedLoading });
+
+  // If preloaded arrives after mount (background fetch finishes), adopt it
+  // without issuing a second IPC — the hook does this, the directory default
+  // is the part that still belongs here.
   useEffect(() => {
-    if (preloaded) {
-      setInfo((prev) => prev ?? preloaded);
-    }
-  }, [preloaded]);
+    if (downloadDir || !preloaded) return;
+    window.electronAPI
+      .loadSettings()
+      .then((settings) =>
+        setDownloadDir(
+          settings.backendDirectory || preloaded.defaultDownloadDir,
+        ),
+      )
+      .catch(() => undefined);
+  }, [preloaded, downloadDir]);
 
   useEffect(() => {
     let mounted = true;
-
-    (async () => {
-      try {
-        // Prefer session-prefetched hardware. While the parent is still
-        // fetching (preloaded===null && preloadedLoading===true) we wait
-        // for the prop update instead of spawning a duplicate IPC that
-        // would block the main process a second time and jank the UI.
-        let backend: BackendInfo | null = preloaded ?? null;
-        if (!backend && !preloadedLoading) {
-          backend = await window.electronAPI.getBackendInfo();
-        }
-        const settings = await window.electronAPI.loadSettings();
-        if (!mounted) return;
-        if (backend) {
-          setInfo((prev) => prev ?? backend);
-          setDownloadDir(
-            settings.backendDirectory || backend.defaultDownloadDir,
-          );
-          setCustomBinaries(settings.customBinaryPaths ?? []);
-        } else {
-          // No backend yet (prefetch in flight) — seed what we can from
-          // settings; downloadDir default will be filled when preloaded arrives
-          setCustomBinaries(settings.customBinaryPaths ?? []);
-          if (settings.backendDirectory) {
-            setDownloadDir(settings.backendDirectory);
-          }
-        }
-        setDlStatus((prev) => {
-          const next = { ...prev };
-          (settings.backendDownloads ?? []).forEach((d) => {
-            next[d.id] = 'completed';
-            markBinaryInstalled('backend', d.id, d.label, d.folder);
-          });
-          return next;
-        });
-      } catch {
-        // Silently fail — page still renders with an editable path
-      }
-    })();
-
+    window.electronAPI
+      .loadSettings()
+      .then((settings) => {
+        if (!mounted) return false;
+        setCustomBinaries(settings.customBinaryPaths ?? []);
+        setDownloadDir((prev) => prev || settings.backendDirectory || '');
+        return true;
+      })
+      .catch(() => undefined);
     return () => {
       mounted = false;
     };
-  }, [preloaded, preloadedLoading]);
-
-  // When preloaded arrives late, ensure downloadDir is filled if still empty
-  useEffect(() => {
-    if (preloaded && !downloadDir) {
-      window.electronAPI
-        .loadSettings()
-        .then((settings) => {
-          setDownloadDir(
-            settings.backendDirectory || preloaded.defaultDownloadDir,
-          );
-          return undefined;
-        })
-        .catch(() => undefined);
-    }
-  }, [preloaded, downloadDir]);
+  }, []);
 
   useEffect(() => {
     if (!othersOpen) return undefined;
@@ -286,23 +98,6 @@ export default function BackendSetupPage({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [othersOpen]);
-
-  useEffect(() => {
-    const unsubscribe = window.electronAPI.onDownloadProgress(
-      (progress: DownloadProgress) => {
-        const { modelId, status } = progress;
-        if (!modelId || !status) return;
-        if (
-          status === 'completed' ||
-          status === 'failed' ||
-          status === 'cancelled'
-        ) {
-          setDlStatus((prev) => ({ ...prev, [modelId]: status }));
-        }
-      },
-    );
-    return unsubscribe;
-  }, []);
 
   const handleBrowse = async () => {
     try {
@@ -343,46 +138,61 @@ export default function BackendSetupPage({
     setCustomBinaries((prev) => prev.filter((p) => p !== binary));
   };
 
-  const handleDownload = async (download: BackendDownload) => {
-    if (!download.url) return;
-    if (dlStatus[download.id] === 'completed') return;
-    setDlStatus((prev) => ({ ...prev, [download.id]: 'downloading' }));
-    try {
-      await startBinaryInstall('backend', download, downloadDir);
-      setDlStatus((prev) => ({ ...prev, [download.id]: 'completed' }));
-    } catch {
-      // Status events from the main process drive the final state
-    }
-  };
-
-  const [pendingUninstall, setPendingUninstall] =
-    useState<BackendDownload | null>(null);
-
-  const requestUninstall = (download: BackendDownload) => {
-    if (dlStatus[download.id] !== 'completed') return;
-    setPendingUninstall(download);
-  };
+  const requestUninstall = (
+    download: BackendDownload,
+    installedEntry?: InstalledBackend,
+  ) => setPendingUninstall({ download, installed: installedEntry });
 
   const handleUninstallConfirm = async () => {
     const target = pendingUninstall;
-    if (!target) return;
     setPendingUninstall(null);
-    const result = await window.electronAPI.uninstallBinary(
-      'backend',
-      target,
-      downloadDir,
-    );
-    if (result.success) {
-      removeBinaryInstall('backend', target.id);
-      setDlStatus((prev) => {
-        const next = { ...prev };
-        delete next[target.id];
-        return next;
-      });
-    }
+    if (!target) return;
+    await uninstall(target.installed ?? target.download);
   };
 
-  const handleUninstallCancel = () => setPendingUninstall(null);
+  const optional = info?.optional ?? [];
+  const custom = optional.find((d) => d.id === 'custom');
+  const others = optional.filter((d) => d.id !== 'custom');
+  const recommended = info?.recommended ?? [];
+  const groups = groupBackends(info?.others ?? []);
+  const allBackends = [
+    ...groups.compatible,
+    ...groups['gpu-missing'],
+    ...groups['wrong-system'],
+    ...groups.other,
+  ];
+
+  // An install this build has no download entry for (an older target name, or a
+  // build that was copied in) would otherwise be invisible here, and so
+  // impossible to remove during onboarding. Offered installs already show up
+  // below with their installed state.
+  const unmanagedInstalls = installedViews.filter(
+    (view) => !downloadFor(view.download.folder),
+  );
+
+  // Installed is decided by the backend directory, so a backend left over from
+  // an older Synapse version counts here even when this build never recorded a
+  // download for it.
+  const startedAny =
+    installed.some((entry) => entry.exists && entry.hasServer) ||
+    [...recommended, ...others].some(
+      (download) => !!stateFor(download.id).status,
+    );
+  const canContinue = !!info && (startedAny || customBinaries.length > 0);
+  const continueReason = (() => {
+    if (!info) return 'Detecting system hardware — please wait…';
+    if (saving) return 'Saving configuration…';
+    if (!startedAny && customBinaries.length === 0)
+      return 'Download at least one backend or add a custom binary to continue.';
+    return null;
+  })();
+  const isContinueDisabled = !canContinue || saving;
+
+  // Uninstall deletes files with no undo, so the card's button asks first.
+  const actions: BackendCardActions = {
+    ...cardActions,
+    onUninstall: requestUninstall,
+  };
 
   const handleContinue = async () => {
     if (saving) return;
@@ -397,53 +207,9 @@ export default function BackendSetupPage({
     } catch {
       // Silently fail — installation location still applied in memory
     }
+    setSaving(false);
     onContinue();
   };
-
-  const optional = info?.optional ?? [];
-  const custom = optional.find((d) => d.id === 'custom');
-  const others = optional.filter((d) => d.id !== 'custom');
-  const recommended = info?.recommended ?? [];
-  const compatible: BackendDownload[] = [];
-  const gpuMissing: BackendDownload[] = [];
-  const wrongSystem: BackendDownload[] = [];
-  const otherArch: BackendDownload[] = [];
-  (info?.others ?? []).forEach((download) => {
-    switch (getOtherBackendGroup(download)) {
-      case 'compatible':
-        compatible.push(download);
-        break;
-      case 'gpu-missing':
-        gpuMissing.push(download);
-        break;
-      case 'wrong-system':
-        wrongSystem.push(download);
-        break;
-      default:
-        otherArch.push(download);
-        break;
-    }
-  });
-  const allBackends = [
-    ...recommended,
-    ...others,
-    ...compatible,
-    ...gpuMissing,
-    ...wrongSystem,
-    ...otherArch,
-  ];
-  const startedAny = Object.values(dlStatus).some(
-    (s) => s === 'completed' || s === 'downloading',
-  );
-  const canContinue = !!info && (startedAny || customBinaries.length > 0);
-  const continueReason = (() => {
-    if (!info) return 'Detecting system hardware — please wait…';
-    if (saving) return 'Saving configuration…';
-    if (!startedAny && customBinaries.length === 0)
-      return 'Download at least one backend or add a custom binary to continue.';
-    return null;
-  })();
-  const isContinueDisabled = !canContinue || saving;
 
   return (
     <div className="onb-page onb-backend-page">
@@ -481,6 +247,19 @@ export default function BackendSetupPage({
               <span>{warning}</span>
             </div>
           ))}
+
+          {updatesAvailable.length > 0 && (
+            <div className="onb-backend-warning-box onb-rise onb-delay-3">
+              <TriangleAlert size={16} strokeWidth={2.2} />
+              <span>
+                {updatesAvailable.length} installed backend
+                {updatesAvailable.length > 1 ? 's are' : ' is'} older than the
+                llama.cpp build this Synapse uses (
+                {updatesAvailable[0].llamaVersion} → {info?.pinnedLlamaVersion})
+                . Update it from the card.
+              </span>
+            </div>
+          )}
         </div>
 
         <div className="onb-backend-right">
@@ -514,22 +293,39 @@ export default function BackendSetupPage({
                 </p>
               </div>
 
+              {unmanagedInstalls.length > 0 && (
+                <div className="onb-backend-section onb-rise onb-delay-1">
+                  <p className="onb-professions-hint">
+                    Installed on this machine
+                  </p>
+                  <div className="onb-backend-cards">
+                    {unmanagedInstalls.map((view) => (
+                      <BackendCard
+                        key={view.download.folder}
+                        view={view}
+                        actions={actions}
+                      />
+                    ))}
+                  </div>
+                  <p className="onb-backend-path-hint">
+                    Builds this Synapse does not offer — an older target, or one
+                    you copied in yourself. Reinstall or remove them here.
+                  </p>
+                </div>
+              )}
+
               <div className="onb-backend-section onb-rise onb-delay-2">
                 <p className="onb-professions-hint">Recommended</p>
                 <div className="onb-backend-cards">
-                  {info.recommended.map((download) => (
+                  {recommended.map((download) => (
                     <BackendCard
                       key={download.id}
-                      download={download}
-                      onDownload={handleDownload}
-                      onUninstall={requestUninstall}
-                      status={dlStatus[download.id]}
-                      disabled={false}
+                      view={cardView(download)}
+                      actions={actions}
                     />
                   ))}
                 </div>
               </div>
-
               {(others.length > 0 || custom) && (
                 <div className="onb-backend-section onb-rise onb-delay-3">
                   <p className="onb-professions-hint">Optional</p>
@@ -537,11 +333,8 @@ export default function BackendSetupPage({
                     {others.map((download) => (
                       <BackendCard
                         key={download.id}
-                        download={download}
-                        onDownload={handleDownload}
-                        onUninstall={requestUninstall}
-                        status={dlStatus[download.id]}
-                        disabled={false}
+                        view={cardView(download)}
+                        actions={actions}
                       />
                     ))}
                     {custom && (
@@ -632,6 +425,20 @@ export default function BackendSetupPage({
       </div>
 
       <div className="onb-professions-footer onb-rise onb-delay-4">
+        {actionError && (
+          <p className="onb-backend-error" role="alert">
+            <TriangleAlert size={14} strokeWidth={2.2} />
+            {actionError}
+            <button
+              type="button"
+              className="onb-backend-error-dismiss"
+              aria-label="Dismiss"
+              onClick={clearActionError}
+            >
+              <X size={13} strokeWidth={2} />
+            </button>
+          </p>
+        )}
         {isContinueDisabled && continueReason && (
           <p
             id="backend-continue-reason"
@@ -696,11 +503,8 @@ export default function BackendSetupPage({
                   {recommended.map((download) => (
                     <BackendCard
                       key={download.id}
-                      download={download}
-                      onDownload={handleDownload}
-                      onUninstall={requestUninstall}
-                      status={dlStatus[download.id]}
-                      disabled={false}
+                      view={cardView(download)}
+                      actions={actions}
                     />
                   ))}
                 </div>
@@ -711,75 +515,60 @@ export default function BackendSetupPage({
                   {others.map((download) => (
                     <BackendCard
                       key={download.id}
-                      download={download}
-                      onDownload={handleDownload}
-                      onUninstall={requestUninstall}
-                      status={dlStatus[download.id]}
-                      disabled={false}
+                      view={cardView(download)}
+                      actions={actions}
                     />
                   ))}
                 </div>
               )}
-              {compatible.length > 0 && (
+              {groups.compatible.length > 0 && (
                 <div className="onb-backend-overlay-group">
                   <p className="onb-professions-hint">Available</p>
-                  {compatible.map((download) => (
+                  {groups.compatible.map((download) => (
                     <BackendCard
                       key={download.id}
-                      download={download}
-                      onDownload={handleDownload}
-                      onUninstall={requestUninstall}
-                      status={dlStatus[download.id]}
-                      disabled={false}
+                      view={cardView(download)}
+                      actions={actions}
                     />
                   ))}
                 </div>
               )}
-              {gpuMissing.length > 0 && (
+              {groups['gpu-missing'].length > 0 && (
                 <div className="onb-backend-overlay-group">
                   <p className="onb-professions-hint">
                     Compatible GPU Not Found
                   </p>
-                  {gpuMissing.map((download) => (
+                  {groups['gpu-missing'].map((download) => (
                     <BackendCard
                       key={download.id}
-                      download={download}
-                      onDownload={handleDownload}
-                      onUninstall={requestUninstall}
-                      status={dlStatus[download.id]}
-                      disabled={false}
+                      view={cardView(download)}
+                      actions={actions}
                     />
                   ))}
                 </div>
               )}
-              {wrongSystem.length > 0 && (
+              {groups['wrong-system'].length > 0 && (
                 <div className="onb-backend-overlay-group">
                   <p className="onb-professions-hint">
                     Compatible Architecture
                   </p>
-                  {wrongSystem.map((download) => (
+                  {groups['wrong-system'].map((download) => (
                     <BackendCard
                       key={download.id}
-                      download={download}
-                      onDownload={handleDownload}
-                      onUninstall={requestUninstall}
-                      status={dlStatus[download.id]}
-                      disabled={false}
+                      view={cardView(download)}
+                      actions={actions}
                     />
                   ))}
                 </div>
               )}
-              {otherArch.length > 0 && (
+              {groups.other.length > 0 && (
                 <div className="onb-backend-overlay-group">
                   <p className="onb-professions-hint">Other</p>
-                  {otherArch.map((download) => (
+                  {groups.other.map((download) => (
                     <BackendCard
                       key={download.id}
-                      download={download}
-                      onDownload={handleDownload}
-                      onUninstall={requestUninstall}
-                      status={dlStatus[download.id]}
-                      disabled={false}
+                      view={cardView(download)}
+                      actions={actions}
                     />
                   ))}
                 </div>
@@ -790,13 +579,16 @@ export default function BackendSetupPage({
       )}
       {pendingUninstall && (
         <ConfirmDialog
-          title={`Uninstall ${pendingUninstall.label}?`}
-          message={`This will delete ${pendingUninstall.label} from ${downloadDir || 'the install folder'} and remove it from your setup. You can re-download it later.`}
+          title={`Uninstall ${pendingUninstall.download.label}?`}
+          message={`This will delete ${
+            pendingUninstall.installed?.folder ??
+            pendingUninstall.download.folder
+          } from ${downloadDir || 'the install folder'} and remove it from your setup. You can re-download it later.`}
           confirmText="Uninstall"
           cancelText="Cancel"
           danger
           onConfirm={handleUninstallConfirm}
-          onCancel={handleUninstallCancel}
+          onCancel={() => setPendingUninstall(null)}
         />
       )}
     </div>

@@ -162,6 +162,24 @@ export interface Profile {
   corsMethods?: string;
   corsHeaders?: string;
   corsCredentials?: boolean;
+  /**
+   * llama.cpp v1.0.0 (#32115) rejects http(s) media URLs that resolve to a
+   * local/private address. Synapse forwards attachment URLs as given, so this
+   * stays on by default and a profile opts out to harden its server.
+   */
+  mediaAllowPrivateUrls?: boolean;
+  /**
+   * llama.cpp v1.0.0 (#32113) disables server tools/MCP on a non-loopback bind
+   * with no API key. Set to allow that anyway on a trusted network; only has an
+   * effect when Host is not loopback and no local API key is stored.
+   */
+  allowUnauthenticatedTools?: boolean;
+  /**
+   * How the local llama-server API key is provided: false/undefined lets
+   * Synapse generate one, true shows a field to type your own. UI only — the
+   * key itself lives in the encrypted secret store, never in the profile.
+   */
+  localApiKeyManual?: boolean;
   thinkingTokens?: number;
   customFlags?: string[];
   useCustomLaunch?: boolean;

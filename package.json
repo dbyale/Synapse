@@ -2,7 +2,7 @@
   "name": "Synapse",
   "version": "1.0.0",
   "binaryVersions": {
-    "llama": "b11429"
+    "llama": "b12359"
   },
   "description": "A local AI platform",
   "keywords": [

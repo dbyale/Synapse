@@ -1,12 +1,15 @@
 import { app } from 'electron';
 import path from 'path';
 import fs from 'fs';
+import type { BackendDownloadRecord } from '../renderer/preload.d';
 
 export interface AppSettings {
   modelsDirectory: string;
   backendDirectory: string;
   customBinaryPaths: string[];
-  backendDownloads: { id: string; label: string; folder: string }[];
+  // Installs this app recorded. Never the source of truth for what exists:
+  // backendInventory reconciles this against the backend directory on disk.
+  backendDownloads: BackendDownloadRecord[];
   selectedBackend: string;
   openvinoDevice?: 'CPU' | 'GPU' | 'NPU';
   openvinoStateful?: boolean;

@@ -273,6 +273,24 @@ export const MODELS_DIR_TOOLTIP =
 export const BACKEND_DIR_TOOLTIP =
   'Directory where the llama.cpp backends (CUDA, Vulkan, CPU) are downloaded and extracted. Defaults to a folder next to the Models Directory.';
 
+export const BACKEND_VERSION_TOOLTIP = [
+  'The llama.cpp nightly this Synapse build downloads and is tested against.',
+  'An installed backend older than this is behind what Synapse expects and can be updated from its card.',
+  'Update state is computed from what is on disk — Synapse never checks GitHub for newer releases.',
+];
+
+export const BACKEND_INSTALLED_TOOLTIP = [
+  'Everything Synapse finds in the backend directory, plus any install it recorded whose folder is gone.',
+  'An update unpacks the new build beside the old one and swaps it in only once it verifies, so a failed download cannot leave you without a backend — and no old build DLLs can be loaded by mistake.',
+  'An install from an older Synapse version stays listed and removable.',
+];
+
+export const BACKEND_LIST_TOOLTIP = [
+  'Every prebuilt llama.cpp backend for this platform, at the version this Synapse pins.',
+  'Backends incompatible with your hardware are labelled but still downloadable.',
+  'Downloads continue in the background while you use the app.',
+];
+
 export const RESOURCE_ALLOCATION_TOOLTIP = [
   'Automatic: fit models to live free memory via llama.cpp — no fixed budgets, no sliders.',
   'Manual: reserve fixed RAM and VRAM budgets with the sliders below. Switching modes re-optimizes profiles.',
@@ -421,15 +439,52 @@ export const EXTERNAL_MODEL_TOOLTIP = [
 export const EXTERNAL_CTX_TOOLTIP = [
   'The context window Synapse assumes for this server — drives the usage bar and context shifting.',
   'llama.cpp servers report their real n_ctx automatically via /props; this setting overrides that when changed.',
-  'Set it to the server\'s actual limit for endpoints that do not report one (OpenAI: e.g. 128000).',
+  "Set it to the server's actual limit for endpoints that do not report one (OpenAI: e.g. 128000).",
 ];
 
 // ── CORS (Server Settings) ──
 
 export const CORS_ORIGINS_TOOLTIP = [
-  'Comma-separated list of allowed origins for cross-origin requests (--cors-origins).',
-  'Set to * to allow any origin. Set to "localhost" to reflect the Origin header only if it is localhost.',
-  'Default: *',
+  'Which web pages may call this server from a browser.',
+  'By default only pages served by this server itself can call it. A web app running somewhere else is turned away until you list its address here.',
+  'Write the address without http:// and without a port, for example 127.0.0.1 or my-pc.local. Separate several addresses with commas, or use * to allow any web page.',
+  'Allowing any web page means a page you happen to open could send requests to this server, so keep this short and use a Server API key.',
+];
+
+// ── Server security ──
+
+export const MEDIA_PRIVATE_URLS_TOOLTIP = [
+  'Whether the server may load files from addresses on your own network.',
+  'On: a message can show an image or file hosted on this machine or another device on your network.',
+  'Off: those addresses are refused and media is only loaded from the public internet.',
+  'Only applies to web addresses inside a message. Files you attach directly are always loaded.',
+];
+
+export const LOCAL_API_KEY_TOGGLE_TOOLTIP = [
+  'Whether this server asks for a key before it answers.',
+  'On: every request has to carry the key. Synapse sends it automatically, and any other program that connects needs it too.',
+  'Off: any program on this computer can use the server. Turning this off also removes the saved key, so turning it back on means making a new one.',
+];
+
+export const LOCAL_API_KEY_TOOLTIP = [
+  'A password the server requires before it answers any request.',
+  'Synapse sends it automatically to the server it starts for you. It is saved on this computer and never written into your profile file or an export.',
+  'A model that is already loaded keeps using the key it started with, so changing this takes effect the next time the model loads.',
+  'A server that other computers can reach turns its tools off when no password is set, so add one if you share the server.',
+  'Leave it blank if only this machine uses the server. If you start the server yourself, use the password field on the External Server page instead.',
+];
+
+export const LOCAL_API_KEY_MANUAL_TOOLTIP = [
+  'Turn this on to type the key yourself instead of letting Synapse make one.',
+  'Use it when another program already has a key that this server must accept.',
+  'Leave it off to have Synapse generate and store the key for you.',
+];
+
+export const UNAUTHENTICATED_TOOLS_TOOLTIP = [
+  'Whether the server may be used without a password when other computers can reach it.',
+  'On: requests work with no password and the server keeps its tools available.',
+  'Off: every request has to carry the password.',
+  'Anyone who can reach the server could then use its tools, so only turn this on for a network you trust.',
 ];
 
 export const CORS_METHODS_TOOLTIP = [

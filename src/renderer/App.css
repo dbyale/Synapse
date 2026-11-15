@@ -525,6 +525,12 @@ body,
   justify-content: space-between;
   align-items: center;
 }
+/* A row tooltip that drops below the control measures the whole row, not just
+   the label: the label alone sits at the left edge, which pushes a 280px
+   tooltip off-screen. Same treatment --col fields already get. */
+.info-tooltip-wrapper--bottom.info-tooltip-stretch--row .info-tooltip-anchor {
+  position: static;
+}
 .info-tooltip-stretch--col {
   flex-direction: column;
   align-items: stretch;

@@ -14,7 +14,8 @@ function makeFakeCrypto(available = true): SecretCrypto & {
     setAvailable: (v: boolean) => {
       avail = v;
     },
-    encrypt: (value: string) => `enc:${Buffer.from(value, 'utf-8').toString('base64')}`,
+    encrypt: (value: string) =>
+      `enc:${Buffer.from(value, 'utf-8').toString('base64')}`,
     decrypt: (payload: string) => {
       if (!payload.startsWith('enc:')) throw new Error('bad payload');
       return Buffer.from(payload.slice(4), 'base64').toString('utf-8');
@@ -74,7 +75,9 @@ describe('SecretStore', () => {
     expect(store.has('profile:2', 'externalApiKey')).toBe(true);
 
     store.deleteScope('profile:2');
-    expect(fs.existsSync(file) ? fs.readFileSync(file, 'utf-8') : '{}').not.toContain('profile:2');
+    expect(
+      fs.existsSync(file) ? fs.readFileSync(file, 'utf-8') : '{}',
+    ).not.toContain('profile:2');
     expect(store.has('profile:2', 'externalApiKey')).toBe(false);
   });
 

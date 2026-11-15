@@ -578,3 +578,118 @@
 .settings-python-spin {
   animation: settings-python-spin 0.9s linear infinite;
 }
+
+/* ============================================================================
+   BACKEND TAB  (cards themselves come from components/backend, styled in
+   onboarding.css because onboarding and Settings render the same card)
+   ============================================================================ */
+
+.settings-backend-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.settings-backend-recheck {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 14px;
+  font-size: 13px;
+}
+
+.settings-backend-hint {
+  margin-top: 6px;
+}
+
+.settings-backend-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: #f9e2af;
+}
+
+.settings-backend-warning svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.settings-backend-error {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: #f38ba8;
+}
+
+.settings-backend-error-dismiss {
+  align-self: flex-start;
+  margin-top: 6px;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.settings-backend-error-dismiss:hover {
+  color: #f38ba8;
+  border-color: rgba(243, 139, 168, 0.45);
+}
+
+.settings-backend-expand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.settings-backend-expand:hover {
+  background: var(--bg-secondary);
+  border-color: var(--text-secondary);
+}
+
+.settings-backend-expand-count {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-secondary);
+  font-size: 11.5px;
+}
+
+.settings-backend-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 12px;
+}
+
+.settings-backend-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.settings-backend-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 10px;
+}

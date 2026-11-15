@@ -43,6 +43,7 @@ import {
 } from './estimator';
 import { registerExtensionIpcHandlers } from './ipcExtensions';
 import { getBackendInfo } from './backendInfo';
+import { getInstalledBackends } from './backendInventory';
 import { getSecretStore } from './secretStore';
 import { getPythonInfo, invalidatePythonRuntimeCache } from './pythonInfo';
 import {
@@ -920,6 +921,18 @@ export function registerIpcHandlers(win: BrowserWindow): void {
   ipcMain.handle('binaries:list', async () => {
     return binaryDownloads.listBinaryDownloads();
   });
+
+  // What is installed is read from disk (and reconciled with the cached
+  // records), never from the settings list alone.
+  ipcMain.handle('backends:installed', async () => getInstalledBackends());
+
+  ipcMain.handle(
+    'backends:uninstall-folder',
+    async (_event, folder: string, dir?: string) =>
+      // binaryDownloads owns the backends:changed broadcast (and the probe-cache
+      // invalidation) so no install or uninstall path can miss it.
+      binaryDownloads.uninstallInstalledBackend(folder, dir),
+  );
 
   refreshPromise = refreshVramStatsCache();
 

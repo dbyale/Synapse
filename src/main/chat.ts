@@ -23,6 +23,7 @@ import {
   FitCancelledError,
   resolveBudgets,
   logFitCancelled,
+  loadModeFor,
 } from './estimator';
 import { addTokenUsage, addWebSearch, getUsage } from './usage';
 import type { UsageStore } from '../renderer/utils/usage';
@@ -45,8 +46,11 @@ import {
   normalizeExternalServerUrl,
   externalServerSecretScope,
   EXTERNAL_API_KEY_SECRET_KEY,
+  LOCAL_API_KEY_SECRET_KEY,
+  isLoopbackHost,
+  normalizeCorsOrigins,
 } from '../shared/externalServer';
-import { getSecret } from './secretStore';
+import { getSecret, hasSecret } from './secretStore';
 
 export interface GenerationStats {
   tokens: number;
@@ -120,6 +124,13 @@ let serverProcess: ChildProcess | null = null;
 // request failures surface through normal chat errors instead.
 let serverMode: 'local' | 'external' | null = null;
 let currentProfile: Profile | null = null;
+// The Bearer token for whichever server is running right now, captured when
+// that server was started and held until the next load. llama.cpp reads its key
+// once at startup, so a key saved while a server is up belongs to the NEXT
+// server — sending it to the running one only produces 401s. Reading the store
+// per request has exactly that bug, and also used the previous profile's key
+// during a load, before currentProfile had been swapped over.
+let activeApiKey: string | null = null;
 let currentProjector: string | null = null;
 let chatFunctions: any = null;
 let activeTools: any[] = [];
@@ -156,12 +167,14 @@ function buildToolContext(
   };
 }
 
-// Manual-launch server defaults. A manual command fully replaces the server
-// invocation (profile host/port are ignored), so a blank host/port must fall
-// back to the llama-server defaults. Keep as exported constants — the server
-// default port will change later and should only need a one-line update here.
-export const DEFAULT_MANUAL_SERVER_HOST = '127.0.0.1';
-export const DEFAULT_MANUAL_SERVER_PORT = 8080;
+// llama-server defaults, used whenever the actual command line omits a
+// host/port: a manual command fully replaces the server invocation (profile
+// host/port are ignored), and non-manual launch only writes these when the
+// profile leaves them blank. Kept as exported constants so a llama.cpp default
+// change is a one-line update here. llama.cpp v0.7.0 (ggml#30159) moved the
+// default port 8080 -> 9931, which is what the pinned backend now listens on.
+export const DEFAULT_SERVER_HOST = '127.0.0.1';
+export const DEFAULT_SERVER_PORT = 9931;
 
 // --- llama-server stderr tail + crash propagation ---
 // Persistent (module-scope) so a crash AFTER a successful load can still
@@ -666,6 +679,11 @@ export interface LlamaServerLaunchConfig {
   // the unsolved-optimizer preview where layers aren't solved yet).
   tensorSplit?: string | null;
   tensorOverrides?: string | null;
+  // Whether the profile has a stored server API key. A real launch resolves this
+  // before building the command so the flag below and the spawn environment
+  // always describe the same key; a preview omits it and reads the store for the
+  // profile being previewed.
+  hasApiKey?: boolean;
 }
 
 /**
@@ -793,7 +811,7 @@ export function parseManualLaunchRecord(raw: string): {
 // Effective host/port the server will listen on for a given profile.
 // Manual mode fully replaces the server invocation, so profile host/port are
 // ignored: the endpoint comes from the manual command, falling back to the
-// llama-server defaults (DEFAULT_MANUAL_SERVER_*). Non-manual mode keeps the
+// llama-server defaults (DEFAULT_SERVER_*). Non-manual mode keeps the
 // existing profile host/port fallbacks. Exported for tests.
 export function resolveServerEndpoint(profile: Partial<Profile> | null): {
   host: string;
@@ -804,13 +822,13 @@ export function resolveServerEndpoint(profile: Partial<Profile> | null): {
     const raw = ((profile as any)?.customLaunchCommand ?? '').trim();
     const manual = parseManualLaunchRecord(raw);
     return {
-      host: manual.host ?? DEFAULT_MANUAL_SERVER_HOST,
-      port: manual.port ?? DEFAULT_MANUAL_SERVER_PORT,
+      host: manual.host ?? DEFAULT_SERVER_HOST,
+      port: manual.port ?? DEFAULT_SERVER_PORT,
     };
   }
   return {
-    host: (profile as any)?.host || DEFAULT_MANUAL_SERVER_HOST,
-    port: (profile as any)?.port || 9931,
+    host: (profile as any)?.host || DEFAULT_SERVER_HOST,
+    port: (profile as any)?.port || DEFAULT_SERVER_PORT,
   };
 }
 
@@ -818,7 +836,9 @@ export function resolveServerEndpoint(profile: Partial<Profile> | null): {
 // profile's user-entered URL (normalized); local mode keeps the
 // host/port endpoint. Returns null only for a malformed external URL
 // (loadProfile validates before connecting, so this means "misconfigured").
-export function getServerBaseUrl(profile: Partial<Profile> | null): string | null {
+export function getServerBaseUrl(
+  profile: Partial<Profile> | null,
+): string | null {
   if ((profile as any)?.useExternalServer) {
     return normalizeExternalServerUrl(
       (profile as any)?.externalServerUrl ?? '',
@@ -839,29 +859,43 @@ function getServerUrl(path: string = ''): string {
   return `${base}${path}`;
 }
 
-// Per-profile external API key, read from the encrypted store at request
-// time. Never travels through IPC or lands on the Profile object.
+// Per-profile external API key, read from the encrypted store when a backend is
+// started (never per request). Never travels through IPC or lands on the
+// Profile object.
 function getExternalApiKey(profileId?: string): string | null {
   const id = profileId ?? currentProfile?.id;
   if (!id) return null;
   return getSecret(externalServerSecretScope(id), EXTERNAL_API_KEY_SECRET_KEY);
 }
 
-// fetch() against the active backend, attaching the Authorization header
-// when the external server has a stored API key. All server-bound HTTP
-// in this module goes through here so auth is never forgotten.
-function serverFetch(
-  path: string,
-  init?: RequestInit,
-  profileId?: string,
-): Promise<Response> {
+// Bearer token for the llama-server this app launches itself (same encrypted
+// store, same per-profile scope, different key). llama.cpp v1.0.0 (#32113)
+// refuses server tools/MCP on a non-loopback bind when no key is configured,
+// so a profile shared over the LAN needs one to keep tools working. Resolved
+// once per load and handed to the process through the environment; the running
+// server's value lives in activeApiKey from then on.
+function getLocalApiKey(profileId?: string): string | null {
+  const id = profileId ?? currentProfile?.id;
+  if (!id) return null;
+  return getSecret(externalServerSecretScope(id), LOCAL_API_KEY_SECRET_KEY);
+}
+
+function hasLocalApiKey(profileId?: string): boolean {
+  const id = profileId ?? currentProfile?.id;
+  if (!id) return false;
+  return hasSecret(externalServerSecretScope(id), LOCAL_API_KEY_SECRET_KEY);
+}
+
+// fetch() against the active backend. The Authorization header always comes
+// from activeApiKey — the credential the running server was started with —
+// never from the store, so editing a profile's key mid-session cannot break
+// requests that are already in flight. All server-bound HTTP in this module
+// goes through here so auth is never forgotten.
+function serverFetch(path: string, init?: RequestInit): Promise<Response> {
   const headers: Record<string, string> = {
     ...((init?.headers as Record<string, string>) ?? {}),
   };
-  if (currentProfile?.useExternalServer) {
-    const key = getExternalApiKey(profileId);
-    if (key) headers.Authorization = `Bearer ${key}`;
-  }
+  if (activeApiKey) headers.Authorization = `Bearer ${activeApiKey}`;
   return fetch(getServerUrl(path), { ...init, headers });
 }
 
@@ -969,14 +1003,20 @@ export function buildLlamaServerArgs(
     if (profile.specDraftNMin !== undefined && profile.specDraftNMin !== 0) {
       spawnArgs.push('--spec-draft-n-min', profile.specDraftNMin.toString());
     }
+    // Canonical --spec-draft-* names. The short --draft-p-* aliases still
+    // parse, but llama.cpp has already deleted the neighbouring --draft-max/
+    // --draft-min pair, so the aliases are the surface that gets pruned.
     if (
       profile.specDraftPSplit !== undefined &&
       profile.specDraftPSplit !== 0.1
     ) {
-      spawnArgs.push('--draft-p-split', profile.specDraftPSplit.toFixed(2));
+      spawnArgs.push(
+        '--spec-draft-p-split',
+        profile.specDraftPSplit.toFixed(2),
+      );
     }
     if (profile.specDraftPMin !== undefined && profile.specDraftPMin !== 0.0) {
-      spawnArgs.push('--draft-p-min', profile.specDraftPMin.toFixed(2));
+      spawnArgs.push('--spec-draft-p-min', profile.specDraftPMin.toFixed(2));
     }
   }
 
@@ -999,8 +1039,13 @@ export function buildLlamaServerArgs(
   spawnArgs.push('--cache-type-v', (profile as any).cacheTypeV ?? 'f16');
 
   // Memory Arguments
-  if (profile.mmap === false) spawnArgs.push('--no-mmap');
-  if (profile.mlock === true) spawnArgs.push('--mlock');
+  // llama.cpp has no --no-mmap/--mlock pair: loading mode is a single
+  // -lm/--load-mode enum. Both flags were unknown to llama-server, so a profile
+  // with mmap off or mlock on died at startup on an unrecognized argument.
+  // loadModeFor is the same mapping the optimizer probe uses
+  // (appendCommonFitArgs) — the estimate and the launch describe one load mode.
+  const loadMode = loadModeFor(profile.mmap, profile.mlock);
+  if (loadMode) spawnArgs.push('--load-mode', loadMode);
   if (profile.repack === false) spawnArgs.push('--no-repack');
 
   // Context Scaling Arguments (only applied when different from server defaults)
@@ -1086,9 +1131,9 @@ export function buildLlamaServerArgs(
   // Server Arguments
   spawnArgs.push(
     '--host',
-    (profile as any).host ?? '127.0.0.1',
+    (profile as any).host ?? DEFAULT_SERVER_HOST,
     '--port',
-    ((profile as any).port ?? 9931).toString(),
+    ((profile as any).port ?? DEFAULT_SERVER_PORT).toString(),
     '--parallel',
     ((profile as any).parallel !== undefined && (profile as any).parallel !== -1
       ? (profile as any).parallel
@@ -1100,8 +1145,9 @@ export function buildLlamaServerArgs(
   if ((profile as any).corsCredentials === false) {
     spawnArgs.push('--no-cors-credentials');
   }
-  if ((profile as any).corsOrigins && (profile as any).corsOrigins !== '*') {
-    spawnArgs.push('--cors-origins', (profile as any).corsOrigins);
+  const corsOrigins = normalizeCorsOrigins((profile as any).corsOrigins);
+  if (corsOrigins && corsOrigins !== '*') {
+    spawnArgs.push('--cors-origins', corsOrigins);
   }
   if (
     (profile as any).corsMethods &&
@@ -1111,6 +1157,29 @@ export function buildLlamaServerArgs(
   }
   if ((profile as any).corsHeaders && (profile as any).corsHeaders !== '*') {
     spawnArgs.push('--cors-headers', (profile as any).corsHeaders);
+  }
+
+  // llama.cpp v1.0.0 (#32115) refuses http(s) media URLs — an image_url part,
+  // for instance — that resolve to a local or private address. Synapse forwards
+  // attachment URLs verbatim, so a LAN-hosted image would break with no warning;
+  // the flag stays on unless a profile hardens it away deliberately.
+  if ((profile as any).mediaAllowPrivateUrls !== false) {
+    spawnArgs.push('--media-allow-private-urls');
+  }
+
+  // llama.cpp v1.0.0 (#32113) disables server tools and MCP servers entirely
+  // when the server binds beyond loopback and no API key is set. The key is the
+  // safe fix and is passed through the environment (never argv, where another
+  // user could read it from the process list), so this opt-in only ever applies
+  // when there is no key to send.
+  const serverHost = String((profile as any).host ?? DEFAULT_SERVER_HOST);
+  const hasApiKey = config.hasApiKey ?? hasLocalApiKey(profile.id);
+  if (
+    (profile as any).allowUnauthenticatedTools === true &&
+    !isLoopbackHost(serverHost) &&
+    !hasApiKey
+  ) {
+    spawnArgs.push('--allow-unauthenticated-tools');
   }
 
   // Custom Flags – one string per row, each row may be "--flag" (no value) or "--flag value"
@@ -1127,6 +1196,25 @@ export function buildLlamaServerArgs(
   spawnArgs.push('--metrics', '--no-ui');
 
   return spawnArgs;
+}
+
+// llama.cpp v0.8.0 (ggml#31035) caps distinct DRY sequence breakers at
+// LLAMA_DRY_MAX_SEQ_BREAKERS — each breaker costs O(n_vocab) at sampler init,
+// so the server rejects the request past the cap. Trim on our side and leave
+// a log line, rather than turning the message into an opaque 400.
+export const MAX_DRY_SEQUENCE_BREAKERS = 64;
+
+export function clampDrySequenceBreakers(
+  breakers: string[] | undefined,
+): string[] | undefined {
+  if (!Array.isArray(breakers) || breakers.length <= MAX_DRY_SEQUENCE_BREAKERS)
+    return breakers;
+  console.warn(
+    `[chat] dry_sequence_breakers: ${breakers.length} breakers exceed the ` +
+      `llama.cpp limit of ${MAX_DRY_SEQUENCE_BREAKERS}; keeping the first ` +
+      `${MAX_DRY_SEQUENCE_BREAKERS}.`,
+  );
+  return breakers.slice(0, MAX_DRY_SEQUENCE_BREAKERS);
 }
 
 // --- Build request body, only including profile fields that are defined ---
@@ -1191,8 +1279,11 @@ function buildChatBody(
       body.dry_allowed_length = dry.allowedLength;
     if (dry.penaltyLastN !== undefined)
       body.dry_penalty_last_n = dry.penaltyLastN;
-    if (dry.sequenceBreakers !== undefined)
-      body.dry_sequence_breakers = dry.sequenceBreakers;
+    if (dry.sequenceBreakers !== undefined) {
+      body.dry_sequence_breakers = clampDrySequenceBreakers(
+        dry.sequenceBreakers,
+      );
+    }
   }
 
   // Thinking / reasoning budget
@@ -1452,7 +1543,10 @@ export async function preloadSystemPrompt(
 // Shared tool-list construction for local and external loads. Projector
 // tools are dropped when no projector is in play (local: no mmproj file;
 // external: /props reports no vision modality).
-function buildActiveToolList(profile: Profile, projectorAvailable: boolean): any[] {
+function buildActiveToolList(
+  profile: Profile,
+  projectorAvailable: boolean,
+): any[] {
   if (!chatFunctions) chatFunctions = createChatFunctions();
   let tools = (profile.tools || [])
     .map((t) => chatFunctions[t])
@@ -1524,7 +1618,12 @@ async function loadExternalProfile(
   // endpoint and Authorization header.
   currentProfile = profile;
 
+  // Snapshot the credential for this backend too. An external server's key is
+  // normally stable, and holding it means every request in flight keeps the
+  // value the connection was made with; changing it here takes effect the next
+  // time the profile loads, exactly like a local server's key.
   const apiKey = getExternalApiKey(profile.id);
+  activeApiKey = apiKey;
 
   // Context window: an explicit value from the profile (the External
   // Server Settings slider) wins; otherwise discover llama.cpp's n_ctx
@@ -1762,6 +1861,11 @@ export async function loadProfile(
       onStatus?.({ phase: 'loadprofile', message: `Loading New Profile…` });
       activeTools = buildActiveToolList(profile, !!fullProjectorPath);
 
+      // Resolved before the command is built: --allow-unauthenticated-tools and
+      // the spawn environment must describe the same key, and the optimizer run
+      // above can take minutes while a profile save changes the store.
+      const localApiKey = getLocalApiKey(profile.id);
+
       const spawnArgs = buildLlamaServerArgs(profile, {
         modelPath: fullModelPath,
         projectorPath: fullProjectorPath,
@@ -1769,6 +1873,7 @@ export async function loadProfile(
         ctx: result.ctx,
         tensorSplit: result.tensorSplit ?? null,
         tensorOverrides: result.tensorOverrides ?? null,
+        hasApiKey: localApiKey !== null,
       });
 
       if (fullProjectorPath) {
@@ -1798,6 +1903,15 @@ export async function loadProfile(
         }
       }
 
+      // llama.cpp reads its API key from LLAMA_API_KEY as well as --api-key
+      // (arg.cpp set_env). Environment, not argv: a command line is readable by
+      // every process on the machine, so --api-key would leak the key. This is
+      // also the credential every request must carry from here on: llama.cpp
+      // latches it at startup, so a key saved later only applies to the next
+      // load and activeApiKey keeps serving the one this process knows.
+      activeApiKey = localApiKey;
+      if (activeApiKey) spawnEnv.LLAMA_API_KEY = activeApiKey;
+
       const proc = spawn(serverPath, spawnArgs, { env: spawnEnv });
       serverProcess = proc;
 
@@ -1813,6 +1927,9 @@ export async function loadProfile(
         if (serverProcess === proc) {
           serverProcess = null;
           currentProjector = null;
+          // The credential died with the process; a replacement load sets a new
+          // one, and nothing in between should send a stale Bearer header.
+          activeApiKey = null;
           if (!serverStopRequested) {
             const detail = getServerErrorDetail();
             const logs =
@@ -4073,6 +4190,8 @@ export async function unloadModel() {
   currentContextShift = null;
   currentSystemPrompt = '';
   lastPreloadStats = null;
+  // No server, no credential: the next load decides what it starts with.
+  activeApiKey = null;
 }
 
 export function hasConversationContext(): boolean {

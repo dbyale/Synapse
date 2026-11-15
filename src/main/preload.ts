@@ -31,6 +31,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   uninstallBinary: (kind: string, download: unknown, dir: string) =>
     ipcRenderer.invoke('binaries:uninstall', kind, download, dir),
   getBinaryDownloads: () => ipcRenderer.invoke('binaries:list'),
+  getInstalledBackends: () => ipcRenderer.invoke('backends:installed'),
+  uninstallBackendFolder: (folder: string) =>
+    ipcRenderer.invoke('backends:uninstall-folder', folder),
+  onBackendsChanged: (callback: () => void) => {
+    const subscription = () => callback();
+    ipcRenderer.on('backends:changed', subscription);
+    return () => {
+      ipcRenderer.removeListener('backends:changed', subscription);
+    };
+  },
   chatMemoryUsage: (): Promise<{
     modelVramUsage: number;
     contextVramUsage: number;
