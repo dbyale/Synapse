@@ -1736,6 +1736,7 @@ export default function ChatPage() {
   const location = useLocation();
 
   const {
+    sources: sessionSources,
     addSources,
     setActiveSession,
     setSources,
@@ -1746,7 +1747,7 @@ export default function ChatPage() {
     isOpen: isSourcesOpen,
   } = useSourcesContext();
 
-  const [showSourcesButton, setShowSourcesButton] = useState(false);
+  const [profileHasSourcesTools, setProfileHasSourcesTools] = useState(false);
   const [projectorLoaded, setProjectorLoaded] = useState(false);
   const [projectorChecked, setProjectorChecked] = useState(false);
   const [projectorWarning, setProjectorWarning] = useState<{
@@ -2142,7 +2143,7 @@ export default function ChatPage() {
   }, []);
 
   useEffect(() => {
-    setShowSourcesButton(false);
+    setProfileHasSourcesTools(false);
   }, [selectedProfileId]);
 
   useEffect(() => {
@@ -2151,14 +2152,20 @@ export default function ChatPage() {
     }
     const profile = profilesRef.current.find((p) => p.id === selectedProfileId);
     if (!profile?.tools) {
-      setShowSourcesButton(false);
+      setProfileHasSourcesTools(false);
       return;
     }
     const metas = getAllToolMetas();
-    setShowSourcesButton(
+    setProfileHasSourcesTools(
       profile.tools.some((name) => metas[name]?.tags?.includes('sources')),
     );
   }, [systemPhase, selectedProfileId]);
+
+  // Sources collected in this chat are always reachable, even when the current
+  // profile has no source-producing tools or nothing is loaded. Keep the toggle
+  // available while the panel is open so it can always be closed from the chat.
+  const showSourcesButton =
+    profileHasSourcesTools || isSourcesOpen || sessionSources.length > 0;
 
   const PROJECTOR_WARNING_EXIT_MS = 200;
 
