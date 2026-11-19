@@ -172,6 +172,7 @@ export const DRY_SEQUENCE_BREAKERS_TOOLTIP = [
 export const OPTIMIZATION_MODE_TOOLTIP = [
   'Synapse Optimizer: pick a context size and the optimizer offloads as many layers as the hardware allows for exactly that size.',
   'Manual: set GPU layers and context size yourself.',
+  'Llama default (developer only): Synapse solves nothing; llama.cpp picks the placement itself at startup.',
 ];
 
 export const SYNAPSE_OPTIMIZER_TOOLTIP =
@@ -179,6 +180,12 @@ export const SYNAPSE_OPTIMIZER_TOOLTIP =
 
 export const CUSTOM_TOOLTIP =
   'Switch to manual mode to independently adjust GPU layers and context size.';
+
+export const LLAMA_DEFAULT_TOOLTIP = [
+  'Developer only: Synapse runs no optimizer and pins no placement. llama.cpp decides layer offloading itself when the server starts (--n-gpu-layers auto, no tensor overrides).',
+  'Context size is still set by Synapse, so the context meter and context shifting stay accurate.',
+  'Use it to compare llama.cpp’s built-in fitter against the Synapse Optimizer.',
+];
 
 export const GPU_LAYERS_TOOLTIP = [
   'Number of transformer layers offloaded to the GPU (NGL).',
@@ -258,6 +265,30 @@ export const COMPUTE_OVERHEAD_TOOLTIP =
 
 export const FILE_BUFFER_TOOLTIP =
   'Memory reserved for file I/O buffering when loading model weights. Primarily used when MMAP is disabled.';
+
+export const LAYERS_MEM_TOOLTIP =
+  'Transformer layers and their tensors. On the GPU bar this is what -ngl offloaded; on the RAM bar, the layers below the -ngl cut that stay in system memory. Attention, norms and routing live here — no offload lever moves them on their own.';
+
+export const EXPERTS_MEM_TOOLTIP =
+  'MoE expert weights. --cpu-moe keeps every expert in system RAM, where only the few a token activates are read; --n-cpu-moe does that for the first N layers only and leaves the rest on the GPU. The expert cache exists to make those host reads cheaper, and the optimizer only funds it on the all-experts plan.';
+
+export const FFN_MEM_TOOLTIP =
+  'Dense feed-forward weights. --n-cpu-ffn keeps the FFN tensors of the first N layers in system RAM without moving the whole layer off the GPU, so attention and the KV cache stay on the device.';
+
+export const OUTPUT_HEAD_MEM_TOOLTIP =
+  'The output tensor on the device: output.weight, or a second copy of the embedding when the file ties its embeddings. llama.cpp counts the output slot as one of the offloaded layers.';
+
+export const EMBEDDING_MEM_TOOLTIP =
+  'token_embd and every other always-host tensor. The input embedding stays in system memory whatever -ngl says. Tensors --lazy-mode streams from the file are drawn as their own slice, not this one.';
+
+export const LAZY_MEM_TOOLTIP =
+  'Weights llama.cpp reads from the file when a token needs them instead of keeping them in system memory (--lazy-mode): the per-layer embedding tables. llama.cpp still reserves them in its host column, so they take room on this track, but they never become resident RAM and are not in the total. Shown hatched for that reason.';
+
+export const MOE_CACHE_MEM_TOOLTIP =
+  'The expert cache (--moe-cache-mib): GPU memory holding recently used experts so a cache hit needs no host read. The optimizer funds it only when every expert lives in system memory (--cpu-moe): with some experts pinned, the same VRAM buys a pool over a handful of layers instead of the layers themselves, so this slice is either all of the leftover or nothing. llama.cpp bills it inside the KV column, so it is drawn out of that slice rather than beside it.';
+
+export const MMPROJ_MEM_TOOLTIP =
+  'The vision projector: exact weight bytes from its own GGUF file, plus a capped reserve for the encoder buffers. No probe can measure it — the fit binary has no --mmproj — so this figure is analytic, and the optimizer budgets the same number.';
 
 export const VRAM_LABEL_TOOLTIP =
   'Video Memory (GPU) — used when layers are offloaded to the GPU. Running out of VRAM forces CPU fallback and slows inference.';
@@ -365,7 +396,34 @@ export const CPU_MOE_TOOLTIP = [
 export const N_CPU_MOE_TOOLTIP = [
   'Keeps the MoE weights of the first N layers in the CPU (--n-cpu-moe).',
   'Layers beyond N will have their MoE weights on the GPU.',
+  'The Synapse Optimizer never proposes this: a partial spill keeps most experts pinned and spends the VRAM it frees on a small expert cache. It is a raw override — set it and the optimizer leaves it alone.',
   'Default: 0.',
+];
+
+export const N_CPU_FFN_TOOLTIP = [
+  'Keeps the dense FFN weights of the first N layers in CPU memory (--n-cpu-ffn).',
+  'The dense-model counterpart of N CPU MoE: it frees GPU memory without moving a whole layer off the GPU, at the cost of host bandwidth.',
+  'The Synapse Optimizer never proposes it: a dense placement comes from llama.cpp’s own fitter, and on a MoE that VRAM is spent on the expert cache instead. A manual value is a raw override — set it and the optimizer measures with it.',
+  'Default: 0.',
+];
+
+export const MOE_CACHE_MIB_TOOLTIP = [
+  'GPU-resident cache for the experts kept in CPU memory, in MiB (--moe-cache-mib).',
+  'llama.cpp caps it at the expert bytes actually spilled, so it only does something when CPU MoE or N CPU MoE spills experts.',
+  'The Synapse Optimizer funds it on its --cpu-moe plan and gives it every byte of VRAM the spill freed; a manual value is a cap, not an instruction.',
+  'Default: 0 (disabled).',
+];
+
+export const MOE_CACHE_CPU_SHARE_TOOLTIP = [
+  'Share of expert-cache misses the CPU computes from host experts instead of uploading them to the GPU (--moe-cache-cpu-share).',
+  'It moves no cache out of VRAM: it decides who computes a miss, trading GPU uploads against CPU compute.',
+  'Range: 0.0–1.0. Default: 0.00.',
+];
+
+export const LAZY_MODE_TOOLTIP = [
+  'Reads certain tensors (for example per-layer embeddings) from disk on demand instead of keeping them resident (--lazy-mode).',
+  'auto: on, but only for tensors larger than 4 GiB. on: always. off: never.',
+  'The file is read through the OS page cache; where it cannot be mapped, the tensor is loaded into RAM in full instead. The RAM bar draws these bytes hatched and leaves them out of its total.',
 ];
 
 export const DRAFT_P_MIN_TOOLTIP = [

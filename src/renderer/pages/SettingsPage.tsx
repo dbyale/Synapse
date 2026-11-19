@@ -248,8 +248,13 @@ export default function SettingsPage() {
       let shouldPrompt = false;
       if (isMemChange) {
         const currentProfile = await window.electronAPI.chatGetCurrentProfile();
+        // Only a Synapse-solved profile has a cached placement that new
+        // budgets invalidate. Manual pins nothing; 'llama' (developer-only)
+        // re-fits inside the server at every start.
         shouldPrompt =
-          currentProfile !== null && currentProfile.autoOptimizer !== 'custom';
+          currentProfile !== null &&
+          currentProfile.autoOptimizer !== 'custom' &&
+          currentProfile.autoOptimizer !== 'llama';
       }
 
       if (shouldPrompt) {

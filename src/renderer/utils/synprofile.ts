@@ -75,6 +75,9 @@ function stripRuntimeFields(profile: Profile): Profile {
   delete next.estimation;
   delete next.tensorSplit;
   delete next.tensorOverrides;
+  // Solved for this machine's VRAM/RAM: meaningless (and misleading) on the
+  // importing one. The user's own MoE/FFN/cache fields above are portable.
+  delete next.optimizerPlan;
   delete next.maxForModel;
   delete next.maxLayers;
   delete next.maxContext;

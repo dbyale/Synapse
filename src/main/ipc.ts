@@ -1012,6 +1012,10 @@ export function registerIpcHandlers(win: BrowserWindow): void {
         parallel?: number;
         cpuMoe?: boolean;
         nCpuMoe?: number;
+        nCpuFfn?: number;
+        moeCacheMib?: number;
+        moeCacheCpuShare?: number;
+        lazyMode?: 'on' | 'off' | 'auto';
         mmprojOffload?: boolean;
         imageMinTokens?: number;
         imageMaxTokens?: number;
@@ -1057,6 +1061,13 @@ export function registerIpcHandlers(win: BrowserWindow): void {
           tensorSplit: result.tensorSplit ?? null,
           tensorOverrides: result.tensorOverrides ?? null,
           hostOverflowBytes: result.hostOverflowBytes ?? 0,
+          // The rest of the solved placement, plus the plan summary the modal
+          // explains. The renderer stores these as optimizerPlan.
+          cpuMoe: result.cpuMoe === true,
+          nCpuMoe: result.nCpuMoe ?? null,
+          nCpuFfn: result.nCpuFfn ?? null,
+          moeCacheMib: result.moeCacheMib ?? null,
+          plan: result.plan ?? null,
           vramMB,
           ramMB,
         };
@@ -1070,6 +1081,11 @@ export function registerIpcHandlers(win: BrowserWindow): void {
             tensorSplit: null,
             tensorOverrides: null,
             hostOverflowBytes: 0,
+            cpuMoe: false,
+            nCpuMoe: null,
+            nCpuFfn: null,
+            moeCacheMib: null,
+            plan: null,
             vramMB,
             ramMB,
           };
@@ -1098,6 +1114,10 @@ export function registerIpcHandlers(win: BrowserWindow): void {
         parallel?: number;
         cpuMoe?: boolean;
         nCpuMoe?: number;
+        nCpuFfn?: number;
+        moeCacheMib?: number;
+        moeCacheCpuShare?: number;
+        lazyMode?: 'on' | 'off' | 'auto';
         mmprojOffload?: boolean;
         imageMinTokens?: number;
         imageMaxTokens?: number;
@@ -1204,12 +1224,19 @@ export function registerIpcHandlers(win: BrowserWindow): void {
         parallel?: number;
         cpuMoe?: boolean;
         nCpuMoe?: number;
+        nCpuFfn?: number;
+        moeCacheMib?: number;
+        moeCacheCpuShare?: number;
+        lazyMode?: 'on' | 'off' | 'auto';
         mmprojOffload?: boolean;
         imageMinTokens?: number;
         imageMaxTokens?: number;
         mtmdBatchMaxTokens?: number;
         tensorSplit?: string | null;
         tensorOverrides?: string | null;
+        // Part of the placement being priced, not a display extra: spill and
+        // cache launch as a unit with the -ngl the plan solved.
+        optimizerPlan?: Profile['optimizerPlan'];
       },
     ) => {
       const modelsDir = getModelsDirectory();

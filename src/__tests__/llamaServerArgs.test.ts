@@ -61,6 +61,10 @@ const MEMORY_FLAGS = [
   '--parallel',
   '--cpu-moe',
   '--n-cpu-moe',
+  '--n-cpu-ffn',
+  '--moe-cache-mib',
+  '--moe-cache-cpu-share',
+  '--lazy-mode',
   '--load-mode',
   '--no-repack',
   '--rope-scaling',
@@ -127,6 +131,10 @@ function fullProfile(): any {
     parallel: 4,
     cpuMoe: false,
     nCpuMoe: 3,
+    nCpuFfn: 6,
+    moeCacheMib: 512,
+    moeCacheCpuShare: 0.25,
+    lazyMode: 'on',
     mmap: true,
     mlock: true,
     repack: false,
@@ -150,12 +158,16 @@ function fullProfile(): any {
   };
 }
 
-function fitFlags(profile: any, projectorPath?: string): string[] {
+function fitFlags(
+  profile: any,
+  projectorPath?: string,
+  mode?: string,
+): string[] {
   // Every flag advertised as supported: the probe itself is covered by the
   // real backend, here we want the mapping, not the skip logic.
   const supported = new Set(MEMORY_FLAGS);
   const args: string[] = [];
-  appendCommonFitArgs(args, supported, profile, projectorPath);
+  appendCommonFitArgs(args, supported, profile, projectorPath, mode as any);
   return args;
 }
 
@@ -282,6 +294,34 @@ describe('buildLlamaServerArgs against the pinned llama.cpp flag surface', () =>
     expect(emitted.has('--override-tensor')).toBe(false);
   });
 
+  it('llama default mode hands the whole placement to the server', () => {
+    // Developer-only mode: no Synapse solve, so nothing Synapse solved may be
+    // pinned — not the triple, and not the spill/cache knobs that travel with
+    // a plan. ctx stays pinned: it is the user's choice, not a placement.
+    const profile = {
+      autoOptimizer: 'llama',
+      optimizerPlan: { kind: 'moe', ngl: 33, nCpuMoe: 17, moeCacheMib: 397 },
+    };
+    const emitted = flagValues(
+      buildLlamaServerArgs(
+        profile as any,
+        {
+          modelPath: '/models/test.gguf',
+          ngl: null,
+          ctx: 8192,
+          tensorSplit: '1,2',
+          tensorOverrides: 'blk.10.ffn_down.exps=CPU',
+        } as any,
+      ),
+    );
+    expect(emitted.get('--n-gpu-layers')).toBe('auto');
+    expect(emitted.get('--ctx-size')).toBe('8192');
+    expect(emitted.has('--tensor-split')).toBe(false);
+    expect(emitted.has('--override-tensor')).toBe(false);
+    expect(emitted.has('--n-cpu-moe')).toBe(false);
+    expect(emitted.has('--moe-cache-mib')).toBe(false);
+  });
+
   it('always pins host and port explicitly', () => {
     const args = buildLlamaServerArgs(
       {} as any,
@@ -296,6 +336,148 @@ describe('buildLlamaServerArgs against the pinned llama.cpp flag surface', () =>
     // llama.cpp v0.7.0 (ggml#30159) moved the server default port to 9931.
     expect(emitted.get('--port')).toBe(String(DEFAULT_SERVER_PORT));
     expect(DEFAULT_SERVER_PORT).toBe(9931);
+  });
+});
+
+describe('optimizerPlan is the launch carrier for spill/cache knobs', () => {
+  // The profile's own cpuMoe/nCpuMoe/nCpuFfn/moeCacheMib are the caps the last
+  // solve ran under; the plan holds what the solve actually chose. Launching
+  // the plan's -ngl must launch the plan's placement, and nothing else may
+  // make those knobs stick across launches. The plan below carries more knobs
+  // than the current MoE rule ever writes on purpose: the launcher forwards
+  // whatever a plan says, including shapes the optimizer no longer produces.
+  const profile = {
+    cpuMoe: false,
+    nCpuMoe: 0,
+    nCpuFfn: 0,
+    moeCacheMib: 0,
+    moeCacheCpuShare: 0.25,
+    optimizerPlan: {
+      kind: 'moe',
+      ngl: 42,
+      cpuMoe: true,
+      nCpuMoe: 40,
+      nCpuFfn: 4,
+      moeCacheMib: 397,
+    },
+  };
+
+  it('launches the plan placement when the -ngl matches', () => {
+    const emitted = flagValues(
+      buildLlamaServerArgs(
+        profile as any,
+        {
+          modelPath: '/models/test.gguf',
+          ngl: 42,
+          ctx: 14000,
+        } as any,
+      ),
+    );
+    expect(emitted.get('--cpu-moe')).toBe(true);
+    expect(emitted.get('--n-cpu-ffn')).toBe('4');
+    expect(emitted.get('--moe-cache-mib')).toBe('397');
+    // The share is a user preference, not part of the solved placement.
+    expect(emitted.get('--moe-cache-cpu-share')).toBe('0.25');
+  });
+
+  it('launches --cpu-moe and its pool as one placement', () => {
+    // The optimizer's MoE rule: experts that do not all fit all go to the host
+    // and the freed VRAM becomes the pool. Both halves have to launch together
+    // — --cpu-moe with no pool is the slowest configuration llama.cpp measures
+    // — and --n-cpu-moe must not accompany --cpu-moe even though the plan
+    // carries the layer count it subsumes.
+    const emitted = flagValues(
+      buildLlamaServerArgs(
+        profile as any,
+        {
+          modelPath: '/models/test.gguf',
+          ngl: 42,
+          ctx: 8192,
+        } as any,
+      ),
+    );
+    expect(emitted.get('--cpu-moe')).toBe(true);
+    expect(emitted.has('--n-cpu-moe')).toBe(false);
+    expect(emitted.get('--moe-cache-mib')).toBe('397');
+  });
+
+  it('launches a partial spill verbatim when something else wrote the plan', () => {
+    // The optimizer no longer produces this shape: on a MoE it either pins every
+    // expert or moves all of them under --cpu-moe. A plan holding --n-cpu-moe
+    // therefore came from somewhere else, and the launcher's job is to pass it
+    // through exactly as written — including leaving the pool off when the plan
+    // does not ask for one.
+    const emitted = flagValues(
+      buildLlamaServerArgs(
+        {
+          ...profile,
+          optimizerPlan: { kind: 'moe', ngl: 42, nCpuMoe: 17, nCpuFfn: 4 },
+        } as any,
+        { modelPath: '/models/test.gguf', ngl: 42, ctx: 8192 } as any,
+      ),
+    );
+    expect(emitted.has('--cpu-moe')).toBe(false);
+    expect(emitted.get('--n-cpu-moe')).toBe('17');
+    expect(emitted.has('--moe-cache-mib')).toBe(false);
+    // No cache means no miss to route, so the share stays home too.
+    expect(emitted.has('--moe-cache-cpu-share')).toBe(false);
+  });
+
+  it('ignores a plan solved for a different -ngl', () => {
+    const emitted = flagValues(
+      buildLlamaServerArgs(
+        profile as any,
+        {
+          modelPath: '/models/test.gguf',
+          ngl: 30,
+          ctx: 8192,
+        } as any,
+      ),
+    );
+    expect(emitted.has('--n-cpu-moe')).toBe(false);
+    expect(emitted.has('--n-cpu-ffn')).toBe(false);
+    expect(emitted.has('--moe-cache-mib')).toBe(false);
+    // Manual pins on the profile itself still launch.
+    const manual = flagValues(
+      buildLlamaServerArgs(
+        { ...profile, nCpuMoe: 5 } as any,
+        { modelPath: '/models/test.gguf', ngl: 30, ctx: 8192 } as any,
+      ),
+    );
+    expect(manual.get('--n-cpu-moe')).toBe('5');
+  });
+
+  it('emits the cache CPU share only next to a cache', () => {
+    const noCache = flagValues(
+      buildLlamaServerArgs(
+        { moeCacheCpuShare: 0.5 } as any,
+        { modelPath: '/models/test.gguf', ngl: 9, ctx: 4096 } as any,
+      ),
+    );
+    expect(noCache.has('--moe-cache-cpu-share')).toBe(false);
+  });
+
+  it('leaves lazy-mode alone for auto on both sides', () => {
+    // auto is llama.cpp's own default; emitting it would be noise on the
+    // server and a phantom difference in the probe.
+    (['auto', undefined] as const).forEach((lazyMode) => {
+      const server = flagValues(
+        buildLlamaServerArgs(
+          { lazyMode } as any,
+          { modelPath: '/models/test.gguf', ngl: 9, ctx: 4096 } as any,
+        ),
+      );
+      const fit = flagValues(fitFlags({ lazyMode }));
+      expect(server.has('--lazy-mode')).toBe(false);
+      expect(fit.has('--lazy-mode')).toBe(false);
+    });
+    const on = flagValues(
+      buildLlamaServerArgs(
+        { lazyMode: 'on' } as any,
+        { modelPath: '/models/test.gguf', ngl: 9, ctx: 4096 } as any,
+      ),
+    );
+    expect(on.get('--lazy-mode')).toBe('on');
   });
 });
 
@@ -514,6 +696,27 @@ describe('server/estimator parity for memory-relevant flags', () => {
     const fit = flagValues(fitFlags({ parallel: -1 }));
     expect(server.get('--parallel')).toBe('1');
     expect(fit.get('--parallel')).toBe('1');
+  });
+
+  it('strips every placement pin in solve mode', () => {
+    // llama.cpp aborts a --fit run when tensor_buft_overrides are already set
+    // by the user, so the solve probe must arrive pin-free or the optimizer
+    // never gets an upstream answer.
+    const profile = fullProfile();
+    const solve = flagValues(fitFlags(profile, undefined, 'solve'));
+    const pins = [
+      '--cpu-moe',
+      '--n-cpu-moe',
+      '--n-cpu-ffn',
+      '--moe-cache-mib',
+      '--moe-cache-cpu-share',
+    ];
+    const offenders = pins.filter((flag) => solve.has(flag));
+    expect(offenders).toEqual([]);
+    // Memory-mode flags are not placement overrides: they still describe the
+    // run being solved and must survive.
+    expect(solve.get('--load-mode')).toBe('mmap+mlock');
+    expect(solve.get('--lazy-mode')).toBe('on');
   });
 });
 

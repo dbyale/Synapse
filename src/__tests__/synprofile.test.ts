@@ -41,10 +41,39 @@ describe('synprofile collections', () => {
           contextRamUsage: 1,
           computeOverheadRam: 1,
           fileBufferRam: 1,
-          projectorSkipped: false,
+          breakdown: {
+            vram: {
+              layers: 1,
+              experts: 0,
+              ffn: 0,
+              output: 0,
+              cache: 0,
+              mmprojWeights: 0,
+              mmprojEncoder: 0,
+            },
+            ram: {
+              layers: 1,
+              experts: 0,
+              ffn: 0,
+              embedding: 0,
+              lazy: 0,
+              mmprojWeights: 0,
+              mmprojEncoder: 0,
+            },
+            counts: {
+              gpuLayers: 8,
+              totalLayers: 12,
+              expertLayersSpilled: 0,
+              ffnLayersSpilled: 0,
+              cacheMib: 0,
+            },
+          },
         },
         tensorSplit: '1,1',
         tensorOverrides: 'blk.0=cpu',
+        optimizerPlan: { kind: 'moe', ngl: 12, moeCacheMib: 256 },
+        nCpuFfn: 4,
+        moeCacheMib: 512,
         maxLayers: 32,
         maxContext: 8192,
         maxForModel: 'test',
@@ -59,6 +88,10 @@ describe('synprofile collections', () => {
     );
     expect(record.profile).not.toHaveProperty('estimation');
     expect(record.profile).not.toHaveProperty('tensorSplit');
+    // The solved placement is machine-specific; the user's caps are portable.
+    expect(record.profile).not.toHaveProperty('optimizerPlan');
+    expect(record.profile.nCpuFfn).toBe(4);
+    expect(record.profile.moeCacheMib).toBe(512);
     expect(record.profile).not.toHaveProperty('allocatedRAM');
   });
 

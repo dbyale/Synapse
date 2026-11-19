@@ -1,4 +1,5 @@
 import { Profile } from './types/profile';
+import type { MemoryEstimate } from './types/profile';
 import type {
   SavedSession,
   SessionView,
@@ -364,6 +365,10 @@ export interface HardwareStats {
 declare global {
   interface Window {
     electronAPI: {
+      // True in dev runs and DEBUG_PROD builds (same predicate as the main
+      // process's menu/onboarding dev gate).
+      isDev: boolean;
+
       // Search & Models
       searchModels: (
         query: string,
@@ -654,6 +659,10 @@ declare global {
         parallel?: number;
         cpuMoe?: boolean;
         nCpuMoe?: number;
+        nCpuFfn?: number;
+        moeCacheMib?: number;
+        moeCacheCpuShare?: number;
+        lazyMode?: 'on' | 'off' | 'auto';
         mmprojOffload?: boolean;
         imageMinTokens?: number;
         imageMaxTokens?: number;
@@ -667,6 +676,21 @@ declare global {
         tensorSplit: string | null;
         tensorOverrides: string | null;
         hostOverflowBytes: number;
+        // The solved placement beyond -ngl/-ts/-ot, and the plan summary.
+        cpuMoe: boolean;
+        nCpuMoe: number | null;
+        nCpuFfn: number | null;
+        moeCacheMib: number | null;
+        plan: {
+          kind: 'dense' | 'moe';
+          label: string;
+          maxCtx: number;
+          clampedBy: string;
+          forced: boolean;
+          hostOverflowBytes: number;
+          gpuLayers?: number;
+          totalLayers?: number;
+        } | null;
         // Undefined in automatic mode (no fixed budgets).
         vramMB?: number;
         ramMB?: number;
@@ -687,6 +711,10 @@ declare global {
         parallel?: number;
         cpuMoe?: boolean;
         nCpuMoe?: number;
+        nCpuFfn?: number;
+        moeCacheMib?: number;
+        moeCacheCpuShare?: number;
+        lazyMode?: 'on' | 'off' | 'auto';
         mmprojOffload?: boolean;
         imageMinTokens?: number;
         imageMaxTokens?: number;
@@ -710,22 +738,18 @@ declare global {
         parallel?: number;
         cpuMoe?: boolean;
         nCpuMoe?: number;
+        nCpuFfn?: number;
+        moeCacheMib?: number;
+        moeCacheCpuShare?: number;
+        lazyMode?: 'on' | 'off' | 'auto';
         mmprojOffload?: boolean;
         imageMinTokens?: number;
         imageMaxTokens?: number;
         mtmdBatchMaxTokens?: number;
         tensorSplit?: string | null;
         tensorOverrides?: string | null;
-      }) => Promise<{
-        modelVramUsage: number;
-        contextVramUsage: number;
-        computeOverheadVram: number;
-        modelRamUsage: number;
-        contextRamUsage: number;
-        computeOverheadRam: number;
-        fileBufferRam: number;
-        projectorSkipped: boolean;
-      }>;
+        optimizerPlan?: Profile['optimizerPlan'];
+      }) => Promise<MemoryEstimate>;
 
       // ── Extensions API ──
       extensionsList: () => Promise<

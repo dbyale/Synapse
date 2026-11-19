@@ -1,6 +1,13 @@
 import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron';
+import type { MemoryEstimate, Profile } from '../renderer/types/profile';
 
 contextBridge.exposeInMainWorld('electronAPI', {
+  // Environment. Mirrors the main-process dev check (menu.ts, main.ts):
+  // electron-forge dev runs and DEBUG_PROD builds. The renderer gates
+  // developer-only UI on this, so it must be the same predicate.
+  isDev:
+    process.env.NODE_ENV === 'development' || process.env.DEBUG_PROD === 'true',
+
   // Settings
   loadSettings: () => ipcRenderer.invoke('settings:load'),
   saveSettings: (settings: unknown) =>
@@ -223,10 +230,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     value: string,
   ): Promise<{ success: boolean; error?: string; unencrypted?: boolean }> =>
     ipcRenderer.invoke('secrets:set', scope, key, value),
-  secretDelete: (
-    scope: string,
-    key: string,
-  ): Promise<{ success: boolean }> =>
+  secretDelete: (scope: string, key: string): Promise<{ success: boolean }> =>
     ipcRenderer.invoke('secrets:delete', scope, key),
   secretHas: (
     scope: string,
@@ -406,6 +410,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     parallel?: number;
     cpuMoe?: boolean;
     nCpuMoe?: number;
+    nCpuFfn?: number;
+    moeCacheMib?: number;
+    moeCacheCpuShare?: number;
+    lazyMode?: 'on' | 'off' | 'auto';
     mmprojOffload?: boolean;
     imageMinTokens?: number;
     imageMaxTokens?: number;
@@ -417,6 +425,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
     tensorSplit: string | null;
     tensorOverrides: string | null;
     hostOverflowBytes: number;
+    cpuMoe: boolean;
+    nCpuMoe: number | null;
+    nCpuFfn: number | null;
+    moeCacheMib: number | null;
+    plan: {
+      kind: 'dense' | 'moe';
+      label: string;
+      maxCtx: number;
+      clampedBy: string;
+      forced: boolean;
+      hostOverflowBytes: number;
+      gpuLayers?: number;
+      totalLayers?: number;
+    } | null;
     vramMB?: number;
     ramMB?: number;
   }> => ipcRenderer.invoke('profile:runOptimizer', params),
@@ -460,22 +482,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
     parallel?: number;
     cpuMoe?: boolean;
     nCpuMoe?: number;
+    nCpuFfn?: number;
+    moeCacheMib?: number;
+    moeCacheCpuShare?: number;
+    lazyMode?: 'on' | 'off' | 'auto';
     mmprojOffload?: boolean;
     imageMinTokens?: number;
     imageMaxTokens?: number;
     mtmdBatchMaxTokens?: number;
     tensorSplit?: string | null;
     tensorOverrides?: string | null;
-  }): Promise<{
-    modelVramUsage: number;
-    contextVramUsage: number;
-    computeOverheadVram: number;
-    modelRamUsage: number;
-    contextRamUsage: number;
-    computeOverheadRam: number;
-    fileBufferRam: number;
-    projectorSkipped: boolean;
-  }> => ipcRenderer.invoke('profile:estimateMemory', params),
+    // The solved placement travels with the request so the probe prices the
+    // same spill and cache the server will launch with (see effectivePlacement).
+    optimizerPlan?: Profile['optimizerPlan'];
+  }): Promise<MemoryEstimate> =>
+    ipcRenderer.invoke('profile:estimateMemory', params),
 
   getPlatform: (): Promise<string> => ipcRenderer.invoke('get-platform'),
 

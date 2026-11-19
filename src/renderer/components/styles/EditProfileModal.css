@@ -1036,6 +1036,35 @@
   font-weight: 600;
 }
 
+/* The optimizer's final answer: one line per thing the plan decides (layers,
+   experts, expert cache, FFN spill, context ceiling). It sits with the sliders
+   because it is their readout — the flags the server starts with. */
+.epm-perf-plan {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.epm-perf-plan-head {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 3px;
+}
+
+.epm-perf-plan-line {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
 .epm-perf-range {
   -webkit-appearance: none;
   appearance: none;
@@ -1165,6 +1194,11 @@
   flex-wrap: wrap;
 }
 
+/* The RAM legend follows the VRAM bar; keep the two blocks apart. */
+.epm-mem-legend--ram {
+  margin-top: 14px;
+}
+
 .epm-mem-legend-total {
   display: flex;
   align-items: center;
@@ -1208,6 +1242,48 @@
 .epm-mem-dot--free {
   background: transparent;
   border: 1px dashed var(--border);
+}
+
+/* Placement slices: the layer types an offload lever can move, the expert
+   cache, and the projector. Layers/compute reuse the weights/overhead hues
+   because they are what those columns are made of. */
+.epm-mem-dot--layers {
+  background: #5b21b6;
+}
+
+.epm-mem-dot--experts {
+  background: #14b8a6;
+}
+
+.epm-mem-dot--ffn {
+  background: #a3e635;
+}
+
+.epm-mem-dot--output {
+  background: #e879f9;
+}
+
+.epm-mem-dot--embedding {
+  background: #c026d3;
+}
+
+/* Streamed weights (--lazy-mode): the embedding hue, hatched. llama.cpp
+   reserves these bytes in its host column and then reads them from the file,
+   so they take room on the track without becoming resident RAM. */
+.epm-mem-dot--lazy {
+  background: repeating-linear-gradient(135deg, #c026d3 0 2px, #6b1178 2px 4px);
+}
+
+.epm-mem-dot--cache {
+  background: #22d3ee;
+}
+
+.epm-mem-dot--mmproj {
+  background: #fb7185;
+}
+
+.epm-mem-dot--compute {
+  background: #6b7280;
 }
 
 .epm-mem-bar-wrap {
@@ -1259,6 +1335,46 @@
 
 .epm-mem-segment--free {
   background: transparent;
+}
+
+.epm-mem-segment--layers {
+  background: #5b21b6;
+}
+
+.epm-mem-segment--experts {
+  background: #14b8a6;
+}
+
+.epm-mem-segment--ffn {
+  background: #a3e635;
+}
+
+.epm-mem-segment--output {
+  background: #e879f9;
+}
+
+.epm-mem-segment--embedding {
+  background: #c026d3;
+}
+
+.epm-mem-segment--lazy {
+  background: repeating-linear-gradient(
+    135deg,
+    #c026d3 0 5px,
+    #6b1178 5px 10px
+  );
+}
+
+.epm-mem-segment--cache {
+  background: #22d3ee;
+}
+
+.epm-mem-segment--mmproj {
+  background: #fb7185;
+}
+
+.epm-mem-segment--compute {
+  background: #6b7280;
 }
 
 .epm-mem-segment--loading {

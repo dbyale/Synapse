@@ -24,6 +24,7 @@ import {
   resolveBudgets,
   logFitCancelled,
   loadModeFor,
+  firstSplitPart,
 } from './estimator';
 import { addTokenUsage, addWebSearch, getUsage } from './usage';
 import type { UsageStore } from '../renderer/utils/usage';
@@ -913,12 +914,15 @@ export function buildLlamaServerArgs(
   }
   // Model Arguments
   const spawnArgs = ['--model', config.modelPath];
-  // Auto layers apply in manual mode only. The Synapse Optimizer always
-  // launches its explicit ngl + triple (the triple is invalid under auto),
-  // so a default-on hidden toggle can never silently drop the solution.
+  // Auto layers: 'llama' (developer-only mode) hands placement to llama.cpp's
+  // own fitter unconditionally; in manual mode the same is a toggle. The
+  // Synapse Optimizer always launches its explicit ngl + triple (the triple is
+  // invalid under auto), so a default-on hidden toggle can never silently drop
+  // the solution.
   const layersAuto =
-    (profile as any).autoOptimizer === 'custom' &&
-    (profile as any).gpuLayersAuto;
+    (profile as any).autoOptimizer === 'llama' ||
+    ((profile as any).autoOptimizer === 'custom' &&
+      (profile as any).gpuLayersAuto);
   // Unsolved Synapse state (ngl/ctx null) omits both flags from the command
   // rather than previewing a phantom 0. With gpuLayersAuto the server fits
   // live, so 'auto' is still emitted even when no explicit ngl is set.
@@ -945,38 +949,42 @@ export function buildLlamaServerArgs(
   }
 
   // Projector Arguments
+  // Everything past --mmproj configures the projector itself, so it is only
+  // emitted when there is one — the fit probe gates the same block on the
+  // projector file, and a launch that measured without these must not run
+  // with them.
   if (config.projectorPath) {
     spawnArgs.push('--mmproj', config.projectorPath);
-  }
-  if ((profile as any).mmprojOffload !== true) {
-    spawnArgs.push('--no-mmproj-offload');
-  }
-  if (
-    (profile as any).imageMinTokens !== undefined &&
-    (profile as any).imageMinTokens > 0
-  ) {
-    spawnArgs.push(
-      '--image-min-tokens',
-      (profile as any).imageMinTokens.toString(),
-    );
-  }
-  if (
-    (profile as any).imageMaxTokens !== undefined &&
-    (profile as any).imageMaxTokens > 0
-  ) {
-    spawnArgs.push(
-      '--image-max-tokens',
-      (profile as any).imageMaxTokens.toString(),
-    );
-  }
-  if (
-    (profile as any).mtmdBatchMaxTokens !== undefined &&
-    (profile as any).mtmdBatchMaxTokens !== 1024
-  ) {
-    spawnArgs.push(
-      '--mtmd-batch-max-tokens',
-      (profile as any).mtmdBatchMaxTokens.toString(),
-    );
+    if ((profile as any).mmprojOffload !== true) {
+      spawnArgs.push('--no-mmproj-offload');
+    }
+    if (
+      (profile as any).imageMinTokens !== undefined &&
+      (profile as any).imageMinTokens > 0
+    ) {
+      spawnArgs.push(
+        '--image-min-tokens',
+        (profile as any).imageMinTokens.toString(),
+      );
+    }
+    if (
+      (profile as any).imageMaxTokens !== undefined &&
+      (profile as any).imageMaxTokens > 0
+    ) {
+      spawnArgs.push(
+        '--image-max-tokens',
+        (profile as any).imageMaxTokens.toString(),
+      );
+    }
+    if (
+      (profile as any).mtmdBatchMaxTokens !== undefined &&
+      (profile as any).mtmdBatchMaxTokens !== 1024
+    ) {
+      spawnArgs.push(
+        '--mtmd-batch-max-tokens',
+        (profile as any).mtmdBatchMaxTokens.toString(),
+      );
+    }
   }
 
   // Draft Model Arguments
@@ -984,9 +992,11 @@ export function buildLlamaServerArgs(
     spawnArgs.push('--spec-type', profile.specType.join(','));
 
     const draftModelPath = profile.draftModelFilename
-      ? path.join(
-          getModelsDirectory(),
-          `${profile.draftModelAuthor}/${profile.draftModelFolder}/${profile.draftModelFilename}`,
+      ? firstSplitPart(
+          path.join(
+            getModelsDirectory(),
+            `${profile.draftModelAuthor}/${profile.draftModelFolder}/${profile.draftModelFilename}`,
+          ),
         )
       : undefined;
     if (
@@ -1020,14 +1030,38 @@ export function buildLlamaServerArgs(
     }
   }
 
-  // MoE Arguments
-  if (profile.cpuMoe === true) spawnArgs.push('--cpu-moe');
-  if (
-    profile.nCpuMoe !== undefined &&
-    profile.nCpuMoe > 0 &&
-    profile.cpuMoe !== true
-  ) {
-    spawnArgs.push('--n-cpu-moe', profile.nCpuMoe.toString());
+  // MoE / FFN placement. Expert spill, dense-FFN spill and the expert cache are
+  // one solved placement, not three knobs: llama.cpp caps the cache at the spill
+  // and a spill without its cache re-uploads experts per token. So when the
+  // optimizer produced a plan for the -ngl being launched, the plan supplies
+  // them; the profile's own fields are the manual case (and, for an optimized
+  // profile, the caps the last solve ran under — overwriting those would
+  // ratchet the profile on every launch).
+  const plan = profile.optimizerPlan;
+  const fromPlan =
+    !layersAuto &&
+    plan != null &&
+    config.ngl != null &&
+    plan.ngl === config.ngl;
+  const cpuMoeAll = fromPlan ? plan.cpuMoe === true : profile.cpuMoe === true;
+  const nCpuMoe = fromPlan ? (plan.nCpuMoe ?? 0) : (profile.nCpuMoe ?? 0);
+  const nCpuFfn = fromPlan ? (plan.nCpuFfn ?? 0) : (profile.nCpuFfn ?? 0);
+  const moeCacheMib = fromPlan
+    ? (plan.moeCacheMib ?? 0)
+    : (profile.moeCacheMib ?? 0);
+  if (cpuMoeAll) spawnArgs.push('--cpu-moe');
+  if (nCpuMoe > 0 && !cpuMoeAll) {
+    spawnArgs.push('--n-cpu-moe', nCpuMoe.toString());
+  }
+  if (nCpuFfn > 0) spawnArgs.push('--n-cpu-ffn', nCpuFfn.toString());
+  if (moeCacheMib > 0) {
+    spawnArgs.push('--moe-cache-mib', moeCacheMib.toString());
+    // Only meaningful with a cache: it decides who computes a cache MISS, not
+    // where the cache lives, so it is emitted next to the size it qualifies.
+    const share = profile.moeCacheCpuShare ?? 0;
+    if (share > 0) {
+      spawnArgs.push('--moe-cache-cpu-share', share.toFixed(2));
+    }
   }
 
   // Cache Arguments
@@ -1047,6 +1081,11 @@ export function buildLlamaServerArgs(
   const loadMode = loadModeFor(profile.mmap, profile.mlock);
   if (loadMode) spawnArgs.push('--load-mode', loadMode);
   if (profile.repack === false) spawnArgs.push('--no-repack');
+  // llama.cpp already defaults to auto (on, but only past 4 GiB), so an
+  // explicit auto would be noise; on/off is the only thing worth a flag.
+  if (profile.lazyMode && profile.lazyMode !== 'auto') {
+    spawnArgs.push('--lazy-mode', profile.lazyMode);
+  }
 
   // Context Scaling Arguments (only applied when different from server defaults)
   const scalingMethod = (profile as any).rope?.scaling;
@@ -1647,7 +1686,7 @@ async function loadExternalProfile(
   }
 
   currentContextSize =
-    (profile.contextSize ?? null) ?? n_ctx ?? EXTERNAL_DEFAULT_CONTEXT_SIZE;
+    profile.contextSize ?? n_ctx ?? EXTERNAL_DEFAULT_CONTEXT_SIZE;
   currentProjector = vision ? 'external' : null;
 
   activeTools = buildActiveToolList(profile, vision);
@@ -1729,7 +1768,11 @@ export async function loadProfile(
 
       // Prep work + optimizer run concurrently with old server shutdown
       const settings = loadSettings();
-      const fullModelPath = path.join(getModelsDirectory(), profile.model);
+      // A split GGUF (a custom model kept in parts) only loads from its first
+      // part; the optimizer sizes it from all of them.
+      const fullModelPath = firstSplitPart(
+        path.join(getModelsDirectory(), profile.model),
+      );
       const { backendFolder, serverPath } = await resolveBackend(settings);
       console.log(`Backend: ${backendFolder}`);
 
@@ -1740,7 +1783,7 @@ export async function loadProfile(
         : undefined;
 
       let result: {
-        ngl: number;
+        ngl: number | null;
         ctx: number;
         tensorSplit?: string | null;
         tensorOverrides?: string | null;
@@ -1788,9 +1831,27 @@ export async function loadProfile(
           tensorOverrides: null,
           memory: null,
         };
+      } else if (autoOptimizer === 'llama') {
+        // Developer-only mode: Synapse solves nothing and pins nothing. A null
+        // ngl makes buildLlamaServerArgs emit --n-gpu-layers auto (llama.cpp's
+        // own fitter decides placement at startup); ctx stays ours so the
+        // context meter and context-shift still describe the running server.
+        result = {
+          ngl: null,
+          ctx:
+            typeof (profile as any).contextSize === 'number'
+              ? (profile as any).contextSize
+              : 4096,
+          tensorSplit: null,
+          tensorOverrides: null,
+          memory: null,
+        };
+        // A plan solved by Synapse must not ride into a llama-fitted launch.
+        (profile as any).optimizerPlan = null;
       } else if (hasValidCustom) {
         // User-pinned ngl/ctx: a stale optimizer triple must NOT ride along,
-        // it was solved for different values.
+        // it was solved for different values. Same for the spill/cache plan —
+        // even a plan whose -ngl happens to match was solved for another ctx.
         result = {
           ngl: (profile as any).layers,
           ctx: (profile as any).contextSize,
@@ -1798,6 +1859,7 @@ export async function loadProfile(
           tensorOverrides: null,
           memory: null,
         };
+        (profile as any).optimizerPlan = null;
       } else if (hasValidCached) {
         result = {
           ngl: (profile as any).layers,
@@ -1839,6 +1901,27 @@ export async function loadProfile(
         }
         (profile as any).tensorSplit = optResult.tensorSplit ?? null;
         (profile as any).tensorOverrides = optResult.tensorOverrides ?? null;
+        // The rest of the placement, kept apart from the user's own MoE/FFN
+        // fields (see Profile.optimizerPlan): buildLlamaServerArgs launches it
+        // whenever the -ngl it was solved for is the -ngl being launched.
+        (profile as any).optimizerPlan = optResult.plan
+          ? {
+              kind: optResult.plan.kind,
+              ngl: optResult.ngl,
+              cpuMoe: optResult.cpuMoe === true,
+              nCpuMoe: optResult.nCpuMoe ?? undefined,
+              nCpuFfn: optResult.nCpuFfn ?? undefined,
+              moeCacheMib: optResult.moeCacheMib ?? undefined,
+              gpuLayers: optResult.plan?.gpuLayers,
+              totalLayers: optResult.plan?.totalLayers,
+              maxCtx: optResult.plan.maxCtx,
+              clampedBy: optResult.plan.clampedBy,
+              forced: optResult.plan.forced,
+              hostOverflowBytes: optResult.plan.hostOverflowBytes,
+              streamedHostBytes: optResult.plan.streamedHostBytes,
+              label: optResult.plan.label,
+            }
+          : null;
         updatedProfile = { ...profile };
       }
 
@@ -1883,7 +1966,7 @@ export async function loadProfile(
       }
 
       console.log(
-        `NGL=${result.ngl}, Context=${result.ctx}, autoOptimizer=${(profile as any).autoOptimizer}`,
+        `NGL=${result.ngl ?? 'auto'}, Context=${result.ctx}, autoOptimizer=${(profile as any).autoOptimizer}`,
       );
       onStatus?.({ phase: 'starting', message: 'Loading AI Model…' });
 
@@ -2004,7 +2087,7 @@ export async function loadProfile(
           console.error(
             `[llama-server] Startup timed out after ${STARTUP_WAIT_SEC}s waiting for /health ` +
               `(model=${path.basename(fullModelPath)}, ` +
-              `NGL=${result.ngl}, Context=${result.ctx}). ` +
+              `NGL=${result.ngl ?? 'auto'}, Context=${result.ctx}). ` +
               `The server process is still alive, so the model was likely still loading — ` +
               `very large models can take several minutes. Last server output:\n` +
               `${lastServerStderr.slice(-4000)}`,

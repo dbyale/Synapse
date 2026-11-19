@@ -34,6 +34,7 @@ import {
   Scissors,
   Download,
   RotateCcw,
+  Terminal,
 } from 'lucide-react';
 import {
   Profile,
@@ -45,6 +46,15 @@ import {
 import type { LocalModel } from '../preload.d';
 import { getToolMeta, getAvailableToolNames } from '../utils/extensionData';
 import { svgToDataUrl } from '../utils/svgToDataUrl';
+import {
+  barSegmentLabel,
+  barUsedBytes,
+  buildRamBar,
+  buildVramBar,
+  type BarSegment,
+  type BarSegmentKey,
+  type BarSide,
+} from '../utils/memoryBar';
 import { resolveIcon } from './workflows/IconPicker';
 import ToolListModal from './ToolListModal';
 import ExtensionSettingsForm from './ExtensionSettingsForm';
@@ -65,6 +75,7 @@ import type {
   SettingsBag,
 } from '../../shared/extensionSettings';
 import { formatBytes } from '../utils/formatters';
+import { planSummaryLines } from '../utils/planSummary';
 import InfoTooltip from './InfoTooltip';
 import {
   PROFILE_NAME_TOOLTIP,
@@ -97,6 +108,7 @@ import {
   OPTIMIZATION_MODE_TOOLTIP,
   SYNAPSE_OPTIMIZER_TOOLTIP,
   CUSTOM_TOOLTIP,
+  LLAMA_DEFAULT_TOOLTIP,
   GPU_LAYERS_TOOLTIP,
   GPU_LAYERS_AUTO_TOOLTIP,
   CONTEXT_SIZE_TOOLTIP,
@@ -106,10 +118,17 @@ import {
   MMAP_TOOLTIP,
   MLOCK_TOOLTIP,
   REPACK_TOOLTIP,
-  MODEL_WEIGHTS_TOOLTIP,
   KV_CACHE_MEM_TOOLTIP,
   COMPUTE_OVERHEAD_TOOLTIP,
   FILE_BUFFER_TOOLTIP,
+  LAYERS_MEM_TOOLTIP,
+  EXPERTS_MEM_TOOLTIP,
+  FFN_MEM_TOOLTIP,
+  OUTPUT_HEAD_MEM_TOOLTIP,
+  EMBEDDING_MEM_TOOLTIP,
+  LAZY_MEM_TOOLTIP,
+  MOE_CACHE_MEM_TOOLTIP,
+  MMPROJ_MEM_TOOLTIP,
   VRAM_LABEL_TOOLTIP,
   RAM_LABEL_TOOLTIP,
   DRAFT_MODEL_TOOLTIP,
@@ -120,6 +139,10 @@ import {
   DRAFT_P_MIN_TOOLTIP,
   CPU_MOE_TOOLTIP,
   N_CPU_MOE_TOOLTIP,
+  N_CPU_FFN_TOOLTIP,
+  MOE_CACHE_MIB_TOOLTIP,
+  MOE_CACHE_CPU_SHARE_TOOLTIP,
+  LAZY_MODE_TOOLTIP,
   FLASH_ATTENTION_TOOLTIP,
   CORS_ORIGINS_TOOLTIP,
   CORS_METHODS_TOOLTIP,
@@ -1366,8 +1389,145 @@ function ToolCategoryCard({
 
 // ── Page content components ──
 
-const autoOptimizerLabel = (v: 'synapse' | 'custom') =>
-  v === 'synapse' ? 'Synapse Optimizer' : 'Manual';
+const AUTO_OPTIMIZER_LABELS: Record<'synapse' | 'custom' | 'llama', string> = {
+  synapse: 'Synapse Optimizer',
+  custom: 'Manual',
+  // Developer-only mode (see LLAMA_DEFAULT_TOOLTIP).
+  llama: 'Llama default',
+};
+
+const autoOptimizerLabel = (v: 'synapse' | 'custom' | 'llama') =>
+  AUTO_OPTIMIZER_LABELS[v];
+
+const gb = (bytes: number) => (bytes / 1024 ** 3).toFixed(2);
+
+// What each slice of the memory bars is, in words. The bar itself is drawn from
+// the measured columns; these say what the slice means for the placement.
+const SEGMENT_TOOLTIPS: Partial<Record<BarSegmentKey, string>> = {
+  layers: LAYERS_MEM_TOOLTIP,
+  experts: EXPERTS_MEM_TOOLTIP,
+  ffn: FFN_MEM_TOOLTIP,
+  output: OUTPUT_HEAD_MEM_TOOLTIP,
+  embedding: EMBEDDING_MEM_TOOLTIP,
+  lazy: LAZY_MEM_TOOLTIP,
+  cache: MOE_CACHE_MEM_TOOLTIP,
+  mmproj: MMPROJ_MEM_TOOLTIP,
+  ctx: KV_CACHE_MEM_TOOLTIP,
+  compute: COMPUTE_OVERHEAD_TOOLTIP,
+  buffer: FILE_BUFFER_TOOLTIP,
+};
+
+const segmentTooltip = (side: BarSide, s: BarSegment): string[] => {
+  const lines = [`${barSegmentLabel(side, s.key)}: ${gb(s.bytes)}GB`];
+  if (s.note) lines.push(s.note);
+  const help = SEGMENT_TOOLTIPS[s.key];
+  if (help) lines.push(help);
+  return lines;
+};
+
+/**
+ * One memory track: legend, then the slices. Everything comes from
+ * buildVramBar/buildRamBar, so the widths always sum to the total printed at the
+ * right edge, and a slice too thin to see is still listed in the legend.
+ */
+function MemoryBar({
+  side,
+  memory,
+  total,
+}: {
+  side: BarSide;
+  memory: MemoryEstimate | null;
+  total: number;
+}) {
+  const label = side === 'vram' ? 'VRAM' : 'RAM';
+  // The RAM block sits under the VRAM one and needs the gap the old markup
+  // carried inline.
+  const legendClass =
+    side === 'ram' ? 'epm-mem-legend epm-mem-legend--ram' : 'epm-mem-legend';
+  if (!memory || total <= 0) {
+    return (
+      <>
+        <div className={legendClass}>
+          <span className="epm-mem-legend-total">
+            <strong>Total: — GB</strong>
+          </span>
+        </div>
+        <div className="epm-mem-bar-wrap">
+          <div className="epm-mem-bar-label-inline">{label}</div>
+          <div className="epm-mem-bar-track">
+            <div
+              className="epm-mem-segment epm-mem-segment--loading"
+              style={{ width: '100%' }}
+            />
+          </div>
+          <div className="epm-mem-bar-total">— GB</div>
+        </div>
+      </>
+    );
+  }
+  const segments =
+    side === 'vram' ? buildVramBar(memory, total) : buildRamBar(memory, total);
+  return (
+    <>
+      <div className={legendClass}>
+        <span className="epm-mem-legend-total">
+          <strong>Total: {gb(barUsedBytes(memory, side))}GB</strong>
+        </span>
+        {segments.map((s) =>
+          s.key === 'free' ? (
+            <span key={s.key} className="epm-mem-legend-item">
+              <span className="epm-mem-dot epm-mem-dot--free" /> Free (
+              {gb(s.bytes)}GB)
+            </span>
+          ) : (
+            <span key={s.key} className="epm-mem-legend-item">
+              <span className={`epm-mem-dot epm-mem-dot--${s.key}`} />
+              <InfoTooltip
+                content={segmentTooltip(side, s)}
+                side="right"
+                hideIcon
+                portal
+                title={barSegmentLabel(side, s.key)}
+              >
+                <span>
+                  {barSegmentLabel(side, s.key)} ({gb(s.bytes)}GB)
+                  {s.note ? ` · ${s.note}` : ''}
+                </span>
+              </InfoTooltip>
+            </span>
+          ),
+        )}
+      </div>
+      <div className="epm-mem-bar-wrap">
+        <InfoTooltip
+          content={side === 'vram' ? VRAM_LABEL_TOOLTIP : RAM_LABEL_TOOLTIP}
+          side="right"
+          hideIcon
+          title={label}
+        >
+          <div className="epm-mem-bar-label-inline">{label}</div>
+        </InfoTooltip>
+        <div className="epm-mem-bar-track">
+          {segments
+            .filter((s) => s.visible)
+            .map((s) => (
+              <InfoTooltip
+                key={s.key}
+                content={segmentTooltip(side, s)}
+                className={`epm-mem-segment epm-mem-segment--${s.key}`}
+                hideIcon
+                portal
+                side="bottom"
+                title={barSegmentLabel(side, s.key)}
+                style={{ width: `${s.pct * 100}%` }}
+              />
+            ))}
+        </div>
+        <div className="epm-mem-bar-total">{gb(total)} GB</div>
+      </div>
+    </>
+  );
+}
 
 function MainPage({
   editName,
@@ -1412,7 +1572,7 @@ function MainPage({
   editUseExternalServer: boolean;
   onRequestDisableExternal: () => void;
   onNavigate: (page: string) => void;
-  editAutoOptimizer: 'synapse' | 'custom' | null;
+  editAutoOptimizer: 'synapse' | 'custom' | 'llama' | null;
   editLayers: number | undefined;
   editContextSize: number | undefined;
   modelMaxLayers: number;
@@ -1562,9 +1722,7 @@ function MainPage({
             title="Performance"
             preview={
               editAutoOptimizer
-                ? autoOptimizerLabel(
-                    editAutoOptimizer === 'custom' ? 'custom' : 'synapse',
-                  )
+                ? autoOptimizerLabel(editAutoOptimizer)
                 : 'Not configured'
             }
             onClick={() => onNavigate('performance')}
@@ -2748,13 +2906,20 @@ function CacheTypeSelector({
 }
 
 const FLASH_ATTN_OPTIONS: Array<'on' | 'off' | 'auto'> = ['auto', 'on', 'off'];
+const LAZY_MODE_OPTIONS: Array<'on' | 'off' | 'auto'> = ['auto', 'on', 'off'];
 
-function FlashAttnSelector({
+/**
+ * Three-state picker for flags llama.cpp itself defaults to auto
+ * (flash attention, lazy tensors). Same three choices, same widget.
+ */
+function TriStateSelector({
   value,
   onChange,
+  options = FLASH_ATTN_OPTIONS,
 }: {
   value: 'on' | 'off' | 'auto';
   onChange: (v: 'on' | 'off' | 'auto') => void;
+  options?: Array<'on' | 'off' | 'auto'>;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -2786,7 +2951,7 @@ function FlashAttnSelector({
         </button>
         {open && (
           <div className="epm-flash-attn-dropdown">
-            {FLASH_ATTN_OPTIONS.map((t) => (
+            {options.map((t) => (
               <button
                 key={t}
                 className={`epm-cache-selector-option${t === value ? ' epm-cache-selector-option--active' : ''}`}
@@ -3350,14 +3515,13 @@ function PerformancePage({
   editContextSize,
   editGpuLayersAuto,
   optimizerRunning,
+  optimizerPlan,
   modelMaxLayers,
   modelMaxContext,
   maxSpeedCtx,
   fitError,
   onDismissFitError,
   onRetryFit,
-  hasProjector,
-  mmprojOffload,
   onSetAutoOptimizer,
   onSetGpuLayersAuto,
   onSetLayers,
@@ -3368,20 +3532,19 @@ function PerformancePage({
   editSpecType,
   editDraftModelFilename,
 }: {
-  editAutoOptimizer: 'synapse' | 'custom' | null;
+  editAutoOptimizer: 'synapse' | 'custom' | 'llama' | null;
   editLayers: number | undefined;
   editContextSize: number | undefined;
   editGpuLayersAuto: boolean;
   optimizerRunning: boolean;
+  optimizerPlan: NonNullable<Profile['optimizerPlan']> | null;
   modelMaxLayers: number;
   modelMaxContext: number;
   maxSpeedCtx: number | null;
   fitError: string | null;
   onDismissFitError: () => void;
   onRetryFit: () => void;
-  hasProjector: boolean;
-  mmprojOffload: boolean;
-  onSetAutoOptimizer: (v: 'synapse' | 'custom' | null) => void;
+  onSetAutoOptimizer: (v: 'synapse' | 'custom' | 'llama') => void;
   onSetGpuLayersAuto: (v: boolean) => void;
   onSetLayers: (v: number | undefined) => void;
   onSetContextSize: (v: number | undefined) => void;
@@ -3398,10 +3561,12 @@ function PerformancePage({
   editSpecType: string[];
   editDraftModelFilename: string;
 }) {
-  const isAuto =
-    editAutoOptimizer !== null &&
-    editAutoOptimizer !== undefined &&
-    editAutoOptimizer !== 'custom';
+  // Only 'synapse' means "Synapse solves placement". 'llama' (developer-only)
+  // hands placement to the server, so it gets a read-only layer readout and no
+  // optimizer run, but keeps the ctx slider because Synapse still pins ctx.
+  const isAuto = editAutoOptimizer === 'synapse';
+  const isLlama = editAutoOptimizer === 'llama';
+  const isDev = window.electronAPI?.isDev === true;
   const sliderNgl = editGpuLayersAuto
     ? (editLayers ?? 0)
     : isAuto
@@ -3423,12 +3588,13 @@ function PerformancePage({
       })
       .catch(() => {});
   }, []);
-  const layersDisabled = isAuto || editGpuLayersAuto;
-  const activeLayers = editGpuLayersAuto
-    ? (editLayers ?? modelMaxLayers)
-    : isAuto
-      ? (editLayers ?? 0)
-      : sliderNgl;
+  const layersDisabled = isAuto || isLlama || editGpuLayersAuto;
+  // In llama mode there is no solved placement to price, so the memory bar
+  // shows the full-offload projection (what llama.cpp tries first) instead.
+  let activeLayers = sliderNgl;
+  if (isLlama) activeLayers = modelMaxLayers;
+  else if (editGpuLayersAuto) activeLayers = editLayers ?? modelMaxLayers;
+  else if (isAuto) activeLayers = editLayers ?? 0;
   const activeCtx = isAuto ? (editContextSize ?? 4096) : sliderCtx;
 
   // Maximum Speed marker zone: near an edge the label anchors to that edge
@@ -3490,31 +3656,6 @@ function PerformancePage({
     }
     prevOptimizerRunning.current = optimizerRunning;
   }, [optimizerRunning, activeLayers, activeCtx, triggerEstimate]);
-
-  const toGB = (bytes: number) => (bytes / 1024 ** 3).toFixed(2);
-
-  const vramOverheadPct =
-    totalVRAM > 0 ? (memory?.computeOverheadVram ?? 0) / totalVRAM : 0;
-  const vramModelPct =
-    totalVRAM > 0 ? (memory?.modelVramUsage ?? 0) / totalVRAM : 0;
-  const vramCtxPct =
-    totalVRAM > 0 ? (memory?.contextVramUsage ?? 0) / totalVRAM : 0;
-  const ramOverheadPct =
-    totalRAM > 0 ? (memory?.computeOverheadRam ?? 0) / totalRAM : 0;
-  const ramModelPct =
-    totalRAM > 0 ? (memory?.modelRamUsage ?? 0) / totalRAM : 0;
-  const ramBufferPct =
-    totalRAM > 0 ? (memory?.fileBufferRam ?? 0) / totalRAM : 0;
-  const ramCtxPct =
-    totalRAM > 0 ? (memory?.contextRamUsage ?? 0) / totalRAM : 0;
-  const vramFreePct = Math.max(
-    0,
-    1 - vramOverheadPct - vramModelPct - vramCtxPct,
-  );
-  const ramFreePct = Math.max(
-    0,
-    1 - ramOverheadPct - ramModelPct - ramBufferPct - ramCtxPct,
-  );
 
   const fitTimedOut = fitError !== null && /timed out/i.test(fitError);
 
@@ -3595,6 +3736,29 @@ function PerformancePage({
               <span>Manual</span>
             </button>
           </InfoTooltip>
+          {isDev && (
+            <InfoTooltip
+              content={LLAMA_DEFAULT_TOOLTIP}
+              hideIcon
+              title="Llama Default"
+              className="epm-perf-btn-wrapper"
+            >
+              <button
+                type="button"
+                className={`epm-perf-btn${editAutoOptimizer === 'llama' ? ' epm-perf-btn--active' : ''}`}
+                onClick={() => {
+                  if (optimizerRunning) return;
+                  onSetAutoOptimizer('llama');
+                  // Layers become the server's call; only ctx stays ours.
+                  if (editContextSize === undefined) onSetContextSize(4096);
+                }}
+                disabled={optimizerRunning}
+              >
+                <Terminal size={16} />
+                <span>Llama default</span>
+              </button>
+            </InfoTooltip>
+          )}
         </div>
       </div>
 
@@ -3636,310 +3800,18 @@ function PerformancePage({
           </div>
         )}
 
-        {hasProjector && memory?.projectorSkipped === true && (
+        {isLlama && (
           <div className="epm-estimate-notice">
-            <AlertTriangle size={14} />
             <span>
-              {mmprojOffload
-                ? 'We are unable to optimize with projectors at this time, the projector will take additional space in VRAM. If a crash occurs, try disabling "MMPROJ GPU Offload" in Profile -> Projector, or leave additional overhead in Settings -> System.'
-                : 'We are unable to optimize with projectors at this time, the projector will take additional space in RAM.'}
+              llama.cpp decides the layer placement when the server starts, so
+              there is nothing for Synapse to solve. The numbers below assume
+              every layer stays resident, which is what the server tries first.
             </span>
           </div>
         )}
 
-        {memory && totalVRAM > 0 ? (
-          <>
-            <div className="epm-mem-legend">
-              <span className="epm-mem-legend-total">
-                <strong>
-                  Total:{' '}
-                  {toGB(
-                    memory.modelVramUsage +
-                      memory.contextVramUsage +
-                      memory.computeOverheadVram,
-                  )}
-                  GB
-                </strong>
-              </span>
-              {memory.modelVramUsage > 0 && (
-                <span className="epm-mem-legend-item">
-                  <span className="epm-mem-dot epm-mem-dot--model" />
-                  <InfoTooltip
-                    content={MODEL_WEIGHTS_TOOLTIP}
-                    side="right"
-                    hideIcon
-                    title="Model Weights"
-                  >
-                    <span>Model Weights ({toGB(memory.modelVramUsage)}GB)</span>
-                  </InfoTooltip>
-                </span>
-              )}
-              {memory.contextVramUsage > 0 && (
-                <span className="epm-mem-legend-item">
-                  <span className="epm-mem-dot epm-mem-dot--ctx" />
-                  <InfoTooltip
-                    content={KV_CACHE_MEM_TOOLTIP}
-                    side="right"
-                    hideIcon
-                    title="KV Cache"
-                  >
-                    <span>KV Cache ({toGB(memory.contextVramUsage)}GB)</span>
-                  </InfoTooltip>
-                </span>
-              )}
-              {memory.computeOverheadVram > 0 && (
-                <span className="epm-mem-legend-item">
-                  <span className="epm-mem-dot epm-mem-dot--overhead" />
-                  <InfoTooltip
-                    content={COMPUTE_OVERHEAD_TOOLTIP}
-                    side="right"
-                    hideIcon
-                    title="Compute Overhead"
-                  >
-                    <span>
-                      Compute Overhead ({toGB(memory.computeOverheadVram)}GB)
-                    </span>
-                  </InfoTooltip>
-                </span>
-              )}
-              <span className="epm-mem-legend-item">
-                <span className="epm-mem-dot epm-mem-dot--free" /> Free (
-                {toGB(
-                  Math.max(
-                    0,
-                    totalVRAM -
-                      memory.modelVramUsage -
-                      memory.contextVramUsage -
-                      memory.computeOverheadVram,
-                  ),
-                )}
-                GB)
-              </span>
-            </div>
-
-            <div className="epm-mem-bar-wrap">
-              <InfoTooltip
-                content={VRAM_LABEL_TOOLTIP}
-                side="right"
-                hideIcon
-                title="VRAM"
-              >
-                <div className="epm-mem-bar-label-inline">VRAM</div>
-              </InfoTooltip>
-              <div className="epm-mem-bar-track">
-                <InfoTooltip
-                  content={`Model Weights: ${toGB(memory.modelVramUsage)}GB`}
-                  className="epm-mem-segment epm-mem-segment--model"
-                  hideIcon
-                  side="bottom"
-                  title="Model Weights"
-                  style={{ width: `${vramModelPct * 100}%` }}
-                />
-                <InfoTooltip
-                  content={`KV Cache: ${toGB(memory.contextVramUsage)}GB`}
-                  className="epm-mem-segment epm-mem-segment--ctx"
-                  hideIcon
-                  side="bottom"
-                  title="KV Cache"
-                  style={{ width: `${vramCtxPct * 100}%` }}
-                />
-                <InfoTooltip
-                  content={`Compute Overhead: ${toGB(memory.computeOverheadVram)}GB`}
-                  className="epm-mem-segment epm-mem-segment--overhead"
-                  hideIcon
-                  side="bottom"
-                  title="Compute Overhead"
-                  style={{ width: `${vramOverheadPct * 100}%` }}
-                />
-                <InfoTooltip
-                  content={`Free: ${toGB(Math.max(0, totalVRAM - memory.modelVramUsage - memory.contextVramUsage - memory.computeOverheadVram))}GB`}
-                  className="epm-mem-segment epm-mem-segment--free"
-                  hideIcon
-                  side="bottom"
-                  title="Free"
-                  style={{ width: `${vramFreePct * 100}%` }}
-                />
-              </div>
-              <div className="epm-mem-bar-total">{toGB(totalVRAM)} GB</div>
-            </div>
-          </>
-        ) : (
-          <>
-            <div className="epm-mem-legend">
-              <span className="epm-mem-legend-total">
-                <strong>Total: — GB</strong>
-              </span>
-            </div>
-            <div className="epm-mem-bar-wrap">
-              <div className="epm-mem-bar-label-inline">VRAM</div>
-              <div className="epm-mem-bar-track">
-                <div
-                  className="epm-mem-segment epm-mem-segment--loading"
-                  style={{ width: '100%' }}
-                />
-              </div>
-              <div className="epm-mem-bar-total">— GB</div>
-            </div>
-          </>
-        )}
-
-        {memory && totalRAM > 0 ? (
-          <>
-            <div className="epm-mem-legend" style={{ marginTop: '14px' }}>
-              <span className="epm-mem-legend-total">
-                <strong>
-                  Total:{' '}
-                  {toGB(
-                    memory.modelRamUsage +
-                      memory.contextRamUsage +
-                      memory.fileBufferRam +
-                      memory.computeOverheadRam,
-                  )}
-                  GB
-                </strong>
-              </span>
-              {memory.modelRamUsage > 0 && (
-                <span className="epm-mem-legend-item">
-                  <span className="epm-mem-dot epm-mem-dot--model" />
-                  <InfoTooltip
-                    content={MODEL_WEIGHTS_TOOLTIP}
-                    side="right"
-                    hideIcon
-                    title="Model Weights"
-                  >
-                    <span>Model Weights ({toGB(memory.modelRamUsage)}GB)</span>
-                  </InfoTooltip>
-                </span>
-              )}
-              {memory.contextRamUsage > 0 && (
-                <span className="epm-mem-legend-item">
-                  <span className="epm-mem-dot epm-mem-dot--ctx" />
-                  <InfoTooltip
-                    content={KV_CACHE_MEM_TOOLTIP}
-                    side="right"
-                    hideIcon
-                    title="KV Cache"
-                  >
-                    <span>KV Cache ({toGB(memory.contextRamUsage)}GB)</span>
-                  </InfoTooltip>
-                </span>
-              )}
-              {memory.fileBufferRam > 0 && (
-                <span className="epm-mem-legend-item">
-                  <span className="epm-mem-dot epm-mem-dot--buffer" />
-                  <InfoTooltip
-                    content={FILE_BUFFER_TOOLTIP}
-                    side="right"
-                    hideIcon
-                    title="File Buffer"
-                  >
-                    <span>File Buffer ({toGB(memory.fileBufferRam)}GB)</span>
-                  </InfoTooltip>
-                </span>
-              )}
-              {memory.computeOverheadRam > 0 && (
-                <span className="epm-mem-legend-item">
-                  <span className="epm-mem-dot epm-mem-dot--overhead" />
-                  <InfoTooltip
-                    content={COMPUTE_OVERHEAD_TOOLTIP}
-                    side="right"
-                    hideIcon
-                    title="Compute Overhead"
-                  >
-                    <span>
-                      Compute Overhead ({toGB(memory.computeOverheadRam)}GB)
-                    </span>
-                  </InfoTooltip>
-                </span>
-              )}
-              <span className="epm-mem-legend-item">
-                <span className="epm-mem-dot epm-mem-dot--free" /> Free (
-                {toGB(
-                  Math.max(
-                    0,
-                    totalRAM -
-                      memory.modelRamUsage -
-                      memory.contextRamUsage -
-                      memory.fileBufferRam -
-                      memory.computeOverheadRam,
-                  ),
-                )}
-                GB)
-              </span>
-            </div>
-            <div className="epm-mem-bar-wrap">
-              <InfoTooltip
-                content={RAM_LABEL_TOOLTIP}
-                side="right"
-                hideIcon
-                title="RAM"
-              >
-                <div className="epm-mem-bar-label-inline">RAM</div>
-              </InfoTooltip>
-              <div className="epm-mem-bar-track">
-                <InfoTooltip
-                  content={`Model Weights: ${toGB(memory.modelRamUsage)}GB`}
-                  className="epm-mem-segment epm-mem-segment--model"
-                  hideIcon
-                  side="bottom"
-                  title="Model Weights"
-                  style={{ width: `${ramModelPct * 100}%` }}
-                />
-                <InfoTooltip
-                  content={`KV Cache: ${toGB(memory.contextRamUsage)}GB`}
-                  className="epm-mem-segment epm-mem-segment--ctx"
-                  hideIcon
-                  side="bottom"
-                  title="KV Cache"
-                  style={{ width: `${ramCtxPct * 100}%` }}
-                />
-                <InfoTooltip
-                  content={`File Buffer: ${toGB(memory.fileBufferRam)}GB`}
-                  className="epm-mem-segment epm-mem-segment--buffer"
-                  hideIcon
-                  side="bottom"
-                  title="File Buffer"
-                  style={{ width: `${ramBufferPct * 100}%` }}
-                />
-                <InfoTooltip
-                  content={`Compute Overhead: ${toGB(memory.computeOverheadRam)}GB`}
-                  className="epm-mem-segment epm-mem-segment--overhead"
-                  hideIcon
-                  side="bottom"
-                  title="Compute Overhead"
-                  style={{ width: `${ramOverheadPct * 100}%` }}
-                />
-                <InfoTooltip
-                  content={`Free: ${toGB(Math.max(0, totalRAM - memory.modelRamUsage - memory.contextRamUsage - memory.fileBufferRam - memory.computeOverheadRam))}GB`}
-                  className="epm-mem-segment epm-mem-segment--free"
-                  hideIcon
-                  side="bottom"
-                  title="Free"
-                  style={{ width: `${ramFreePct * 100}%` }}
-                />
-              </div>
-              <div className="epm-mem-bar-total">{toGB(totalRAM)} GB</div>
-            </div>
-          </>
-        ) : (
-          <>
-            <div className="epm-mem-legend" style={{ marginTop: '14px' }}>
-              <span className="epm-mem-legend-total">
-                <strong>Total: — GB</strong>
-              </span>
-            </div>
-            <div className="epm-mem-bar-wrap">
-              <div className="epm-mem-bar-label-inline">RAM</div>
-              <div className="epm-mem-bar-track">
-                <div
-                  className="epm-mem-segment epm-mem-segment--loading"
-                  style={{ width: '100%' }}
-                />
-              </div>
-              <div className="epm-mem-bar-total">— GB</div>
-            </div>
-          </>
-        )}
+        <MemoryBar side="vram" memory={memory} total={totalVRAM} />
+        <MemoryBar side="ram" memory={memory} total={totalRAM} />
       </div>
 
       {/* Sliders */}
@@ -3953,7 +3825,7 @@ function PerformancePage({
           <div className="epm-section__label">Settings</div>
         </InfoTooltip>
         <div className="epm-perf-sliders">
-          {!isAuto && (
+          {!isAuto && !isLlama && (
             <div className="epm-perf-slider-group">
               <label className="epm-perf-toggle-row" style={{ paddingTop: 0 }}>
                 <InfoTooltip
@@ -4027,6 +3899,60 @@ function PerformancePage({
                 </strong>
               </span>
             </div>
+          )}
+
+          {isLlama && (
+            <div className="epm-perf-slider-group">
+              <InfoTooltip
+                content={LLAMA_DEFAULT_TOOLTIP}
+                side="bottom"
+                stretch
+                className="info-tooltip-stretch--col"
+                title="GPU Layers (NGL)"
+              >
+                <span className="epm-perf-slider-label">
+                  GPU Layers (NGL): <strong>Auto (llama.cpp)</strong>
+                </span>
+              </InfoTooltip>
+            </div>
+          )}
+
+          {isAuto && optimizerPlan && (
+            <InfoTooltip
+              content={
+                [
+                  'What the Synapse Optimizer chose for this model and these memory budgets.',
+                  'Every number here is what llama.cpp measured for these flags, and they are the flags the server starts with.',
+                  optimizerPlan.label
+                    ? `Placement as flags: ${optimizerPlan.label}.`
+                    : null,
+                  optimizerPlan.forced
+                    ? 'Nothing fit the video memory: this is the option that overflows it the least.'
+                    : null,
+                  (optimizerPlan.hostOverflowBytes ?? 0) > 0
+                    ? `System memory is ${(
+                        optimizerPlan.hostOverflowBytes! /
+                        1024 ** 3
+                      ).toFixed(
+                        1,
+                      )} GiB over budget: the experts kept there are served from the page file. That is deliberate — the alternative is pinning them back on the GPU and dropping layers, which reads more per token.`
+                    : null,
+                ].filter(Boolean) as string[]
+              }
+              side="bottom"
+              title="Optimizer plan"
+              stretch
+              className="info-tooltip-stretch--col"
+            >
+              <div className="epm-perf-plan">
+                <div className="epm-perf-plan-head">Optimizer plan</div>
+                {planSummaryLines(optimizerPlan).map((line) => (
+                  <div key={line} className="epm-perf-plan-line">
+                    {line}
+                  </div>
+                ))}
+              </div>
+            </InfoTooltip>
           )}
 
           <div className="epm-perf-slider-group" style={{ marginTop: '16px' }}>
@@ -4244,7 +4170,7 @@ function CacheOptionsPage({
               title="Flash Attention"
             >
               <span className="epm-perf-toggle-label">Flash Attention</span>
-              <FlashAttnSelector
+              <TriStateSelector
                 value={editFlashAttn}
                 onChange={(v) => {
                   onSetFlashAttn(v);
@@ -4380,16 +4306,20 @@ function MemoryOptionsPage({
   editMmap,
   editMlock,
   editRepack,
+  editLazyMode,
   onSetMmap,
   onSetMlock,
   onSetRepack,
+  onSetLazyMode,
 }: {
   editMmap: boolean;
   editMlock: boolean;
   editRepack: boolean;
+  editLazyMode: 'on' | 'off' | 'auto';
   onSetMmap: (v: boolean) => void;
   onSetMlock: (v: boolean) => void;
   onSetRepack: (v: boolean) => void;
+  onSetLazyMode: (v: 'on' | 'off' | 'auto') => void;
 }) {
   return (
     <>
@@ -4482,6 +4412,22 @@ function MemoryOptionsPage({
             >
               <div className="epm-toggle-switch__knob" />
             </div>
+          </InfoTooltip>
+        </label>
+        <label className="epm-perf-toggle-row">
+          <InfoTooltip
+            content={LAZY_MODE_TOOLTIP}
+            side="right"
+            stretch
+            className="info-tooltip-stretch--row"
+            title="Lazy Tensors"
+          >
+            <span className="epm-perf-toggle-label">Lazy Tensors</span>
+            <TriStateSelector
+              value={editLazyMode}
+              onChange={onSetLazyMode}
+              options={LAZY_MODE_OPTIONS}
+            />
           </InfoTooltip>
         </label>
       </div>
@@ -4762,13 +4708,25 @@ function DraftModelPage({
 function MoeOptionsPage({
   editCpuMoe,
   editNCpuMoe,
+  editNCpuFfn,
+  editMoeCacheMib,
+  editMoeCacheCpuShare,
   onSetCpuMoe,
   onSetNCpuMoe,
+  onSetNCpuFfn,
+  onSetMoeCacheMib,
+  onSetMoeCacheCpuShare,
 }: {
   editCpuMoe: boolean;
   editNCpuMoe: string;
+  editNCpuFfn: string;
+  editMoeCacheMib: string;
+  editMoeCacheCpuShare: string;
   onSetCpuMoe: (v: boolean) => void;
   onSetNCpuMoe: (v: string) => void;
+  onSetNCpuFfn: (v: string) => void;
+  onSetMoeCacheMib: (v: string) => void;
+  onSetMoeCacheCpuShare: (v: string) => void;
 }) {
   return (
     <>
@@ -4826,6 +4784,39 @@ function MoeOptionsPage({
             helper="Default: 0"
             tooltip={N_CPU_MOE_TOOLTIP}
             tooltipTitle="N CPU MoE"
+          />
+          <NumberField
+            label="N CPU FFN"
+            value={editNCpuFfn}
+            onChange={onSetNCpuFfn}
+            min="0"
+            max="999"
+            step="1"
+            helper="Default: 0"
+            tooltip={N_CPU_FFN_TOOLTIP}
+            tooltipTitle="N CPU FFN"
+          />
+          <NumberField
+            label="MoE Cache MiB"
+            value={editMoeCacheMib}
+            onChange={onSetMoeCacheMib}
+            min="0"
+            max="65536"
+            step="64"
+            helper="Cap; 0 = optimizer decides"
+            tooltip={MOE_CACHE_MIB_TOOLTIP}
+            tooltipTitle="MoE Cache MiB"
+          />
+          <NumberField
+            label="Cache CPU Share"
+            value={editMoeCacheCpuShare}
+            onChange={onSetMoeCacheCpuShare}
+            min="0"
+            max="1"
+            step="0.05"
+            helper="Default: 0"
+            tooltip={MOE_CACHE_CPU_SHARE_TOOLTIP}
+            tooltipTitle="Cache CPU Share"
           />
         </div>
       </div>
@@ -6242,9 +6233,15 @@ export default function EditProfileModal({
   );
 
   // Performance options. Legacy stored modes fall through to synapse.
+  // 'llama' is honored even in a production build (the profile may have been
+  // authored on a dev machine); only the button that picks it is dev-gated.
   const [editAutoOptimizer, setEditAutoOptimizer] = useState<
-    'synapse' | 'custom' | null
-  >(profile?.autoOptimizer === 'custom' ? 'custom' : 'synapse');
+    'synapse' | 'custom' | 'llama' | null
+  >(
+    profile?.autoOptimizer === 'custom' || profile?.autoOptimizer === 'llama'
+      ? profile.autoOptimizer
+      : 'synapse',
+  );
   const [editLayers, setEditLayers] = useState<number | undefined>(
     profile?.layers,
   );
@@ -6450,6 +6447,24 @@ export default function EditProfileModal({
   );
   const [editNCpuMoe, setEditNCpuMoe] = useState<string>(
     String(profile?.nCpuMoe ?? 0),
+  );
+  const [editNCpuFfn, setEditNCpuFfn] = useState<string>(
+    String(profile?.nCpuFfn ?? 0),
+  );
+  const [editMoeCacheMib, setEditMoeCacheMib] = useState<string>(
+    String(profile?.moeCacheMib ?? 0),
+  );
+  const [editMoeCacheCpuShare, setEditMoeCacheCpuShare] = useState<string>(
+    String(profile?.moeCacheCpuShare ?? 0),
+  );
+  // The optimizer's own decisions (spill sizes, cache, max context). Kept in
+  // sync with the solve that produced the current -ngl/-ts/-ot, and written
+  // back into the profile so buildLlamaServerArgs launches the same placement.
+  const [editOptimizerPlan, setEditOptimizerPlan] = useState<NonNullable<
+    Profile['optimizerPlan']
+  > | null>(profile?.optimizerPlan ?? null);
+  const [editLazyMode, setEditLazyMode] = useState<'on' | 'off' | 'auto'>(
+    profile?.lazyMode ?? 'auto',
   );
 
   // Server settings
@@ -6657,6 +6672,10 @@ export default function EditProfileModal({
         gpuLayersAuto: editGpuLayersAuto,
         cpuMoe: editCpuMoe,
         nCpuMoe: parseInt(editNCpuMoe, 10),
+        nCpuFfn: parseInt(editNCpuFfn, 10) || undefined,
+        moeCacheMib: parseInt(editMoeCacheMib, 10) || undefined,
+        moeCacheCpuShare: parseFloat(editMoeCacheCpuShare) || undefined,
+        lazyMode: editLazyMode === 'auto' ? undefined : editLazyMode,
         specType: editSpecType,
         draftModelAuthor:
           (editSpecType.includes('draft-simple') && editDraftModelAuthor) ||
@@ -6685,6 +6704,10 @@ export default function EditProfileModal({
         customLaunchCommand: editUseCustomLaunch
           ? editCustomLaunchCommand
           : undefined,
+        // The preview must apply the same plan-carrier rule as the real
+        // launch, or the spill/cache flags shown would not be the ones sent.
+        optimizerPlan:
+          editAutoOptimizer === 'synapse' ? editOptimizerPlan : null,
       };
       // Mirror the launch rule in chat.ts: custom (user-pinned) configs
       // never carry an optimizer triple, even if one is stored. Otherwise
@@ -6750,6 +6773,10 @@ export default function EditProfileModal({
     editGpuLayersAuto,
     editCpuMoe,
     editNCpuMoe,
+    editNCpuFfn,
+    editMoeCacheMib,
+    editMoeCacheCpuShare,
+    editLazyMode,
     editSpecType,
     editDraftModelAuthor,
     editDraftModelFolder,
@@ -6774,6 +6801,7 @@ export default function EditProfileModal({
     editLayers,
     editContextSize,
     editAutoOptimizer,
+    editOptimizerPlan,
     tripleFor,
   ]);
 
@@ -6921,6 +6949,10 @@ export default function EditProfileModal({
         parallel: effectiveParallel,
         cpuMoe: editCpuMoe,
         nCpuMoe: parseInt(editNCpuMoe, 10) || undefined,
+        nCpuFfn: parseInt(editNCpuFfn, 10) || undefined,
+        moeCacheMib: parseInt(editMoeCacheMib, 10) || undefined,
+        moeCacheCpuShare: parseFloat(editMoeCacheCpuShare) || undefined,
+        lazyMode: editLazyMode === 'auto' ? undefined : editLazyMode,
         mmprojOffload: editMmprojOffload,
         imageMinTokens: parseInt(editImageMinTokens, 10) || undefined,
         imageMaxTokens: parseInt(editImageMaxTokens, 10) || undefined,
@@ -6939,6 +6971,25 @@ export default function EditProfileModal({
         setEditTensorSplit(res.tensorSplit ?? null);
         setEditTensorOverrides(res.tensorOverrides ?? null);
         setEditTensorSolvedFor({ ngl: res.ngl, ctx: res.ctx });
+        setEditOptimizerPlan(
+          res.plan
+            ? {
+                kind: res.plan.kind,
+                ngl: res.ngl,
+                cpuMoe: res.cpuMoe,
+                nCpuMoe: res.nCpuMoe ?? undefined,
+                nCpuFfn: res.nCpuFfn ?? undefined,
+                moeCacheMib: res.moeCacheMib ?? undefined,
+                gpuLayers: res.plan.gpuLayers,
+                totalLayers: res.plan.totalLayers,
+                maxCtx: res.plan.maxCtx,
+                clampedBy: res.plan.clampedBy,
+                forced: res.plan.forced,
+                hostOverflowBytes: res.plan.hostOverflowBytes,
+                label: res.plan.label,
+              }
+            : null,
+        );
         // Budgets come back undefined in automatic mode: leave state (and
         // the stored manual values it persists) untouched.
         if (res.vramMB !== undefined) setEditAllocatedVRAM(res.vramMB);
@@ -7012,12 +7063,21 @@ export default function EditProfileModal({
       parallel: effectiveParallel,
       cpuMoe: editCpuMoe,
       nCpuMoe: parseInt(editNCpuMoe, 10) || undefined,
+      nCpuFfn: parseInt(editNCpuFfn, 10) || undefined,
+      moeCacheMib: parseInt(editMoeCacheMib, 10) || undefined,
+      moeCacheCpuShare: parseFloat(editMoeCacheCpuShare) || undefined,
+      lazyMode: editLazyMode === 'auto' ? undefined : editLazyMode,
       mmprojOffload: editMmprojOffload,
       imageMinTokens: parseInt(editImageMinTokens, 10) || undefined,
       imageMaxTokens: parseInt(editImageMaxTokens, 10) || undefined,
       mtmdBatchMaxTokens: parseInt(editMtmdBatchMaxTokens, 10) || undefined,
       tensorSplit: solvedTriple.tensorSplit ?? undefined,
       tensorOverrides: solvedTriple.tensorOverrides ?? undefined,
+      // The solved placement is part of what is being priced: spill and cache
+      // launch as a unit with the -ngl they were solved for, so the bar has to
+      // probe that same placement (see effectivePlacement in the estimator).
+      optimizerPlan:
+        editAutoOptimizer === 'synapse' ? (editOptimizerPlan ?? null) : null,
     });
     setLastEstimate(result);
     return result;
@@ -7036,6 +7096,10 @@ export default function EditProfileModal({
     parallel: effectiveParallel,
     cpuMoe: editCpuMoe,
     nCpuMoe: parseInt(editNCpuMoe, 10) || undefined,
+    nCpuFfn: parseInt(editNCpuFfn, 10) || undefined,
+    moeCacheMib: parseInt(editMoeCacheMib, 10) || undefined,
+    moeCacheCpuShare: parseFloat(editMoeCacheCpuShare) || undefined,
+    lazyMode: editLazyMode === 'auto' ? undefined : editLazyMode,
     mmprojOffload: editMmprojOffload,
     imageMinTokens: parseInt(editImageMinTokens, 10) || undefined,
     imageMaxTokens: parseInt(editImageMaxTokens, 10) || undefined,
@@ -7087,6 +7151,10 @@ export default function EditProfileModal({
     effectiveParallel,
     editCpuMoe,
     editNCpuMoe,
+    editNCpuFfn,
+    editMoeCacheMib,
+    editMoeCacheCpuShare,
+    editLazyMode,
     editMmprojOffload,
     editImageMinTokens,
     editImageMaxTokens,
@@ -7126,6 +7194,10 @@ export default function EditProfileModal({
     effectiveParallel,
     editCpuMoe,
     editNCpuMoe,
+    editNCpuFfn,
+    editMoeCacheMib,
+    editMoeCacheCpuShare,
+    editLazyMode,
     editMmprojOffload,
     editImageMinTokens,
     editImageMaxTokens,
@@ -7507,6 +7579,14 @@ export default function EditProfileModal({
       specDraftPMin: parseFloat(editSpecDraftPMin),
       cpuMoe: editCpuMoe,
       nCpuMoe: parseInt(editNCpuMoe, 10),
+      nCpuFfn: parseInt(editNCpuFfn, 10) || undefined,
+      moeCacheMib: parseInt(editMoeCacheMib, 10) || undefined,
+      moeCacheCpuShare: parseFloat(editMoeCacheCpuShare) || undefined,
+      lazyMode: editLazyMode === 'auto' ? undefined : editLazyMode,
+      // Carries the solved placement back to the profile (the draft replaces
+      // the stored profile wholesale). Only a Synapse solve has a plan: manual
+      // pins and llama-fitted launches must not carry a stale one.
+      optimizerPlan: editAutoOptimizer === 'synapse' ? editOptimizerPlan : null,
       parallel: parseInt(editParallel, 10),
       host: editHost || undefined,
       port: parseInt(editPort, 10) || undefined,
@@ -7845,6 +7925,7 @@ export default function EditProfileModal({
             editContextSize={editContextSize}
             editGpuLayersAuto={editGpuLayersAuto}
             optimizerRunning={optimizerRunning}
+            optimizerPlan={editOptimizerPlan}
             modelMaxLayers={modelMeta?.maxLayers ?? 200}
             modelMaxContext={modelMeta?.maxContext ?? 131072}
             onSetAutoOptimizer={setEditAutoOptimizer}
@@ -7859,8 +7940,6 @@ export default function EditProfileModal({
             fitError={fitError}
             onDismissFitError={() => setFitError(null)}
             onRetryFit={handleRetryFit}
-            hasProjector={!!editProjectorFilename}
-            mmprojOffload={editMmprojOffload}
             onEstimateMemory={handleEstimateMemory}
             initialEstimate={profile?.estimation ?? lastEstimate}
             onNavigate={navigateTo}
@@ -7875,6 +7954,12 @@ export default function EditProfileModal({
             editNCpuMoe={editNCpuMoe}
             onSetCpuMoe={setEditCpuMoe}
             onSetNCpuMoe={setEditNCpuMoe}
+            editNCpuFfn={editNCpuFfn}
+            editMoeCacheMib={editMoeCacheMib}
+            editMoeCacheCpuShare={editMoeCacheCpuShare}
+            onSetNCpuFfn={setEditNCpuFfn}
+            onSetMoeCacheMib={setEditMoeCacheMib}
+            onSetMoeCacheCpuShare={setEditMoeCacheCpuShare}
           />
         );
       case 'context-shift':
@@ -8003,6 +8088,8 @@ export default function EditProfileModal({
             onSetMmap={setEditMmap}
             onSetMlock={setEditMlock}
             onSetRepack={setEditRepack}
+            editLazyMode={editLazyMode}
+            onSetLazyMode={setEditLazyMode}
           />
         );
       case 'rope-scaling':

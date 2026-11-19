@@ -26,6 +26,51 @@ export interface ContextShiftSettings {
   minTokensToClear?: number;
 }
 
+/**
+ * What the measured columns are made of, so the memory bar can draw each part
+ * separately: the layer types a placement can offload, the expert cache, and
+ * the projector. Bytes, not flags — a part is absent when it is zero.
+ */
+export interface MemoryBreakdown {
+  vram: {
+    /** GPU-resident layer bytes no spill lever can move. */
+    layers: number;
+    /** Experts --cpu-moe/--n-cpu-moe left on the GPU. */
+    experts: number;
+    /** Dense FFN --n-cpu-ffn left on the GPU. */
+    ffn: number;
+    /** The output slot's device copy. */
+    output: number;
+    /** Expert cache (--moe-cache-mib), carved out of the KV column. */
+    cache: number;
+    mmprojWeights: number;
+    mmprojEncoder: number;
+  };
+  ram: {
+    /** Whole layers -ngl left in system RAM. */
+    layers: number;
+    /** Experts of GPU layers moved to system RAM. */
+    experts: number;
+    /** Dense FFN of GPU layers moved to system RAM. */
+    ffn: number;
+    /** token_embd and every other always-host tensor. */
+    embedding: number;
+    /** The --lazy-mode tables (per-layer embeddings): billed to the host column
+     *  by llama.cpp, but streamed from the file instead of held in RAM, so the
+     *  bar draws them hatched and the RAM total does not count them. */
+    lazy: number;
+    mmprojWeights: number;
+    mmprojEncoder: number;
+  };
+  counts: {
+    gpuLayers: number;
+    totalLayers: number;
+    expertLayersSpilled: number;
+    ffnLayersSpilled: number;
+    cacheMib: number;
+  };
+}
+
 export interface MemoryEstimate {
   modelVramUsage: number;
   contextVramUsage: number;
@@ -34,9 +79,9 @@ export interface MemoryEstimate {
   contextRamUsage: number;
   computeOverheadRam: number;
   fileBufferRam: number;
-  // True when a projector was requested but this fit build cannot measure
-  // it: the numbers cover the text model only.
-  projectorSkipped: boolean;
+  // Sub-segments of the columns above. Absent when the model's GGUF table could
+  // not be read, and in estimates stored by an older build.
+  breakdown?: MemoryBreakdown | null;
 }
 
 export const DEFAULT_CONTEXT_SHIFT: ContextShiftSettings = {
@@ -109,9 +154,12 @@ export interface Profile {
   tensorOverrides?: string | null;
   contextShift?: ContextShiftSettings;
   contextSize?: number;
-  // 'synapse': pick context, the optimizer picks layers. Anything else
-  // stored (legacy longest-context/most-gpu) falls through to synapse.
-  autoOptimizer?: 'synapse' | 'custom';
+  // 'synapse': pick context, the optimizer picks layers. 'llama' is a
+  // developer-only escape hatch: no Synapse solve at all, llama.cpp's own
+  // fitter decides layers at startup while Synapse still pins --ctx-size.
+  // Anything else stored (legacy longest-context/most-gpu) falls through to
+  // synapse.
+  autoOptimizer?: 'synapse' | 'custom' | 'llama';
   kvOffload?: boolean;
   flashAttn?: 'on' | 'off' | 'auto';
   cacheTypeK?: CacheType;
@@ -155,6 +203,58 @@ export interface Profile {
   specDraftPMin?: number;
   cpuMoe?: boolean;
   nCpuMoe?: number;
+  /**
+   * --n-cpu-ffn: keep the dense FFN of the first N layers in host RAM. The
+   * optimizer's lever for dense models; a user value is a starting point, and
+   * an auto profile overwrites it.
+   */
+  nCpuFfn?: number;
+  /**
+   * --moe-cache-mib: device-resident expert cache, in MiB. llama.cpp caps it at
+   * the expert bytes actually spilled to the host, so the optimizer sizes it
+   * from the spill it chose rather than treating it as a free knob.
+   */
+  moeCacheMib?: number;
+  /** --moe-cache-cpu-share: 0..1 of the cache allowed to live in host RAM. */
+  moeCacheCpuShare?: number;
+  /** --lazy-mode: on-demand reading of tensors the arch marks lazily. */
+  lazyMode?: 'on' | 'off' | 'auto';
+  /**
+   * What the auto-optimizer decided. Written by the optimizer only, and read
+   * back by buildLlamaServerArgs when the -ngl being launched is the one it
+   * solved: spill, cache and -ngl are one placement, so they launch as a unit.
+   * The user's own fields above stay untouched — they are the caps the solve ran
+   * under, and overwriting them would ratchet the profile every launch.
+   */
+  optimizerPlan?: {
+    kind: 'dense' | 'moe';
+    ngl: number;
+    cpuMoe?: boolean;
+    nCpuMoe?: number;
+    nCpuFfn?: number;
+    moeCacheMib?: number;
+    /** Blocks of the file the device holds, and how many it has: -ngl counts
+     *  the output tensor (and any draft layers), so it is not a block count.
+     *  Only the UI reads these, to say the plan in words. */
+    gpuLayers?: number;
+    totalLayers?: number;
+    /** Largest context this placement holds at the budgets it was solved for. */
+    maxCtx?: number;
+    /** What capped maxCtx: 'vram' | 'ram' | 'train' | 'none'. */
+    clampedBy?: string;
+    /** True when nothing fit the device budgets and this is the least-bad plan.
+     *  Host memory is not part of it: a --cpu-moe plan may need more system RAM
+     *  than the machine has, and that is allowed. */
+    forced?: boolean;
+    /** Bytes of this placement that exceed the system-memory budget and will be
+     *  served from the page file. */
+    hostOverflowBytes?: number;
+    /** Bytes --lazy-mode reads from the file instead of holding in RAM. They are
+     *  in neither the RAM total nor hostOverflowBytes; the plan says so out loud
+     *  because the memory bar draws them hatched. */
+    streamedHostBytes?: number;
+    label?: string;
+  } | null;
   host?: string;
   port?: number;
   parallel?: number;

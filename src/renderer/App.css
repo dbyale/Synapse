@@ -591,6 +591,39 @@ body,
 .info-tooltip-wrapper.epm-mem-segment--free {
   background: transparent;
 }
+.info-tooltip-wrapper.epm-mem-segment--layers {
+  background: #5b21b6;
+}
+.info-tooltip-wrapper.epm-mem-segment--experts {
+  background: #14b8a6;
+}
+.info-tooltip-wrapper.epm-mem-segment--ffn {
+  background: #a3e635;
+}
+.info-tooltip-wrapper.epm-mem-segment--output {
+  background: #e879f9;
+}
+.info-tooltip-wrapper.epm-mem-segment--embedding {
+  background: #c026d3;
+}
+/* Streamed weights: hatched, so the room they take on the track reads as
+   bytes the run never holds. See the dot of the same name. */
+.info-tooltip-wrapper.epm-mem-segment--lazy {
+  background: repeating-linear-gradient(
+    135deg,
+    #c026d3 0 5px,
+    #6b1178 5px 10px
+  );
+}
+.info-tooltip-wrapper.epm-mem-segment--cache {
+  background: #22d3ee;
+}
+.info-tooltip-wrapper.epm-mem-segment--mmproj {
+  background: #fb7185;
+}
+.info-tooltip-wrapper.epm-mem-segment--compute {
+  background: #6b7280;
+}
 
 /* ── Inner content ── */
 .info-tooltip-title {

@@ -5,7 +5,42 @@ import os from 'os';
 import { loadSettings } from './settings';
 import type { AppSettings } from './settings';
 import { resolveFitBinary } from './backendPaths';
-import type { Profile } from '../renderer/types/profile';
+import type { MemoryBreakdown, Profile } from '../renderer/types/profile';
+import { planSummaryLines } from '../renderer/utils/planSummary';
+import {
+  clearGgufInfoCache,
+  firstSplitPart,
+  ggufArchNumber,
+  readGgufInfoCached,
+} from './estimator/gguf';
+import {
+  classifyModel,
+  decideMoePlacement,
+  effectivePlacement,
+  firstGpuLayer,
+  lazyBytes,
+  moeCacheFloorBytes,
+  probeDeviceTotal,
+  shrinkMoeCache,
+  spilledExpertLayers,
+  spilledFfnLayers,
+  weightBreakdown,
+  weightSplit,
+  type FitRow,
+  type ModelClass,
+  type Placement,
+  type Probe,
+} from './estimator/model';
+import {
+  checkProjectionDim,
+  mmprojReserve,
+  readMmprojInfo,
+  type MmprojReserve,
+} from './estimator/mmproj';
+
+// Re-exported for the launch path: llama-server, like every probe, only loads
+// the first part of a split GGUF.
+export { firstSplitPart } from './estimator/gguf';
 
 const execFileAsync = promisify(execFile);
 
@@ -27,6 +62,38 @@ export interface MemoryEstimation {
     modelRamUsage: number;
     contextRamUsage: number;
   } | null;
+  // Expert residency the optimizer chose for a MoE. These travel with the
+  // plan the same way the -ts/-ot triple does: they are part of the placement,
+  // and llama.cpp's cache is capped by the spill, so they only make sense
+  // together.
+  nCpuMoe: number | null;
+  cpuMoe: boolean;
+  nCpuFfn: number | null;
+  moeCacheMib: number | null;
+  // Human-readable summary of the plan (optimizer path, knobs, headroom) for
+  // the UI's explanation line.
+  plan?: {
+    kind: 'dense' | 'moe';
+    label: string;
+    /** Largest context this placement holds at these budgets. */
+    maxCtx: number;
+    /** What capped that number: VRAM, RAM, or the model's trained length. */
+    clampedBy: string;
+    /** True when nothing fit the device budgets and this plan is the least-bad
+     *  option. Host memory is not part of it: a --cpu-moe plan is allowed to
+     *  need more system RAM than the machine has. */
+    forced: boolean;
+    /** Bytes of the placement that exceed the system-memory budget and will be
+     *  served from the page file. Reported, never used to reject a plan. */
+    hostOverflowBytes: number;
+    /** Bytes --lazy-mode reads from the file instead of holding in RAM: in
+     *  neither the RAM total nor the overflow above. */
+    streamedHostBytes?: number;
+    /** Blocks the device holds, and how many the file has: -ngl counts the
+     *  output tensor (and any draft layers), so it is not a block count. */
+    gpuLayers: number;
+    totalLayers: number;
+  };
 }
 
 const MiB = 1024 * 1024;
@@ -135,8 +202,20 @@ export function pushIfSupported(
 
 // ── Shared arg builder (server parity) ──
 // Mirrors buildLlamaServerArgs in chat.ts for every memory-relevant flag so
-// the estimate measures exactly what the server will launch, including the
-// multimodal projector block (--mmproj + supporting vision flags).
+// the estimate measures exactly what the server will launch.
+//
+// Two probe modes exist and they are never mixed:
+//   'measure' — --fit-print on. The fitter is skipped, so ANY placement is
+//               legal, and every placement pin the profile carries (-ngl, -ts,
+//               -ot, --cpu-moe, …) is passed because the point is to read the
+//               cost of exactly that placement.
+//   'solve'   — --fit on. The fitter picks the placement, so every pin has to
+//               be stripped: llama.cpp aborts with "model_params::
+//               tensor_buft_overrides already set by user" as soon as it is
+//               asked to overflow a model whose overrides are already pinned,
+//               a hard failure for any profile using --cpu-moe.
+
+export type FitProbeMode = 'measure' | 'solve';
 
 // llama.cpp has no --no-mmap/--mlock pair: how a model is loaded is one enum,
 // -lm/--load-mode (auto|none|mmap|mlock|mmap+mlock|dio). The optimizer probe and
@@ -160,8 +239,10 @@ export function appendCommonFitArgs(
   supported: Set<string>,
   profile: Partial<Profile>,
   projectorPath: string | undefined,
+  mode: FitProbeMode = 'measure',
 ): void {
   const p = profile as any;
+  const solve = mode === 'solve';
 
   // Cache / attention
   pushIfSupported(args, supported, '--cache-type-k', p.cacheTypeK ?? 'f16');
@@ -176,14 +257,46 @@ export function appendCommonFitArgs(
   // Parallel slots change KV sizing (n_seq_max) — always explicit like server.
   pushIfSupported(args, supported, '--parallel', String(getParallel(profile)));
 
-  // MoE placement
-  if (profile.cpuMoe === true) pushIfSupported(args, supported, '--cpu-moe');
-  if (
-    profile.nCpuMoe !== undefined &&
-    profile.nCpuMoe > 0 &&
-    profile.cpuMoe !== true
-  ) {
-    pushIfSupported(args, supported, '--n-cpu-moe', String(profile.nCpuMoe));
+  // MoE placement. In solve mode these are stripped: they are overrides, and a
+  // profile that pins them while asking the fitter to overflow is exactly the
+  // combination llama.cpp refuses.
+  if (!solve) {
+    if (profile.cpuMoe === true) pushIfSupported(args, supported, '--cpu-moe');
+    if (
+      profile.nCpuMoe !== undefined &&
+      profile.nCpuMoe > 0 &&
+      profile.cpuMoe !== true
+    ) {
+      pushIfSupported(args, supported, '--n-cpu-moe', String(profile.nCpuMoe));
+    }
+    if (p.nCpuFfn !== undefined && p.nCpuFfn > 0) {
+      // Long form only: getSupportedFlags records --long names, so "-ncffn"
+      // would read as unsupported and be silently dropped.
+      pushIfSupported(args, supported, '--n-cpu-ffn', String(p.nCpuFfn));
+    }
+    if (p.moeCacheMib !== undefined && p.moeCacheMib > 0) {
+      // Unconditional, like the server launch: the probe and the server come
+      // from one pinned bundle, so gating this on the fit binary's --help only
+      // models a version nobody runs — and when it did miss, the probe would
+      // measure a plan whose cache the launch then spends, silently.
+      args.push('--moe-cache-mib', String(p.moeCacheMib));
+      // Qualifies the cache, like the server emits it: without a cache there is
+      // no miss to route, and formatting must match toFixed(2) exactly.
+      if (p.moeCacheCpuShare !== undefined && p.moeCacheCpuShare > 0) {
+        args.push(
+          '--moe-cache-cpu-share',
+          Number(p.moeCacheCpuShare).toFixed(2),
+        );
+      }
+    }
+  }
+
+  // Lazy tensors are a load behaviour, not a tensor placement: the fitter is
+  // allowed to see it in solve mode. Same rule as buildLlamaServerArgs: auto is
+  // llama.cpp's own default, so the probe must not model an effect the launch
+  // will not have.
+  if (p.lazyMode && p.lazyMode !== 'auto') {
+    pushIfSupported(args, supported, '--lazy-mode', String(p.lazyMode));
   }
 
   // Memory mode: fit has no --no-mmap/--mlock pair, only --load-mode.
@@ -258,54 +371,44 @@ export function appendCommonFitArgs(
     }
   }
 
-  // ── Multimodal projector block (server parity) ──
-  // Best-effort: on builds whose fit binary lacks the vision flags the
-  // projector is skipped with a warning and the measurement covers the text
-  // model only. A build advertising --mmproj includes it automatically.
-  if (projectorPath) {
-    if (!fs.existsSync(projectorPath)) {
-      throw new Error(`Projector file not found at ${projectorPath}.`);
+  // ── Multimodal projector block ──
+  // The pinned llama-fit-params has no --mmproj at all ("invalid argument"), so
+  // no probe can ever include the projector. Its cost is added analytically
+  // instead (see estimator/mmproj.ts: exact weights, exact tokens per image,
+  // reserved encoder buffers). Builds that do advertise the flag keep the
+  // server-parity behaviour.
+  if (projectorPath && !fs.existsSync(projectorPath)) {
+    throw new Error(`Projector file not found at ${projectorPath}.`);
+  }
+  if (projectorPath && !solve && supported.has('--mmproj')) {
+    pushIfSupported(args, supported, '--mmproj', projectorPath);
+    if (p.mmprojOffload !== true) {
+      pushIfSupported(args, supported, '--no-mmproj-offload');
     }
-    pushIfSupported(
-      args,
-      supported,
-      '--mmproj',
-      projectorPath,
-      `vision projector measurement for ${projectorPath}`,
-    );
-  }
-  if (p.mmprojOffload !== true) {
-    pushIfSupported(
-      args,
-      supported,
-      '--no-mmproj-offload',
-      undefined,
-      'vision projector placement',
-    );
-  }
-  if (p.imageMinTokens !== undefined && p.imageMinTokens > 0) {
-    pushIfSupported(
-      args,
-      supported,
-      '--image-min-tokens',
-      String(p.imageMinTokens),
-    );
-  }
-  if (p.imageMaxTokens !== undefined && p.imageMaxTokens > 0) {
-    pushIfSupported(
-      args,
-      supported,
-      '--image-max-tokens',
-      String(p.imageMaxTokens),
-    );
-  }
-  if (p.mtmdBatchMaxTokens !== undefined && p.mtmdBatchMaxTokens !== 1024) {
-    pushIfSupported(
-      args,
-      supported,
-      '--mtmd-batch-max-tokens',
-      String(p.mtmdBatchMaxTokens),
-    );
+    if (p.imageMinTokens !== undefined && p.imageMinTokens > 0) {
+      pushIfSupported(
+        args,
+        supported,
+        '--image-min-tokens',
+        String(p.imageMinTokens),
+      );
+    }
+    if (p.imageMaxTokens !== undefined && p.imageMaxTokens > 0) {
+      pushIfSupported(
+        args,
+        supported,
+        '--image-max-tokens',
+        String(p.imageMaxTokens),
+      );
+    }
+    if (p.mtmdBatchMaxTokens !== undefined && p.mtmdBatchMaxTokens !== 1024) {
+      pushIfSupported(
+        args,
+        supported,
+        '--mtmd-batch-max-tokens',
+        String(p.mtmdBatchMaxTokens),
+      );
+    }
   }
 }
 
@@ -356,11 +459,7 @@ export function endFitRun(id: number): void {
   fitRuns.delete(id);
 }
 
-function fitFailure(
-  args: string[],
-  reason: string,
-  stderrTail: string,
-): Error {
+function fitFailure(args: string[], reason: string, stderrTail: string): Error {
   return new Error(
     `llama-fit-params failed (${args.join(' ')}): ${reason}${
       stderrTail ? `\n${stderrTail}` : ''
@@ -405,9 +504,7 @@ async function runFit(
       if (stderr.length < 16 * MiB) stderr += d.toString();
     });
     child.on('error', (err: Error) => {
-      finish(() =>
-        reject(fitFailure(args, err.message, stderr.slice(-4000))),
-      );
+      finish(() => reject(fitFailure(args, err.message, stderr.slice(-4000))));
     });
     child.on('close', (code: number | null) => {
       if (rec?.cancelled) {
@@ -424,13 +521,7 @@ async function runFit(
         );
       } else if (code !== 0) {
         finish(() =>
-          reject(
-            fitFailure(
-              args,
-              `exit code ${code}`,
-              stderr.slice(-4000),
-            ),
-          ),
+          reject(fitFailure(args, `exit code ${code}`, stderr.slice(-4000))),
         );
       } else {
         finish(() => resolve({ stdout, stderr }));
@@ -489,11 +580,6 @@ export function parseFitPrint(stdout: string): FitPrintResult {
     );
   }
   return { devices, host };
-}
-
-interface DeviceBudget {
-  total: number;
-  margin: number;
 }
 
 export function parseListDevices(
@@ -609,139 +695,18 @@ export function resolveBudgets(settings: AppSettings): ResolvedBudgets {
   };
 }
 
-// ── Minimal GGUF header reader (replaces parser metadata) ──
-// Walks the KV store at the start of the file to find
-// <arch>.block_count and <arch>.context_length.
-
-const GGUF_TYPE_SIZES: Record<number, number> = {
-  0: 1, // uint8
-  1: 1, // int8
-  2: 2, // uint16
-  3: 2, // int16
-  4: 4, // uint32
-  5: 4, // int32
-  6: 4, // float32
-  7: 1, // bool
-  10: 8, // uint64
-  11: 8, // int64
-  12: 8, // float64
-};
-
+// ── Model metadata ──
+// The full GGUF read (metadata plus the tensor-info table) lives in
+// estimator/gguf.ts and is cached per file. This is the cheap header-only
+// path behind the UI's max-layers / max-context display.
 export async function readGgufMetadata(
   modelPath: string,
 ): Promise<{ maxLayers: number; maxContext: number }> {
-  const fh = await fs.promises.open(modelPath, 'r');
-  try {
-    const stat = await fh.stat();
-    const CHUNK = 256 * 1024;
-    let buf = Buffer.alloc(0);
-    let pos = 0;
-    // Serial chunk reads: each read advances the file cursor.
-    /* eslint-disable no-await-in-loop */
-    const ensure = async (need: number) => {
-      while (buf.length < need && pos < stat.size) {
-        const toRead = Math.min(CHUNK, stat.size - pos);
-        const chunk = Buffer.alloc(toRead);
-        const { bytesRead } = await fh.read(chunk, 0, toRead, pos);
-        pos += bytesRead;
-        buf = Buffer.concat([buf, chunk.slice(0, bytesRead)]);
-        if (bytesRead === 0) break;
-      }
-      if (buf.length < need) throw new Error('Unexpected EOF in GGUF header.');
-    };
-    /* eslint-enable no-await-in-loop */
-    let off = 0;
-    const take = (n: number): Buffer => {
-      const s = buf.slice(off, off + n);
-      off += n;
-      return s;
-    };
-    const u64 = (): bigint => {
-      const v = buf.readBigUInt64LE(off);
-      off += 8;
-      return v;
-    };
-    const readStr = async (): Promise<string> => {
-      await ensure(off + 8);
-      const len = Number(u64());
-      if (len > 256 * MiB) throw new Error('Implausible GGUF string length.');
-      await ensure(off + len);
-      return take(len).toString('utf8');
-    };
-
-    await ensure(4 + 4 + 8 + 8);
-    if (take(4).toString('ascii') !== 'GGUF') {
-      throw new Error(`Not a GGUF file: ${modelPath}`);
-    }
-    take(4); // version
-    u64(); // tensor count (not needed for estimation)
-    const nKv = Number(u64());
-
-    let arch = '';
-    let blockCount: number | null = null;
-    let contextLength: number | null = null;
-
-    // Sequential by necessity: GGUF KV entries are variable-length back to
-    // back, so each entry must be parsed to find the next.
-    /* eslint-disable no-await-in-loop */
-    for (let i = 0; i < nKv; i += 1) {
-      const key = await readStr();
-      await ensure(off + 4);
-      const type = buf.readUInt32LE(off);
-      off += 4;
-      if (key === 'general.architecture') {
-        if (type !== 8)
-          throw new Error('general.architecture is not a string.');
-        arch = await readStr();
-      } else if (type === 4) {
-        await ensure(off + 4);
-        const v = buf.readUInt32LE(off);
-        off += 4;
-        if (key === `${arch}.block_count`) blockCount = v;
-        else if (key === `${arch}.context_length`) contextLength = v;
-      } else if (type === 8) {
-        await readStr();
-      } else if (type === 9) {
-        await ensure(off + 12);
-        const arrType = buf.readUInt32LE(off);
-        off += 4;
-        const arrLen = Number(u64());
-        if (arrType === 8) {
-          for (let j = 0; j < arrLen; j += 1) {
-            await readStr();
-          }
-        } else {
-          const sz = GGUF_TYPE_SIZES[arrType];
-          if (sz === undefined)
-            throw new Error(`Unsupported GGUF array type ${arrType}.`);
-          await ensure(off + arrLen * sz);
-          off += arrLen * sz;
-        }
-      } else {
-        const sz = GGUF_TYPE_SIZES[type];
-        if (sz === undefined)
-          throw new Error(
-            `Unsupported GGUF metadata type ${type} for key ${key}.`,
-          );
-        await ensure(off + sz);
-        off += sz;
-      }
-      if (blockCount !== null && contextLength !== null) break;
-      // Keep the window sliding to bound memory on huge KV stores.
-      if (off > 128 * 1024) {
-        buf = buf.slice(off);
-        off = 0;
-      }
-    }
-    /* eslint-enable no-await-in-loop */
-
-    return {
-      maxLayers: blockCount ?? 0,
-      maxContext: contextLength ?? 4096,
-    };
-  } finally {
-    await fh.close();
-  }
+  const info = await readGgufInfoCached(modelPath, { tensors: false });
+  return {
+    maxLayers: ggufArchNumber(info, 'block_count') ?? 0,
+    maxContext: ggufArchNumber(info, 'context_length') ?? 4096,
+  };
 }
 
 export async function getModelMetadata(
@@ -762,73 +727,125 @@ export async function getModelMetadata(
   }
 }
 
-// ── Measurement oracle: single no_alloc probe ──
+// ── Measurement oracle ──
+//
+// probeAt() below is the oracle: one `--fit-print` run for one placement at one
+// context. Nothing else measures memory in this file.
 
-async function measureAtConfig(
+// ── Probing a placement ─────────────────────────────────────────────────────
+//
+// A probe is `llama-fit-params --fit-print`: llama.cpp loads the file's
+// metadata, applies its own tensor-placement rules to the flags it is given, and
+// prints what each device and the host would spend. No weights are read, so the
+// probe is legal for placements that could never fit — which is how the MoE rule
+// gets to ask whether they can.
+//
+// That print is the only memory measurement the optimizer has. There is no
+// second model of memory in this file to disagree with it.
+
+/**
+ * The profile a probe runs under: the placement's own knobs replace whatever
+ * the user's profile carries, so a probe always measures exactly the placement
+ * being priced, and never inherits stale -ot/--cpu-moe pins from a previous
+ * optimizer run.
+ */
+function probeProfile(
+  profile: Partial<Profile>,
+  pl: Placement,
+  pins?: { tensorSplit?: string | null; overrides?: string | null },
+): Partial<Profile> {
+  return {
+    ...profile,
+    cpuMoe: pl.cpuMoeAll === true ? true : undefined,
+    nCpuMoe: (pl.nCpuMoe ?? 0) > 0 && !pl.cpuMoeAll ? pl.nCpuMoe : undefined,
+    nCpuFfn: (pl.nCpuFfn ?? 0) > 0 ? pl.nCpuFfn : undefined,
+    moeCacheMib: (pl.moeCacheMib ?? 0) > 0 ? pl.moeCacheMib : undefined,
+    moeCacheCpuShare:
+      (pl.moeCacheCpuShare ?? 0) > 0 ? pl.moeCacheCpuShare : undefined,
+    lazyMode: pl.lazyMode ?? profile.lazyMode,
+    tensorSplit: pins?.tensorSplit ?? null,
+    tensorOverrides: pins?.overrides ?? null,
+  };
+}
+
+/** One --fit-print probe at an explicit placement. The projector is never
+ *  passed: the pinned fit binary has no --mmproj, and its cost is accounted for
+ *  analytically, so a build that accepted it here would be double-counted. */
+async function probeAt(
   fitPath: string,
   supported: Set<string>,
   modelPath: string,
-  ngl: number,
-  ctx: number,
-  projectorPath: string | undefined,
   profile: Partial<Profile>,
-  opts?: {
-    device?: string;
+  ctx: number,
+  placement: Placement,
+  opts: {
+    runId?: number;
+    deviceArg?: string;
     tensorSplit?: string | null;
     overrides?: string | null;
-    runId?: number;
-  },
-): Promise<FitPrintResult> {
-  const args = ['-m', modelPath, '-c', String(ctx), '-ngl', String(ngl)];
-  appendCommonFitArgs(args, supported, profile, projectorPath);
-  if (opts?.device) {
-    pushIfSupported(args, supported, '--device', opts.device);
+  } = {},
+): Promise<Probe> {
+  const args = [
+    '-m',
+    modelPath,
+    '-c',
+    String(ctx),
+    '-ngl',
+    String(placement.ngl),
+  ];
+  appendCommonFitArgs(
+    args,
+    supported,
+    probeProfile(profile, placement, opts),
+    undefined,
+    'measure',
+  );
+  if (opts.deviceArg) {
+    pushIfSupported(args, supported, '--device', opts.deviceArg);
   }
-  // Placement triple: measuring WITH the fitter's -ts/-ot reports the true
-  // launch-time split. Without them a partial-overflow plan reads as whole
-  // layers resident and wildly overstates device memory.
-  if (opts?.tensorSplit) args.push('-ts', opts.tensorSplit);
-  if (opts?.overrides) args.push('-ot', opts.overrides);
+  if (opts.tensorSplit) args.push('-ts', opts.tensorSplit);
+  if (opts.overrides) args.push('-ot', opts.overrides);
   args.push('--fit-print', 'on');
-  const { stdout } = await runFit(fitPath, args, opts?.runId);
-  return parseFitPrint(stdout);
+  const { stdout } = await runFit(fitPath, args, opts.runId);
+  const r = parseFitPrint(stdout);
+  return {
+    ctx,
+    devices: r.devices,
+    host: { name: 'Host', ...r.host },
+    placement,
+  };
 }
 
-function vramFits(m: FitPrintResult, budgets: DeviceBudget[]): boolean {
-  if (m.devices.length === 0) return true;
-  if (m.devices.length !== budgets.length) {
-    const used = m.devices.reduce(
-      (a, d) => a + d.model + d.context + d.compute,
-      0,
-    );
-    const budget = budgets.reduce((a, b) => a + (b.total - b.margin), 0);
-    return used <= budget;
-  }
-  return m.devices.every((d, i) => {
-    const used = d.model + d.context + d.compute;
-    return used <= budgets[i].total - budgets[i].margin;
-  });
-}
+// ── Preparation shared by every optimizer entry point ──
+//
+// One probe does the discovery: `-ngl` full at the smallest context tells us
+// which devices llama.cpp selects for this model, and in which order the
+// budgets are indexed by. Every later probe pins that same set with --device,
+// and the server uses the same default selection, so the three agree.
 
-// ── Optimizer ──
-
-// Shared preparation: binary, flags, header, device discovery, budgets.
-// Returned as one object so fitLayersForContext and maxFullOffloadCtx stay
-// consistent (same device set, same margins, same order).
 interface FitPrep {
   fitPath: string;
   supported: Set<string>;
-  maxLayers: number;
-  maxModelCtx: number;
+  model: ModelClass;
+  /** Usable bytes per device, in probe row order. */
+  deviceBudget: number[];
   usedNames: string[];
   deviceArg: string | undefined;
   marginsMiB: number[];
-  budgets: DeviceBudget[];
+  maxModelCtx: number;
+  ramLimitBytes: number;
+  ramBudgetLabel: string;
+  mmprojReserveResult: MmprojReserve | null;
+  /** Bytes the profile's --lazy-mode reads from the file on demand instead of
+   *  holding in RAM. The probe still bills them to the host column, so every
+   *  host total in this file takes them back out: they are never resident. */
+  streamedHostBytes: number;
 }
 
 async function prepareFit(
-  modelPath: string,
+  modelPathIn: string,
   vramMB: number | undefined,
+  ramMB: number | undefined,
   projectorPath: string | undefined,
   profile: Partial<Profile>,
   discoveryCtx: number,
@@ -837,62 +854,346 @@ async function prepareFit(
   const fitPath = await resolveFitPath();
   const supported = await getSupportedFlags(fitPath);
 
-  const meta = await readGgufMetadata(modelPath);
-  const maxModelCtx = meta.maxContext || 4096;
+  const info = await readGgufInfoCached(modelPathIn);
+  if (info.splitTable) {
+    throw new Error(
+      `${modelPathIn} describes more tensor bytes than the file holds, so it is a ` +
+        'byte-chunked GGUF rather than a llama.cpp split. llama.cpp cannot load ' +
+        'this either — merge the parts into one file first.',
+    );
+  }
+  // Split models are probed through their first part: llama.cpp refuses the
+  // others ("model must be loaded with the first split"). readGgufInfoCached
+  // already put that path in info.path and merged every part's tensor table.
+  const modelPath = info.path;
+  const model = classifyModel(info);
 
-  // Discover which devices llama.cpp actually selects for this model
-  // (often a subset, e.g. discrete GPU only). Margins are only meaningful
-  // for that set, in that order — so pin it via --device for every later
-  // probe. The server uses the same default selection, so this stays
-  // representative of launch-time placement.
-  const discoveryNgl = meta.maxLayers > 0 ? meta.maxLayers : 9999;
-  const discovery = await measureAtConfig(
+  const mmproj = projectorPath ? await readMmprojInfo(projectorPath) : null;
+  if (mmproj) {
+    const mismatch = checkProjectionDim(
+      mmproj,
+      ggufArchNumber(info, 'embedding_length') ?? 0,
+    );
+    // llama.cpp aborts on this pair, so no plan is worth building.
+    if (mismatch) throw new Error(mismatch);
+  }
+
+  const discovery = await probeAt(
     fitPath,
     supported,
     modelPath,
-    discoveryNgl,
-    discoveryCtx,
-    projectorPath,
     profile,
+    discoveryCtx,
+    { ngl: model.fullOffloadNgl },
     { runId },
   );
   const usedNames = discovery.devices.map((d) => d.name);
   const deviceArg = usedNames.length > 0 ? usedNames.join(',') : undefined;
   if (isDev()) {
     console.log(
-      `[fit-estimator] devices in use: ${usedNames.length > 0 ? usedNames.join(',') : '(host only)'}`,
+      `[fit-estimator] devices in use: ${usedNames.join(',') || '(host only)'}`,
     );
   }
 
   const marginsMiB = await computeFitMargins(fitPath, vramMB, usedNames);
   const deviceTotals = await getDeviceTotals(fitPath);
   const byName = new Map(deviceTotals.map((d) => [d.name, d.total]));
-  const budgets: DeviceBudget[] = marginsMiB.map((margin, i) => ({
-    total:
+  const deviceBudget = marginsMiB.map((margin, i) => {
+    const total =
       byName.get(usedNames[i]) ??
       deviceTotals[i]?.total ??
-      // Last resort when totals are unknown: manual assumes the margin
-      // leaves the requested budget usable; automatic (no budget) does not
-      // gate on VRAM at all.
-      (vramMB !== undefined ? margin + vramMB * MiB : Number.POSITIVE_INFINITY),
-    margin,
-  }));
+      // Last resort when totals are unknown: manual assumes the margin leaves
+      // the requested budget usable; automatic does not gate on VRAM at all.
+      (vramMB !== undefined ? margin + vramMB * MiB : Number.POSITIVE_INFINITY);
+    return total - margin;
+  });
+
+  const totalSystemRAM = os.totalmem();
+  const mmprojReserveResult = mmproj
+    ? mmprojReserve(mmproj, {
+        offload: (profile as any).mmprojOffload === true,
+        images: 1,
+        imageMaxTokens: (profile as any).imageMaxTokens,
+        imageMinTokens: (profile as any).imageMinTokens,
+        flashAttn: (profile as any).flashAttn !== 'off',
+      })
+    : null;
+
   return {
     fitPath,
     supported,
-    maxLayers: meta.maxLayers,
-    maxModelCtx,
+    model,
+    deviceBudget,
     usedNames,
     deviceArg,
     marginsMiB,
-    budgets,
+    maxModelCtx: model.modelMaxContext || 4096,
+    ramLimitBytes: ramMB !== undefined ? ramMB * MiB : totalSystemRAM,
+    ramBudgetLabel:
+      ramMB !== undefined
+        ? `${(ramMB / 1024).toFixed(2)} GB allocated`
+        : `${(totalSystemRAM / 1024 ** 3).toFixed(2)} GB total system RAM`,
+    mmprojReserveResult,
+    streamedHostBytes: lazyBytes(model, profile.lazyMode),
   };
 }
 
-// Parameter order is positional API shared with chat.ts/ipc.ts callers.
+/** The projector is never in a probe (the pinned llama-fit-params has no
+ *  --mmproj), so it is booked onto the measurement beside the row it lands on. */
+const mmprojFor = (prep: FitPrep) => ({
+  device: prep.mmprojReserveResult?.deviceBytes ?? 0,
+  host: prep.mmprojReserveResult?.hostBytes ?? 0,
+  ctxTokens: prep.mmprojReserveResult?.ctxTokens ?? 0,
+});
+
+/** Host bytes a probe row bills that the run will never hold: the --lazy-mode
+ *  tables, which llama.cpp reserves in its host column and then reads from the
+ *  file on demand. Clamped to the row, because a probe that did not bill them
+ *  has nothing to give back. */
+function residentHost(prep: FitPrep, row: FitRow): number {
+  return Math.max(0, probeDeviceTotal(row) - prep.streamedHostBytes);
+}
+
+/** Bytes a probe says this placement puts past a device budget. Negative means
+ *  it fits, and by how much: the same number is the pool's budget. */
+function overBudget(prep: FitPrep, p: Probe, mmprojDevice: number): number {
+  if (p.devices.length === 0) return 0;
+  const cap = (i: number) =>
+    prep.deviceBudget[i] ??
+    prep.deviceBudget[prep.deviceBudget.length - 1] ??
+    Number.POSITIVE_INFINITY;
+  if (p.devices.length !== prep.deviceBudget.length) {
+    const used =
+      p.devices.reduce((a, d) => a + probeDeviceTotal(d), 0) + mmprojDevice;
+    return used - prep.deviceBudget.reduce((a, b) => a + b, 0);
+  }
+  return Math.max(
+    ...p.devices.map(
+      (d, i) => probeDeviceTotal(d) + (i === 0 ? mmprojDevice : 0) - cap(i),
+    ),
+  );
+}
+
+/** Flags of a placement in reading order, for the UI's explanation line. */
+function placementLabel(pl: Placement): string {
+  return [
+    `ngl=${pl.ngl}`,
+    pl.cpuMoeAll ? '--cpu-moe' : '',
+    (pl.nCpuMoe ?? 0) > 0 ? `--n-cpu-moe=${pl.nCpuMoe}` : '',
+    (pl.nCpuFfn ?? 0) > 0 ? `--n-cpu-ffn=${pl.nCpuFfn}` : '',
+    (pl.moeCacheMib ?? 0) > 0 ? `cache=${pl.moeCacheMib}MiB` : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+}
+
+/** 0 and unset are the same thing to the caller: no flag to emit. */
+function spillFlag(n: number | undefined): number | null {
+  return (n ?? 0) > 0 ? n! : null;
+}
+
+/** Next -ngl guess for a measured overshoot: whole layers come off the bottom
+ *  of the GPU range and the GGUF table says what each one is worth. A guess
+ *  only — the caller re-measures, and the measurement is the verdict. */
+function nglForOver(model: ModelClass, ngl: number, over: number): number {
+  let freed = 0;
+  let next = ngl;
+  while (next > 0 && freed < over) {
+    // -ngl full also holds the output slot; below full, each step drops the
+    // lowest GPU layer.
+    freed +=
+      next >= model.fullOffloadNgl
+        ? model.outputDeviceBytes
+        : (model.layerBytes[model.nLayerAll + 1 - next] ?? 0);
+    next -= 1;
+  }
+  return Math.max(0, next);
+}
+
+/** Largest context the placement holds, from two probes of it: the requested
+ *  ctx and ctx 1. Their difference is what a context token costs, so the limit
+ *  is one division — measured, never modelled. */
+function ctxLimit(
+  prep: FitPrep,
+  atCtx: Probe,
+  atOne: Probe,
+  probeCtx: number,
+  mmproj: { device: number; host: number; ctxTokens: number },
+): { maxCtx: number; clampedBy: string } {
+  const span = Math.max(1, probeCtx - 1);
+  const limits: { ctx: number; by: string }[] = [];
+  // A budget the placement already exceeds at ctx 1 is not a "largest context
+  // that fits": nothing fits, and the plan is reported as forced with its
+  // overflow instead. Only a budget that still has room caps this number.
+  atOne.devices.forEach((one, i) => {
+    const budget =
+      prep.deviceBudget[i] ??
+      prep.deviceBudget[prep.deviceBudget.length - 1] ??
+      Number.POSITIVE_INFINITY;
+    if (!Number.isFinite(budget)) return;
+    const used = probeDeviceTotal(one) + (i === 0 ? mmproj.device : 0);
+    if (used >= budget) return;
+    const grown =
+      probeDeviceTotal(atCtx.devices[i] ?? one) - probeDeviceTotal(one);
+    if (grown <= 0) return;
+    limits.push({ ctx: 1 + (budget - used) / (grown / span), by: 'vram' });
+  });
+  if (Number.isFinite(prep.ramLimitBytes)) {
+    // The streamed tables cancel out of `grown` (both rows bill them), so only
+    // the starting point needs them taken back out.
+    const used = residentHost(prep, atOne.host) + mmproj.host;
+    const grown = probeDeviceTotal(atCtx.host) - probeDeviceTotal(atOne.host);
+    if (grown > 0 && used < prep.ramLimitBytes) {
+      limits.push({
+        ctx: 1 + (prep.ramLimitBytes - used) / (grown / span),
+        by: 'host',
+      });
+    }
+  }
+  limits.push({ ctx: prep.maxModelCtx, by: 'model' });
+  const binding = limits.reduce((a, b) => (b.ctx < a.ctx ? b : a));
+  const imgTokens = mmproj.ctxTokens;
+  return {
+    maxCtx: Math.max(
+      CTX_MIN,
+      Math.floor(Math.min(binding.ctx, prep.maxModelCtx) / CTX_SNAP) *
+        CTX_SNAP -
+        imgTokens,
+    ),
+    clampedBy: binding.by,
+  };
+}
+
+/** Shared tail of both optimizer paths: the two breakdown probes, the host
+ *  overflow report, and the shape the caller launches with. */
+async function reportPlacement(
+  prep: FitPrep,
+  modelPath: string,
+  ctx: number,
+  projectorPath: string | undefined,
+  profile: Partial<Profile>,
+  placement: Placement,
+  measured: Probe,
+  extra: {
+    label: string;
+    forced: boolean;
+    tensorSplit?: string | null;
+    tensorOverrides?: string | null;
+    runId?: number;
+  },
+): Promise<MemoryEstimation> {
+  const mmproj = mmprojFor(prep);
+  const atOne = await probeAt(
+    prep.fitPath,
+    prep.supported,
+    modelPath,
+    profile,
+    1,
+    placement,
+    { runId: extra.runId, deviceArg: prep.deviceArg },
+  );
+  const totalVram =
+    measured.devices.reduce((a, d) => a + probeDeviceTotal(d), 0) +
+    mmproj.device;
+  const totalRam = residentHost(prep, measured.host) + mmproj.host;
+  const modelVram =
+    atOne.devices.reduce((a, d) => a + d.model + d.compute, 0) + mmproj.device;
+  const modelRam =
+    Math.max(
+      0,
+      atOne.host.model + atOne.host.compute - prep.streamedHostBytes,
+    ) + mmproj.host;
+
+  // Host memory spills to the page file: still runs, just slower. Reported,
+  // never a reason to refuse a plan — a --cpu-moe plan is allowed to want more
+  // RAM than the machine has. The streamed tables are already out of totalRam:
+  // they are read from the file, so they never occupy RAM to overflow it.
+  const hostOverflowBytes = Math.max(0, totalRam - prep.ramLimitBytes);
+  if (hostOverflowBytes > 0) {
+    console.warn(
+      `[fit-estimator] ctx ${ctx} needs ${(totalRam / 1024 ** 3).toFixed(2)} GB ` +
+        `host memory vs ${prep.ramBudgetLabel} — overflow will spill to the ` +
+        `page file. It will still run, but slower.`,
+    );
+  }
+  const limit = ctxLimit(prep, measured, atOne, measured.ctx, mmproj);
+  // -ngl counts the output slot (and any draft layers), so the block count the
+  // UI reports comes from the placement rule, not from ngl itself.
+  const gpuLayers = Math.max(
+    0,
+    Math.min(
+      prep.model.baseLayers,
+      prep.model.baseLayers - firstGpuLayer(prep.model, placement.ngl),
+    ),
+  );
+  const plan: NonNullable<MemoryEstimation['plan']> = {
+    kind: prep.model.kind,
+    label: extra.label,
+    maxCtx: limit.maxCtx,
+    clampedBy: limit.clampedBy,
+    forced: extra.forced,
+    hostOverflowBytes,
+    streamedHostBytes: prep.streamedHostBytes,
+    gpuLayers,
+    totalLayers: prep.model.baseLayers,
+  };
+  if (isDev()) {
+    // The run ends by saying what it decided, in the same words the profile
+    // modal prints: these flags are the plan, and this is the plan read out.
+    console.log(
+      `[fit-estimator] plan for ctx ${ctx}:\n  ${planSummaryLines({
+        ...plan,
+        ngl: placement.ngl,
+        cpuMoe: placement.cpuMoeAll === true,
+        nCpuMoe: spillFlag(placement.nCpuMoe) ?? undefined,
+        nCpuFfn: spillFlag(placement.nCpuFfn) ?? undefined,
+        moeCacheMib: spillFlag(placement.moeCacheMib) ?? undefined,
+      }).join('\n  ')}`,
+    );
+  }
+  return {
+    ngl: placement.ngl,
+    ctx,
+    tensorSplit: extra.tensorSplit ?? null,
+    tensorOverrides: extra.tensorOverrides ?? null,
+    hostOverflowBytes,
+    // The plan is what the launch carries (see buildLlamaServerArgs): a
+    // --cpu-moe plan reports every expert layer as spilled, and a manual
+    // override travels through unchanged so it survives a re-solve.
+    nCpuMoe:
+      placement.cpuMoeAll === true
+        ? prep.model.baseLayers
+        : spillFlag(placement.nCpuMoe),
+    cpuMoe: placement.cpuMoeAll === true,
+    nCpuFfn: spillFlag(placement.nCpuFfn),
+    moeCacheMib: spillFlag(placement.moeCacheMib),
+    memory: {
+      modelVramUsage: modelVram,
+      modelRamUsage: modelRam,
+      contextVramUsage: Math.max(0, totalVram - modelVram),
+      contextRamUsage: Math.max(0, totalRam - modelRam),
+    },
+    plan,
+  };
+}
+// ── Optimizer entry point ──
+//
+// Every number the optimizer reports comes from a probe: llama.cpp's own
+// accounting for the exact flags the server will launch with. The GGUF table is
+// used for two things only — the memory bar's subdivision of a measured column,
+// and llama.cpp's own minimum pool size — never to decide a placement. A second
+// model of memory next to the binary is what produced every plan that measured
+// differently than it was priced.
+//
+//   dense, or more than one device: llama.cpp's fitter (-ngl auto --fit on)
+//     solves the placement and its -ts/-ot triple, and probes report the result.
+//   MoE, one device: Synapse's rule, two probes deep — pinned if the experts fit
+//     in VRAM, otherwise every expert in host RAM with the rest of VRAM as the
+//     expert pool. See decideMoePlacement.
+
 /* eslint-disable default-param-last */
 export async function fitLayersForContext(
-  modelPath: string,
+  modelPathIn: string,
   ctxInput: number,
   vramMB: number | undefined,
   ramMB: number | undefined,
@@ -901,66 +1202,58 @@ export async function fitLayersForContext(
   runId?: number,
 ): Promise<MemoryEstimation> {
   /* eslint-enable default-param-last */
-  // Automatic mode (no caps): overflow is measured against total physical
-  // RAM — the only true SSD-spill signal when nothing is reserved.
-  const totalSystemRAM = os.totalmem();
-  const ramLimitBytes = ramMB !== undefined ? ramMB * MiB : totalSystemRAM;
-  const ramBudgetLabel =
-    ramMB !== undefined
-      ? `${(ramMB / 1024).toFixed(2)} GB allocated`
-      : `${(totalSystemRAM / 1024 ** 3).toFixed(2)} GB total system RAM`;
-
+  // Split GGUF: llama.cpp only loads the first part, and the reader sizes the
+  // whole model from all of them, so probe the first part.
+  const modelPath = firstSplitPart(modelPathIn);
   const prep = await prepareFit(
     modelPath,
     vramMB,
+    ramMB,
     projectorPath,
     profile,
     CTX_MIN,
     runId,
   );
-  const {
-    fitPath,
-    supported,
-    maxLayers,
-    maxModelCtx,
-    usedNames,
-    deviceArg,
-    marginsMiB,
-    budgets,
-  } = prep;
-  const measureBase = deviceArg ? { device: deviceArg, runId } : { runId };
-  // Clamp the requested ctx into the valid snapped range.
   const ctx = Math.min(
-    maxModelCtx,
+    prep.maxModelCtx,
     Math.max(CTX_MIN, Math.floor(ctxInput / CTX_SNAP) * CTX_SNAP),
   );
-  // 1. Let the fitter solve at the requested ctx: max layers (+triple) for
-  // exactly this context size. With explicit -c the fitter never shrinks
-  // ctx itself, so the returned triple is self-consistent by construction —
-  // no search loop, no reconciliation needed.
-  const fitArgs = ['-m', modelPath, '-c', String(ctx), '-ngl', 'auto'];
-  appendCommonFitArgs(fitArgs, supported, profile, projectorPath);
-  if (deviceArg) {
-    pushIfSupported(fitArgs, supported, '--device', deviceArg);
+
+  // Multi-device: llama.cpp's fitter owns the whole placement. Its -ts/-ot
+  // splits interact with per-layer pins in ways that overfill one device while
+  // underfilling another, so the MoE rule only runs on a single device.
+  /* eslint-disable no-use-before-define -- the entry point reads first; the two
+   *  paths it chooses between are what follows it. */
+  if (prep.model.kind === 'moe' && prep.usedNames.length <= 1) {
+    return fitMoe(prep, modelPath, ctx, projectorPath, profile, runId);
   }
-  fitArgs.push('--fit', 'on', '--fit-target', marginsForCli(marginsMiB));
-  const { stdout, stderr } = await runFit(fitPath, fitArgs, runId);
+  return fitWithFitter(prep, modelPath, ctx, projectorPath, profile, runId);
+  /* eslint-enable no-use-before-define */
+}
+
+/** Ask llama.cpp's own fitter for the largest placement that fits this context,
+ *  then measure what it answered. With an explicit -c the fitter never shrinks
+ *  the context itself, so the -ngl/-ts/-ot triple it echoes is self-consistent —
+ *  no search loop, no reconciliation. This is also the multi-device path. */
+async function fitWithFitter(
+  prep: FitPrep,
+  modelPath: string,
+  ctx: number,
+  projectorPath: string | undefined,
+  profile: Partial<Profile>,
+  runId?: number,
+): Promise<MemoryEstimation> {
+  const fitArgs = ['-m', modelPath, '-c', String(ctx), '-ngl', 'auto'];
+  appendCommonFitArgs(fitArgs, prep.supported, profile, projectorPath, 'solve');
+  if (prep.deviceArg) {
+    pushIfSupported(fitArgs, prep.supported, '--device', prep.deviceArg);
+  }
+  fitArgs.push('--fit', 'on', '--fit-target', marginsForCli(prep.marginsMiB));
+  const { stdout } = await runFit(prep.fitPath, fitArgs, runId);
   const fitted = parseFittedArgs(stdout);
-
-  // The fitter echoes -ngl -1 (full-offload sentinel, verified identical to
-  // -ngl 99) when everything fits untouched. Normalize to the model's layer
-  // count for the profile/UI; the shared arg parser accepts -1 regardless.
-  const normalizeNgl = (ngl: number): number =>
-    ngl < 0 && maxLayers > 0 ? maxLayers : ngl;
-  const bestNgl = normalizeNgl(fitted.ngl);
-  // Placement triple: ngl alone is not a complete solution when the fitter
-  // emits -ts/-ot (partial-layer overflow). The triple travels together from
-  // here on, through measurement and all the way to the server launch flags.
-  const triple = {
-    tensorSplit: fitted.tensorSplit ?? null,
-    overrides: fitted.overrides ?? null,
-  };
-
+  // The fitter echoes -ngl -1 (the full-offload sentinel) when everything fits
+  // untouched; the profile and the UI want the layer count.
+  const ngl = fitted.ngl < 0 ? prep.model.fullOffloadNgl : fitted.ngl;
   if (isDev()) {
     console.log(
       `[fit-estimator] fitted -c ${fitted.ctx} -ngl ${fitted.ngl}` +
@@ -968,158 +1261,296 @@ export async function fitLayersForContext(
         `${fitted.overrides ? ` -ot "${fitted.overrides}"` : ''}`,
     );
   }
-
-  const finalOpts = {
-    ...measureBase,
-    tensorSplit: triple.tensorSplit,
-    overrides: triple.overrides,
+  const placement: Placement = {
+    ngl,
+    nCpuFfn: (profile as any).nCpuFfn,
   };
-  const finalMeasure = await measureAtConfig(
-    fitPath,
-    supported,
+  const measured = await probeAt(
+    prep.fitPath,
+    prep.supported,
     modelPath,
-    bestNgl,
+    profile,
+    ctx,
+    placement,
+    {
+      runId,
+      deviceArg: prep.deviceArg,
+      tensorSplit: fitted.tensorSplit ?? null,
+      overrides: fitted.overrides ?? null,
+    },
+  );
+  const forced = overBudget(prep, measured, mmprojFor(prep).device) > 0;
+  if (isDev()) {
+    console.log(
+      `[fit-estimator] dense plan: ${placementLabel(placement)} ` +
+        `over=${Math.round(overBudget(prep, measured, mmprojFor(prep).device) / MiB)}MiB`,
+    );
+  }
+  return reportPlacement(
+    prep,
+    modelPath,
     ctx,
     projectorPath,
     profile,
-    finalOpts,
+    placement,
+    measured,
+    {
+      label: placementLabel(placement),
+      forced,
+      tensorSplit: fitted.tensorSplit ?? null,
+      tensorOverrides: fitted.overrides ?? null,
+      runId,
+    },
   );
+}
 
-  // 2. Breakdown: weights vs context from a ctx=1 probe at bestNgl.
-  const modelOnly = await measureAtConfig(
-    fitPath,
-    supported,
-    modelPath,
-    bestNgl,
-    1,
-    projectorPath,
-    profile,
-    finalOpts,
-  );
-  const sumDev = (r: FitPrintResult) =>
-    r.devices.reduce((a, d) => a + d.model + d.context + d.compute, 0);
-  const sumHost = (r: FitPrintResult) =>
-    r.host.model + r.host.context + r.host.compute;
-  const totalVram = sumDev(finalMeasure);
-  const totalRam = sumHost(finalMeasure);
-  const modelVram = sumDev(modelOnly);
-  const modelRam = sumHost(modelOnly);
-  const toGB = (bytes: number) => `${(bytes / 1024 ** 3).toFixed(2)} GB`;
-  const vramDisplay =
-    vramMB !== undefined
-      ? `${(vramMB / 1024).toFixed(2)} GB allocated`
-      : `${(budgets.reduce((a, b) => a + b.total, 0) / 1024 ** 3).toFixed(2)} GB total device`;
-
-  // Host overflow spills to SSD swap: still runs, just slower. Warn (always,
-  // all environments) instead of refusing or silently degrading.
-  const hostOverflowBytes = Math.max(0, totalRam - ramLimitBytes);
-  if (hostOverflowBytes > 0) {
-    console.warn(
-      `[fit-estimator] ctx ${ctx} needs ${toGB(totalRam)} host memory vs ` +
-        `${ramBudgetLabel} — overflow will spill to SSD swap. ` +
-        `It will still run, but slower.`,
+/** MoE on one device: the rule, answered by probes.
+ *
+ *   probe 1  -ngl full                       -> does everything fit? launch it
+ *   probe 2  -ngl full --cpu-moe             -> the alternative, and its headroom
+ *   probe 3  ... --moe-cache-mib <headroom>  -> the pool the launch will get
+ *
+ * plus one probe at ctx 1 for the weights/context split. Host memory is never
+ * part of the decision: the --cpu-moe plan is allowed to want more RAM than the
+ * machine has, and the overflow is reported instead. */
+async function fitMoe(
+  prep: FitPrep,
+  modelPath: string,
+  ctx: number,
+  projectorPath: string | undefined,
+  profile: Partial<Profile>,
+  runId?: number,
+): Promise<MemoryEstimation> {
+  const mmproj = mmprojFor(prep);
+  // Image tokens are part of what a context value has to hold: one image is
+  // what the memory panel promises a chat can attach without re-solving.
+  const probeCtx = ctx + mmproj.ctxTokens;
+  const full = prep.model.fullOffloadNgl;
+  const probed: string[] = [];
+  const probe = async (pl: Placement): Promise<Probe> => {
+    const p = await probeAt(
+      prep.fitPath,
+      prep.supported,
+      modelPath,
+      profile,
+      probeCtx,
+      pl,
+      { runId, deviceArg: prep.deviceArg },
     );
+    probed.push(
+      `${placementLabel(pl)} over=${Math.round(overBudget(prep, p, mmproj.device) / MiB)}MiB`,
+    );
+    return p;
+  };
+  const over = (p: Probe) => overBudget(prep, p, mmproj.device);
+  // A manual --n-cpu-moe / --n-cpu-ffn is a raw override: the optimizer never
+  // proposes one, but a probe that ignores it prices a launch nobody runs.
+  const raw = {
+    nCpuMoe: profile.nCpuMoe,
+    nCpuFfn: (profile as any).nCpuFfn,
+  };
+
+  // 1. Pinned. One probe answers the whole first half of the rule.
+  const pinned = await probe({ ...raw, ngl: full });
+  const pinnedOver = over(pinned);
+  let placement: Placement = {
+    ...raw,
+    ...decideMoePlacement({
+      ngl: full,
+      pinnedOver,
+      cacheHeadroom: 0,
+      cacheFloor: 0,
+    }),
+  };
+  let measured = pinned;
+  let forced = pinnedOver > 0;
+
+  if (pinnedOver > 0) {
+    // 2. It does not fit: every expert to host RAM, everything else still at
+    //    -ngl full. No partial spill, no per-layer bargain.
+    let ngl = full;
+    let spilled = await probe({ ...raw, ngl, cpuMoeAll: true });
+    let spilledOver = over(spilled);
+    // Even with the experts gone the device is full, so whole layers have to
+    // come back. The GGUF table only says how far to reach for the next guess.
+    /* eslint-disable no-await-in-loop -- sequential by design: each probe is
+     *  what decides the next placement, and they share one cancellation run. */
+    for (let step = 0; spilledOver > 0 && ngl > 0 && step < 4; step += 1) {
+      ngl = nglForOver(prep.model, ngl, spilledOver);
+      spilled = await probe({ ...raw, ngl, cpuMoeAll: true });
+      spilledOver = over(spilled);
+    }
+    forced = spilledOver > 0;
+
+    // 3. The pool takes whatever the spill left on the device.
+    placement = {
+      ...raw,
+      ...decideMoePlacement({
+        ngl,
+        pinnedOver,
+        cacheHeadroom: -spilledOver,
+        cacheFloor: moeCacheFloorBytes(prep.model),
+        maxCacheMib:
+          profile.moeCacheMib !== undefined && profile.moeCacheMib > 0
+            ? profile.moeCacheMib
+            : undefined,
+      }),
+    };
+    measured = await probe(placement);
+    // The pool is allocated in whole expert slots, so the size the measurement
+    // leaves room for can still print a few MiB over. Take it back out of the
+    // pool: it is the plan's only device allocation that is not a layer.
+    let poolOver = over(measured);
+    for (let step = 0; poolOver > 0 && step < 3; step += 1) {
+      const next = shrinkMoeCache(placement, poolOver);
+      if (!next) break;
+      placement = next;
+      measured = await probe(placement);
+      poolOver = over(measured);
+    }
+    /* eslint-enable no-await-in-loop */
+    forced = poolOver > 0;
   }
 
   if (isDev()) {
-    console.log(`
---- Optimization Results (llama-fit-params) ---
-Requested Context:   ${ctx} tokens
-Best GPU Layers (NGL): ${bestNgl}
-
-Memory Breakdown:
-- Model Weights in VRAM:  ${toGB(modelVram)}
-- Context VRAM (Compute): ${toGB(Math.max(0, totalVram - modelVram))}
-- Context RAM (KV Cache): ${toGB(Math.max(0, totalRam - modelRam))}
-
-Hardware Utilization:
-- VRAM: ${toGB(totalVram)} / ${vramDisplay}
-- RAM:  ${toGB(totalRam)} / ${ramBudgetLabel} (${toGB(hostOverflowBytes)} over budget)
-----------------------------------
-`);
-  }
-
-  if (isDev()) {
-    const toMiB = (bytes: number) => Math.round(bytes / MiB);
-    const rowMiB = (r: {
-      model: number;
-      context: number;
-      compute: number;
-    }) => ({
-      modelMiB: toMiB(r.model),
-      contextMiB: toMiB(r.context),
-      computeMiB: toMiB(r.compute),
-      totalMiB: toMiB(r.model + r.context + r.compute),
-    });
     console.debug(
-      '[fit-estimator:full-result]',
+      '[fit-estimator:plan]',
       JSON.stringify(
         {
-          strategy: 'synapse',
-          modelPath,
-          projectorPath: projectorPath ?? null,
-          budgetsMiB: { vramMB, ramMB },
-          devicesInUse: usedNames,
-          marginsMiB: marginsMiB.map((m) => Math.round(m / MiB)),
-          deviceBudgetsMiB: budgets.map((b) => ({
-            totalMiB: toMiB(b.total),
-            marginMiB: toMiB(b.margin),
-          })),
-          maxModelCtx,
-          requestedCtx: ctxInput,
-          fitCommand: [fitPath, ...fitArgs].join(' '),
-          fitStdout: stdout.trim(),
-          fitStderrTail: stderr.slice(-2048),
-          fitted: {
-            ctx: fitted.ctx,
-            ngl: fitted.ngl,
-            normalizedNgl: bestNgl,
-            tensorSplit: fitted.tensorSplit ?? null,
-            overrides: fitted.overrides ?? null,
+          model: prep.model.name,
+          kind: prep.model.kind,
+          nLayerAll: prep.model.nLayerAll,
+          draftLayers: prep.model.draftLayers,
+          budgetsMiB: {
+            devices: prep.deviceBudget.map((b) => Math.round(b / MiB)),
+            host: Math.round(prep.ramLimitBytes / MiB),
           },
-          hostOverflowMiB: toMiB(hostOverflowBytes),
-          final: {
-            ngl: bestNgl,
-            ctx,
-            devices: finalMeasure.devices.map((d) => ({
-              name: d.name,
-              ...rowMiB(d),
-            })),
-            host: rowMiB(finalMeasure.host),
-          },
-          modelOnlyAtCtx1: {
-            devices: modelOnly.devices.map((d) => ({
-              name: d.name,
-              ...rowMiB(d),
-            })),
-            host: rowMiB(modelOnly.host),
-          },
+          requestedCtx: ctx,
+          imgTokens: mmproj.ctxTokens,
+          plan: placementLabel(placement),
+          placement,
+          forced,
+          probed,
         },
         null,
         2,
       ),
     );
   }
-
-  return {
-    ngl: bestNgl,
+  return reportPlacement(
+    prep,
+    modelPath,
     ctx,
-    tensorSplit: triple.tensorSplit,
-    tensorOverrides: triple.overrides,
-    hostOverflowBytes,
-    memory: {
-      modelVramUsage: modelVram,
-      modelRamUsage: modelRam,
-      contextVramUsage: Math.max(0, totalVram - modelVram),
-      contextRamUsage: Math.max(0, totalRam - modelRam),
+    projectorPath,
+    profile,
+    placement,
+    measured,
+    {
+      label: placementLabel(placement),
+      forced,
+      runId,
     },
+  );
+}
+// ── Single-point estimate (memory panel) ──
+
+/** Profile with the optimizer plan's placement fields substituted, using the
+ *  same precedence buildLlamaServerArgs applies. Both the probe's arguments and
+ *  the estimate cache key must describe the placement the server will run: a
+ *  plan solved a spill and a cache that the profile's own fields never mention,
+ *  and keying on those fields alone would also serve a stale estimate after a
+ *  re-solve. */
+function withEffectivePlacement(
+  profile: Partial<Profile>,
+  ngl: number,
+): Partial<Profile> {
+  const pl = effectivePlacement(profile, ngl);
+  return {
+    ...profile,
+    cpuMoe: pl.cpuMoeAll === true,
+    nCpuMoe: pl.nCpuMoe,
+    nCpuFfn: pl.nCpuFfn,
+    moeCacheMib: pl.moeCacheMib,
   };
 }
 
-// ── Single-point estimate (memory panel) ──
+/** Subdivides the measured weight columns with the GGUF tensor table. The probe
+ *  stays the authority on how much the binary spent; the table only says how
+ *  that total is composed, so every part is scaled to the measured column and
+ *  the parts sum to it exactly. */
+async function estimateBreakdown(
+  modelPath: string,
+  pl: Placement,
+  measured: { modelVram: number; ctxVram: number; modelRam: number },
+  mmproj: {
+    weights: number;
+    encoder: number;
+    hostWeights: number;
+    hostEncoder: number;
+  },
+): Promise<MemoryBreakdown | null> {
+  try {
+    const model = classifyModel(await readGgufInfoCached(modelPath));
+    const w = weightSplit(model, pl);
+    const b = weightBreakdown(model, pl);
+    const devScale = w.device > 0 ? measured.modelVram / w.device : 0;
+    const hostScale = w.host > 0 ? measured.modelRam / w.host : 0;
+    // The expert cache bills into the device context column (measured), so it
+    // is carved out of that column rather than added beside it.
+    const cache = Math.min(w.cacheDeviceBytes, measured.ctxVram);
+    const gpuStart = Math.min(firstGpuLayer(model, pl.ngl), model.baseLayers);
+    return {
+      vram: {
+        layers: b.attnDevice * devScale,
+        experts: b.expertsDevice * devScale,
+        ffn: b.ffnDevice * devScale,
+        output: b.outputDevice * devScale,
+        cache,
+        mmprojWeights: mmproj.weights,
+        mmprojEncoder: mmproj.encoder,
+      },
+      ram: {
+        // Non-layer tensors are few and small; they ride with the host layers
+        // rather than becoming a segment of their own.
+        layers: (b.layersHost + b.otherHost) * hostScale,
+        experts: b.expertsHost * hostScale,
+        ffn: b.ffnHost * hostScale,
+        embedding: b.embeddingHost * hostScale,
+        // The probe bills a streamed tensor to the host column, so it belongs
+        // in the column's subdivision — but the run reads it from the file, so
+        // the caller takes it back out of the RAM total. It is the one slice the
+        // total does not count, and the bar draws it hatched to say so.
+        lazy: b.lazyHost * hostScale,
+        mmprojWeights: mmproj.hostWeights,
+        mmprojEncoder: mmproj.hostEncoder,
+      },
+      counts: {
+        gpuLayers: w.gpuLayers,
+        totalLayers: model.baseLayers,
+        // Only layers a device holds can have anything spilled off them.
+        expertLayersSpilled: Math.max(
+          0,
+          Math.min(spilledExpertLayers(model, pl), model.baseLayers) - gpuStart,
+        ),
+        ffnLayersSpilled: Math.max(
+          0,
+          Math.min(spilledFfnLayers(model, pl), model.baseLayers) - gpuStart,
+        ),
+        cacheMib: Math.round(cache / MiB),
+      },
+    };
+  } catch (e) {
+    // A missing or unreadable header costs the extra segments, never the bar.
+    console.error(
+      '[fit-estimator] breakdown failed:',
+      e instanceof Error ? e.message : e,
+    );
+    return null;
+  }
+}
 
 export async function estimateMemoryAtConfig(
-  modelPath: string,
+  modelPathIn: string,
   ngl: number,
   ctx: number,
   projectorPath?: string,
@@ -1132,11 +1563,19 @@ export async function estimateMemoryAtConfig(
   contextRamUsage: number;
   computeOverheadRam: number;
   fileBufferRam: number;
-  // True when a projector was requested but this fit build cannot measure
-  // it (--mmproj unsupported): the numbers cover the text model only.
-  projectorSkipped: boolean;
+  breakdown: MemoryBreakdown | null;
 }> {
-  const zero = {
+  const modelPath = firstSplitPart(modelPathIn);
+  const zero: {
+    modelVramUsage: number;
+    contextVramUsage: number;
+    computeOverheadVram: number;
+    modelRamUsage: number;
+    contextRamUsage: number;
+    computeOverheadRam: number;
+    fileBufferRam: number;
+    breakdown: MemoryBreakdown | null;
+  } = {
     modelVramUsage: 0,
     contextVramUsage: 0,
     computeOverheadVram: 0,
@@ -1144,47 +1583,82 @@ export async function estimateMemoryAtConfig(
     contextRamUsage: 0,
     computeOverheadRam: 0,
     fileBufferRam: 0,
-    projectorSkipped: false,
+    breakdown: null,
   };
   try {
     const fitPath = await resolveFitPath();
     const supported = await getSupportedFlags(fitPath);
-    const projectorSkipped =
-      projectorPath !== undefined && !supported.has('--mmproj');
+    const pl = effectivePlacement(profile, ngl);
     // Forward the caller's real kvOffload: --no-kv-offload natively moves KV
     // to host in the measurement (no manual fixup needed).
     // Apply the stored placement triple when the caller provides one (the
     // optimizer panel passes it for the exact values it was solved for).
     // Without it a partial-overflow plan reads as whole layers resident.
-    const m = await measureAtConfig(
-      fitPath,
-      supported,
-      modelPath,
-      ngl,
-      ctx,
-      projectorPath,
-      profile,
-      {
-        tensorSplit: profile.tensorSplit ?? null,
-        overrides: profile.tensorOverrides ?? null,
-      },
-    );
+    const m = await probeAt(fitPath, supported, modelPath, profile, ctx, pl, {
+      tensorSplit: profile.tensorSplit ?? null,
+      overrides: profile.tensorOverrides ?? null,
+    });
     const modelVramUsage = m.devices.reduce((a, d) => a + d.model, 0);
     const contextVramUsage = m.devices.reduce((a, d) => a + d.context, 0);
     const computeOverheadVram = m.devices.reduce((a, d) => a + d.compute, 0);
     const mmap = (profile as any).mmap ?? true;
+
+    // The projector is never in a probe: the pinned llama-fit-params has no
+    // --mmproj. Its cost is analytic (estimator/mmproj.ts) and is booked here
+    // exactly as the optimizer books it, so the bar and the plan agree.
+    let mmproj: MmprojReserve | null = null;
+    if (projectorPath && fs.existsSync(projectorPath)) {
+      mmproj = mmprojReserve(await readMmprojInfo(projectorPath), {
+        offload: (profile as any).mmprojOffload === true,
+        images: 1,
+        imageMaxTokens: (profile as any).imageMaxTokens,
+        imageMinTokens: (profile as any).imageMinTokens,
+        flashAttn: (profile as any).flashAttn !== 'off',
+      });
+    }
+    const offloadMmproj = (profile as any).mmprojOffload === true;
+    const mmprojSplit = mmproj
+      ? {
+          weights: offloadMmproj ? mmproj.weightBytes : 0,
+          encoder: offloadMmproj ? mmproj.activationBytes : 0,
+          hostWeights: offloadMmproj ? 0 : mmproj.weightBytes,
+          hostEncoder: offloadMmproj
+            ? mmproj.hostBytes
+            : mmproj.activationBytes,
+        }
+      : { weights: 0, encoder: 0, hostWeights: 0, hostEncoder: 0 };
+    const mmprojDevice = mmprojSplit.weights + mmprojSplit.encoder;
+    const mmprojHost = mmprojSplit.hostWeights + mmprojSplit.hostEncoder;
+
+    const breakdown = await estimateBreakdown(
+      modelPath,
+      pl,
+      {
+        modelVram: modelVramUsage,
+        ctxVram: contextVramUsage,
+        modelRam: m.host.model,
+      },
+      mmprojSplit,
+    );
+    // The streamed tables sit in the measured host column but the run never
+    // holds them, so they come out of the RAM total — and out of the load
+    // buffer, which holds what the run reads into memory, not what it streams.
+    const streamed = breakdown?.ram.lazy ?? 0;
     // With --load-mode none the OS keeps the whole file in a heap buffer for
     // the process lifetime; approximate it from the measured weights.
-    const fileBufferRam = !mmap ? modelVramUsage + m.host.model : 0;
+    const fileBufferRam = !mmap
+      ? Math.max(0, modelVramUsage + m.host.model - streamed)
+      : 0;
+
     return {
-      modelVramUsage,
+      modelVramUsage: modelVramUsage + mmprojDevice,
       contextVramUsage,
       computeOverheadVram,
-      modelRamUsage: m.host.model,
+      modelRamUsage: Math.max(0, m.host.model - streamed) + mmprojHost,
       contextRamUsage: m.host.context,
       computeOverheadRam: m.host.compute,
       fileBufferRam,
-      projectorSkipped,
+      breakdown,
     };
   } catch (e) {
     // Estimate panel must never break the modal; optimizer stays strict.
@@ -1213,6 +1687,10 @@ function fitRelevantKey(profile: Partial<Profile> = {}): string {
     parallel: getParallel(profile),
     cpuMoe: profile.cpuMoe ?? false,
     nCpuMoe: profile.nCpuMoe ?? 0,
+    nCpuFfn: p.nCpuFfn ?? 0,
+    moeCacheMib: p.moeCacheMib ?? 0,
+    moeCacheCpuShare: p.moeCacheCpuShare ?? 0,
+    lazyMode: p.lazyMode ?? 'auto',
     mmprojOffload: p.mmprojOffload ?? false,
     imageMinTokens: p.imageMinTokens ?? 0,
     imageMaxTokens: p.imageMaxTokens ?? 0,
@@ -1235,13 +1713,18 @@ function estimateCacheKey(
 }
 
 export async function getOrEstimateMemory(
-  modelPath: string,
+  modelPathIn: string,
   ngl: number,
   ctx: number,
   projectorPath?: string,
   profile: Partial<Profile> = {},
 ) {
-  const key = estimateCacheKey(modelPath, ngl, ctx, projectorPath, profile);
+  // Keyed on the placement the probe will actually run, so a re-solve that
+  // changes spill or cache invalidates the entry instead of serving the old one.
+  // Split parts share one entry: they are the same model.
+  const modelPath = firstSplitPart(modelPathIn);
+  const effective = withEffectivePlacement(profile, ngl);
+  const key = estimateCacheKey(modelPath, ngl, ctx, projectorPath, effective);
   const existing = memoryEstimateCache.get(key);
   if (existing) return existing;
 
@@ -1250,7 +1733,7 @@ export async function getOrEstimateMemory(
     ngl,
     ctx,
     projectorPath,
-    profile,
+    effective,
   );
   memoryEstimateCache.set(key, promise);
   try {
@@ -1287,7 +1770,7 @@ function optimizerCacheKey(
 // Parameter order is positional API shared with chat.ts/ipc.ts callers.
 /* eslint-disable default-param-last */
 export async function getOrRunOptimizer(
-  modelPath: string,
+  modelPathIn: string,
   vramMB: number | undefined,
   ramMB: number | undefined,
   ctx: number,
@@ -1295,6 +1778,8 @@ export async function getOrRunOptimizer(
   profile: Partial<Profile> = {},
 ): Promise<MemoryEstimation> {
   /* eslint-enable default-param-last */
+  // One in-flight run per model, whichever part of a split model named it.
+  const modelPath = firstSplitPart(modelPathIn);
   const key = optimizerCacheKey(
     modelPath,
     vramMB,
@@ -1329,12 +1814,6 @@ export async function getOrRunOptimizer(
   }
 }
 
-// ── Maximum-speed line ──
-// Strict whole-layer answer to "how far can ctx grow before anything spills
-// off the GPU": largest ctx with maxLayers and NO -ot. Interpolated from two
-// probes (KV cache scales linearly with ctx), verified, then bisected on
-// miss. Returns null when even CTX_MIN spills (line hidden in that case).
-
 const speedLineCache = new Map<string, number | null>();
 
 // A backend install, reinstall or uninstall replaces (or removes) the binaries
@@ -1346,15 +1825,23 @@ export function invalidateBackendProbeCaches(): void {
   deviceTotalsCache.clear();
   memoryEstimateCache.clear();
   speedLineCache.clear();
+  clearGgufInfoCache();
 }
 
+// ── Maximum-speed line ──
+// Strict whole-layer answer to how far ctx can grow before anything spills off
+// the GPU: largest ctx at full offload, VRAM only. RAM never caps this line — it
+// is the maximum-speed line, not the maximum-possible one. Two probes bracket
+// the answer, one division locates it, a few more verify it.
+
 export async function maxFullOffloadCtx(
-  modelPath: string,
+  modelPathIn: string,
   vramMB: number | undefined,
   projectorPath?: string,
   profile: Partial<Profile> = {},
   runId?: number,
 ): Promise<number | null> {
+  const modelPath = firstSplitPart(modelPathIn);
   const key = `${modelPath}|${vramMB}|${projectorPath ?? ''}|${fitRelevantKey(profile)}`;
   const cached = speedLineCache.get(key);
   if (cached !== undefined) return cached;
@@ -1362,98 +1849,71 @@ export async function maxFullOffloadCtx(
   const prep = await prepareFit(
     modelPath,
     vramMB,
+    undefined,
     projectorPath,
     profile,
     CTX_MIN,
     runId,
   );
-  const {
-    fitPath,
-    supported,
-    maxLayers,
-    maxModelCtx,
-    deviceArg,
-    budgets,
-  } = prep;
-  if (maxLayers <= 0) {
-    speedLineCache.set(key, null);
-    return null;
-  }
-  const measureOpts = deviceArg ? { device: deviceArg, runId } : { runId };
-  const devTotal = (m: FitPrintResult): number[] =>
-    m.devices.map((d) => d.model + d.context + d.compute);
+  const full = prep.model.fullOffloadNgl;
+  const probe = (ctx: number) =>
+    probeAt(
+      prep.fitPath,
+      prep.supported,
+      modelPath,
+      profile,
+      ctx,
+      { ngl: full },
+      {
+        runId,
+        deviceArg: prep.deviceArg,
+      },
+    );
+  const mmproj = mmprojFor(prep);
+  const imgTokens = mmproj.ctxTokens;
+  const { maxModelCtx } = prep;
 
-  // Fast path: train max fits whole → line at the top.
-  const atMax = await measureAtConfig(
-    fitPath,
-    supported,
-    modelPath,
-    maxLayers,
-    maxModelCtx,
-    projectorPath,
-    profile,
-    measureOpts,
-  );
-  if (vramFits(atMax, budgets)) {
+  // Fast path: the model's own maximum context fits whole.
+  const atMax = await probe(maxModelCtx + imgTokens);
+  if (overBudget(prep, atMax, mmproj.device) <= 0) {
     speedLineCache.set(key, maxModelCtx);
     return maxModelCtx;
   }
-  // Floor spills too → no full-offload ctx exists.
-  const atMin = await measureAtConfig(
-    fitPath,
-    supported,
-    modelPath,
-    maxLayers,
-    CTX_MIN,
-    projectorPath,
-    profile,
-    measureOpts,
-  );
-  if (!vramFits(atMin, budgets)) {
+  // Even the smallest context overpacks a device at full offload: no
+  // full-offload ctx exists.
+  const atMin = await probe(CTX_MIN + imgTokens);
+  if (overBudget(prep, atMin, mmproj.device) > 0) {
     speedLineCache.set(key, null);
     return null;
   }
-  // Interpolate per device, take the binding (smallest) ctx, verify, bisect.
-  const loTotals = devTotal(atMin);
-  const hiTotals = devTotal(atMax);
-  const perToken = hiTotals.map((hi, i) =>
-    Math.max(1, (hi - loTotals[i]) / (maxModelCtx - CTX_MIN)),
+  // Interpolate from the two probes, then verify: each step halves the
+  // uncertainty, and the probe is what decides.
+  const span = maxModelCtx - CTX_MIN;
+  const grown = atMax.devices.map((d, i) =>
+    Math.max(1, probeDeviceTotal(d) - probeDeviceTotal(atMin.devices[i] ?? d)),
   );
-  const perDeviceBudget = budgets.map((b, i) => b.total - b.margin);
   let guess = maxModelCtx;
-  if (atMax.devices.length === budgets.length) {
+  if (atMin.devices.length === prep.deviceBudget.length) {
     guess = Math.min(
-      ...loTotals.map((lo, i) =>
-        CTX_MIN + (perDeviceBudget[i] - lo) / perToken[i],
-      ),
+      ...atMin.devices.map((d, i) => {
+        const free =
+          (prep.deviceBudget[i] ?? Number.POSITIVE_INFINITY) -
+          probeDeviceTotal(d) -
+          (i === 0 ? mmproj.device : 0);
+        return CTX_MIN + free / (grown[i] / span);
+      }),
     );
-  } else {
-    const totalBudget = perDeviceBudget.reduce((a, b) => a + b, 0);
-    const totalLo = loTotals.reduce((a, t) => a + t, 0);
-    const totalPerToken = perToken.reduce((a, t) => a + t, 0);
-    guess = CTX_MIN + (totalBudget - totalLo) / totalPerToken;
   }
   let candidate = Math.min(
     maxModelCtx,
-    Math.max(
-      CTX_MIN,
-      Math.floor(guess / CTX_SNAP) * CTX_SNAP,
-    ),
+    Math.max(CTX_MIN, Math.floor(guess / CTX_SNAP) * CTX_SNAP),
   );
-  // At most a few bisection steps: each probe halves the uncertainty.
   let verified: number | null = null;
+  /* eslint-disable no-await-in-loop -- bisection: each probe narrows the range
+   *  the next one is placed in. */
   for (let step = 0; step < 6; step += 1) {
-    const m = await measureAtConfig(
-      fitPath,
-      supported,
-      modelPath,
-      maxLayers,
-      candidate,
-      projectorPath,
-      profile,
-      measureOpts,
-    );
-    if (vramFits(m, budgets)) {
+    const m = await probe(candidate + imgTokens);
+    if (overBudget(prep, m, mmproj.device) <= 0) {
       verified = candidate;
       if (candidate >= maxModelCtx) break;
       candidate = Math.min(
@@ -1462,13 +1922,18 @@ export async function maxFullOffloadCtx(
       );
       if (candidate <= verified) break;
     } else {
-      candidate =
-        Math.floor((CTX_MIN + candidate) / 2 / CTX_SNAP) * CTX_SNAP;
-      candidate = Math.max(CTX_MIN, candidate);
+      candidate = Math.max(
+        CTX_MIN,
+        Math.floor((CTX_MIN + candidate) / 2 / CTX_SNAP) * CTX_SNAP,
+      );
       if (verified !== null && candidate <= verified) break;
     }
   }
-  const answer = verified;
+  /* eslint-enable no-await-in-loop */
+  const answer = verified === null ? null : verified - imgTokens;
+  if (isDev()) {
+    console.log(`[fit-estimator] max full-offload ctx: ${answer ?? 'none'}`);
+  }
   speedLineCache.set(key, answer);
   return answer;
 }
