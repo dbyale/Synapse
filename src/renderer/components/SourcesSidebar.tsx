@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { FileText, Globe, X, Search } from 'lucide-react';
 import type { Source } from '../../shared/chatTypes';
+import { filterSources } from '../utils/sources';
 
 export type { Source };
 
@@ -78,14 +79,10 @@ export default function SourcesSidebar({
 }) {
   const [searchQuery, setSearchQuery] = useState('');
 
-  const filteredSources = useMemo(() => {
-    if (!searchQuery.trim()) return sources;
-    const q = searchQuery.toLowerCase();
-    return sources.filter(
-      (s) =>
-        s.title.toLowerCase().includes(q) || s.url.toLowerCase().includes(q),
-    );
-  }, [sources, searchQuery]);
+  const filteredSources = useMemo(
+    () => filterSources(sources, searchQuery),
+    [sources, searchQuery],
+  );
 
   const topSources = filteredSources.filter((s) => s.kind === 'top');
   const otherSources = filteredSources.filter((s) => s.kind !== 'top');

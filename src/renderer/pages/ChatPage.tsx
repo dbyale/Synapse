@@ -67,6 +67,7 @@ import { useSourcesContext } from '../context/SourcesContext';
 import type { Profile } from '../types/profile';
 import type { AppSettings, ContentPart } from '../preload.d';
 import { getToolMeta, getAllToolMetas } from '../utils/extensionData';
+import { getSourceCount } from '../utils/sources';
 import { resolveIcon } from '../components/workflows/IconPicker';
 import {
   getMonthId,
@@ -2164,8 +2165,9 @@ export default function ChatPage() {
   // Sources collected in this chat are always reachable, even when the current
   // profile has no source-producing tools or nothing is loaded. Keep the toggle
   // available while the panel is open so it can always be closed from the chat.
+  const sourceCount = getSourceCount(sessionSources);
   const showSourcesButton =
-    profileHasSourcesTools || isSourcesOpen || sessionSources.length > 0;
+    profileHasSourcesTools || isSourcesOpen || sourceCount > 0;
 
   const PROJECTOR_WARNING_EXIT_MS = 200;
 
@@ -5225,17 +5227,22 @@ export default function ChatPage() {
             content="Sources"
             hideIcon
             side="left"
-            className="info-tooltip-wrapper--chat-sources"
+            className={`info-tooltip-wrapper--chat-sources${sourceCount > 0 ? ' info-tooltip-wrapper--chat-sources--with-count' : ''}`}
           >
             <button
               type="button"
-              className={`chat-sources-button${isSourcesOpen ? ' chat-sources-button--active' : ''}`}
+              className={`chat-sources-button${sourceCount > 0 ? ' chat-sources-button--with-count' : ''}${isSourcesOpen ? ' chat-sources-button--active' : ''}`}
               onClick={(e) => {
                 e.stopPropagation();
                 toggleSources();
               }}
             >
               <SquareDashedText size={18} />
+              {sourceCount > 0 && (
+                <span className="chat-sources-button__count">
+                  {sourceCount}
+                </span>
+              )}
             </button>
           </InfoTooltip>
         )}
