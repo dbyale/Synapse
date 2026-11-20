@@ -90,6 +90,22 @@ import {
   GitFork,
   Boxes,
   Sparkles,
+  Brain,
+  BrainCircuit,
+  MessageCircle,
+  GraduationCap,
+  Wand2,
+  PenLine,
+  Scale,
+  Gamepad2,
+  Rocket,
+  Briefcase,
+  Microscope,
+  Stethoscope,
+  Music2,
+  Coffee,
+  BookOpen,
+  Bug,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -176,6 +192,22 @@ const RAW: Record<string, LucideIcon | undefined> = {
   Share2,
   Boxes,
   Sparkles,
+  Brain,
+  BrainCircuit,
+  MessageCircle,
+  GraduationCap,
+  Wand2,
+  PenLine,
+  Scale,
+  Gamepad2,
+  Rocket,
+  Briefcase,
+  Microscope,
+  Stethoscope,
+  Music2,
+  Coffee,
+  BookOpen,
+  Bug,
   Search,
 };
 
@@ -311,6 +343,10 @@ export interface IconPickerProps {
   onSelect: (name: string) => void;
   onColorSelect: (color: string) => void;
   onClose: () => void;
+  /** Hides the colour row for callers that only store an icon (profiles). */
+  hideColor?: boolean;
+  /** Appended to the overlay class to stack above an already-open modal. */
+  className?: string;
 }
 
 export default function IconPicker({
@@ -319,6 +355,8 @@ export default function IconPicker({
   onSelect,
   onColorSelect,
   onClose,
+  hideColor = false,
+  className = '',
 }: IconPickerProps) {
   const [query, setQuery] = useState('');
   const [showColorPicker, setShowColorPicker] = useState(false);
@@ -502,6 +540,16 @@ export default function IconPicker({
     return () => document.removeEventListener('mousedown', onDocClick);
   }, [showColorPicker]);
 
+  // Escape closes the picker. Callers that also listen for Escape (the profile
+  // editor) stand down while the picker is open.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
   const filtered = useMemo(
     () =>
       query.trim()
@@ -513,7 +561,10 @@ export default function IconPicker({
   );
 
   return createPortal(
-    <div className="wf-icon-picker-overlay" onClick={onClose}>
+    <div
+      className={`wf-icon-picker-overlay${className ? ` ${className}` : ''}`}
+      onClick={onClose}
+    >
       <div className="wf-icon-picker" onClick={(e) => e.stopPropagation()}>
         <div className="wf-icon-picker__header">
           <span>Choose Icon</span>
@@ -539,32 +590,34 @@ export default function IconPicker({
         </div>
 
         {/* -- Color row -- */}
-        <div className="wf-icon-picker__color-row">
-          <div
-            className="wf-icon-picker__color-preview"
-            style={{ background: liveColor }}
-          />
-          {COLOR_PRESETS.map((color) => (
-            <button
-              key={color}
-              type="button"
-              title={color}
-              className={`wf-icon-picker__color-swatch${currentColor === color ? ' wf-icon-picker__color-swatch--active' : ''}`}
-              style={{ background: color }}
-              onClick={() => onColorSelect(color)}
-              aria-label={color}
+        {!hideColor && (
+          <div className="wf-icon-picker__color-row">
+            <div
+              className="wf-icon-picker__color-preview"
+              style={{ background: liveColor }}
             />
-          ))}
-          <button
-            ref={addBtnRef}
-            type="button"
-            className="wf-icon-picker__color-add"
-            onClick={openColorPicker}
-            aria-label="Custom color"
-          >
-            <Plus size={14} />
-          </button>
-        </div>
+            {COLOR_PRESETS.map((color) => (
+              <button
+                key={color}
+                type="button"
+                title={color}
+                className={`wf-icon-picker__color-swatch${currentColor === color ? ' wf-icon-picker__color-swatch--active' : ''}`}
+                style={{ background: color }}
+                onClick={() => onColorSelect(color)}
+                aria-label={color}
+              />
+            ))}
+            <button
+              ref={addBtnRef}
+              type="button"
+              className="wf-icon-picker__color-add"
+              onClick={openColorPicker}
+              aria-label="Custom color"
+            >
+              <Plus size={14} />
+            </button>
+          </div>
+        )}
 
         {/* -- Color picker popup -- */}
         {showColorPicker && (

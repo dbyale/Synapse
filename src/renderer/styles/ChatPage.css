@@ -121,6 +121,16 @@
   transition: transform 0.15s ease;
 }
 
+/* The active profile's own icon, at the head of the profile pill. */
+.chat-model-selector__profile-icon {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+
+.chat-model-selector__profile-icon--active {
+  color: var(--accent);
+}
+
 .chat-model-loading-label {
   color: var(--text-secondary);
   font-size: 13px;
@@ -242,6 +252,12 @@
   color: var(--text-secondary);
   margin-bottom: 8px;
   opacity: 0.4;
+}
+
+/* The active profile's own icon stands in for the send glyph. */
+.chat-empty-state-icon--profile {
+  color: var(--accent);
+  opacity: 0.35;
 }
 
 .chat-empty-state h2 {
@@ -393,6 +409,12 @@
 
 .chat-message__label-chevron {
   transition: transform 0.2s ease;
+}
+
+/* The profile's icon, marking which profile produced this reply. */
+.chat-message__label-icon {
+  flex-shrink: 0;
+  color: var(--accent);
 }
 
 .chat-message__label-chevron--collapsed {

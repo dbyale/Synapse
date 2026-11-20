@@ -99,6 +99,12 @@ export const DEFAULT_CONTEXT_SHIFT: ContextShiftSettings = {
 export interface Profile {
   id: string;
   name: string;
+  /**
+   * Lucide icon name drawn from the shared icon registry (see
+   * components/workflows/IconPicker.tsx). Absent or unknown names fall back to
+   * the default profile icon, so profiles exported by older builds still render.
+   */
+  icon?: string;
   model: string;
   projector?: string;
   modelAuthor: string;

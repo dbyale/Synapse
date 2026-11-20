@@ -48,6 +48,7 @@ import InfoTooltip from '../components/InfoTooltip';
 import SearchBar from '../components/SearchBar';
 import EditProfileModal from '../components/EditProfileModal';
 import ConfirmDialog from '../components/ConfirmDialog';
+import { resolveProfileIcon } from '../utils/profileIcon';
 import '../styles/ProfilesPage.css';
 
 interface EditSectionProps {
@@ -802,6 +803,7 @@ export default function ProfilesPage() {
             {displayProfiles.map((profile) => {
               const isDragged = draggedId === profile.id;
               const isLoadingThis = loadingId === profile.id;
+              const ProfileIcon = resolveProfileIcon(profile.icon);
 
               return (
                 <div
@@ -826,6 +828,9 @@ export default function ProfilesPage() {
                           size={18}
                           className="sp-card__grip-icon"
                         />
+                      </div>
+                      <div className="sp-card__icon" aria-hidden="true">
+                        <ProfileIcon size={22} />
                       </div>
                       <div className="sp-card__info">
                         <div className="sp-card__title-row">

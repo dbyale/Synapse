@@ -359,6 +359,11 @@
   }
 }
 
+/* Opened on top of a modal (the profile editor, z-index 2000). */
+.wf-icon-picker-overlay--above-modal {
+  z-index: 2100;
+}
+
 .wf-icon-picker {
   background: var(--bg-secondary);
   border: 1px solid var(--border);

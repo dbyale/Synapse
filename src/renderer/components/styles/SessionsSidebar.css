@@ -21,10 +21,23 @@
   flex-shrink: 0;
 }
 
+.sessions-sidebar__heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.sessions-sidebar__icon {
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
 .sessions-sidebar__title {
   font-size: 14px;
   font-weight: 600;
   color: var(--text-primary);
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

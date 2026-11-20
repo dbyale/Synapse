@@ -55,7 +55,8 @@ import {
   type BarSegmentKey,
   type BarSide,
 } from '../utils/memoryBar';
-import { resolveIcon } from './workflows/IconPicker';
+import IconPicker, { resolveIcon } from './workflows/IconPicker';
+import { DEFAULT_PROFILE_ICON, resolveProfileIcon } from '../utils/profileIcon';
 import ToolListModal from './ToolListModal';
 import ExtensionSettingsForm from './ExtensionSettingsForm';
 import ConfirmDialog from './ConfirmDialog';
@@ -79,6 +80,7 @@ import { planSummaryLines } from '../utils/planSummary';
 import InfoTooltip from './InfoTooltip';
 import {
   PROFILE_NAME_TOOLTIP,
+  PROFILE_ICON_TOOLTIP,
   MODEL_TOOLTIP,
   PROJECTOR_TOOLTIP,
   MMPROJ_OFFLOAD_TOOLTIP,
@@ -335,6 +337,12 @@ const SEARCH_INDEX: SearchIndexEntry[] = [
     id: 'main:profile-name',
     label: 'Profile Name',
     keywords: ['name', 'title'],
+    page: 'main',
+  },
+  {
+    id: 'main:profile-icon',
+    label: 'Profile Icon',
+    keywords: ['icon', 'avatar', 'image', 'emoji', 'logo', 'badge'],
     page: 'main',
   },
   {
@@ -1532,6 +1540,8 @@ function MemoryBar({
 function MainPage({
   editName,
   setEditName,
+  editIcon,
+  onOpenIconPicker,
   editModel,
   selectedModelDisplay,
   selectedProjectorDisplay,
@@ -1551,6 +1561,8 @@ function MainPage({
 }: {
   editName: string;
   setEditName: (v: string) => void;
+  editIcon: string;
+  onOpenIconPicker: () => void;
   editModel: string;
   selectedModelDisplay: {
     groupName: string;
@@ -1581,6 +1593,7 @@ function MainPage({
   editCsEnabled: boolean;
   editCsTokensRemaining: string;
 }) {
+  const IconComponent = resolveProfileIcon(editIcon);
   return (
     <div className="epm-main-grid">
       <div className="epm-main-left">
@@ -1593,13 +1606,32 @@ function MainPage({
           >
             <div className="epm-section__label">Profile Name</div>
           </InfoTooltip>
-          <input
-            type="text"
-            className="epm-input"
-            value={editName}
-            onChange={(e) => setEditName(e.target.value)}
-            placeholder="Profile name..."
-          />
+          <div className="epm-name-row">
+            <InfoTooltip
+              content={PROFILE_ICON_TOOLTIP}
+              side="right"
+              hideIcon
+              className="epm-icon-avatar-wrap"
+              title="Profile Icon"
+            >
+              <button
+                type="button"
+                className="epm-icon-avatar"
+                onClick={onOpenIconPicker}
+                aria-label="Choose profile icon"
+                title="Choose profile icon"
+              >
+                <IconComponent size={22} />
+              </button>
+            </InfoTooltip>
+            <input
+              type="text"
+              className="epm-input"
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              placeholder="Profile name..."
+            />
+          </div>
         </div>
 
         <div className="epm-section">
@@ -6118,6 +6150,10 @@ export default function EditProfileModal({
   const isNewProfile = profile === null;
   const [exportingProfile, setExportingProfile] = useState(false);
   const [editName, setEditName] = useState(profile?.name ?? 'New Profile');
+  const [editIcon, setEditIcon] = useState(
+    profile?.icon ?? DEFAULT_PROFILE_ICON,
+  );
+  const [showIconPicker, setShowIconPicker] = useState(false);
   const [editSystemPrompt, setEditSystemPrompt] = useState(
     profile?.systemPrompt ?? 'You are a helpful assistant.',
   );
@@ -7242,6 +7278,7 @@ export default function EditProfileModal({
         showModelModal ||
         showProjectorModal ||
         showDraftModelModal ||
+        showIconPicker ||
         confirmDisableExternal
       )
         return;
@@ -7498,6 +7535,7 @@ export default function EditProfileModal({
       ...profile,
       id: profile?.id ?? now.toString(),
       name: editName.trim(),
+      icon: editIcon,
       model: editModelFilename ? modelRelativePath : '',
       projector: projectorRelativePath || undefined,
       modelAuthor: editModelAuthor,
@@ -7849,6 +7887,8 @@ export default function EditProfileModal({
           <MainPage
             editName={editName}
             setEditName={setEditName}
+            editIcon={editIcon}
+            onOpenIconPicker={() => setShowIconPicker(true)}
             editModel={editModelFilename}
             selectedModelDisplay={selectedModelDisplay}
             selectedProjectorDisplay={selectedProjectorDisplay}
@@ -8431,6 +8471,17 @@ export default function EditProfileModal({
             setShowDraftModelModal(false);
           }}
           onClose={() => setShowDraftModelModal(false)}
+        />
+      )}
+      {showIconPicker && (
+        <IconPicker
+          current={editIcon}
+          currentColor=""
+          hideColor
+          className="wf-icon-picker-overlay--above-modal"
+          onSelect={(name) => setEditIcon(name)}
+          onColorSelect={() => {}}
+          onClose={() => setShowIconPicker(false)}
         />
       )}
       {confirmDisableExternal && (

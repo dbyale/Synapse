@@ -2,6 +2,11 @@
 
 export const PROFILE_NAME_TOOLTIP = 'A friendly name to identify this profile.';
 
+export const PROFILE_ICON_TOOLTIP = [
+  'A Lucide icon that identifies this profile everywhere it appears: the Profiles page, the profile picker, the chat header, and the assistant label on its replies.',
+  'It also replaces the placeholder shown in an empty chat.',
+];
+
 export const MODEL_TOOLTIP =
   'The local GGUF model file this profile will use. Select a model that best fits your hardware and quality needs.';
 

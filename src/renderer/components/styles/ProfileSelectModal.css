@@ -212,6 +212,18 @@
   margin: 0;
 }
 
+.psm-card__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-sm);
+  background: rgba(37, 99, 235, 0.08);
+  color: var(--accent);
+}
+
 .psm-card__active-badge {
   font-size: 10px;
   font-weight: 600;

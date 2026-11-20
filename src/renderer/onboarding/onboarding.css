@@ -1991,6 +1991,18 @@
   background: rgba(74, 222, 128, 0.14);
 }
 
+.onb-final-profile-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: rgba(137, 180, 250, 0.12);
+  color: #89b4fa;
+}
+
 .onb-final-profile-body {
   min-width: 0;
   display: flex;

@@ -495,6 +495,47 @@
   border-color: var(--accent);
 }
 
+/* ── Profile name + icon avatar ── */
+
+.epm-name-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.epm-name-row .epm-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.epm-icon-avatar-wrap {
+  flex-shrink: 0;
+}
+
+.epm-icon-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 46px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: rgba(37, 99, 235, 0.08);
+  color: var(--accent);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.epm-icon-avatar:hover {
+  border-color: var(--accent);
+  background: rgba(37, 99, 235, 0.14);
+}
+
+.epm-icon-avatar:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+}
+
 .epm-textarea {
   width: 100%;
   max-width: 100%;

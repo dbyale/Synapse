@@ -20,6 +20,7 @@ import type {
 } from '../preload.d';
 import type { Profile } from '../types/profile';
 import { formatBytes } from '../utils/formatters';
+import { resolveProfileIcon } from '../utils/profileIcon';
 import {
   getBackgroundSetupError,
   getBinaryInstallSnapshot,
@@ -183,6 +184,7 @@ function ProfileChoice({
   selected: boolean;
   onSelect: () => void;
 }) {
+  const ProfileIcon = resolveProfileIcon(profile.icon);
   return (
     <button
       type="button"
@@ -192,6 +194,9 @@ function ProfileChoice({
     >
       <span className="onb-final-profile-check">
         {selected && <Check size={13} strokeWidth={2.6} />}
+      </span>
+      <span className="onb-final-profile-icon" aria-hidden="true">
+        <ProfileIcon size={16} />
       </span>
       <span className="onb-final-profile-body">
         <span className="onb-final-profile-name">{profile.name}</span>

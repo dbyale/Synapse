@@ -12,12 +12,15 @@ import {
   Pin,
 } from 'lucide-react';
 import { sessionsToMarkdown } from '../utils/sessions';
+import { resolveProfileIcon } from '../utils/profileIcon';
 import type { SavedSession } from '../../shared/chatTypes';
 import './styles/SessionsSidebar.css';
 
 interface SessionsSidebarProps {
   profileId: string;
   profileName: string;
+  /** Lucide icon name of the active profile, shown beside its name. */
+  profileIcon: string;
   activeSessionId: string | null;
   collapsed: boolean;
   streamingSessionIds: Set<string>;
@@ -53,6 +56,7 @@ function getGroupLabel(ts: number): GroupLabel {
 function SessionsSidebar({
   profileId,
   profileName,
+  profileIcon,
   activeSessionId,
   collapsed,
   streamingSessionIds,
@@ -61,6 +65,7 @@ function SessionsSidebar({
   onNewChat,
   onDelete,
 }: SessionsSidebarProps) {
+  const ProfileIcon = resolveProfileIcon(profileIcon);
   const [sessions, setSessions] = useState<SavedSession[]>([]);
   const [query, setQuery] = useState('');
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -164,8 +169,17 @@ function SessionsSidebar({
     >
       <div className="sessions-sidebar" style={{ width: 320, minWidth: 320 }}>
         <div className="sessions-sidebar__header">
-          <span className="sessions-sidebar__title">
-            {profileName || 'Sessions'}
+          <span className="sessions-sidebar__heading">
+            {profileName && (
+              <ProfileIcon
+                size={16}
+                className="sessions-sidebar__icon"
+                aria-hidden="true"
+              />
+            )}
+            <span className="sessions-sidebar__title">
+              {profileName || 'Sessions'}
+            </span>
           </span>
           <button
             type="button"

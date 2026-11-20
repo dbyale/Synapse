@@ -15,7 +15,6 @@ import {
 import {
   SendHorizonal,
   Square,
-  Bot,
   SlidersHorizontal,
   AlertCircle,
   RefreshCw,
@@ -69,6 +68,7 @@ import type { AppSettings, ContentPart } from '../preload.d';
 import { getToolMeta, getAllToolMetas } from '../utils/extensionData';
 import { getSourceCount } from '../utils/sources';
 import { resolveIcon } from '../components/workflows/IconPicker';
+import { resolveProfileIcon } from '../utils/profileIcon';
 import {
   getMonthId,
   getLastNonZeroMonthId,
@@ -425,6 +425,8 @@ interface MessageViewProps {
   msg: Message;
   isLast: boolean;
   profileName: string;
+  /** Lucide icon name for the active profile, shown beside its replies. */
+  profileIcon: string;
   loading: boolean;
   processing: boolean;
   progressPercent: number;
@@ -577,6 +579,7 @@ function MessageViewInner({
   msg,
   isLast,
   profileName,
+  profileIcon,
   loading,
   processing,
   progressPercent,
@@ -594,6 +597,7 @@ function MessageViewInner({
   onRetry,
   onDelete,
 }: MessageViewProps) {
+  const ProfileIcon = resolveProfileIcon(profileIcon);
   const streamingDisplayText = useMemo(() => {
     if (!streamingTool) return '';
     return formatToolJson(streamingTool.text);
@@ -664,6 +668,13 @@ function MessageViewInner({
               }
             }}
           >
+            {msg.role === 'assistant' && (
+              <ProfileIcon
+                size={13}
+                className="chat-message__label-icon"
+                aria-hidden="true"
+              />
+            )}
             {msg.role === 'user'
               ? 'You'
               : msg.role === 'system'
@@ -1316,6 +1327,7 @@ function messageViewPropsEqual(prev: MessageViewProps, next: MessageViewProps) {
     prev.msg !== next.msg ||
     prev.isLast !== next.isLast ||
     prev.profileName !== next.profileName ||
+    prev.profileIcon !== next.profileIcon ||
     prev.settings !== next.settings ||
     prev.copiedMsgId !== next.copiedMsgId ||
     prev.isCollapsed !== next.isCollapsed ||
@@ -2632,6 +2644,10 @@ export default function ChatPage() {
 
   const selectedProfile =
     profiles.find((p) => p.id === selectedProfileId) ?? null;
+  // The profile's own icon, used by the header pill, the empty chat state and
+  // the assistant label. resolveProfileIcon falls back when none is stored.
+  const selectedProfileIcon = selectedProfile?.icon ?? '';
+  const SelectedProfileIcon = resolveProfileIcon(selectedProfileIcon);
   // External v1-compatible server profile: the pill is a static blue
   // "External Server" badge (never toggleable, no offline state) and the
   // restart button is hidden — Synapse does not own the remote server.
@@ -5161,6 +5177,7 @@ export default function ChatPage() {
       <SessionsSidebar
         profileId={selectedProfileId}
         profileName={selectedProfile?.name ?? ''}
+        profileIcon={selectedProfileIcon}
         activeSessionId={activeSessionId}
         collapsed={sidebarCollapsed}
         streamingSessionIds={streamingSessions}
@@ -5172,9 +5189,13 @@ export default function ChatPage() {
 
       <div className="chat-page">
         <div className="chat-model-selector">
-          <Bot
+          <SelectedProfileIcon
             size={18}
-            style={{ color: 'var(--text-secondary)', flexShrink: 0 }}
+            className={`chat-model-selector__profile-icon${
+              selectedProfile
+                ? ' chat-model-selector__profile-icon--active'
+                : ''
+            }`}
           />
           <InfoTooltip
             content="Select Profile"
@@ -5398,7 +5419,14 @@ export default function ChatPage() {
 
             {messages.length === 0 && !loading && !loadError && (
               <div className="chat-empty-state">
-                <SendHorizonal className="chat-empty-state-icon" size={44} />
+                {selectedProfile ? (
+                  <SelectedProfileIcon
+                    className="chat-empty-state-icon chat-empty-state-icon--profile"
+                    size={44}
+                  />
+                ) : (
+                  <SendHorizonal className="chat-empty-state-icon" size={44} />
+                )}
                 <h2>
                   {modelLoading ? 'Loading profile...' : 'Start a conversation'}
                 </h2>
@@ -5424,6 +5452,7 @@ export default function ChatPage() {
                       msg={split.head}
                       isLast={false}
                       profileName={selectedProfile?.name ?? ''}
+                      profileIcon={selectedProfileIcon}
                       loading={false}
                       processing={false}
                       progressPercent={0}
@@ -5446,6 +5475,7 @@ export default function ChatPage() {
                       msg={split.tail}
                       isLast={msg === messages[messages.length - 1]}
                       profileName={selectedProfile?.name ?? ''}
+                      profileIcon={selectedProfileIcon}
                       loading={loading}
                       processing={processing}
                       progressPercent={progressPercent}
@@ -5473,6 +5503,7 @@ export default function ChatPage() {
                     msg={msg}
                     isLast={msg === messages[messages.length - 1]}
                     profileName={selectedProfile?.name ?? ''}
+                    profileIcon={selectedProfileIcon}
                     loading={loading}
                     processing={processing}
                     progressPercent={progressPercent}

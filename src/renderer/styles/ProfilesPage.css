@@ -190,6 +190,19 @@
   opacity: 1;
 }
 
+/* ── Profile icon ── */
+.sp-card__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-md);
+  background: rgba(37, 99, 235, 0.08);
+  color: var(--accent);
+}
+
 .sp-card__info {
   flex: 1;
   min-width: 0;

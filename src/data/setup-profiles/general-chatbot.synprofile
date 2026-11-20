@@ -7,6 +7,7 @@
       "profile": {
         "id": "1792692981393",
         "name": "General Chatbot - Fast",
+        "icon": "Zap",
         "model": "unsloth/Qwen3.5-4B-MTP-GGUF/Qwen3.5-4B-UD-Q4_K_XL.gguf",
         "projector": "unsloth/Qwen3.5-4B-MTP-GGUF/projectors/mmproj-BF16.gguf",
         "modelAuthor": "unsloth",
@@ -105,6 +106,7 @@
       "profile": {
         "id": "1792703628199",
         "name": "General Chatbot - Expert",
+        "icon": "BrainCircuit",
         "model": "unsloth/Qwen3.6-35B-A3B-MTP-GGUF/Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf",
         "projector": "unsloth/Qwen3.6-35B-A3B-MTP-GGUF/projectors/mmproj-BF16.gguf",
         "modelAuthor": "unsloth",

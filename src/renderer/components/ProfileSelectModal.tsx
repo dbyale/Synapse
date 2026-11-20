@@ -2,6 +2,7 @@ import { useState, MouseEvent, KeyboardEvent, ChangeEvent } from 'react';
 import { X, PackageCheck, PackageMinus, Search } from 'lucide-react';
 import { Profile } from '../types/profile';
 import { getExtensions } from '../utils/extensionData';
+import { resolveProfileIcon } from '../utils/profileIcon';
 import './styles/ProfileSelectModal.css';
 
 interface ProfileSelectModalProps {
@@ -130,6 +131,7 @@ export default function ProfileSelectModal({
               // selectable and show their server URL instead of a model.
               const isExternal = !!profile.useExternalServer;
               const selectable = isExternal || !!profile.modelFilename;
+              const ProfileIcon = resolveProfileIcon(profile.icon);
               return (
                 <button
                   key={profile.id}
@@ -143,6 +145,9 @@ export default function ProfileSelectModal({
                   disabled={!selectable}
                 >
                   <div className="psm-card__title-row">
+                    <span className="psm-card__icon" aria-hidden="true">
+                      <ProfileIcon size={18} />
+                    </span>
                     <h3>{profile.name}</h3>
                     {selectedProfileId === profile.id && (
                       <span className="psm-card__active-badge">Active</span>
