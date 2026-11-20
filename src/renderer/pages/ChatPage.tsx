@@ -4502,25 +4502,17 @@ export default function ChatPage() {
 
   const withPastedName = (file: File): File => {
     const ext = getExtension(file.name);
-    if (
-      file.name &&
-      (IMAGE_EXTENSIONS_SET.has(ext) ||
-        VIDEO_EXTENSIONS_SET.has(ext) ||
-        DOC_EXTENSIONS_SET.has(ext))
-    ) {
-      return file;
-    }
-    if (file.type.startsWith('image/')) {
+    if (file.type.startsWith('image/') || IMAGE_EXTENSIONS_SET.has(ext)) {
       pastedNameCounter += 1;
-      const imageExt = file.type.split('/')[1] || 'png';
+      const imageExt = file.type.split('/')[1] || ext || 'png';
       return new File([file], `pasted-image-${pastedNameCounter}.${imageExt}`, {
         type: file.type,
       });
     }
-    if (file.type.startsWith('video/')) {
+    if (file.type.startsWith('video/') || VIDEO_EXTENSIONS_SET.has(ext)) {
       pastedNameCounter += 1;
-      const subtype = file.type.split('/')[1] || 'mp4';
-      const videoExt = MIME_TO_VIDEO_EXT[subtype] ?? subtype;
+      const subtype = file.type.split('/')[1] || '';
+      const videoExt = MIME_TO_VIDEO_EXT[subtype] || subtype || ext || 'mp4';
       return new File([file], `pasted-video-${pastedNameCounter}.${videoExt}`, {
         type: file.type,
       });
